@@ -54,6 +54,8 @@ export type AutomationStudioConversationInstructionAnswer = {
   interpretationCostUsd?: number;
   /** How many priced model calls `interpretationCostUsd` sums. Present beside it. */
   interpretationCalls?: number;
+  /** What the reading declared the task will cause (`./acts.ts`, t976). Never sent to the client: the handler hands it to the command the turn runs. */
+  taskActs?: string[];
 };
 
 

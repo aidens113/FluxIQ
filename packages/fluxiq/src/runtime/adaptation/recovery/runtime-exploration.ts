@@ -29,34 +29,16 @@ import type { AutomationStudioLlmStepLogPageReader } from "../../llm/step-log/in
 // empty. `evidence_gathered` itself is constructible only from an action that
 // returned evidence -- Phase D's rule, applied one layer further out.
 //
-// **An action the run was not allowed is a question for a person.** Every
-// action is handed the run's permission check. When the domain declares a
-// lasting consequence the run does not hold, the gate raises a request.
+// **An action the run was not allowed is never a question mid-Flow (t976).** Every action is
+// handed the run's permission check. A repair runs inside a Flow's run, and the user's rule
+// (2026-11-03, 2026-11-10) is that a dangerous act asks one question only when a Flow or chat starts,
+// never in the middle. So the run holds what its caller allowed and what the person already
+// answered in the Flow's chat. The gate's asking is closed before exploration: an uncovered act is
+// refused without raising a request, a held no stays `declined`, and the model sees that evidence
+// and can try another way. The existing exploration ledger still counts every refused action.
 //
-// What happens next depends on whether there is anywhere to put it. With an
-// `ask` bound, the request goes to the run's own thread and the exploration
-// waits, and the same check is asked again on the answer -- so nothing decides
-// permission twice. An answer that allows it widens what the run holds and the
-// action goes ahead. A person who says no has answered: the gate remembers the
-// no for that one question, the action is refused as `declined`, the model is
-// told so and the exploration goes on, and a different control is a new
-// question that is asked. Without an `ask`, or when nobody answered, the
-// exploration stops there with `operator_approval_required`, carrying the
-// request. Nothing else raises that reason: a domain's own refusal code cannot,
-// because a stop with no request in hand would ask a person a question nobody
-// can answer.
-//
-// Until 2026-10-01 a no was settled exactly as silence: the exploration ended
-// on the first decline, carrying a request the person had already refused, and
-// no later question in that repair could be asked. The build path stopped doing
-// that in t195-w18 (`../flow-bootstrap/action-permissions.ts`); this is the
-// same rule on the repair path.
-//
-// Until 2026-09-22 there was no `ask` here at all, and this threw the terminal
-// refusal on the first request -- the exact ending the authoring path had just
-// stopped producing. Flow creation, a runtime failure and improving an existing
-// Flow are three entry points into one loop, so a question that parks a build
-// and kills a repair is the loop half-built.
+// Until t976 an `ask` put the request to the run's own thread and the exploration waited for the
+// answer (2026-09-22 to 2026-11-20); before that, the first request threw the terminal refusal.
 //
 // **A tool that fails is shown to the model, not the end of the exploration.**
 // The loop runs with `toolFailures: "observe"`, as a build does: a call that
@@ -87,7 +69,6 @@ import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/in
 import { automationStudioActivityAskPort, observeAutomationStudioEvidenceLoop } from "../../automation-activity/index.ts";
 import {
   AUTOMATION_STUDIO_PERSON_NEEDED_ISSUE_CODES,
-  automationStudioPermissionAskOutcome,
   automationStudioPersonNeededToolCalls,
   type AutomationStudioPermissionAsk,
   type AutomationStudioPersonNeededEnding
@@ -182,15 +163,7 @@ export type AutomationStudioRuntimeExplorationInput = {
   /** The instructions the run is carrying out, cited by a request as its reason. */
   instructionIds?: readonly string[];
   /**
-   * Where a request this exploration raises is put to a person, and where the
-   * answer comes back from. Absent, a request ends the exploration as it always
-   * did; nobody is asked, because there is nowhere to ask.
-   *
-   * The gate it is used with must have been built with `endsOnRequest: false`,
-   * or its own signal aborts the loop before an answer can arrive. A gate
-   * built here is; a caller's own gate is the caller's to build that way.
-   *
-   * It is also where a check only a person can complete is handed to them
+   * Where a check only a person can complete is handed to them
    * (`personNeeded` on a call's result), with Core's own person-needed wait
    * rather than this ask's `timeoutMs`. Absent, such a call ends the
    * exploration `user_intervention_required` at once.
@@ -261,6 +234,9 @@ export async function runAutomationStudioRuntimeExploration(
   // First, before the clock starts: a caller that handed both a gate and the
   // fields that build one is refused before anything is held open.
   const gate = explorationPermissionGate(input, now);
+  // Exploration is already inside a running Flow: uncovered consequences are evidence the model
+  // must route around, never another permission question or a new ending for the task.
+  gate.closeAsking();
   const startedAtMs = now();
   const ledger = new AutomationStudioExplorationBudgetLedger({
     budget: input.budget,
@@ -270,15 +246,8 @@ export async function runAutomationStudioRuntimeExploration(
     ...(input.signal ? { externalSignal: input.signal } : {})
   });
   let unusableDecisions = 0;
-  // Each request is put to a person once. A request nobody answered stays in
-  // force at the gate, so the exploration waits once and then ends on it; a
-  // person's no is remembered at the gate for that question alone, and a
-  // different question raises a request with a new id, which is asked.
-  const asked = new Set<string>();
-  // A gate that may be answered does not abort its own signal, so the ending an
-  // unanswered request makes has to be fired from here. Without an ask the gate
-  // fires its own and this stays unused; with one, it fires only when nobody
-  // answered. A no does not fire it: the model is told and the exploration goes on.
+  // A request the gate raises ends the exploration, fired from here whether or not the gate aborts its
+  // own signal (header, t976). A no does not fire it: the model is told and the exploration goes on.
   const permissionRefused = new AbortController();
   // The exploration's own step record, taken where the action is called because
   // that is the only place that holds both the argument the loop discards and
@@ -298,9 +267,7 @@ export async function runAutomationStudioRuntimeExploration(
       ...call,
       permission: asking({
         gate,
-        ...(ask ? { ask } : {}),
         action: { kind: "exploration_step", id: call.toolId, ref: call.callId },
-        asked,
         unanswered: permissionRefused
       })
     }),
@@ -358,6 +325,7 @@ export async function runAutomationStudioRuntimeExploration(
           const execution = await recorder.around(call, () => personNeeded.executeTool(call));
           gate.observe(execution);
           const needsPermission = gate.raisedDuring(call.callId);
+          const permissionRefusedHere = gate.declarations.some((entry) => entry.action.ref === call.callId && !entry.permitted);
           // What the step asked for and what came back, recorded together. The
           // ledger needs both to answer whether the exploration is still
           // learning: a repeated request and a new request that returned an
@@ -369,7 +337,7 @@ export async function runAutomationStudioRuntimeExploration(
             signature,
             evidenceDigest: automationStudioExplorationEvidenceDigest(evidenceText),
             evidenceBytes: emptyEvidence(evidence) ? 0 : Buffer.byteLength(evidenceText, "utf8"),
-            ...(needsPermission ? { refused: "operator_approval_required" as const } : refusal(execution, input.classifyRefusal))
+            ...(needsPermission ? { refused: "operator_approval_required" as const } : permissionRefusedHere ? { refused: "destructive_action_refused" as const } : refusal(execution, input.classifyRefusal))
           });
           // Terminal, not parked: the step is recorded, and the exploration
           // ends here rather than asking the model for something else to try.
@@ -400,44 +368,20 @@ export async function runAutomationStudioRuntimeExploration(
 }
 
 /**
- * The gate's check, with the refusal it would return put to a person first.
- *
- * No answer is acted on from here: the same check is asked again, and the gate
- * recomputes what is missing against what it now holds -- permitted after a
- * grant, refused as `declined` after a no. A question already asked, or a
- * refusal the gate itself answered as declined, is not asked again. Without an
- * ask this is the gate's own check unchanged.
+ * The gate's check, ending the exploration on a request it raises (header, t976): nothing is put to a
+ * person mid-Flow. A refusal the gate answered as declined is the person's no, told to the model.
  */
 function asking(input: {
   gate: AutomationStudioActionPermissionGate;
-  ask?: AutomationStudioPermissionAsk;
   action: { kind: "exploration_step"; id: string; ref: string };
-  /** The ids of the requests this exploration has put to a person. */
-  asked: Set<string>;
-  /** Fired when a request was put to a person and nobody answered it. */
+  /** Fired when the gate raised a request: the exploration ends on it. */
   unanswered: AbortController;
 }): AutomationStudioActionPermissionCheck {
   const check = input.gate.checkFor(input.action);
-  const ask = input.ask;
-  if (!ask) return check;
   return async (declaration) => {
     const decision = await check(declaration);
-    const request = input.gate.request;
-    if (decision.permitted || decision.declined || !request || request.requestId !== decision.requestId) return decision;
-    // Only a request nobody answered is still outstanding, and the exploration
-    // ended on it the first time: one wait, never a second.
-    if (input.asked.has(request.requestId)) {
-      input.unanswered.abort();
-      return decision;
-    }
-    input.asked.add(request.requestId);
-    const outcome = await automationStudioPermissionAskOutcome(ask, request);
-    input.gate.settle(outcome);
-    if (outcome === "unanswered") {
-      input.unanswered.abort();
-      return decision;
-    }
-    return await check(declaration);
+    if (!decision.permitted && !decision.declined && decision.requestId !== null) input.unanswered.abort();
+    return decision;
   };
 }
 
@@ -456,10 +400,6 @@ function explorationPermissionGate(input: AutomationStudioRuntimeExplorationInpu
     permittedConsequences: input.permittedConsequences,
     stage: "recovery",
     instructionIds: input.instructionIds,
-    // With somewhere to put the question, the gate must not abort on raising
-    // it: the exploration is about to wait for an answer, and its own stop
-    // signal is joined to the gate's.
-    ...(input.ask ? { endsOnRequest: false } : {}),
     now
   });
   for (const shown of input.shownEvidence ?? []) gate.observe(shown);

@@ -19,6 +19,9 @@
 // candidate from `flow-bootstrap/candidate/index.ts`; `runtime/index.ts`
 // publishes it.
 export * from "./action-permissions.ts";
+export * from "./unforeseen-said.ts";
+export * from "./start-asking.ts";
+export * from "./unanswered-said.ts";
 export * from "./explored-toggles.ts";
 export * from "./explored-interruptions.ts";
 export * from "./learned-paces.ts";

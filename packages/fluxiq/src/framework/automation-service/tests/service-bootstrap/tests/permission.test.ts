@@ -81,16 +81,16 @@ describe("building a Flow that needs an action a person has not allowed", () => 
     expect(result.status).toBe("proposed");
     expect(result.permissionRequest).toMatchObject({
       schemaVersion: "automation-studio.action-permission-request.v1",
-      action: { kind: "exploration_step", id: "example.press", verb: "press" },
-      control: { name: REFUND.name, kind: "button" },
-      consequences: ["move_money", "modify_existing"],
+      action: { kind: "flow_step", id: "core.task_start", verb: "do" },
+      control: { name: null, kind: null },
+      consequences: ["move_money"],
       // The request carries both classes the press declared and asks about the
       // money alone: an edit stopped being gated on 2026-09-26.
       missing: ["move_money"],
       reason: { stage: "authoring", instructionIds: ["instruction.build"] },
       authority: { granted: [], instructed: [] }
     });
-    expect(result.permissionRequest!.sentence).toContain("\"Refund line 1\"");
+    expect(result.permissionRequest!.sentence).toContain("To do this task");
 
     // The person is asked before anything is applied, not instead of a Flow.
     const stored = await run.instance.getFlowBootstrapAdaptation(run.project.id, run.flow.flowId, result.adaptationId);
@@ -100,29 +100,39 @@ describe("building a Flow that needs an action a person has not allowed", () => 
     await expectNoTopology(run.instance, run.project.id, run.flow.flowId);
   });
 
-  it("ends the build when the Flow it wrote would take the action, rather than building a Flow that would", async () => {
+  it("keeps an unsafe plan held on the task's initial unanswered permission", async () => {
     const run = await build([complete(pressPlan(REFUND.handle))]);
     const diagnostic = await rejectedGenerationDiagnostic(run.generation);
 
     expect(diagnostic).toMatchObject({
       code: "flow_bootstrap.permission_required",
       permissionRequest: {
-        action: { kind: "flow_step", id: PRESS_ID, ref: "primary.press", verb: "press" },
-        control: { name: REFUND.name, kind: "button" },
+        action: { kind: "flow_step", id: "core.task_start", ref: "task.start", verb: "do" },
+        control: { name: null, kind: null },
         missing: ["move_money"]
       },
       evidenceLoop: { toolCallCount: 1 }
     });
-    expect(diagnostic.permissionRequest!.sentence).toContain("each time this runs");
-    expect(run.requests).toHaveLength(1);
+    expect(diagnostic.permissionRequest!.sentence).toContain("To do this task");
+    expect(run.requests.length).toBeGreaterThan(0);
     await expect(run.instance.listFlowAdaptationSummaries({ projectId: run.project.id, limit: 10, offset: 0 })).resolves.toMatchObject({ total: 0 });
   });
 
   it("builds a Flow whose steps have no lasting consequence without asking anything", async () => {
-    const run = await build([pressDecision(OPEN.handle), complete(pressPlan(OPEN.handle))]);
+    const run = await build([pressDecision(OPEN.handle), complete(pressPlan(OPEN.handle))], undefined, [], []);
 
     await expect(run.generation).resolves.toMatchObject({ status: "proposed" });
     expect(run.pressed).toEqual([OPEN.handle]);
+  });
+
+  it.each(["exploration", "submitted plan"])("an unforeseen class in %s is refused without ending the loop or creating a request", async (where) => {
+    const first = where === "exploration" ? pressDecision(REFUND.handle) : complete(pressPlan(REFUND.handle));
+    const run = await build([first, pressDecision(OPEN.handle), complete(pressPlan(OPEN.handle))], undefined, [], []);
+    const result = await run.generation;
+    expect(result.status).toBe("proposed");
+    expect(result.permissionRequest).toBeUndefined();
+    expect(run.pressed).toEqual([OPEN.handle]);
+    expect(run.requests.length).toBeGreaterThan(1);
   });
 });
 
@@ -135,7 +145,7 @@ describe("the same build, when the instruction itself asks for it", () => {
   // The user's rule since 2026-09-30 (`action-permissions/destructive.ts`):
   // moving money asks a person every time; the instruction asking for it is
   // recorded on the request, and is not a permission.
-  it("still asks before moving money with nothing permitted, carrying what the instruction asked for on the request", async () => {
+  it("asks once at task start before moving money; the declaration never grants permission", async () => {
     const run = await build([pressDecision(REFUND.handle), complete(pressPlan(REFUND.handle))], undefined, INSTRUCTED);
     const diagnostic = await rejectedGenerationDiagnostic(run.generation);
 
@@ -145,10 +155,7 @@ describe("the same build, when the instruction itself asks for it", () => {
         missing: ["move_money"],
         authority: {
           granted: [],
-          instructed: [
-            { consequence: "move_money", instructionId: "instruction.build", quote: "Refund the first line" },
-            { consequence: "modify_existing", instructionId: "instruction.build", quote: "refund the first line of Ada Lovelace's order" }
-          ]
+          instructed: []
         }
       }
     });
@@ -176,7 +183,7 @@ describe("the same build, when the instruction itself asks for it", () => {
     const run = await build([pressDecision(REFUND.handle)], undefined, [{ consequence: "modify_existing", quote: "refund the first line of Ada Lovelace's order" }]);
     const diagnostic = await rejectedGenerationDiagnostic(run.generation);
 
-    expect(diagnostic.permissionRequest).toMatchObject({ missing: ["move_money"], authority: { granted: [], instructed: [{ consequence: "modify_existing", quote: "refund the first line of Ada Lovelace's order" }] } });
+    expect(diagnostic.permissionRequest).toMatchObject({ missing: ["move_money"], authority: { granted: [], instructed: [] } });
     expect(run.pressed).toEqual([]);
   });
 
@@ -187,8 +194,8 @@ describe("the same build, when the instruction itself asks for it", () => {
     expect(diagnostic.permissionRequest).toMatchObject({ missing: ["move_money"], authority: { instructed: [] } });
   });
 
-  it("never reads the instruction for a build with no lasting consequence", async () => {
-    const run = await build([pressDecision(OPEN.handle), complete(pressPlan(OPEN.handle))]);
+  it("adds no instruction read when the chat already declared that the task only observes", async () => {
+    const run = await build([pressDecision(OPEN.handle), complete(pressPlan(OPEN.handle))], undefined, [], []);
 
     await expect(run.generation).resolves.toMatchObject({ status: "proposed" });
     expect(run.authorityRequests).toHaveLength(0);
@@ -210,7 +217,7 @@ describe("the same build, carrying what the person allowed", () => {
     const run = await build([pressDecision(REFUND.handle)], ["modify_existing"]);
     const diagnostic = await rejectedGenerationDiagnostic(run.generation);
 
-    expect(diagnostic.permissionRequest).toMatchObject({ consequences: ["move_money", "modify_existing"], missing: ["move_money"] });
+    expect(diagnostic.permissionRequest).toMatchObject({ consequences: ["move_money"], missing: ["move_money"] });
     expect(run.pressed).toEqual([]);
   });
 
@@ -229,7 +236,7 @@ describe("the same build, carrying what the person allowed", () => {
  * `instructed` is its answer when asked what the instruction asks for. The
  * judge of a finished build's test says yes, and is counted in `requests`.
  */
-async function build(decisions: JsonObject[], permittedConsequences?: AutomationStudioActionConsequence[], instructed: JsonObject[] = []) {
+async function build(decisions: JsonObject[], permittedConsequences?: AutomationStudioActionConsequence[], instructed: JsonObject[] = [], taskActs: AutomationStudioActionConsequence[] = ["move_money"]) {
   const requests: AutomationStudioLlmTaskRequest[] = [];
   const authorityRequests: AutomationStudioLlmTaskRequest[] = [];
   const pressed: string[] = [];
@@ -264,6 +271,7 @@ async function build(decisions: JsonObject[], permittedConsequences?: Automation
     flowId: flow.flowId,
     evidenceGuided: true,
     caller: caller(),
+    ...(taskActs === undefined ? {} : { taskActs }),
     ...(permittedConsequences ? { permittedConsequences } : {})
   });
   return { instance, project, flow, requests, authorityRequests, pressed, generation };

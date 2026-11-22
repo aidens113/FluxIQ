@@ -195,6 +195,8 @@ export type ScriptedAttemptOptions = {
   keepLooking?: boolean;
   usage?: typeof USAGE;
   permittedConsequences?: AutomationStudioActionConsequence[];
+  /** What the chat's reading declared the task will cause (t976): asked about once when the attempt starts. */
+  taskActs?: AutomationStudioActionConsequence[];
   /** Replaces the scripted provider's call, for a test of a provider that is silent or refuses. */
   wrapProvider?: (provider: AutomationStudioLlmProvider, requests: AutomationStudioLlmTaskRequest[]) => AutomationStudioLlmProvider;
   /** The resolver's extras: a total, or a per-call limit. */
@@ -272,7 +274,8 @@ export async function scriptedAttempt(options: ScriptedAttemptOptions, cleanups:
   await options.before?.(service, ids);
   const answered = await service.generateFlowBootstrapAdaptation({
     projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true, authoringMode: "answer-first",
-    permittedConsequences: options.permittedConsequences ?? []
+    permittedConsequences: options.permittedConsequences ?? [],
+    ...(options.taskActs ? { taskActs: options.taskActs } : {})
   });
   clearTimeout(guard);
   stopListening();

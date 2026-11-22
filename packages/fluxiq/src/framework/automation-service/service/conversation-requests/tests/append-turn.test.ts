@@ -25,7 +25,7 @@ type Payload = Parameters<typeof appendConversationTurnForRequest>[3];
 
 const caller = { userId: "user", sessionId: "session", paired: false };
 
-function harness() {
+function harness(taskActs?: string[]) {
   const written: unknown[] = [];
   const dependencies = {
     registry: {},
@@ -38,7 +38,7 @@ function harness() {
           written.push(turn);
           return { turnId: "t" };
         },
-        respondToPersonTurn: async () => ({ turn: { turnId: "t" }, response: null, problem: null })
+        respondToPersonTurn: async () => ({ turn: { turnId: "t" }, response: null, problem: null, ...(taskActs ? { taskActs } : {}) })
       }
     }
   };
@@ -49,6 +49,12 @@ function harness() {
 
 describe("a chat turn's humanness", () => {
   beforeEach(() => { started.contexts.length = 0; });
+
+  it("hands the existing interpretation's declared task acts to the command", async () => {
+    await harness(["delete"]).append({});
+    expect(started.contexts).toHaveLength(1);
+    expect(started.contexts[0]).toMatchObject({ taskActs: ["delete"] });
+  });
 
   it.each([0, 1, 50, 100])("passes %s into the command's context", async (humanness) => {
     await harness().append({ humanness });

@@ -1,7 +1,7 @@
 # Data-First Simplification: Core Execution
 
 Status: Active
-Status detail: P0 resumed 2026-11-22 in existing paired tasks t976, t979 and t981; no resumed change accepted yet.
+Status detail: Judge and repeat repair accepted and pushed; permission lead tests/typecheck/audit pass, downstream acceptance pending. Extraction/data/model lanes active.
 Created: 2026-11-22
 Last updated: 2026-11-22
 Owner: Senior supervisor agent
@@ -49,6 +49,14 @@ Build, repair and judging stay on Haiku; no model escalation.
 Paid acceptance follows provider-free proofs, four attempts per task and the $50 campaign ceiling.
 
 ## Work Ledger
+
+### 2026-11-22 ? t976 independent acceptance in progress
+
+- Lead synchronized both parents and reviewed gate closure, startup concurrency, held declines and repair continuation. Core version is 0.50.5.
+- Validation: `pnpm --filter fluxiq exec vitest run src/runtime/action-permission-requests/tests/task-start.test.ts src/runtime/flow-authoring/bootstrap/tests/action-permissions-task-start.test.ts src/framework/automation-service/service/answer-first/chat-permission/tests src/framework/automation-service/tests/service-bootstrap/tests/permission.test.ts src/framework/automation-service/tests/service-bootstrap/tests/permission-ask.test.ts src/framework/automation-service/service/answer-first/flow-run/tests/permission-start.test.ts src/framework/automation-service/service/answer-first/flow-run/tests/steps-ran-interruption.test.ts src/framework/automation-service/service/project-build/tests/project-build-brief-ports.test.ts src/framework/automation-service/service/answer-first/attempt/tests/caller-seams.test.ts src/framework/automation-service/service/answer-first/attempt/tests/caller-replay.test.ts src/runtime/adaptation/recovery/tests/runtime-exploration-permission.test.ts src/runtime/adaptation/recovery/annotation/tests/recovery-permissions.test.ts src/runtime/conversations/instructions/tests/interpret.test.ts src/runtime/conversations/instructions/tests/acts.test.ts src/runtime/conversations/commands/tests/build.test.ts src/framework/automation-service/service/conversation-requests/tests/append-turn.test.ts --maxWorkers=1 --minWorkers=1 --fileParallelism=false` -> 17 files, 161 tests passed, 214.68 s.
+- Validation: `pnpm --filter fluxiq check` -> exit 0, 155667 ms. `node scripts/structure-audit.mjs` -> passed, 564 warnings, 909 baselined. All three through heavy-slot gate in t976 Core.
+- Validation completed: Core five-library and downstream five-package dependency builds passed; scenario catalog build passed. Downstream `pnpm --filter @fluxiq-web-extension/test-runner check` -> exit 0, 26413 ms. `node --test dist/flow-lane/creation/tests/permission-point.test.js dist/person-simulation/tests/simulation.test.js dist/person-simulation/tests/asks.test.js dist/run-evaluation/permission-stop/tests/permission-stop.test.js dist/flow-lane/creation/tests/lane.test.js` in test-runner -> 66/66 passed, 14495.7023 ms. `node --test dist/scenarios/tests/live-instructions.test.js` in scenario-lab -> 13/13 passed. Downstream audit -> passed, 258 warnings/551 baselined. Paired integration next; no paid/live/full-sweep acceptance claimed.
+
 
 ### 2026-11-22 - Repeat repair integrated after lead acceptance
 - Agent: Senior supervisor.

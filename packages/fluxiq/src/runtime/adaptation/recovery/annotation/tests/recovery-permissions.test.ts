@@ -57,29 +57,20 @@ describe("a recovery under its permission gate", () => {
     expect(run.offered[0]).toEqual(["test.look", "test.press"]);
   });
 
-  it("ends on a request when a press would lastingly change something nobody allowed, and makes no patch call", async () => {
+  it("refuses an uncovered press as evidence and continues to the patch without a mid-run question", async () => {
     const run = await recover({});
 
     expect(run.pressed).toEqual([]);
-    expect(run.taskKinds).toEqual(["runtime_diagnosis", "evidence_tool_decision"]);
-    expect(run.detail.metadata?.permissionRequest).toMatchObject({
-      schemaVersion: "automation-studio.action-permission-request.v1",
-      action: { kind: "exploration_step", id: "test.press", ref: "call.press", verb: "press" },
-      control: { name: "Cancel unfilled lines", kind: "button" },
-      consequences: ["delete"],
-      missing: ["delete"],
-      reason: { stage: "recovery" },
-      authority: { granted: [], instructed: [] }
-    });
+    expect(run.taskKinds).toEqual(["runtime_diagnosis", "evidence_tool_decision", "evidence_tool_decision", "runtime_patch"]);
+    expect(run.detail.metadata).not.toHaveProperty("permissionRequest");
     const gate = run.detail.metadata?.llmGate as JsonObject;
     expect(gate).toMatchObject({
-      patchSkippedCode: "llm.runtime_patch_permission_required",
-      patchSkipped: (run.detail.metadata?.permissionRequest as JsonObject).sentence,
       permissions: { granted: [], instructed: [], lapsed: [] }
     });
-    expect(run.detail.metadata).not.toHaveProperty("runtimePatchAttempts");
-    expect(stage(run.detail, "exploration")).toMatchObject({ status: "refused", detail: { outcome: "user_intervention_required", stopReason: "operator_approval_required" } });
-    expect(stage(run.detail, "resolution")).toMatchObject({ status: "skipped", providerCalled: false, detail: { skipCode: "llm.runtime_patch_permission_required" } });
+    expect(run.detail.metadata?.runtimePatchAttempts).toEqual([expect.objectContaining({ kind: "no_repair", executed: false, declinedReason: "control_gone" })]);
+    expect(stage(run.detail, "exploration")).toMatchObject({ detail: { outcome: "no_evidence_found", refusedActions: 1 } });
+    expect(gate).not.toHaveProperty("patchSkippedCode");
+    expect(stage(run.detail, "resolution")).toMatchObject({ providerCalled: true });
   });
 
   it("presses when the run permits the consequence, raises nothing, and goes on to the patch", async () => {
@@ -98,21 +89,21 @@ describe("a recovery under its permission gate", () => {
   // Until 2026-09-30 the stored instruction pressed on its own authority. A
   // deletion now needs a person's permission every time; the instruction's
   // words travel with the question instead.
-  it("asks rather than pressing on the authority of the person's instruction, and says what it asked for", async () => {
+  it("does not authorize deletion from the instruction or ask mid-run", async () => {
     const current = instruction();
     const run = await recover({ instructions: [current], storedInstructed: [stored(current)] });
 
     expect(run.pressed).toEqual([]);
-    expect(run.detail.metadata?.permissionRequest).toMatchObject({ missing: ["delete"], authority: { granted: [], instructed: [expect.objectContaining({ consequence: "delete" })] } });
+    expect(run.detail.metadata).not.toHaveProperty("permissionRequest");
     expect((run.detail.metadata?.llmGate as JsonObject).permissions).toEqual({ granted: [], instructed: ["delete"], lapsed: [] });
   });
 
-  it("asks again once the instruction that gave that authority has been edited", async () => {
+  it("refuses unasked after the instruction that gave that authority has been edited", async () => {
     const original = instruction();
     const run = await recover({ instructions: [{ ...original, body: "Pick and pack only the urgent orders in the dispatch batch." }], storedInstructed: [stored(original)] });
 
     expect(run.pressed).toEqual([]);
-    expect(run.detail.metadata?.permissionRequest).toMatchObject({ missing: ["delete"], authority: { instructed: [] } });
+    expect(run.detail.metadata).not.toHaveProperty("permissionRequest");
     expect((run.detail.metadata?.llmGate as JsonObject).permissions).toEqual({ granted: [], instructed: [], lapsed: ["delete"] });
   });
 
@@ -120,18 +111,11 @@ describe("a recovery under its permission gate", () => {
   // destroy or spend something each time the Flow runs, and that nobody
   // allowed, is the request the recovery ends on -- not the preflight refusal
   // it was, and not a receipt nobody is shown.
-  it("turns a repair that would destructively act into the request, and runs nothing", async () => {
+  it("refuses an unauthorized destructive repair without raising another question", async () => {
     const run = await recover({ explore: false, repair: { consequences: ["delete"] } });
 
     expect(run.taskKinds).toEqual(["runtime_diagnosis", "runtime_patch"]);
-    expect(run.detail.metadata?.permissionRequest).toMatchObject({
-      action: { kind: "flow_step", id: "builtin.policy.action", ref: "node.action", verb: "press" },
-      control: { name: "Pick and pack", kind: "button" },
-      consequences: ["delete"],
-      missing: ["delete"],
-      reason: { stage: "recovery" },
-      sentence: expect.stringMatching(/^To fix the step that failed, FluxIQ needs to press "Pick and pack" each time this runs\.$/)
-    });
+    expect(run.detail.metadata).not.toHaveProperty("permissionRequest");
     const gate = run.detail.metadata?.llmGate as JsonObject;
     expect(gate.patchHeldCode).toBe("llm.runtime_patch_permission_required");
     expect(gate).not.toHaveProperty("patchSkippedCode");

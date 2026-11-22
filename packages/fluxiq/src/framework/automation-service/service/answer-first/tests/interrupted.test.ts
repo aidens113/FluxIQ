@@ -142,7 +142,8 @@ describe("a Core that restarted", () => {
 
   it("a row waiting on a permission question reads interrupted too", async () => {
     const old = await laterAttempts(cleanups);
-    const going = old.attempt({ instruction: "Renew the card on my library account.", script: [runNode("card", RENEW_CARD, {}, ["send_or_publish"], { add: true })] });
+    // Declared with the task, the question is put when the attempt starts (t976), and the row waits on it there.
+    const going = old.attempt({ instruction: "Renew the card on my library account.", taskActs: ["send_or_publish"], script: [runNode("card", RENEW_CARD, {}, ["send_or_publish"], { add: true })] });
     abandon(old, undefined, going);
     await pendingAsk(old.service, old.projectId, "flow.loans");
     let waiting;

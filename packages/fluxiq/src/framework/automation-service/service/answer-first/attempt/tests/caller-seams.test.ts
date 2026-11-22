@@ -158,9 +158,11 @@ describe("a caller's budget and model", () => {
 describe("a caller's person port and scope", () => {
   it("a person-ask sink hears a permission question and answers it by callback, and the act goes ahead", async () => {
     const raised: { askId: string; kind: string }[] = [];
-    // Sending is one of the classes the permission gate asks a person about; a change is not.
+    // Sending is one of the classes the permission gate asks a person about; a change is not. Declared with the task, it is
+    // asked once when the attempt starts, before the press, and never at the press (t976).
     const attempt = await scriptedAttempt({
       instruction: "Renew the card on my library account.",
+      taskActs: ["send_or_publish"],
       script: [runNode("card", RENEW_CARD, {}, ["send_or_publish"], { add: true }), complete("Renewed the card.")],
       before: (service) => drivenBy(service, () => ({
         personAsk: {
