@@ -4,10 +4,11 @@ import { replayAutomationStudioFlowDraft, type AutomationStudioLlmEvidenceToolEx
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../../flow-authoring/draft/index.ts";
 import { automationStudioResultRunTrail, automationStudioResultSemanticTrail, automationStudioResultTrailOfObservations } from "../../../../result-verification/index.ts";
+import { automationStudioFlowDraftReplayObservation } from "../observation.ts";
 
 const FAILURE = { category: "expected_state_missing", code: "example.effect_unknown", retryable: false, stage: "confirmation", effect: "ambiguous" } as const;
 const ROWS = [{ name: "Original first row" }, { name: "Original second row" }];
-const step = (position: number, actionId: string): AutomationStudioFlowDraftStep => ({ id: `d${position}`, position, actionId, toolId: "core.run_node", input: { node: actionId, parameters: {}, consequences: ["update"] }, ranWith: { node: actionId, parameters: {}, consequences: ["update"] }, effect: "mutate", disposition: "kept", proposes: true, replay: { from: { location: "https://example.test/settings" } } });
+const step = (position: number, actionId: string): AutomationStudioFlowDraftStep => ({ id: `d${position}`, position, iteration: position, actionId, toolId: "core.run_node", input: { node: actionId, parameters: {}, consequences: actionId === "example.list" ? [] : ["update"] }, ranWith: { node: actionId, parameters: {}, consequences: actionId === "example.list" ? [] : ["update"] }, effect: actionId === "example.list" ? "observe" : "mutate", disposition: "kept", proposes: true, replay: { from: { location: "https://example.test/settings" } } });
 
 describe.each([false, true])("actual draft/span observation metadata (repeat=%s)", (repeat) => {
   it("forwards reported applied/uncertain/rejected-schema facts through the real walker into the projector", async () => {
@@ -16,11 +17,15 @@ describe.each([false, true])("actual draft/span observation metadata (repeat=%s)
     if (repeat) act.routing = { kind: "repeat", over: "d1", through: "d2" };
     const steps = repeat ? [list, act] : [act];
     const actual: AutomationStudioLlmEvidenceToolExecutionResult = { kind: "llm_evidence_tool_execution", evidence: { notice: "Confirmation was unavailable", page: "PRIVATE_CAPTURE_SENTINEL" }, resultCode: "core.replay.failed", effectApplied: true, failure: FAILURE, recordSchema: null };
+    const calls: JsonObject[] = [];
     const report = await replayAutomationStudioFlowDraft({ steps, attempt: 1, nodeOf: (id) => id === "example.list" ? { inputs: [], outputs: [{ id: "records", type: "array" }] } : { inputs: [{ id: "item" }], outputs: [] }, executeTool: async ({ value }) => {
-      if (value.replay === "reset") return { kind: "llm_evidence_tool_execution", evidence: {}, resultCode: "core.replay.replayed" };
-      if (value.node === "example.list") return { kind: "llm_evidence_tool_execution", evidence: { read: { extracted: ROWS } }, resultCode: "core.replay.replayed", outputs: { records: ROWS } };
+      calls.push(value);
+      if (value.replay === "reset") return { kind: "llm_evidence_tool_execution", evidence: {}, effectApplied: true, resultCode: "core.replay.replayed" };
+      if (value.node === "example.list") return { kind: "llm_evidence_tool_execution", evidence: { read: { extracted: ROWS } }, effectApplied: false, resultCode: "core.replay.replayed", outputs: { records: ROWS } };
       return actual;
     } });
+    expect(calls[0]).toMatchObject({ replay: "reset" });
+    expect(calls.filter((call) => call.node === act.actionId)).toHaveLength(repeat ? ROWS.length : 1);
     const observed = report.observations.find((item) => item.step === act.position)!;
     expect(observed).toMatchObject({ effectApplied: true, failure: FAILURE, recordSchema: null, consequences: ["update"] });
     expect(observed.evidence).toEqual(actual.evidence);
@@ -39,14 +44,29 @@ describe.each([false, true])("actual draft/span observation metadata (repeat=%s)
     expect(JSON.stringify(shown)).not.toContain("PRIVATE_CAPTURE_SENTINEL");
   });
 
-  it("does not infer applied/failure/schema fields for an older successful result that omitted them", async () => {
+  it("retains the required false execution fact without inferring omitted failure or schema fields", async () => {
     const act = step(repeat ? 2 : 1, "example.update");
     if (repeat) act.routing = { kind: "repeat", over: "d1", through: "d2" };
-    const report = await replayAutomationStudioFlowDraft({ steps: repeat ? [step(1, "example.list"), act] : [act], attempt: 1, nodeOf: (id) => id === "example.list" ? { inputs: [], outputs: [{ id: "records", type: "array" }] } : { inputs: [{ id: "item" }], outputs: [] }, executeTool: async ({ value }) => ({ kind: "llm_evidence_tool_execution", evidence: { notice: "Command answered" }, resultCode: "core.replay.replayed", ...(value.node === "example.list" ? { outputs: { records: ROWS } } : {}) }) });
+    const calls: JsonObject[] = [];
+    const report = await replayAutomationStudioFlowDraft({ steps: repeat ? [step(1, "example.list"), act] : [act], attempt: 1, nodeOf: (id) => id === "example.list" ? { inputs: [], outputs: [{ id: "records", type: "array" }] } : { inputs: [{ id: "item" }], outputs: [] }, executeTool: async ({ value }) => {
+      calls.push(value);
+      if (value.replay === "reset") return { kind: "llm_evidence_tool_execution", evidence: {}, effectApplied: true, resultCode: "core.replay.replayed" };
+      return { kind: "llm_evidence_tool_execution", evidence: { notice: "Command answered" }, effectApplied: false, resultCode: "core.replay.replayed", ...(value.node === "example.list" ? { outputs: { records: ROWS } } : {}) };
+    } });
+    expect(calls[0]).toMatchObject({ replay: "reset" });
+    expect(calls.filter((call) => call.node === act.actionId)).toHaveLength(repeat ? ROWS.length : 1);
     const observed = report.observations.find((item) => item.step === act.position)!;
     expect(observed.resultCode).toBe("core.replay.replayed");
-    expect(observed).not.toHaveProperty("effectApplied");
+    expect(observed.effectApplied).toBe(false);
     expect(observed).not.toHaveProperty("failure");
     expect(observed).not.toHaveProperty("recordSchema");
   });
+});
+
+it("does not invent execution metadata when constructing an older historical observation that omitted it", () => {
+  const observed = automationStudioFlowDraftReplayObservation({ step: 1 }, { evidence: { notice: "Historical observation" }, resultCode: "core.replay.replayed" });
+  expect(observed.resultCode).toBe("core.replay.replayed");
+  expect(observed).not.toHaveProperty("effectApplied");
+  expect(observed).not.toHaveProperty("failure");
+  expect(observed).not.toHaveProperty("recordSchema");
 });
