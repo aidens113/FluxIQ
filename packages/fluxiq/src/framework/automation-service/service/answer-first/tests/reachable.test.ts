@@ -127,8 +127,10 @@ describe("what an attempt's wiring reaches", () => {
     let service: AutomationStudioService | undefined;
     let ids: { projectId: string; flowId: string } | undefined;
     const seen: string[] = [];
+    // The chat's reading declares the act, so the question is put when the attempt starts, never at the press (t976).
     const generation = scriptedAttempt({
       instruction: "Renew the card on my library account.",
+      taskActs: ["send_or_publish"],
       before: (held, project) => {
         service = held;
         ids = project;
@@ -156,6 +158,7 @@ describe("what an attempt's wiring reaches", () => {
     const declined: string[] = [];
     const generating = scriptedAttempt({
       instruction: "Renew the card on my library account.",
+      taskActs: ["send_or_publish"],
       before: (held, project) => {
         declinedService = held;
         declinedIds = project;

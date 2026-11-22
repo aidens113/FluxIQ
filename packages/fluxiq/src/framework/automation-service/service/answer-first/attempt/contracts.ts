@@ -51,6 +51,8 @@ export type AutomationStudioAnswerFirstAttemptInput = {
   limits: AutomationStudioFlowBootstrapEvidenceLoopLimits;
   creation: AutomationStudioFlowBootstrapCreationPurse;
   authority: ReturnType<typeof automationStudioFlowBootstrapInstructionAuthority>;
+  /** What the chat's reading declared the task will cause (t976): the gated ones are asked about once, when the attempt starts. Absent when nothing was declared. */
+  taskActs?: readonly string[] | undefined;
   /** The permission gate's input but its executor, which this attempt's call chain supplies (`./call-chain.ts`). */
   permissionGround: Omit<Parameters<typeof automationStudioFlowBootstrapActionPermissions>[0], "executeTool">;
   /** Where a person-only check or a stuck attempt's question goes. Absent, there is nobody to ask. */

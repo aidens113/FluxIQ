@@ -16,6 +16,7 @@ import type { AutomationStudioLlmStepLogPageReader } from "../../../llm/step-log
 // repair (`../in-run-repair/`) is supplied the same ports, bound once.
 
 import type { JsonObject } from "../../../../core/index.ts";
+import type { AutomationStudioActionConsequence } from "../../../action-permission-requests/index.ts";
 import type {
   AutomationStudioFlowAdaptation,
   AutomationStudioFlowChangeProposal,
@@ -43,6 +44,11 @@ import type {
  * `?: T` would refuse the field it already has.
  */
 export type AutomationStudioRuntimeRecoveryPorts = {
+  /** The Flow chat's existing answer. Repairs hold it and record uncovered classes, and never ask mid-run. */
+  permissionForRecovery?: ((projectId: string, flowId: string) => Promise<{
+    held?: { granted: readonly string[]; declined: readonly string[]; requestId: string | null } | undefined;
+    unforeseen?: ((classes: readonly AutomationStudioActionConsequence[]) => unknown) | undefined;
+  }>) | undefined;
   /** Resolves the provider for this project and Flow, or nothing when none is configured. */
   resolveLlmProvider?: ((input: AutomationStudioLlmProviderResolverInput) =>
     | AutomationStudioLlmProviderResolution

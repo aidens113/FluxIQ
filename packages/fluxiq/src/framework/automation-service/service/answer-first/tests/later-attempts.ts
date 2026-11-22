@@ -30,6 +30,8 @@ type Decision = JsonObject | ((request: AutomationStudioLlmTaskRequest) => JsonO
 
 export type LaterAttemptOptions = {
   instruction?: string;
+  /** What the chat's reading declared the task will cause (t976): asked about once when the attempt starts. */
+  taskActs?: AutomationStudioActionConsequence[];
   flowId?: string;
   startLocation?: string;
   script?: readonly Decision[];
@@ -128,7 +130,7 @@ export async function laterAttempts(cleanups: (() => Promise<void>)[], options: 
     const guard = setTimeout(() => service.buildCancellation.cancel(project.id, flowId), HANG_GUARD_MS);
     const generate = async (startLocation = given.startLocation) => await service.generateFlowBootstrapAdaptation({
       projectId: project.id, flowId, caller: caller(), evidenceGuided: true, authoringMode: "answer-first",
-      permittedConsequences: given.permittedConsequences ?? [], ...(startLocation ? { startLocation } : {}), ...(given.humanness === undefined ? {} : { humanness: given.humanness })
+      permittedConsequences: given.permittedConsequences ?? [], ...(given.taskActs ? { taskActs: given.taskActs } : {}), ...(startLocation ? { startLocation } : {}), ...(given.humanness === undefined ? {} : { humanness: given.humanness })
     });
     let pressed: string | undefined;
     const answered = given.runAgain ? await (async () => {

@@ -170,6 +170,12 @@ export type GenerateFlowBootstrapAdaptationRequest = FlowIdProjectRequest & {
   interpretationCostUsd?: number;
   /** How many priced model calls `interpretationCostUsd` sums: a whole number, recorded as the Flow spend's "chat" calls. Anything else refuses the request. */
   interpretationCalls?: number;
+  /**
+   * The consequence classes the chat's reading declared the task will cause (t976): the gated ones
+   * are asked about once, when the work starts, and never mid-Flow. A class Core does not know
+   * refuses the request. Omitted, nothing was declared.
+   */
+  taskActs?: string[];
 };
 
 export type GenerateFlowBootstrapAdaptationFailureDiagnostic = {

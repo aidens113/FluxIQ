@@ -22,9 +22,9 @@
 //    proposed, with a receipt either way.
 //
 // One permission gate stands over the stages that can act (`permissions.ts`).
-// A request it raises ends the recovery, and the request is what the run
-// carries out to the person: raised while exploring, the patch call is not
-// made; raised by a patch that would lastingly act, that patch does not run.
+// It holds the Flow chat's grants and refusals and closes asking before a repair acts. An uncovered
+// act is refused as evidence; a patch without that authority cannot run. No permission question
+// opens mid-Flow, and newly encountered classes are kept for the next task start.
 //
 // A check only a person can complete, met while exploring, is put to the
 // person through the run's thread (`../runtime-exploration.ts`) and never shown
@@ -341,10 +341,16 @@ async function annotateRunDetail(input: AutomationStudioRuntimeRecoveryAnnotatio
     storedInstructed: recoveryFlow?.metadata?.bootstrapInstructedConsequences,
     instructions,
     failureEvidence,
-    // The gate keeps its own ending only when there is nowhere to put the
-    // question. With a thread, the exploration waits and settles it.
-    answerable: Boolean(permissionAsk)
+    // A repair runs inside a Flow's run, so nothing is put to a person here (t976, the user's rule: a
+    // dangerous act asks only when a Flow or chat starts): uncovered actions are refused as evidence. The
+    // run holds what its caller allowed and what the Flow's chat already answered (`runRuntimeSession`).
+    answerable: false
   }) : undefined;
+  if (permissions) {
+    const ground = await ports.permissionForRecovery?.(input.context.projectId, input.context.flowId);
+    if (ground?.held) permissions.gate.holdAnswer(ground.held);
+    permissions.gate.closeAsking(ground?.unforeseen);
+  }
   // An in-run recovery draws on the run's one purse, opened by the first one
   // that resolved a model: the cost ceiling is the run's, whatever the number
   // of incidents. Any other recovery is a whole run's recovery of its own.
@@ -677,7 +683,7 @@ async function annotateRunDetail(input: AutomationStudioRuntimeRecoveryAnnotatio
   // raised the request there, and the run carries it exactly as it would one
   // raised while exploring. The resolution records why nothing ran.
   const raisedRequest = permissions?.gate.request;
-  const patchHeldForPermission = Boolean(raisedRequest && !permissionRequest);
+  const patchHeldForPermission = Boolean(raisedRequest && !permissionRequest) || applied.attempts.some((attempt) => attempt.permissionRequired === true);
   const resolutionFailureCode = patchFailureCode ?? (patchHeldForPermission ? "llm.runtime_patch_permission_required" : undefined);
   const attempts = declined ? [...applied.attempts, automationStudioDeclinedRepairAttempt(declined.reason)] : applied.attempts;
   // One line per provider call, beside the totals they add up to. The

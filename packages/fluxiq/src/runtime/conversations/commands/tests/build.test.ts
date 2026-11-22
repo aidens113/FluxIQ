@@ -12,6 +12,15 @@ function recording(answer: unknown) {
 
 afterEach(() => { vi.unstubAllEnvs(); });
 
+it("carries declared task acts into the build without treating them as permission", async () => {
+  const { requests, context } = recording({ ok: true, payload: { candidate: CANDIDATE } });
+  context.taskActs = ["delete"];
+  await buildAutomationStudioFlowFromConversation(context, { flowId: "flow", mode: "create" });
+  expect(requests).toHaveLength(1);
+  expect(requests[0]?.payload).toMatchObject({ taskActs: ["delete"] });
+  expect(requests[0]?.payload).not.toHaveProperty("permittedConsequences");
+});
+
 describe("explicit legacy authoring mode", () => {
   beforeEach(() => { vi.stubEnv("FLUXIQ_AUTHORING_MODE", "legacy"); });
 

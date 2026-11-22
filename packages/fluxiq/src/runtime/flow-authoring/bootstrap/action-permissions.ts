@@ -107,6 +107,10 @@
 // intent. A missing or ungrounded choice refuses before dispatch with actual
 // bounded choices. A first unknown press may reveal states. An admitted undo
 // of this build's own act retains its bypass and supplies no toggle evidence.
+//
+// **Asked when the task starts, never in the middle (t976, F21)**: `askAtStart` and
+// `closeAsking`, whose reasoning is `./start-asking.ts`'s. A caller that never calls `askAtStart`
+// asks as it always has.
 
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import {
@@ -116,6 +120,7 @@ import {
   automationStudioDestructiveConsequences,
   automationStudioInstructedActReads,
   readAutomationStudioActionDeclaration,
+  type AutomationStudioActionConsequence,
   type AutomationStudioActionDeclaration,
   type AutomationStudioActionDeclarationCrossCheck,
   type AutomationStudioActionDeclarationRecord,
@@ -146,6 +151,8 @@ import { AUTOMATION_STUDIO_SITE_RESET_WORDS } from "./site-reset/words.ts";
 import type { AutomationStudioFlowBootstrapScreenedControlWords } from "./screened-control-words.ts";
 import { AutomationStudioExploredToggles } from "./explored-toggles.ts";
 import { AutomationStudioExploredInterruptions } from "./explored-interruptions.ts";
+import { automationStudioFlowBootstrapSaidUnanswered } from "./unanswered-said.ts";
+import { AutomationStudioFlowBootstrapStartAsking, type AutomationStudioFlowBootstrapPermissionHeard, type AutomationStudioFlowBootstrapStartPermission, type AutomationStudioFlowBootstrapStartRequest } from "./start-asking.ts";
 import { automationStudioExploredToggleTie } from "./script-statements/index.ts";
 import { automationStudioToggleStateChoice } from "../../../framework/automation-service/toggle-state/index.ts";
 import { automationStudioSiteResetWitnessStampValid, type AutomationStudioSiteResetAdmissionDeclared, type AutomationStudioSiteResetWitness, type AutomationStudioSiteResetWitnessStamp } from "./reset-admission/index.ts";
@@ -258,6 +265,10 @@ export type AutomationStudioFlowBootstrapActionPermissions = {
     progress?: { trace: readonly AutomationStudioLlmEvidenceLoopTrace[]; accounting: Readonly<AutomationStudioLlmEvidenceLoopAccounting> },
     accounting?: NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["accounting"]>
   ): AutomationStudioFlowBootstrapGenerationError | undefined;
+  /** The task's one question, before anything acts (`./start-asking.ts`): held answer, the classes the task needs, `ask: false` for a carried-on attempt. */
+  askAtStart(start: AutomationStudioFlowBootstrapStartRequest): Promise<AutomationStudioFlowBootstrapStartPermission>;
+  /** Ends the start of the task: from here nothing is put to a person (header, t976). */
+  closeAsking(): void;
 };
 
 export function automationStudioFlowBootstrapActionPermissions(input: {
@@ -303,6 +314,14 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
    * steps are never undos.
    */
   siteReset?: AutomationStudioSiteResetCalls | undefined;
+  /** Told every answer a person gives to a question this gate put to them, for the chat to hold (t976). */
+  heard?: ((answer: AutomationStudioFlowBootstrapPermissionHeard) => unknown) | undefined;
+  /** Told the gated classes refused unasked once asking closed, that nobody foresaw at the start (t976). */
+  unforeseen?: ((classes: readonly AutomationStudioActionConsequence[]) => unknown) | undefined;
+  /** For a caller that does not call `askAtStart`: where the start comes from, read once before the first call or check (`./start-asking.ts`). */
+  startFrom?: (() => Promise<AutomationStudioFlowBootstrapStartRequest>) | undefined;
+  /** Told how a start from `startFrom` went. */
+  started?: ((start: AutomationStudioFlowBootstrapStartPermission, request: AutomationStudioFlowBootstrapStartRequest) => unknown) | undefined;
   now?: () => number;
   newRequestId?: () => string;
 }): AutomationStudioFlowBootstrapActionPermissions {
@@ -331,9 +350,12 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
   const asking = (action: AutomationStudioActionPermissionAction): AutomationStudioActionPermissionCheck => {
     const check = gate.checkFor(action);
     return async (declaration) => {
+      await starting.beforeActing();
       const decision = await check(declaration);
       const request = gate.request;
-      if (decision.permitted || decision.declined || !input.ask || !request || request.requestId !== decision.requestId || asked.has(request.requestId)) return decision;
+      if (decision.permitted || decision.declined) return decision;
+      if (starting.isClosed) return await starting.unasked(decision);
+      if (!input.ask || !request || request.requestId !== decision.requestId || asked.has(request.requestId)) return decision;
       asked.add(request.requestId);
       // The wait and its answer are said where the port settles them (`../activity/ask/port.ts`).
       const outcome = await automationStudioPermissionAskOutcome({ ...input.ask, port: automationStudioActivityAskPort(input.ask.port, "building") }, request);
@@ -342,6 +364,7 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
         return decision;
       }
       gate.settle(outcome);
+      await starting.answered(request, outcome);
       // Asked again rather than answered from here: the gate recomputes what is
       // missing against what it now holds -- permitted after a grant, refused as
       // `declined` after a no -- so nothing decides permission twice.
@@ -361,12 +384,20 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
     const unanswered = (automationStudioInstructedActReads(entries) ?? []).filter((act) => act.consequences === null);
     if (unanswered.length && !unansweredSaid) {
       unansweredSaid = true;
-      if (input.authoringMode === undefined || input.authoringMode === "legacy") await saidUnanswered(input.say, unanswered.map((act) => act.quote));
+      if (input.authoringMode === undefined || input.authoringMode === "legacy") await automationStudioFlowBootstrapSaidUnanswered(input.say, unanswered.map((act) => act.quote));
     }
     return entries;
   };
+  // The start of the task (`./start-asking.ts`, t976).
+  const starting = new AutomationStudioFlowBootstrapStartAsking({
+    gate, asked, heard: input.heard, unforeseen: input.unforeseen, say: input.say, startFrom: input.startFrom, started: input.started,
+    ...(input.ask ? { ask: (request: AutomationStudioActionPermissionRequest) => automationStudioPermissionAskOutcome({ ...input.ask!, port: automationStudioActivityAskPort(input.ask!.port, "building") }, request) } : {})
+  });
   return {
     executeTool: async (call) => {
+      // The first call the domain is handed is acting: the start of the task runs before it, and is over with it (t976).
+      await starting.beforeActing();
+      starting.acting();
       const siteReset = input.siteReset;
       if (!siteReset) {
         // Before the domain has the call, not from inside its permission check (see the header).
@@ -478,9 +509,9 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
       const check = asking({ kind: "flow_step", id: step.definitionId, ref: step.ref });
       return async (declaration) => {
         const decision = await check(declaration);
-        // The completion check is opaque to the loop, so a refusal inside it
-        // has to stop the loop from here or it is asked again unanswerably.
-        if (!decision.permitted) planRefused.abort();
+        // A start-only caller receives ordinary invalid-plan feedback and may find another route.
+        // Gates that never entered that lifecycle retain their original unanswered-request stop.
+        if (!decision.permitted && !starting.isClosed) planRefused.abort();
         // The step's witness, from the one admission, for the resolver to stamp; never a refusal (t751, R3 door 2).
         else if (step.witnessed) {
           const read = permissionDeclaration(declaration);
@@ -537,7 +568,9 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
     },
     endedOnRequest: (progress, accounting) => gate.request
       ? flowBootstrapPermissionRequiredFailure(gate.request, progress ?? NO_LOOP_PROGRESS, accounting)
-      : undefined
+      : undefined,
+    askAtStart: (start) => starting.start(start),
+    closeAsking: () => starting.close()
   };
 }
 
@@ -680,44 +713,6 @@ function quotedLasting(act: { source?: { clause: string; object: string } | unde
   return object.length > 0 && clause.includes(object) && words.includes(object) && quotes.some((quote) =>
     quote.includes(object) && (quote.includes(words) || words.includes(quote) || quote.includes(clause) || clause.includes(quote))
   );
-}
-
-/** How much of each unanswered act's words the thread is shown. */
-const UNANSWERED_QUOTE_MAX = 120;
-
-/**
- * The line naming the acts the read gave no answer for. A long quote is cut
- * where a word ends: cut at 119 characters it read "...the 7-in-1 version,
- * shipped f..." (W25, run-mux6n7m4-8273e7a0).
- */
-export function automationStudioFlowBootstrapUnansweredSaid(quotes: readonly string[]): string {
-  const named = quotes.map((quote) => `"${quoteCut(quote)}"`).join(", ");
-  const one = quotes.length === 1;
-  return `I could not tell from your instruction whether ${named} ${one ? "changes" : "change"} something that stays changed, so when the build tests its steps it checks ${one ? "the step that does it" : "the steps that do them"} rather than doing ${one ? "it" : "them"} again.`;
-}
-
-/** `quote` within `UNANSWERED_QUOTE_MAX`, cut after its last whole word with an ellipsis; one word longer than that is cut where it must. */
-function quoteCut(quote: string): string {
-  if (quote.length <= UNANSWERED_QUOTE_MAX) return quote;
-  const kept = quote.slice(0, UNANSWERED_QUOTE_MAX - 1);
-  const space = quote.charAt(UNANSWERED_QUOTE_MAX - 1) === " " ? UNANSWERED_QUOTE_MAX - 1 : kept.lastIndexOf(" ");
-  const cut = space > 0 ? kept.slice(0, space) : kept;
-  return `${cut.trimEnd().replace(/[,;:]+$/u, "")}…`;
-}
-
-/**
- * Says, once, which of the person's acts the instruction's read gave no answer
- * for, and what the build does about it. A plain line, never a question: the
- * build carries on and loses nothing by it. Best-effort, like every line the
- * gate says; the read's own step record keeps the answer it gave either way.
- */
-async function saidUnanswered(say: ((text: string) => Promise<unknown>) | undefined, quotes: readonly string[]): Promise<void> {
-  if (!say) return;
-  try {
-    await say(automationStudioFlowBootstrapUnansweredSaid(quotes));
-  } catch {
-    /* best-effort: a thread that could not be written to changes nothing the build does. */
-  }
 }
 
 /** A quote as `instructedLastingActs` compares it: lower case, every run of spacing one space. */

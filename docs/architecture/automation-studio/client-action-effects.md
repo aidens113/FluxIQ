@@ -26,6 +26,24 @@ and the canonical graph-options factory bind registered native/output floors.
 Hosts using custom execution supply the trusted `resolveActionEffect` option;
 outside-graph dispatch accepts a separate resolved `actionEffect` argument.
 
+## Permission at task start
+
+An automation's optional `taskActs` declaration names consequential classes;
+it never grants permission. Chat interpretation supplies it in the existing
+interpretation call. Startup combines those classes with the saved Flow's
+assembled declarations before asking the person once, ahead of execution.
+The answer is retained beside the Flow in `chat-permission.json`, including
+declines, so later attempts and runtime repair use the same authorization.
+
+Once startup closes, an uncovered consequential act is refused without another
+question. Repair receives that refusal as evidence and may continue searching
+for an allowed path; it cannot grant itself permission. Newly encountered
+classes are retained for a later task start. A decline stays a decline even if
+its old request identifier is missing. Trusted action-effect floors and
+uncertain-effect retry protection remain authoritative.
+
+## Effect evidence and retries
+
 Execution retains resolved floors per invocation frame and logical node pass,
 before dispatch, including thrown acknowledgements and synthetic timeouts. A
 later loop pass specializes its own parameters. A committing action with an

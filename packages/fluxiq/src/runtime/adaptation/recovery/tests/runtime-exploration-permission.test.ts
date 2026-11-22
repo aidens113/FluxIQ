@@ -10,10 +10,8 @@
 // gated: on that pair the row below that permits "only part of it" would have
 // permitted a class needing no permission, and proved nothing about a partial one.
 
-import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { describe, expect, it } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../../automation-activity/index.ts";
 import { AutomationStudioActionPermissionGate, type AutomationStudioActionConsequence } from "../../../action-permission-requests/index.ts";
 import type { AutomationStudioAsk, AutomationStudioAskAnswer, AutomationStudioParkingPort } from "../../../automation-parking/index.ts";
 import { automationStudioHarnessOptionRegistry, type AutomationStudioLlmEvidenceTool } from "../../../llm/index.ts";
@@ -108,35 +106,26 @@ async function explore(options: Options = {}) {
 }
 
 describe("a recovery exploration that needs permission", () => {
-  it("stops at the first action the run was not allowed, carrying the request, and never takes it", async () => {
+  it("refuses an uncovered action as evidence and continues without asking or taking it", async () => {
     const run = await explore();
 
     expect(run.pressed).toEqual([]);
     expect(run.exploration).toMatchObject({
-      outcome: "user_intervention_required",
-      stopReason: "operator_approval_required",
-      endedBy: "operator_approval_required",
+      outcome: "evidence_gathered",
+      endedBy: "exploration.completed",
       refusedActions: 1
     });
-    expect(run.exploration.result).toBeUndefined();
-    expect(run.exploration.permissionRequest).toMatchObject({
-      action: { kind: "exploration_step", id: "shop.press", ref: "call.refund", verb: "press" },
-      control: { name: "Refund and void line 1", kind: "button" },
-      consequences: ["move_money", "delete"],
-      missing: ["move_money", "delete"],
-      reason: { stage: "recovery", instructionIds: ["instruction.refund"] }
-    });
-    expect(run.exploration.reason).toBe(run.exploration.permissionRequest!.sentence);
-    // Terminal: the model is not asked what to try instead.
-    expect(run.providerCalls()).toBe(2);
+    expect(run.exploration.permissionRequest).toBeUndefined();
+    expect(run.providerCalls()).toBe(3);
+    expect(run.shown[2]?.get("call.refund")).toEqual({ ok: false, code: "permission_required", handle: "c4" });
   });
 
-  it("puts the request in the recovery trace, where a person can be shown it", async () => {
+  it("records the refused action without publishing an unanswered permission question", async () => {
     const run = await explore();
     const event = automationStudioExplorationTraceEvent({ requested: true, exploration: run.exploration });
 
-    expect(event.status).toBe("refused");
-    expect(event.detail).toMatchObject({ outcome: "user_intervention_required", stopReason: "operator_approval_required", permissionRequest: run.exploration.permissionRequest });
+    expect(event.detail).toMatchObject({ outcome: "evidence_gathered", refusedActions: 1 });
+    expect(event.detail).not.toHaveProperty("permissionRequest");
   });
 
   it("takes the action when the run is permitted every consequence it has", async () => {
@@ -147,31 +136,33 @@ describe("a recovery exploration that needs permission", () => {
     expect(run.exploration.permissionRequest).toBeUndefined();
   });
 
-  it("asks for what is still missing when the run is permitted only part of it", async () => {
+  it("refuses what is still missing when the run is permitted only part of it", async () => {
     const run = await explore({ permittedConsequences: ["delete"] });
 
     expect(run.pressed).toEqual([]);
-    expect(run.exploration.permissionRequest?.missing).toEqual(["move_money"]);
+    expect(run.exploration.permissionRequest).toBeUndefined();
+    expect(run.exploration.outcome).toBe("evidence_gathered");
   });
 
   it("does not read an unrecognised class as permitted", async () => {
     const run = await explore({ permittedConsequences: ["refund", "purchase"] });
 
     expect(run.pressed).toEqual([]);
-    expect(run.exploration.outcome).toBe("user_intervention_required");
+    expect(run.exploration.outcome).toBe("evidence_gathered");
   });
 
   // A recovery builds one gate and hands it to the exploration, so the patch
   // stage after it reads the same request. The exploration uses that gate as
   // it is: its permitted consequences, its instructed set and what it has already been shown.
-  it("checks every action against a gate the caller handed it, and leaves the request on that gate", async () => {
+  it("checks every action against the caller's gate without raising a mid-run request", async () => {
     const refusing = new AutomationStudioActionPermissionGate({ stage: "recovery", instructionIds: ["instruction.dispatch"] });
     refusing.observe({ controls: ["Refund and void line 1"] });
     const refused = await explore({ gate: refusing });
 
     expect(refused.pressed).toEqual([]);
     expect(refused.exploration.permissionRequest).toBe(refusing.request);
-    expect(refusing.request).toMatchObject({ reason: { stage: "recovery", instructionIds: ["instruction.dispatch"] }, control: { name: "Refund and void line 1" } });
+    expect(refusing.request).toBeUndefined();
+    expect(refusing.declarations).toContainEqual(expect.objectContaining({ consequences: ["move_money", "delete"], permitted: false }));
 
     // A person's permission, not the instruction, lets it press (the user's rule, 2026-09-30).
     const permitting = new AutomationStudioActionPermissionGate({ stage: "recovery", permittedConsequences: ["move_money", "delete"] });
@@ -216,115 +207,39 @@ describe("a recovery exploration that needs permission", () => {
   });
 });
 
-describe("a repair that can put its question to a person", () => {
-  it("asks in the run's thread, and carries on with the action once it is granted", async () => {
+// A repair runs inside a Flow's run, so it never puts a permission question to a person (t976; the
+// user's rule: a dangerous act asks only when a Flow or chat starts). Until t976 a bound thread was
+// asked and the repair waited for the answer. What the person already answered in the Flow's chat
+// reaches the run as what it may do, or as a no the gate holds.
+describe("a repair inside a Flow's run never asks mid-Flow", () => {
+  it("continues after refusing with a thread bound, and asks nothing there", async () => {
     const run = await explore({ answer: "grant" });
 
-    expect(run.opened).toHaveLength(1);
-    expect(run.opened[0]).toMatchObject({
-      kind: "permission",
-      parks: true,
-      missing: ["move_money", "delete"],
-      control: { name: "Refund and void line 1", kind: "button" },
-      raisedBy: { stage: "recovery", definitionId: "shop.press" }
-    });
-    // The ask is keyed by the gate's own request id: one question, one key.
-    expect(run.opened[0]?.askId).toBe(run.opened[0]?.permissionRequest?.requestId);
-    // The whole point: the press happened, the exploration finished, and the
-    // repair was not killed by a question the build path parks on.
-    expect(run.pressed).toEqual(["c4"]);
-    expect(run.exploration.outcome).toBe("evidence_gathered");
+    expect(run.opened).toEqual([]);
+    expect(run.pressed).toEqual([]);
+    expect(run.providerCalls()).toBe(3);
+    expect(run.exploration).toMatchObject({ outcome: "evidence_gathered", endedBy: "exploration.completed" });
     expect(run.exploration.permissionRequest).toBeUndefined();
   });
 
-  // A no is an answer, not silence (2026-10-01; the build path since t195-w18).
-  // Until then the first decline ended the repair on a request the person had
-  // already refused, and no later question could be asked.
-  it("tells the model the person declined and goes on, without taking the action", async () => {
-    const run = await explore({ answer: "deny" });
+  it("takes the action the chat already allowed, unasked", async () => {
+    const run = await explore({ answer: "grant", permittedConsequences: ["move_money", "delete"] });
 
-    expect(run.opened).toHaveLength(1);
+    expect(run.opened).toEqual([]);
+    expect(run.pressed).toEqual(["c4"]);
+    expect(run.exploration.outcome).toBe("evidence_gathered");
+  });
+
+  it("tells the model the chat's no, without asking or taking the action, and goes on", async () => {
+    const gate = new AutomationStudioActionPermissionGate({ stage: "recovery", endsOnRequest: false });
+    gate.holdAnswer({ granted: [], declined: ["move_money", "delete"], requestId: "permission-request:chat" });
+    const run = await explore({ answer: "grant", gate });
+
+    expect(run.opened).toEqual([]);
     expect(run.pressed).toEqual([]);
-    // The decision after the press was shown the refusal as a decline.
     expect(run.providerCalls()).toBe(3);
     expect(run.shown[2]?.get("call.refund")).toEqual({ ok: false, code: "consequences_declined", handle: "c4" });
     expect(run.exploration.outcome).toBe("evidence_gathered");
     expect(run.exploration.permissionRequest).toBeUndefined();
-  });
-
-  it("asks about a different control after a decline, and takes it once granted", async () => {
-    const run = await explore({
-      answer: ["deny", "grant"],
-      decisions: [
-        { kind: "tool_call", callId: "call.look", toolId: "shop.look", input: {} },
-        { kind: "tool_call", callId: "call.refund", toolId: "shop.press", input: { handle: "c4" } },
-        { kind: "tool_call", callId: "call.credit", toolId: "shop.press", input: { handle: "c5" } },
-        { kind: "complete", result: { findings: "Refunded to store credit." } }
-      ]
-    });
-
-    expect(run.opened.map((ask) => ask.control?.name)).toEqual(["Refund and void line 1", "Refund to store credit"]);
-    expect(run.opened[0]?.askId).not.toBe(run.opened[1]?.askId);
-    expect(run.pressed).toEqual(["c5"]);
-    expect(run.exploration.outcome).toBe("evidence_gathered");
-    expect(run.exploration.permissionRequest).toBeUndefined();
-  });
-
-  it("refuses the declined control again without asking", async () => {
-    const run = await explore({
-      answer: "deny",
-      decisions: [
-        { kind: "tool_call", callId: "call.look", toolId: "shop.look", input: {} },
-        { kind: "tool_call", callId: "call.refund", toolId: "shop.press", input: { handle: "c4" } },
-        { kind: "tool_call", callId: "call.refund.again", toolId: "shop.press", input: { handle: "c4", retry: true } },
-        { kind: "complete", result: { findings: "The person declined the refund." } }
-      ]
-    });
-
-    expect(run.opened).toHaveLength(1);
-    expect(run.pressed).toEqual([]);
-    expect(run.shown[3]?.get("call.refund.again")).toEqual({ ok: false, code: "consequences_declined", handle: "c4" });
-    expect(run.exploration.outcome).toBe("evidence_gathered");
-    expect(run.exploration.permissionRequest).toBeUndefined();
-  });
-
-  it("ends on the request when nobody answers, having asked once", async () => {
-    const run = await explore({
-      answer: "nobody",
-      decisions: [
-        { kind: "tool_call", callId: "call.look", toolId: "shop.look", input: {} },
-        { kind: "tool_call", callId: "call.refund", toolId: "shop.press", input: { handle: "c4" } },
-        { kind: "tool_call", callId: "call.credit", toolId: "shop.press", input: { handle: "c5" } },
-        { kind: "complete", result: { findings: "Refunded to store credit." } }
-      ]
-    });
-
-    expect(run.opened).toHaveLength(1);
-    expect(run.pressed).toEqual([]);
-    // Ended on the first unanswered question: the model was not asked again.
-    expect(run.providerCalls()).toBe(2);
-    expect(run.exploration).toMatchObject({ outcome: "user_intervention_required", stopReason: "operator_approval_required", endedBy: "operator_approval_required" });
-    expect(run.exploration.permissionRequest).toBeDefined();
-  });
-});
-
-describe("what a repair says while it waits on a permission", () => {
-  it.each([
-    ["grant", "succeeded", "allowed"],
-    ["deny", "failed", "declined"],
-    ["nobody", "failed", "timed_out"]
-  ] as const)("says the wait on the request and its end when the answer is %s", async (answer, status, resolution) => {
-    const seen: ClientGatewayActivity[] = [];
-    const stop = automationStudioActivityHub.subscribe((event) => seen.push(event));
-    try {
-      const run = await runWithAutomationStudioActivity({ kind: "run", id: "r1", projectId: "project.one" }, () => explore({ answer }));
-      const requestId = run.opened[0]!.askId;
-      expect(seen.filter((event) => event.detail?.kind === "ask").map((event) => [event.phase, event.detail!.ref, event.detail!.title, event.detail!.status, event.detail!.resolution])).toEqual([
-        ["waiting_permission", requestId, "Asked a question (permission)", "started", undefined],
-        ["repairing", requestId, "Asked a question (permission)", status, resolution]
-      ]);
-    } finally {
-      stop();
-    }
   });
 });
