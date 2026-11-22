@@ -40,7 +40,7 @@ Keep original display values; shared parsers derive typed comparisons against th
 run reference time. Parsed column samples are not row truth. Full safe schemas
 survive live/saved bindings and replay; process.columns alone selects display.
 Explicit exclusions stay authoritative and schema overflow must not silently trim.
-Implementation is pending in paired t982. P4 compatibility preserves historical
+Implementation is active in paired t982; worker reports the schema seam stable with 60 record-set tests and contracts typecheck passing. Lead acceptance remains pending. P4 compatibility preserves historical
 attempt records and attempt identity, but old escalation cannot change serving;
 automation defaults to Haiku and all its roles retain its explicit starting model.
 Core owns domain-neutral storage, processing, judging, models and replay.
@@ -49,6 +49,14 @@ Build, repair and judging stay on Haiku; no model escalation.
 Paid acceptance follows provider-free proofs, four attempts per task and the $50 campaign ceiling.
 
 ## Work Ledger
+
+### 2026-11-22 ? Judge integrated and next lanes dispatched
+- Agent: Senior supervisor.
+- Changed: t979 merged into both dev branches; t982 extraction and t983 fixed-model implementations active in isolated paired trees. t981 checkpointed and synced for lead verification.
+- Validation: `pnpm task finish t979 --skip-checks` -> mandatory contract tests 70/70 passed and merge completed. Downstream `pnpm task finish t979` -> structure audit passed and paired merge completed. Earlier independent 125 tests, package typecheck and audit recorded below.
+- Outcome: Partial: judge unit accepted; remaining plan continues.
+- Follow-up: repair acceptance, permission review/validation, retained-row plumbing, fixed-model execution, then dependent processing and offline proofs.
+
 
 ### 2026-11-22 — Resume approved P0 tasks
 - Agent: Senior supervisor.
@@ -68,5 +76,5 @@ Paid acceptance follows provider-free proofs, four attempts per task and the $50
 
 ## Open Questions
 
-- Lead: inspect existing typed fields, marks and identity before fixing the retained-row contract.
+- Resolved: retained-row interface frozen; implementation underway in t982.
 - Lead: verify recorded-run offline replay coverage before any paid test.
