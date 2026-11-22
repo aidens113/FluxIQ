@@ -14,9 +14,8 @@
 // - An answer that tried to be an object and could not be read is asked for
 //   again with the reason, which a model almost always corrects.
 // - A reply to a message the model declared a task, or a reply that declared
-//   nothing (`./unanswered-task.ts`, t973), is asked for again one rung up the
-//   model ladder, still with no thinking, with the reason in the climbed call's
-//   step meta. Still a reply after that, a declared task starts from the open
+//   nothing (`./unanswered-task.ts`), is asked again on the same model with a
+//   correction. Still a reply after that, a declared task starts from the open
 //   page (`./unanswered-route.ts`); never a silent stall.
 // - When the model cannot be used at all -- none is connected, or every attempt
 //   failed -- Core reads the words itself (`fallback.ts`) and records why, so
@@ -28,7 +27,7 @@ import { automationStudioConversationFallbackDecision } from "./fallback.ts";
 import { automationStudioConversationDeclaredActs } from "./acts.ts";
 import { automationStudioConversationDeclaredIntent } from "./intent.ts";
 import type { AutomationStudioConversationDecisionContext } from "./invocation.ts";
-import type { AutomationStudioConversationCaller, AutomationStudioConversationModel, AutomationStudioConversationModelClimb, AutomationStudioConversationModelTurn } from "./model.ts";
+import type { AutomationStudioConversationCaller, AutomationStudioConversationModel, AutomationStudioConversationModelTurn } from "./model.ts";
 import { parseAutomationStudioConversationDecision } from "./parse.ts";
 import { automationStudioConversationInstructions } from "./prompt.ts";
 import { automationStudioConversationUnansweredTaskDecision } from "./unanswered-route.ts";
@@ -87,8 +86,7 @@ export async function interpretAutomationStudioConversationTurn(input: Automatio
     costUsd = (costUsd ?? 0) + usd;
     pricedCalls += 1;
   };
-  // A task left unanswered in words (`./unanswered-task.ts`): the rung it is asked on from then on, its last reply, and whether any answer declared it a task.
-  let climb: AutomationStudioConversationModelClimb | undefined;
+  // A task left unanswered in words: its last reply, and whether any answer declared it a task.
   let lastReply: Extract<AutomationStudioConversationDecision, { kind: "reply" }> | undefined;
   let declaredTask = false;
   while (attempts < limits.attempts) {
@@ -101,7 +99,7 @@ export async function interpretAutomationStudioConversationTurn(input: Automatio
     try {
       const model = input.model;
       const raw = await attemptWithin(Math.min(limits.attemptTimeoutMs, remaining), (signal) => model.decide(
-        { instructions, transcript: [...input.transcript], message: input.message, correction, ...(climb ? { climb } : {}) },
+        { instructions, transcript: [...input.transcript], message: input.message, correction },
         { signal, caller: input.caller ?? null, paid }
       ));
       // The model answered, so an earlier attempt's access failure is no longer the reason.
@@ -111,10 +109,9 @@ export async function interpretAutomationStudioConversationTurn(input: Automatio
       const unanswered = decision ? automationStudioConversationUnansweredTask(decision, intent) : null;
       if (decision && !unanswered) return { decision, source: "model", modelProblem: null, attempts, ...priced(costUsd, pricedCalls), ...declaredActs(decision, raw) };
       if (decision?.kind === "reply" && unanswered) {
-        // A task answered in words, or a reply that declared nothing: asked again one rung up, sticky for this turn.
+        // A task answered in words, or a reply that declared nothing: ask the same model with clear feedback.
         lastReply = decision;
         declaredTask ||= intent === "task";
-        climb = { reason: unanswered.reason };
         correction = unanswered.correction;
         problem = "the model answered a task in words instead of starting it";
         continue;
@@ -139,7 +136,7 @@ export async function interpretAutomationStudioConversationTurn(input: Automatio
     }
   }
   if (access) return { ...accessReading(input, access, attempts), ...priced(costUsd, pricedCalls) };
-  // Asked again one rung up and still answered in words: a declared task starts, anything else keeps the model's own reply (`./unanswered-route.ts`). Never a stall.
+  // Asked again on the same model and still answered in words: a declared task starts, anything else keeps the model's own reply (`./unanswered-route.ts`). Never a stall.
   if (lastReply) return { decision: automationStudioConversationUnansweredTaskDecision({ reply: lastReply, declaredTask, message: input.message, context: input.context }), source: "model", modelProblem: null, attempts, ...priced(costUsd, pricedCalls) };
   return { ...fallback(input, problem, attempts), ...priced(costUsd, pricedCalls) };
 }

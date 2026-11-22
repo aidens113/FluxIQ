@@ -11,9 +11,8 @@ export const AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID = "core.loop_decision";
  * - `continue`: the repeat is deliberate (`why`, such as waiting for something to change);
  * - `change_approach`: a different way (`approach`, named);
  * - `ask_person`: one plain question to the person (`question`);
- * - `escalate_model`: hand the attempt to the next, stronger model;
  * - `finish_with_best`: answer with what it has (`result`), checked as the attempt's result.
  */
-export const AUTOMATION_STUDIO_LLM_LOOP_DECISIONS = Object.freeze(["continue", "change_approach", "ask_person", "escalate_model", "finish_with_best"] as const);
+export const AUTOMATION_STUDIO_LLM_LOOP_DECISIONS = Object.freeze(["continue", "change_approach", "ask_person", "finish_with_best"] as const);
 
 export type AutomationStudioLlmLoopDecisionKind = (typeof AUTOMATION_STUDIO_LLM_LOOP_DECISIONS)[number];

@@ -1,7 +1,7 @@
 # Data-First Simplification: Core Execution
 
 Status: Active
-Status detail: Judge and repeat repair accepted and pushed; permission lead tests/typecheck/audit pass, downstream acceptance pending. Extraction/data/model lanes active.
+Status detail: All three P0 fixes accepted and integrated in both repositories; paired push follows. Fixed-model combined acceptance, retained extraction, automatic processing and recorded proof active.
 Created: 2026-11-22
 Last updated: 2026-11-22
 Owner: Senior supervisor agent
@@ -10,6 +10,8 @@ Paired document: ../!FluxIQWebExtension/docs/working/data-first-simplification-p
 Related: [FluxNodes](./fluxnode-plan.md), [Answer First](./answer-first-plan.md)
 
 ## Current State
+
+**2026-11-22 integration checkpoint:** t979 judge, t981 repeat repair and t976 start-only permission are accepted and integrated in both dev branches. Permission lead acceptance: 161 Core tests, 66 Lab tests, 13 catalog tests, types/builds/audits, then mandatory Core merge contracts 70/70. Fixed-model t983 includes permission source and is integrated after 140/140 combined tests, typecheck/build/audit and merge contracts 70/70. P1 extraction consumes t984 retainedRows seam 2c4099965 (lead 25/25 tests, source-symbol provenance preserved). P2 exact field binder and automatic readiness work, plus t986 strict recorded-trace wrapper/CLI/preflight, are active. No paid/full-sweep/live-browser acceptance yet. Detailed downstream plan and task reports remain authoritative for lane status.
 
 The downstream paired plan is the approved plan of record (2026-11-20).
 The user requested execution with agents and durable progress on 2026-11-22.
@@ -49,6 +51,23 @@ Build, repair and judging stay on Haiku; no model escalation.
 Paid acceptance follows provider-free proofs, four attempts per task and the $50 campaign ceiling.
 
 ## Work Ledger
+
+### 2026-11-22 ? Fixed-model paired integration
+
+- Validation: downstream `pnpm task finish t983` -> structure audit passed, merged and worktree removed. Core `pnpm task finish t983 --skip-checks` -> mandatory contract gate 70/70 passed, merged and detached/deleted task branch. Independent 140 tests/typecheck/build/audit are recorded below. Core 0.51.0; paired dev push next. No main promotion or paid/live acceptance.
+
+### 2026-11-22 ? t983 combined lead acceptance
+
+- Merged accepted permission source and current dev; semantic auto-merge preserves taskActs and fixed-model interpretation. Core version 0.51.0. Final parent sync changed documentation only.
+- Validation: `pnpm --filter fluxiq exec vitest run src/framework/automation-service/service/answer-first/task-model/tests/resolve.test.ts src/framework/automation-service/service/answer-first/attempt/tests/caller-seams.test.ts src/framework/automation-service/service/answer-first/attempt/tests/caller-replay.test.ts src/framework/automation-service/service/answer-first/chat-permission/tests src/runtime/conversations/instructions/tests/unanswered-task.test.ts src/runtime/conversations/instructions/tests/recorded-chat-requests.test.ts src/runtime/conversations/instructions/tests/interpret.test.ts src/runtime/conversations/instructions/tests/acts.test.ts src/runtime/llm/anthropic/tests/panel-command-climb.test.ts src/runtime/llm/role-routing/tests src/runtime/llm/role-routing/ladder/tests/state.test.ts src/runtime/llm/decision-handlers/tests/loop-decision.test.ts src/runtime/llm/attempt-loop/tests/run.test.ts --maxWorkers=1 --minWorkers=1 --fileParallelism=false` -> 20 files, 140/140 tests passed, 152.82 s.
+- Validation: `pnpm --filter fluxiq check` -> exit 0, 90624 ms. `node scripts/structure-audit.mjs` -> passed, 564 warnings, 909 baselined. All through machine heavy-slot gate in t983 Core.
+- Validation: `pnpm --workspace-concurrency=1 --filter @fluxiq/contracts --filter @fluxiq/sdk --filter fluxiq --filter @fluxiq/client-gateway-websocket --filter @fluxiq/ui-components build` -> exit 0; fluxiq build 155364 ms, UI build 17430 ms, other libraries reused current stamps. Paired integration next. No paid/live/full-sweep claim.
+
+
+### 2026-11-22 ? Permission paired integration
+
+- Validation: downstream `pnpm task finish t976` -> structure audit passed, merged, worktree removed. Core `pnpm task finish t976 --skip-checks` -> mandatory contract gate 70/70 passed; merged and task branch detached/deleted. Independent acceptance commands/results recorded below.
+- Next: paired dev push, fixed-model final acceptance, remaining data/replay/offline units.
 
 ### 2026-11-22 ? t976 independent acceptance in progress
 
