@@ -1,14 +1,16 @@
 import { isJsonObject, isJsonValue } from "@fluxiq/contracts/fluxnode";
-import type { AutomationStudioResultEvidenceBundle } from "../../../../../runtime/result-verification/index.ts";
+import { readAutomationStudioResultEvidenceSourceReplacements, type AutomationStudioResultEvidenceBundle } from "../../../../../runtime/result-verification/index.ts";
 
 /** Validate every member of the existing typed bundle. Partial page parsing is not proof that the remaining persisted metadata is readable. */
 export function readAutomationStudioAnswerFirstResultEvidence(value: unknown): AutomationStudioResultEvidenceBundle | undefined {
-  if (!shape(value, ["pages", "coverage", "working", "looks"], ["answerContract", "processing", "missingEvidence"])) return undefined;
+  if (!shape(value, ["pages", "coverage", "working", "looks"], ["answerContract", "processing", "missingEvidence", "sourceReplacements"])) return undefined;
   if (!list(value.pages, page) || !list(value.looks, page) || !list(value.coverage, coverage) || !list(value.working, working)) return undefined;
   if (value.answerContract !== undefined && !(shape(value.answerContract, ["columns"]) && list(value.answerContract.columns, identity))) return undefined;
   if (value.processing !== undefined && !processing(value.processing)) return undefined;
   if (value.missingEvidence !== undefined && !list(value.missingEvidence, (entry) => shape(entry, ["datasetId"], ["batchKey"]) && identity(entry.datasetId) && optional(entry, "batchKey", identity))) return undefined;
-  const copied = structuredClone(value) as unknown as AutomationStudioResultEvidenceBundle;
+  const { sourceReplacements: _optionalAuthority, ...requiredEvidence } = value;
+  const copied = structuredClone(requiredEvidence) as unknown as AutomationStudioResultEvidenceBundle;
+  if (Object.hasOwn(value, "sourceReplacements")) copied.sourceReplacements = readAutomationStudioResultEvidenceSourceReplacements(value.sourceReplacements) ?? null;
   // JSON represents a deliberately unknown found[i] as null. Decode only this declared optional reading; no row, condition or fabricated annotation is dropped.
   for (const page of [...copied.pages, ...copied.looks]) if (page.leftOut && "found" in page.leftOut && Array.isArray(page.leftOut.found)) page.leftOut.found = page.leftOut.found.map((found) => found === null ? undefined : found);
   return copied;

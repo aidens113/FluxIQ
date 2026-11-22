@@ -41,7 +41,7 @@ import { stableJson } from "../../stable-json.ts";
 import type { AutomationStudioRecordBatch } from "../../../../../engine/automation/contracts.ts";
 import { automationStudioFlowDraftStepId, automationStudioFlowDraftStepIsAction, type AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/llm/index.ts";
-import type { AutomationStudioFlowLessSummary, AutomationStudioResultEvidenceBundle, AutomationStudioResultEvidencePage, AutomationStudioResultEvidenceProcessing } from "../../../../../runtime/result-verification/index.ts";
+import type { AutomationStudioFlowLessSummary, AutomationStudioResultEvidenceBundle, AutomationStudioResultEvidencePage, AutomationStudioResultEvidenceProcessing, AutomationStudioResultEvidenceSourceRef } from "../../../../../runtime/result-verification/index.ts";
 import { automationStudioAnswerFirstResultCoverage } from "../result/index.ts";
 import { automationStudioAnswerFirstResultPort, automationStudioAnswerFirstResultStepHolder, type AutomationStudioAnswerFirstResultEvent, type AutomationStudioAnswerFirstResultPort, type AutomationStudioAnswerFirstResultRead, type AutomationStudioAnswerFirstResultStepRef } from "../result/index.ts";
 import { automationStudioAnswerFirstProcessedRows, automationStudioAnswerFirstReadSchema, type AutomationStudioAnswerFirstRowCall, type AutomationStudioAnswerFirstRowsStored, type AutomationStudioAnswerFirstRowsSummary } from "../rows/index.ts";
@@ -54,6 +54,8 @@ import { automationStudioAnswerFirstResultSchema } from "./schema.ts";
 import type { AutomationStudioAnswerFirstResultReadiness } from "./readiness.ts";
 import { automationStudioAnswerFirstResultSourceState } from "./source-state.ts";
 import { automationStudioFlowBootstrapInstructionAsk } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
+import { automationStudioAnswerFirstResultReplacements } from "./replacements.ts";
+import { readAutomationStudioAnswerFirstResultEvidence } from "./read-evidence.ts";
 
 /** What the latest decision says its call is: a step the draft adds as it runs, or a rerun of a kept step. Absent: a look. */
 export type AutomationStudioAnswerFirstResultIntent =
@@ -77,7 +79,7 @@ export type AutomationStudioAnswerFirstResultFeed = {
   /** Rows an earlier segment of this attempt found, carried on into this one. */
   carried(steps: readonly AutomationStudioFlowDraftStep[], rows: readonly JsonObject[], datasetId: string | undefined): void;
   /** Restore only the original contributing evidence pages and their copied retained schemas. */
-  restored(entries: readonly { step: AutomationStudioFlowDraftStep; read: AutomationStudioAnswerFirstResultRead; version: number; schema: AutomationStudioRecordSchema; datasetId?: string; leftOut?: AutomationStudioResultEvidencePage["leftOut"] }[]): void;
+  restored(entries: readonly { step: AutomationStudioFlowDraftStep; read: AutomationStudioAnswerFirstResultRead; version: number; schema: AutomationStudioRecordSchema; datasetId?: string; leftOut?: AutomationStudioResultEvidencePage["leftOut"] }[], sourceReplacements?: AutomationStudioResultEvidenceBundle["sourceReplacements"]): void;
   sourceUnavailable(reason: string, originalEvidence?: AutomationStudioResultEvidenceBundle | undefined): void;
   /** Internal forward-walk receipt: a complete fresh collection may supersede unavailable originals. */
   collectionReplaced(receipt: { from: number; to: number; callIds: readonly string[]; readSince: number; steps: readonly AutomationStudioFlowDraftStep[] }): JsonObject | undefined;
@@ -91,6 +93,8 @@ export type AutomationStudioAnswerFirstResultFeed = {
   readPages(): ReadPages;
   /** Every contributing page, its current conditions and coverage, the sure column contract and working evidence. */
   evidence(): AutomationStudioResultEvidenceBundle;
+  /** Exact current contributing identities; absence or several matches must remain unknown to consumers. */
+  sourceRefs(source: string): readonly AutomationStudioResultEvidenceSourceRef[];
   /** The empty result's refusal, where a look holds rows the draft could take; `undefined` otherwise. */
   emptyRefusal(): string | undefined;
   /** The ledger id of a draft step. */
@@ -111,12 +115,12 @@ const EMPTY: AutomationStudioAnswerFirstRowsSummary = { totalRows: 0, truncated:
 const CARRIED_SOURCE = "carried";
 const PUBLICATION_TRACKING_MISSING = "The attempt's pending-publication metadata is unavailable. Restore the exact private record before publishing an answer; a later read cannot prove which earlier answer publications need retirement. The original source records and processing reference are preserved.";
 
-export function automationStudioAnswerFirstResultFeed(input: { instructionText: string; readRowsKey: string | undefined; processing?: AutomationStudioAnswerFirstProcessingDeclaration | undefined; processingReferenceTimeMs?: number | null | undefined; requiresDataOutput?: true | undefined; inputs?: Readonly<Record<string, JsonValue>> | undefined; publicationTrackingComplete?: boolean | undefined }): AutomationStudioAnswerFirstResultFeed {
+export function automationStudioAnswerFirstResultFeed(input: { instructionText: string; readRowsKey: string | undefined; processing?: AutomationStudioAnswerFirstProcessingDeclaration | undefined; processingReferenceTimeMs?: number | null | undefined; requiresDataOutput?: true | undefined; inputs?: Readonly<Record<string, JsonValue>> | undefined; publicationTrackingComplete?: boolean | undefined; sourceRecorded?: ((refs: readonly AutomationStudioResultEvidenceSourceRef[], call?: AutomationStudioAnswerFirstRowCall) => void) | undefined }): AutomationStudioAnswerFirstResultFeed {
   const port = automationStudioAnswerFirstResultPort(input.instructionText);
   const stage = automationStudioAnswerFirstDataStage(input.processing, input.processingReferenceTimeMs, input.requiresDataOutput === true || automationStudioFlowBootstrapInstructionAsk(input.instructionText).records, input.inputs);
   const reference = input.processingReferenceTimeMs ?? Date.now();
   let legacyRefusal: string | undefined;
-  const sourceState = automationStudioAnswerFirstResultSourceState();
+  const replacements = automationStudioAnswerFirstResultReplacements();
   const carriedLeftOut = new Map<string, AutomationStudioResultEvidencePage["leftOut"]>();
   const carriedVersions = new Map<string, number>();
   /** A draft step's chain (its own id, or the step it stands for) to its ledger id. */
@@ -124,6 +128,7 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
   /** Each page's source to the dataset the sink stored it under, and the sources whose read was cut by the schema's limit. */
   const datasets = new Map<string, string>();
   const schemas = new Map<string, AutomationStudioRecordSchema>();
+  const sourceState = automationStudioAnswerFirstResultSourceState((from, to) => { replacements.page(from, to, schemas.get(to.source)); });
   const truncated = new Set<string>();
   /** Each step's declared processing, by its ledger id, as its latest read or its draft input said it. */
   const processes = new Map<string, unknown>();
@@ -138,7 +143,7 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
   let account: { declared: AutomationStudioRecordProcessing; account: AutomationStudioRecordProcessingAccount } | undefined;
   let intent: AutomationStudioAnswerFirstResultIntent | undefined;
   /** The latest pass's read, for the forward run's report of it (`passed`). */
-  let pass: { read?: AutomationStudioAnswerFirstResultRead } | undefined;
+  let pass: { read?: AutomationStudioAnswerFirstResultRead; call?: AutomationStudioAnswerFirstRowCall } | undefined;
   const said: string[] = [];
   const told = (line: string | undefined): void => { if (line) said.push(line); };
 
@@ -208,7 +213,14 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
       legacyRefusal = shaped.refusal;
       return { datasetId, totalRows: shaped.rows.length, truncated: sources.some((source) => truncated.has(source)), columns: shaped.columns, rows: shaped.rows };
   };
-  const record = (events: readonly AutomationStudioAnswerFirstResultEvent[], before = rows().totalRows): string | undefined => port.record(events, { before, after: () => rows().totalRows });
+  const record = (events: readonly AutomationStudioAnswerFirstResultEvent[], before = rows().totalRows, call?: AutomationStudioAnswerFirstRowCall): string | undefined => {
+    const line = port.record(events, { before, after: () => rows().totalRows });
+    const current = baseEvidence(false);
+    replacements.observed(current, schemas);
+    const sources = new Set(events.flatMap((event) => event.kind === "page" ? [event.read.source] : []));
+    if (sources.size) input.sourceRecorded?.(current.pages.filter((page) => sources.has(page.source)).map((page) => ({ source: page.source, step: page.step, version: page.version, ...(page.datasetId === undefined ? {} : { datasetId: page.datasetId }) })), call);
+    return line;
+  };
   /** What the answer's processing did, as the judge is shown it (header); nothing where none was declared. */
   const processingEvidence = (): { processing?: AutomationStudioResultEvidenceProcessing } => {
     rows();
@@ -242,10 +254,13 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
     processingDeclaration: stage.declaration,
     sourceUnavailable(reason, originalEvidence) {
       const current = baseEvidence();
+      const original = readAutomationStudioAnswerFirstResultEvidence(originalEvidence ?? current);
+      if (original) { replacements.restore(original.sourceReplacements); replacements.remember(original.pages); }
       sourceState.hold(reason, originalEvidence ?? current, current, originalEvidence !== undefined, datasets);
     },
     collectionReplaced(receipt) {
-      if (!stage.active() || sourceState.reason() === undefined) return undefined;
+      if (!stage.active()) return undefined;
+      const pending = sourceState.reason() !== undefined;
       const refuse = (said: string): JsonObject => ({ replaced: false, code: "answer_first.collection_replacement_incomplete", said });
       const group = port.outputGroup();
       const pages = group.flatMap((step) => step.pages);
@@ -265,8 +280,10 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
       if (!positions.length || positions.some((position) => position < receipt.from || position > receipt.to)) return refuse("The successful forward range must include the contributing reads and their declared paging boundaries.");
       const current = baseEvidence(false);
       if (current.coverage.length !== group.length || current.coverage.some((coverage) => coverage.first !== "read" || coverage.last?.paging?.verdict !== "ended")) return refuse("A finished walk is not a complete collection. Re-read from the actual first site page and observe pagination ending for each contributing group. An opaque/unplaced start remains unknown; a data limit with global ordering does not prove collection completeness.");
-      if (!sourceState.supersede(current)) return refuse("The complete fresh collection does not match the known original source/list identity. Do not substitute an unrelated collection.");
-      told("A complete fresh collection superseded unavailable original evidence; it was collected now, not restored.");
+      if (pending && !sourceState.supersede(current)) return refuse("The complete fresh collection does not match the known original source/list identity. Do not substitute an unrelated collection.");
+      const minted = replacements.collection(current, schemas);
+      if (!pending && !minted) return undefined;
+      told("A complete fresh collection superseded earlier source evidence; it was collected now.");
       return { replaced: true, kind: "fresh_collection", sources: pages.map((page) => page.source), readSince: receipt.readSince };
     },
     boundProcessing() {
@@ -305,7 +322,7 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
       const read = storedRows && !storedRows.failure ? automationStudioAnswerFirstResultReadOfCall(call, answer, storedRows.rows, input.readRowsKey, undefined, storedRows.invalidCount) : undefined;
       if (read) stored(call.callId, storedRows?.datasetId, storedRows?.truncated === true, storedRows?.schema);
       if (typeof call.value.replay === "string") {
-        if (call.value.replay !== "reset") pass = read ? { read } : {};
+        if (call.value.replay !== "reset") pass = read ? { read, call } : {};
         return undefined;
       }
       if (!read) return undefined;
@@ -314,8 +331,8 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
       if (now?.kind === "rerun") refreshed(idOf(now.step), read);
       if (now?.kind === "add") declare(call.callId, call.value);
       if (now?.kind === "rerun") declare(idOf(now.step), call.value);
-      if (now?.kind === "add") return record([{ kind: "page", step: withWrites({ id: call.callId, position: now.position, intermediate: now.intermediate }, call.value), read }], before);
-      if (now?.kind === "rerun") return record([{ kind: "page", step: refOf(now.step), read }], before);
+      if (now?.kind === "add") return record([{ kind: "page", step: withWrites({ id: call.callId, position: now.position, intermediate: now.intermediate }, call.value), read }], before, call);
+      if (now?.kind === "rerun") return record([{ kind: "page", step: refOf(now.step), read }], before, call);
       return record([{ kind: "look", read }], before);
     },
     passed(step, steps, answer) {
@@ -324,7 +341,7 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
       if (held?.read) {
         const read = { ...held.read, version: automationStudioAnswerFirstResultVersionOf(step.input, held.read.version.listKey) };
         refreshed(idOf(step), read);
-        told(record([{ kind: "page", step: refOf(step), read }]));
+        told(record([{ kind: "page", step: refOf(step), read }], undefined, held.call));
         return;
       }
       const loop = steps.find((each) => each.disposition === "kept" && each.routing?.kind === "repeat" && each.routing.while !== undefined && each.routing.while === step.id);
@@ -354,7 +371,8 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
       stored(CARRIED_SOURCE, datasetId, false);
       told(record([{ kind: "page", step: refOf(step), read: { source: CARRIED_SOURCE, version: automationStudioAnswerFirstResultVersionOf(step.input), kept: rows.map((row) => ({ ...row })), carried: true } }]));
     },
-    restored(entries) {
+    restored(entries, sourceReplacements) {
+      replacements.restore(sourceReplacements);
       const events: AutomationStudioAnswerFirstResultEvent[] = [];
       for (const entry of entries) {
         stored(entry.read.source, entry.datasetId, false, entry.schema);
@@ -400,7 +418,10 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
     emptyRefusal() {
       return port.ledger().looks.some((look) => look.kept.length > 0) ? port.emptyRefusal() : undefined;
     },
-    evidence() { return sourceState.evidence(baseEvidence()); },
+    evidence() { return replacements.evidence(sourceState.evidence(baseEvidence())); },
+    sourceRefs(source) {
+      return baseEvidence(false).pages.filter((page) => page.source === source).map((page) => ({ source: page.source, step: page.step, version: page.version, ...(page.datasetId === undefined ? {} : { datasetId: page.datasetId }) }));
+    },
   };
 }
 
