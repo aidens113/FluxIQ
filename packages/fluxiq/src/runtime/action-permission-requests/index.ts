@@ -5,7 +5,8 @@
 // person's own instruction, and the request a run carries to a person when the
 // answer was no; whether a node's step must declare at all, as its domain
 // says; and the build's one instruction read, which also answers
-// the route the person names, with the quote grounding both share.
+// the route the person names, with the quote grounding both share; and the
+// one question a task asks when it starts (`task-start.ts`).
 export * from "./consequences.ts";
 export * from "./cross-check.ts";
 export * from "./declaration.ts";
@@ -20,3 +21,4 @@ export * from "./instruction-quote/index.ts";
 export * from "./instruction-reading/index.ts";
 export * from "./instruction-route/index.ts";
 export * from "./request.ts";
+export * from "./task-start.ts";

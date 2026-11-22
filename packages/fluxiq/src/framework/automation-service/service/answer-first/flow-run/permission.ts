@@ -20,7 +20,7 @@
 // (`shown`, screened by `./control-words.ts`). That is display only: the same declarations are put in the same order,
 // and a step with no usable words is asked in the same plain words as before.
 
-import type { AutomationStudioActionConsequence, AutomationStudioActionDeclaration } from "../../../../../runtime/action-permission-requests/index.ts";
+import { automationStudioActionPermissionProjection, readAutomationStudioActionDeclaration, type AutomationStudioActionConsequence, type AutomationStudioActionDeclaration } from "../../../../../runtime/action-permission-requests/index.ts";
 import type { AutomationStudioFlowBootstrapNode } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import { automationStudioAnswerFirstFlowRunControlWords } from "./control-words.ts";
@@ -32,7 +32,16 @@ const UNNAMED_STEP = "a saved step of this task";
 const PLAIN_VERB = "run";
 
 /** The classes refused, or `undefined` when the Flow may run. */
-export async function automationStudioAnswerFirstFlowRunPermission(ports: Pick<AutomationStudioAnswerFirstFlowRunPorts, "permissions">, assembly: Extract<AutomationStudioAnswerFirstFlowRunAssembly, { ok: true }>, saved: readonly AutomationStudioFlowDraftStep[] = []): Promise<readonly string[] | undefined> {
+export async function automationStudioAnswerFirstFlowRunPermission(ports: Pick<AutomationStudioAnswerFirstFlowRunPorts, "permissions" | "starting">, assembly: Extract<AutomationStudioAnswerFirstFlowRunAssembly, { ok: true }>, saved: readonly AutomationStudioFlowDraftStep[] = []): Promise<readonly string[] | undefined> {
+  const classes = new Set<string>();
+  for (const subflow of assembly.buildPlan.plan.subflows) {
+    for (const node of subflow.nodes) {
+      for (const declaration of declarationsOf(node, assembly.declared.get(`${subflow.key}.${node.key}`))) {
+        for (const consequence of automationStudioActionPermissionProjection(readAutomationStudioActionDeclaration(declaration)).consequences) classes.add(consequence);
+      }
+    }
+  }
+  await ports.starting?.([...classes]);
   for (const [subflowIndex, subflow] of assembly.buildPlan.plan.subflows.entries()) {
     for (const [nodeIndex, node] of subflow.nodes.entries()) {
       const ref = `${subflow.key}.${node.key}`;

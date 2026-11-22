@@ -28,6 +28,7 @@ const KEPT_ATTEMPTS = 100;
 const KEPT_INDEX = 2000;
 const KEPT_FLOW_BASES = 20;
 const FOLDER = "task-memory";
+const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/u;
 const INDEX_FILE = "attempt-index.json";
 
 type Index = { kind: "answer_first_attempt_index"; schemaVersion: 1; projectId: string; attempts: { attemptId: string; taskId: string; flowId: string }[] };
@@ -230,6 +231,7 @@ export class AutomationStudioAnswerFirstTaskMemoryStore {
 
 /** The caps, and the screen on every note. */
 function tidy(memory: AutomationStudioAnswerFirstTaskMemory, taskId: string): AutomationStudioAnswerFirstTaskMemory {
+  if (memory.startingModel !== undefined && (typeof memory.startingModel !== "string" || !MODEL_ID.test(memory.startingModel))) throw new Error("The task starting model is invalid.");
   const notes: AutomationStudioAnswerFirstTaskNote[] = [];
   for (const note of memory.notes ?? []) {
     const words = automationStudioAnswerFirstScreenedNote(note);
@@ -242,6 +244,7 @@ function readHeld(value: JsonObject, projectId: string, taskId: string, scoped =
   const memory = value.memory as Partial<AutomationStudioAnswerFirstTaskMemory> | undefined;
   if (value.kind !== "answer_first_task_memory" || value.schemaVersion !== 1 || value.projectId !== projectId || typeof memory !== "object" || memory === null) return undefined;
   if (memory.taskId !== taskId || typeof memory.flowId !== "string" || !Array.isArray(memory.notes) || !Array.isArray(memory.attempts)) return undefined;
+  if (memory.startingModel !== undefined && (typeof memory.startingModel !== "string" || !MODEL_ID.test(memory.startingModel))) throw new Error("The stored task starting model is invalid; repair its model selection before retrying.");
   if (scoped && !readableExecutionState(memory)) return undefined;
   for (const flow of [memory.best, memory.latest]) {
     if (flow !== undefined && (typeof flow !== "object" || flow === null || !Array.isArray(flow.steps) || typeof flow.flowId !== "string" || typeof flow.stepsDigest !== "string")) return undefined;

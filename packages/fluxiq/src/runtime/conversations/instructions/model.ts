@@ -26,15 +26,11 @@ export type AutomationStudioConversationModelRequest = {
   message: string;
   /** On a retry after an answer that could not be read, what was wrong with it. Null on a first attempt. */
   correction: string | null;
-  /**
-   * Set when an earlier answer left a task unanswered (`./unanswered-task.ts`): this attempt is asked one
-   * rung up the model ladder, still with no thinking, and its step meta records why. A model with no rung
-   * above it, or not on the ladder, asks its own model again. Absent on every other attempt.
-   */
+  /** Deprecated historical metadata. Core no longer emits it and adapters keep the same model. */
   climb?: AutomationStudioConversationModelClimb | undefined;
 };
 
-/** Why a chat attempt is asked one rung up: closed words, recorded in the call's step meta. */
+/** Historical retry metadata accepted for compatibility; it cannot request a stronger model. */
 export type AutomationStudioConversationModelClimb = { reason: string };
 
 /**

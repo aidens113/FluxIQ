@@ -6,6 +6,36 @@ in `runtime/flow-authoring/bootstrap/plan/` and integrated with the existing LLM
 the `flow_bootstrap` task. It does not execute a provider request, persist a
 proposal, or mutate a Flow by itself.
 
+## One starting model per automation task
+
+Automation defaults to `claude-haiku-5-5`. An explicit task model, starting-model
+override or configured environment default is retained; an explicitly selected
+other provider keeps its compatible default. Generic engine/catalog defaults
+outside automation remain configurable. Build decisions, repairs, judges and
+unreadable-reply recovery use the starting model. Legacy judge/repair overrides
+remain readable but cannot select another model. No loop decision or failed
+repair escalates to a stronger model. Chat interpretation also corrects and
+retries its starting model; it no longer emits a climb request when a task was
+answered in words. The historical request field remains accepted but inert.
+A person question requires its existing
+explanation of genuine impossibility, without a model-climb prerequisite.
+
+Answer First task memory keeps the resolved public model ID as optional
+`startingModel` in its existing version-1 record. The existing task identity
+(words/site or explicit caller task key) owns that choice across later attempts,
+Run again, carry-on and service restarts. A distinct task identity can choose a
+different explicit model. Atomic task-memory updates keep the first durable
+selection; a concurrent loser resolves that winner before any generation.
+Failed provider resolution saves no new model, and a present invalid model
+record fails before generation without discarding the rest of the task.
+
+Older records without the field remain readable. Only an ordinal-one explicit
+caller model can establish their original choice; otherwise the documented
+automation/provider default is used. Later escalated calls are never evidence
+for a starting model. Historical ladder/decision metadata and compatibility
+exports stay readable but are inert. Attempt-frame identity remains stable for
+Anthropic cached continuation and its same-model standalone fallback.
+
 ## Passive result observation
 
 A domain evidence binding may supply `observeResult` for the fresh end view used
@@ -1181,7 +1211,7 @@ so the model's current view is the page as it stands (`pageNotRead` where that l
 `change_approach` takes a fresh round, steered off what was repeated; `ask_person` comes
 only from the model's own `core.loop_decision`, and posts its question without waiting
 while the attempt carries on (`failure-control.md`, "The model decides how to go on"). Every
-round runs on the attempt's model ladder (same file, "The model ladder").
+round uses the task's fixed starting model (see "One starting model per automation task" above).
 
 **Money.** One purse per attempt, with no creation record, at $5 by default
 (`runtime/answer-first/attempt-purse/`). It is held to an explicit Flow limit, a

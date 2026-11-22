@@ -19,7 +19,7 @@ const covered = () => vi.fn(async () => ({ kind: "llm_evidence_tool_execution", 
 
 async function attemptProvider(): Promise<AutomationStudioLlmProvider> {
   const resolved = await automationStudioLlmRoleRoutedResolution(async (input: AutomationStudioLlmProviderResolverInput) => {
-    const model = input.modelId ?? "claude-sonnet-5-5";
+    const model = input.modelId ?? "claude-haiku-5-5";
     return { provider: { metadata: { provider: "anthropic", model }, runTask: async () => ({ model }) } };
   }, { projectId: "p", flowId: "f", modelId: "claude-haiku-5-5" });
   return resolved!.provider;
@@ -29,7 +29,7 @@ async function attemptProvider(): Promise<AutomationStudioLlmProvider> {
 function scripted(provider: AutomationStudioLlmProvider, served: string[], next: (index: number) => unknown) {
   const decide = vi.fn();
   decide.mockImplementation(async () => {
-    served.push(provider.servedBy!(decisionRequest).metadata.model);
+    served.push((provider.servedBy?.(decisionRequest) ?? provider).metadata.model);
     return next(decide.mock.calls.length);
   });
   return decide;
@@ -41,45 +41,45 @@ const loop = (decide: ReturnType<typeof vi.fn>, extra: Partial<AutomationStudioL
 } as AutomationStudioLlmEvidenceLoopInput);
 
 describe("a loop on its attempt's model ladder", () => {
-  it("starts on the base, climbs one rung where the detector fires with nobody asked to decide, stays there for the attempt's next loop, and records the climb", async () => {
+  it("retains its starting model through caught loops, later rounds and fresh attempts", async () => {
     const provider = await attemptProvider();
     const record = automationStudioLlmLoopAttemptRecord();
     const served: string[] = [];
     const rewording = scripted(provider, served, (index) => index > 3 ? { kind: "complete", result: { done: true } } : call(index, { target: "Close", reason: `try ${index}` }));
     await loop(rewording, { attemptRecord: record });
     // Decision 1 and 2 on Haiku; the second press was a near repeat, steered, and the next decision is Sonnet's.
-    expect(served.slice(0, 3)).toEqual(["claude-haiku-5-5", "claude-haiku-5-5", "claude-sonnet-5-5"]);
-    expect(record.data().ladder).toEqual({ base: "claude-haiku-5-5", escalations: [{ from: "claude-haiku-5-5", to: "claude-sonnet-5-5", reason: "loop_detected", pattern: "near_repeat" }] });
+    expect(served.slice(0, 3)).toEqual(["claude-haiku-5-5", "claude-haiku-5-5", "claude-haiku-5-5"]);
+    expect(record.ladder.level).toBe(0);
 
     const later: string[] = [];
     await loop(scripted(provider, later, () => ({ kind: "complete", result: { done: true } })), { attemptRecord: record });
-    expect(later).toEqual(["claude-sonnet-5-5"]);
+    expect(later).toEqual(["claude-haiku-5-5"]);
 
     const fresh: string[] = [];
     await loop(scripted(provider, fresh, () => ({ kind: "complete", result: { done: true } })), { attemptRecord: automationStudioLlmLoopAttemptRecord() });
     expect(fresh).toEqual(["claude-haiku-5-5"]);
   });
 
-  it("climbs one rung when a repair round ends without the result, and not when a Stop ended it", async () => {
+  it("keeps the starting model after failed repairs and Stop", async () => {
     const provider = await attemptProvider();
     const record = automationStudioLlmLoopAttemptRecord();
     const served: string[] = [];
     const broken = scripted(provider, served, () => { throw new Error("the model broke"); });
     await expect(runWithAutomationStudioLlmModelRole("repair", () => loop(broken, { attemptRecord: record }))).rejects.toThrow("the model broke");
-    expect(record.data().ladder?.escalations).toEqual([{ from: "claude-haiku-5-5", to: "claude-sonnet-5-5", reason: "repair_failed" }]);
+    expect(record.data().ladder?.escalations ?? []).toEqual([]);
     // The same failure on an exploring round climbs nothing.
     await expect(loop(scripted(provider, [], () => { throw new Error("the model broke"); }), { attemptRecord: record })).rejects.toThrow("the model broke");
-    expect(record.ladder.level).toBe(1);
+    expect(record.ladder.level).toBe(0);
     const stop = new AbortController();
     stop.abort();
     await runWithAutomationStudioLlmModelRole("repair", () => loop(scripted(provider, [], () => ({ kind: "complete", result: {} })), { attemptRecord: record, signal: stop.signal })).catch(() => undefined);
-    expect(record.ladder.level).toBe(1);
+    expect(record.ladder.level).toBe(0);
   });
 
   it("shares the ladder of the loop it runs inside where it is given no record of its own", async () => {
     const provider = await attemptProvider();
     const record = automationStudioLlmLoopAttemptRecord();
-    record.ladder.serve(["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"]);
+    record.ladder.serve(["claude-haiku-5-5", "claude-haiku-5-5", "claude-opus-5-5"]);
     record.ladder.escalate({ reason: "model_decided" });
     const inner: string[] = [];
     const outer = vi.fn(async () => {
@@ -87,6 +87,6 @@ describe("a loop on its attempt's model ladder", () => {
       return { kind: "complete", result: { done: true } };
     });
     await loop(outer, { attemptRecord: record });
-    expect(inner).toEqual(["claude-sonnet-5-5"]);
+    expect(inner).toEqual(["claude-haiku-5-5"]);
   });
 });

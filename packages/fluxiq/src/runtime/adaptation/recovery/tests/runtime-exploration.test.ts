@@ -301,7 +301,7 @@ describe("runAutomationStudioRuntimeExploration", () => {
     expect(failure).not.toContain("secret detail");
   });
 
-  it("still ends on the request the gate raised, however failures are handled", async () => {
+  it("continues after a refused action throws, without raising a mid-run permission request", async () => {
     const run = await explore({
       decisions: [call("test.reveal", { control: "Refund" }), call("test.inspect", { area: "unreached" }), complete({ finding: "unreached" })],
       execute: async (input) => {
@@ -310,10 +310,11 @@ describe("runAutomationStudioRuntimeExploration", () => {
       }
     });
 
-    expect(run.outcome).toBe("user_intervention_required");
-    expect(run.endedBy).toBe("operator_approval_required");
-    expect(run.permissionRequest?.missing).toEqual(["move_money"]);
-    expect(run.accounting.iterations).toBe(1);
+    expect(run.outcome).toBe("no_evidence_found");
+    expect(run.endedBy).toBe("exploration.completed");
+    expect(run.permissionRequest).toBeUndefined();
+    expect(run.accounting.iterations).toBe(3);
+    expect(run.result).toBeUndefined();
   });
 
   it("charges refused actions against the action budget rather than only the successful ones", async () => {
@@ -433,7 +434,7 @@ function SCENARIOS(): Array<[string, string, string, Scenario]> {
     // request in hand: here the domain asks before a consequential step and
     // the run is permitted nothing. A domain code read as that reason is reported
     // as the refusal it is (`runtime-exploration-permission.test.ts`).
-    ["step a person has not allowed", "user_intervention_required", "operator_approval_required", {
+    ["step a person has not allowed", "no_evidence_found", "exploration.completed", {
       decisions: [call("test.reveal", { control: "Refund" }), complete({ finding: "unreached" })],
       execute: askingExecution
     }],

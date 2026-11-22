@@ -19,7 +19,7 @@ import { humannessSchema } from "@fluxiq/contracts/automation";
 import { assertExactObjectFields, requiredBootstrapCommandId } from "../field-readings.ts";
 
 /** The fields a generation request may carry, and the fields its caller may carry. */
-const REQUEST_FIELDS = ["projectId", "flowId", "caller", "permittedConsequences", "evidenceGuided", "authoringMode", "useReusableContext", "startLocation", "permissionAskTimeoutMs", "mode", "interpretationCostUsd", "interpretationCalls", "humanness"] as const;
+const REQUEST_FIELDS = ["projectId", "flowId", "caller", "permittedConsequences", "evidenceGuided", "authoringMode", "useReusableContext", "startLocation", "permissionAskTimeoutMs", "mode", "interpretationCostUsd", "interpretationCalls", "taskActs", "humanness"] as const;
 const CALLER_FIELDS = ["actorUserId", "actorSessionId"] as const;
 
 /** A generation request, read. `startLocation` is absent when the caller named none. */
@@ -39,6 +39,8 @@ export type AutomationStudioFlowBootstrapGenerationRequest = {
   interpretationCostUsd?: number;
   /** How many priced model calls `interpretationCostUsd` sums. Absent when none was sent. */
   interpretationCalls?: number;
+  /** What the chat's reading declared the task will cause (t976). Absent when nothing was declared. */
+  taskActs?: AutomationStudioActionConsequence[];
 };
 
 /**
@@ -86,6 +88,7 @@ export function readAutomationStudioFlowBootstrapGenerationRequest(unsafeInput: 
     ...(interpretationCostUsd === undefined ? {} : { interpretationCostUsd }),
     ...(interpretationCalls === undefined ? {} : { interpretationCalls: interpretationCalls as number }),
     ...(humanness === undefined ? {} : { humanness: humanness as number }),
+    ...(unsafeInput.taskActs === undefined ? {} : { taskActs: parseAutomationStudioPermittedConsequences(unsafeInput.taskActs) }),
     caller: {
       actorUserId: requiredBootstrapCommandId(caller.actorUserId, "actor user"),
       actorSessionId: requiredBootstrapCommandId(caller.actorSessionId, "actor session")

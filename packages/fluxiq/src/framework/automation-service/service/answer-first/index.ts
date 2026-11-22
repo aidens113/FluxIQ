@@ -6,6 +6,7 @@ export * from "./apply-proven/index.ts";
 export * from "./attempt/index.ts";
 export * from "./attempt-store/index.ts";
 export * from "./carry-on/index.ts";
+export * from "./chat-permission/index.ts";
 export * from "./completion/index.ts";
 export * from "./flow-run/index.ts";
 export * from "./interrupted/index.ts";

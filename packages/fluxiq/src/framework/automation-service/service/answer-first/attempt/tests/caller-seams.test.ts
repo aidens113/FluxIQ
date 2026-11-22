@@ -142,7 +142,7 @@ describe("a caller's budget and model", () => {
     const over = {
       llmProviderResolver: (request: AutomationStudioLlmProviderResolverInput) => {
         models.push(request.modelId);
-        return { provider: provider! };
+        return { provider: { ...provider!, metadata: { ...provider!.metadata, model: request.modelId! } } };
       }
     };
     const script = [runNode("read", READ_LOANS, {}, [], { add: true }), complete("Listed.")];
@@ -151,16 +151,18 @@ describe("a caller's budget and model", () => {
     expect(new Set(models)).toEqual(new Set(["claude-haiku-5-5"]));
     models.splice(0);
     await scriptedAttempt({ instruction: LIST, script, wrapProvider: keep, over }, cleanups);
-    expect(new Set(models)).toEqual(new Set([undefined]));
+    expect(new Set(models)).toEqual(new Set(["claude-haiku-5-5"]));
   });
 });
 
 describe("a caller's person port and scope", () => {
   it("a person-ask sink hears a permission question and answers it by callback, and the act goes ahead", async () => {
     const raised: { askId: string; kind: string }[] = [];
-    // Sending is one of the classes the permission gate asks a person about; a change is not.
+    // Sending is one of the classes the permission gate asks a person about; a change is not. Declared with the task, it is
+    // asked once when the attempt starts, before the press, and never at the press (t976).
     const attempt = await scriptedAttempt({
       instruction: "Renew the card on my library account.",
+      taskActs: ["send_or_publish"],
       script: [runNode("card", RENEW_CARD, {}, ["send_or_publish"], { add: true }), complete("Renewed the card.")],
       before: (service) => drivenBy(service, () => ({
         personAsk: {
@@ -210,6 +212,27 @@ describe("a caller's person port and scope", () => {
 });
 
 describe("a caller's task key", () => {
+  it("keeps a nondefault model across later attempts and a restart, while a new task can choose another", async () => {
+    const lane = await laterAttempts(cleanups, { bindSelectedModel: true });
+    let options: AutomationStudioAnswerFirstCallerOptions = { taskKey: "fixed-model-task", model: "claude-sonnet-5-5", check: threeLoans };
+    drivenBy(lane.service, () => options);
+    const first = await lane.attempt({ instruction: LIST, script: [readLoans(), complete("Listed.")] });
+    options = { ...options, model: "claude-opus-5-5" };
+    const second = await lane.attempt({ instruction: "Show the loans once more." });
+    expect(second.answer.attempt.taskId).toBe(first.answer.attempt.taskId);
+    expect(second.answer.attempt.spend.calls).toBe(0);
+    expect(lane.resolvedModels).toEqual(["claude-sonnet-5-5", "claude-sonnet-5-5"]);
+    const restarted = await laterAttempts(cleanups, { restart: lane.restart(), bindSelectedModel: true });
+    options = { taskKey: "fixed-model-task", check: threeLoans };
+    drivenBy(restarted.service, () => options);
+    const third = await restarted.attempt({ instruction: LIST });
+    expect(third.answer.attempt.taskId).toBe(first.answer.attempt.taskId);
+    expect(restarted.resolvedModels).toEqual(["claude-sonnet-5-5"]);
+    options = { taskKey: "deliberately-new-task", model: "claude-opus-5-5", check: threeLoans };
+    await restarted.attempt({ instruction: LIST, script: [readLoans(), complete("Listed anew.")] });
+    expect(restarted.resolvedModels.at(-1)).toBe("claude-opus-5-5");
+  });
+
   it("names the task across other words: a later attempt finds its saved Flow and, with the check passing, replays it with no model call at all", async () => {
     const lane = await laterAttempts(cleanups);
     let options: AutomationStudioAnswerFirstCallerOptions | undefined = { taskKey: "library.loans:spec-1", check: threeLoans };

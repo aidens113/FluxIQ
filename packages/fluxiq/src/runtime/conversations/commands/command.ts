@@ -92,6 +92,8 @@ export type AutomationStudioConversationCommandContext = {
   interpretationCostUsd?: number;
   /** How many priced model calls `interpretationCostUsd` sums, carried beside it into the Flow's spend as its "chat" calls. */
   interpretationCalls?: number;
+  /** What the chat's reading declared the task will cause (`../instructions/acts.ts`, t976), handed to the attempt or build so it asks once when it starts. */
+  taskActs?: string[];
   /** The person's humanness (integer 0-100) from the turn that started this command, passed on to the build or run it starts. Absent means 0. */
   humanness?: number;
   /**

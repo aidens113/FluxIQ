@@ -21,6 +21,12 @@
 // wrap the act gate and the row sink too (permission gate -> act gate -> row sink), with no clock
 // on its question. It is made here from the same input, as a project build's briefs make theirs.
 //
+// **One permission question, when the task starts** (`../chat-permission/`, t976): before the saved
+// Flow runs and before any round, the gate is handed what the chat already answered and asks once
+// about whatever dangerous act the chat's reading declared that the chat has not; the saved Flow's own
+// check before it runs is still that start. Asking then closes, so nothing is asked mid-build or
+// mid-Flow, and every answer is kept beside the Flow for the chat's later attempts and Run again.
+//
 // **Its purse is opened by the common path**, as a repair's: no creation record carried or
 // written, the ceiling `automationStudioAnswerFirstBudgetUsd`'s. The judge's call is kept back.
 //
@@ -50,6 +56,7 @@ import { automationStudioLlmStepLogScope } from "../../../../../runtime/llm/step
 import { automationStudioAnswerFirstAttemptStoreOf } from "../attempt-store/index.ts";
 import { automationStudioAnswerFirstCarriedOpening, automationStudioAnswerFirstCarryOnScope, type AutomationStudioAnswerFirstCarriedOpening, type AutomationStudioAnswerFirstCarryOnHold } from "../carry-on/index.ts";
 import { automationStudioAnswerFirstCallerApplied, automationStudioAnswerFirstScopeGate } from "../caller/index.ts";
+import { automationStudioAnswerFirstPermissionAtStart } from "../chat-permission/index.ts";
 import { automationStudioAnswerFirstCompletionCheck, automationStudioAnswerFirstReplayOf } from "../completion/index.ts";
 import { automationStudioAnswerFirstFlowRunEngineOf } from "../flow-run/index.ts";
 import { automationStudioFlowHumanness } from "../../flow-settings/index.ts";
@@ -118,9 +125,20 @@ async function attemptRun(given: AutomationStudioAnswerFirstAttemptInput): Promi
   }
 }
 
-/** The saved Flow's run where there is one, then the rounds if that did not end it. */
+/** The task's one permission question, the saved Flow's run where there is one, then the rounds if that did not end it. */
 async function stagedThenRounds(run: AutomationStudioAnswerFirstAttemptRun): Promise<AutomationStudioAnswerFirstRoundsEnding | "setup_needed"> {
-  const ended = await automationStudioAnswerFirstFlowStage(run);
+  const { input } = run;
+  let started = false;
+  const start = async (classes: readonly string[] = []): Promise<void> => {
+    if (started) return;
+    started = true;
+    await automationStudioAnswerFirstPermissionAtStart({ owner: input.owner, stores: input.stores, projectId: input.projectId, flowId: input.flowId, instructionText: input.instructionText, taskActs: [...(input.taskActs ?? []), ...classes], permissions: run.permissions, carriedOn: run.prior !== undefined });
+    run.permissions.closeAsking();
+  };
+  // A saved Flow contributes its actual assembled declarations to the same question, before any
+  // witness look or engine step. A rejected assembly still starts before the exploration rounds.
+  const ended = await automationStudioAnswerFirstFlowStage(run, start);
+  await start();
   return ended ?? await automationStudioAnswerFirstRounds(run, automationStudioAnswerFirstRoundNote(run, undefined));
 }
 
@@ -264,6 +282,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
   }));
   const ground = input.permissionGround;
   const permissions = automationStudioFlowBootstrapActionPermissions({
+    // The chat's ground is in it: every answer the person gives, and any class a run meets unforeseen, kept in the chat (`../chat-permission/`).
     ...ground,
     ask: ground.ask ? {
       ...ground.ask,

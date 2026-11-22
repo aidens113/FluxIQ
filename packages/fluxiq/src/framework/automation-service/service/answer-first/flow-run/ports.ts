@@ -48,6 +48,8 @@ export type AutomationStudioAnswerFirstFlowRunPorts = {
   /** The attempt's one result: told the run's batches as its draft steps' pages once it has ended (`./flow-run.ts`). Absent, nothing is told. */
   result?: Pick<AutomationStudioAnswerFirstResultFeed, "batches"> | undefined;
   permissions: Pick<AutomationStudioFlowBootstrapActionPermissions, "planStep" | "shown"> & { exploredToggles?: Pick<AutomationStudioFlowBootstrapActionPermissions["exploredToggles"], "trial"> | undefined };
+  /** Every actual assembled consequence, together, before the start question and any run or witness read. */
+  starting?: ((classes: readonly string[]) => Promise<void>) | undefined;
   /** One call really reached the target. */
   stepped(): void;
   /** The run moved the page, so the attempt carries on from where it left it. */
