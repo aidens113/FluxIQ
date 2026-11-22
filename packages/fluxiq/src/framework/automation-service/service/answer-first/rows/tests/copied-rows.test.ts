@@ -37,6 +37,14 @@ function storedWith(pages: Record<string, readonly AutomationStudioRunDatasetPag
 }
 
 describe("copying a run's rows", () => {
+  it("preserves an original dataset's rejected-row count exactly once across copied pages", async () => {
+    const first = sinkOf();
+    const pages = storedWith({ raw: [[{ title: "A" }], [{ title: "B" }]] }, ["raw"]);
+    const stored = { ...pages, list: async () => [{ ...summary("raw"), invalidCount: 2 }] };
+    await automationStudioAnswerFirstCopyRows({ sink: first.sink, stored, shown: undefined });
+    expect(first.batches.map((batch) => batch.invalidCount)).toEqual([2, 0]);
+    expect(first.batches.flatMap((batch) => batch.rows)).toEqual([{ title: "A" }, { title: "B" }]);
+  });
   it("preserves a known empty source identity and validated full schema as one zero-row batch", async () => {
     const first = sinkOf();
     const stored = storedWith({ empty: [[]] }, ["empty"]);

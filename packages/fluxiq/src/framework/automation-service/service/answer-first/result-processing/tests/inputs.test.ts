@@ -7,6 +7,20 @@ const process: JsonObject = { where: [{ field: "Date", atLeast: "2030-01-02", at
 const originals = [{ id: "one", title: "Earlier", date: "2030-01-01" }, { id: "two", title: "First", date: "2030-01-02" }, { id: "three", title: "Later", date: "2030-01-03" }];
 
 describe("processing binds only explicit current caller values", () => {
+  it.each(["latest_date", "LatestDate", "_leading", "a".repeat(65), "constructor", "prototype", "__proto__"])("keeps explicit public input %s current with constants unchanged", (name) => {
+    const raw: JsonObject = { where: [{ field: "date", atLeast: "2030-01-02", atMost: { $input: name, test: "2030-01-02" }, as: "date" }], columns: ["title"] };
+    const inputs = Object.fromEntries([[name, "2030-01-03"]]);
+    const before = Object.getPrototypeOf(inputs);
+    const fixture = automaticFeed(raw, REFERENCE, undefined, inputs);
+    fixture.read("source", originals);
+    expect(fixture.feed.rows().rows.map((row) => row.title)).toEqual(["First", "Later"]);
+    expect(fixture.feed.boundProcessing()?.where?.[0]).toMatchObject({ atLeast: "2030-01-02", atMost: "2030-01-03" });
+    expect(fixture.feed.storedProcessing()).toMatchObject({ where: [{ atMost: { $state: { path: name, fallback: "2030-01-03" } } }] });
+    expect(fixture.feed.processingDeclaration()?.task).toEqual({ process: raw });
+    expect(automationStudioAnswerFirstProcessingInputs(raw, {}).ok).toBe(false);
+    expect(Object.keys(inputs)).toEqual([name]);
+    expect(Object.getPrototypeOf(inputs)).toBe(before);
+  });
   it("changes the effective upper bound without lifting an equal constant or mutating the declaration", () => {
     const first = automaticFeed(process, REFERENCE, undefined, { latest: "2030-01-02" });
     first.read("source", originals);

@@ -43,13 +43,14 @@
 //
 // Core's words only: a row and a field are the parts of any list.
 
+import { FLOW_INPUT_IDENTIFIER } from "@fluxiq/contracts/fluxnode";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import { automationNodeStateBinding, isAutomationNodeParameterStateBinding } from "../../../framework/automation-service/nodes/index.ts";
 import { automationStudioFlowDraftStepId } from "./routing.ts";
 import { automationStudioFlowDraftStepIsProposable, type AutomationStudioFlowDraftStep } from "./step.ts";
 
-/** The name a Flow input may have. */
-export const AUTOMATION_STUDIO_FLOW_DRAFT_INPUT_NAME = /^[a-z][A-Za-z0-9]{0,31}$/u;
+/** A bindable Flow input identifier; arbitrary schema property names remain a separate contract. */
+export const AUTOMATION_STUDIO_FLOW_DRAFT_INPUT_NAME = FLOW_INPUT_IDENTIFIER;
 /** The name a row's field may have: one path segment. */
 export const AUTOMATION_STUDIO_FLOW_DRAFT_ROW_FIELD = /^[^.\s]{1,64}$/u;
 

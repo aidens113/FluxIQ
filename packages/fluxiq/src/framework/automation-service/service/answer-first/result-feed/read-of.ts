@@ -39,6 +39,7 @@ export function automationStudioAnswerFirstResultReadOfCall(
   kept: readonly JsonObject[],
   readRowsKey: string | undefined,
   step?: AutomationStudioFlowDraftStep,
+  invalidCount?: number,
 ): AutomationStudioAnswerFirstResultRead {
   const path = readRowsKey?.split(".") ?? [];
   const listKey = automationStudioRecordReadListKey(answer.evidence, path);
@@ -49,6 +50,7 @@ export function automationStudioAnswerFirstResultReadOfCall(
     version: automationStudioAnswerFirstResultVersionOf(step?.input ?? call.value, listKey),
     ...(place === undefined ? {} : { place }),
     kept: kept.map((row) => ({ ...row })),
+    ...(invalidCount === undefined ? {} : { invalidCount }),
     ...(evidence.leftOut ? { leftOut: evidence.leftOut } : {}),
     ...(evidence.list === undefined ? {} : { where: evidence.list }),
   };
@@ -64,6 +66,7 @@ export function automationStudioAnswerFirstResultReadOfBatch(batch: AutomationSt
     version: automationStudioAnswerFirstResultVersionOf(step.input, batch.listKey),
     ...(place === undefined ? {} : { place }),
     kept: batch.rows.map((row) => ({ ...row })),
+    invalidCount: batch.invalidCount,
     ...(leftOut ? { leftOut } : {}),
     ...(at ? { where: at.view } : {}),
   };

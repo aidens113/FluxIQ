@@ -6,6 +6,16 @@ const schema: JsonObject = { schemaVersion: "0.1", fields: [{ id: "date", label:
 const process: JsonObject = { where: [{ field: "date", atLeast: "2030-01-02", atMost: { $state: { path: "latest", fallback: "2030-01-02" } }, as: "date" }], declaration: { version: 1, source: "a".repeat(64), revision: 1, bindings: { date: "date" } } };
 
 describe("current processing inputs", () => {
+  it.each(["latest_date", "LatestDate", "_leading", "a".repeat(65), "constructor", "prototype", "__proto__"])("uses own exact public identifier %s without inherited access or prototype changes", (name) => {
+    const bound: JsonObject = { ...process, where: [{ field: "date", atMost: { $state: { path: name, fallback: "2030-01-02" } }, as: "date" }] };
+    const inputs = Object.fromEntries([[name, "2030-01-03"]]);
+    const before = Object.getPrototypeOf(inputs);
+    expect(automationStudioProcessingInputs({ process: bound, schema, inputs })).toEqual({ ok: true, process: { ...bound, where: [{ field: "date", atMost: "2030-01-03", as: "date" }] } });
+    expect(automationStudioProcessingInputs({ process: bound, schema, inputs: {} }).ok).toBe(false);
+    expect(Object.keys(inputs)).toEqual([name]);
+    expect(inputs[name]).toBe("2030-01-03");
+    expect(Object.getPrototypeOf(inputs)).toBe(before);
+  });
   it("uses the current exact caller key, preserving constants and canonical field provenance", () => {
     const before = structuredClone(process);
     expect(automationStudioProcessingInputs({ process, schema, inputs: { latest: "2030-01-03" } })).toEqual({ ok: true, process: { ...process, where: [{ field: "date", atLeast: "2030-01-02", atMost: "2030-01-03", as: "date" }] } });

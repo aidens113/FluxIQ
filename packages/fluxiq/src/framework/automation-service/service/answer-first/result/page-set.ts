@@ -17,6 +17,7 @@ export function automationStudioAnswerFirstResultPageSet(ledger: AutomationStudi
     source: read.source,
     place: read.place,
     kept: read.kept,
+    ...(read.invalidCount === undefined ? {} : { invalidCount: read.invalidCount }),
     leftOut: read.leftOut,
     where: read.where,
     paging: read.paging,
