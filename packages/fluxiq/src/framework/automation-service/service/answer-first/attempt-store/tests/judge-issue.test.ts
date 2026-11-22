@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { automationStudioTaskAttemptNoLoopsCaught } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../../../../core/index.ts";
-import { automationStudioFlowLessJudgedSummary, automationStudioResultVerdict } from "../../../../../../runtime/result-verification/index.ts";
+import { automationStudioFlowLessJudgedSummary, automationStudioResultVerdict, type AutomationStudioFlowLessSummary } from "../../../../../../runtime/result-verification/index.ts";
 import { AutomationStudioAnswerFirstAttemptStore, type AutomationStudioAnswerFirstAttemptRecord } from "../index.ts";
 import { automationStudioAnswerFirstCarriedOpening } from "../../carry-on/index.ts";
 import { automationStudioAnswerFirstTrailsOf } from "../../trail/index.ts";
@@ -93,7 +93,7 @@ it("retains historical uncertainty while independently complete current action p
   const held = (await p.open().get("project", "flow", "attempt"))!;
   const journal = automationStudioAnswerFirstTrailsOf({});
   const trail = journal.of("attempt", { carriedOn: true, askedAgain: false, judgeEvidence: held.judgeEvidence ?? null, judgeEvidenceIssue: held.judgeEvidenceIssue ?? null });
-  const current = { instructions: "Set the preference to checked", acts: [{ id: "actual.act", what: "Changed the preference", where: "Settings", classes: ["modify_existing"], state: "landed" as const }], trail, witnesses: journal.witnesses(trail, { after: { checked: true } }) };
+  const current: AutomationStudioFlowLessSummary = { instructions: "Set the preference to checked", acts: [{ id: "actual.act", what: "Changed the preference", where: "Settings", classes: ["modify_existing"], state: "landed" }], trail, witnesses: journal.witnesses(trail, { after: { checked: true } }) };
   const proof = automationStudioFlowLessJudgedSummary(current, [], OPTIONS);
   expect(proof.sent.evidenceProjection?.missing).toEqual([]);
   expect(JSON.stringify(proof.sent)).toContain("historical_incomplete");
