@@ -34,7 +34,7 @@ const conditionsOf = (parameters: JsonValue | undefined): JsonValue | undefined 
 describe("a repaired Flow's replay", () => {
   it("runs the read it repaired with every condition the read was saved with", async () => {
     const lane = await laterAttempts(cleanups);
-    const first = await lane.attempt({ script: [readWithConditions("read"), complete("Listed.")] });
+    const first = await lane.attempt({ taskProcessing: { process: {} }, script: [readWithConditions("read"), complete("Listed.")] });
     expect(first.answer.attempt).toMatchObject({ status: "achieved", path: "explore", ordinal: 1 });
 
     // Attempt 2: the saved Flow's run is judged no; the model reads again with the same conditions, drops that step, and runs forward from the read.

@@ -90,7 +90,7 @@ function byHand(target: LibraryTarget, opened: string[]): FakeLibraryFault {
 
 /** The first attempt as the build writes it: read, open the first row by its address and renew it, make those two a repeat over the read bound to the row, run forward. */
 const firstAttempt = () => ({
-  instruction: TASK, ...PERMITTED,
+  instruction: TASK, taskProcessing: { process: { columns: ["title", "due"] } }, ...PERMITTED,
   script: [
     runNode("read", READ_SHELF, { list: FIELDS }, [], { add: true }),
     runNode("open-first", OPEN_LOAN, { url: addressOf(TITLES[0]) }, [], { add: true }),

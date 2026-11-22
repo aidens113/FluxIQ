@@ -29,7 +29,7 @@ afterEach(async () => {
   given.handed.length = 0;
 });
 
-const firstAttempt = { script: [readLoans(), { kind: "complete", result: { summary: "Listed." } }] };
+const firstAttempt = { taskProcessing: { process: {} }, script: [readLoans(), { kind: "complete", result: { summary: "Listed." } }] };
 
 const levels = () => given.handed.map((options) => options.humanness);
 const flowLevel = async (lane: Awaited<ReturnType<typeof laterAttempts>>, humanness: number) => {

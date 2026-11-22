@@ -34,7 +34,7 @@ const CARD_TASK = "List every loan on my library account and renew the card.";
 const LOAN_TASK = "Renew every loan on my library account.";
 const HOLD_TASK = "Keep my loans on the hold shelf.";
 const pressCard = (callId = "card") => runNode(callId, RENEW_CARD, {}, ["modify_existing"], { add: true });
-const cardAttempt = { instruction: CARD_TASK, permittedConsequences: ["modify_existing" as const], script: [readLoans(), pressCard(), complete("Done.")] };
+const cardAttempt = { instruction: CARD_TASK, taskProcessing: { process: {} }, permittedConsequences: ["modify_existing" as const], script: [readLoans(), pressCard(), complete("Done.")] };
 const same = { instruction: CARD_TASK, permittedConsequences: ["modify_existing" as const] };
 const ALREADY = /^Already done earlier: /u;
 

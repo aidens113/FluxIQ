@@ -21,7 +21,7 @@ afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(
 
 const TITLES = ["Atlas of Rivers", "Birds of the Coast", "Clockmaking", "Dune Walks"];
 const [ATLAS, BIRDS, CLOCKS, DUNES] = TITLES as [string, string, string, string];
-const PERMITTED = { instruction: LOAN_TASK, permittedConsequences: ["modify_existing" as const] };
+const PERMITTED = { instruction: LOAN_TASK, taskProcessing: { process: {} }, permittedConsequences: ["modify_existing" as const] };
 const press = (title: string, over: { add?: true } = { add: true }) => runNode(`renew.${title.replace(/\W+/gu, "-")}`, RENEW_LOAN, { title }, ["modify_existing"], over);
 /** A purse with room for the read and two presses, and little past them. */
 const TIGHT = { ...PERMITTED, costUsd: 0.04, maxTotalEstimatedCostUsd: 0.09, keepLooking: true };

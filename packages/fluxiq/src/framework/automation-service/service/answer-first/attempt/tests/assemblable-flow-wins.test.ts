@@ -28,7 +28,7 @@ describe("a kept Flow that does not assemble", () => {
   it("loses to the repair that assembles, the repair is told why at which step, and the next attempt starts from the repair", async () => {
     const lane = await laterAttempts(cleanups);
 
-    const first = await lane.attempt({ script: [readLoans(), secondRead, recoverIntoEarlierStep, complete("Listed.")] });
+    const first = await lane.attempt({ taskProcessing: { process: {} }, script: [readLoans(), secondRead, recoverIntoEarlierStep, complete("Listed.")] });
     expect(first.answer.attempt.status).toBe("achieved");
     expect(first.answer.candidateId).toBeUndefined();
     const afterFirst = await lane.kept();
@@ -54,7 +54,7 @@ describe("a kept Flow that does not assemble", () => {
   it("refuses an endless repeat-while as it is written, so the draft still assembles", async () => {
     const lane = await laterAttempts(cleanups);
 
-    const first = await lane.attempt({ script: [readLoans(), repeatWhileItSucceeds, complete("Listed.")] });
+    const first = await lane.attempt({ taskProcessing: { process: {} }, script: [readLoans(), repeatWhileItSucceeds, complete("Listed.")] });
     expect(first.answer.attempt.status).toBe("achieved");
     // The model is told the loop never ends, and the repeat is not in its draft, which therefore assembles.
     const refusal = first.decisions.at(-1)?.context.evidenceLoop?.evidence.find((entry) => entry.toolId === "core.amendment_check")?.value as { refused?: { step: number; reason: string }[] } | undefined;

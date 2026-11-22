@@ -21,7 +21,7 @@ afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(
 const TITLES = ["Atlas of Rivers", "Birds of the Coast", "Clockmaking", "Dune Walks"];
 const [ATLAS, BIRDS, CLOCKS, DUNES] = TITLES as [string, string, string, string];
 const ALL = "Renew every loan on my library account and list them.";
-const PERMITTED = { instruction: ALL, permittedConsequences: ["modify_existing" as const] };
+const PERMITTED = { instruction: ALL, taskProcessing: { process: {} }, permittedConsequences: ["modify_existing" as const] };
 const press = (title: string) => runNode(`renew.${title.replace(/\W+/gu, "-")}`, RENEW_LOAN, { title }, ["modify_existing"], { add: true });
 
 type Lane = Awaited<ReturnType<typeof laterAttempts>>;
@@ -163,7 +163,8 @@ describe("a Core that restarted", () => {
     const old = await laterAttempts(cleanups, { titles: TITLES });
     const instruction = "List every loan on my library account and renew the card.";
     const card = runNode("card", RENEW_CARD, {}, ["modify_existing"], { add: true });
-    await old.attempt({ instruction, permittedConsequences: ["modify_existing"], script: [readLoans(), card, complete("Done.")] });
+    const first = await old.attempt({ instruction, taskProcessing: { process: {} }, permittedConsequences: ["modify_existing"], script: [readLoans(), card, complete("Done.")] });
+    expect(first.answer.attempt.status).toBe("achieved");
     const pressesBefore = old.target.presses.length;
     let hit = (): void => undefined;
     const reached = new Promise<void>((resolve) => { hit = resolve; });
@@ -248,7 +249,7 @@ describe("what is live", () => {
 
   it("an attempt that reached its result stays what it is through every read", async () => {
     const lane = await laterAttempts(cleanups);
-    await lane.attempt({ script: [readLoans(), complete("Listed.")] });
+    await lane.attempt({ taskProcessing: { process: {} }, script: [readLoans(), complete("Listed.")] });
     const before = await lane.rows();
     expect((await reads(lane).list(lane.projectId, "flow.loans"))).toEqual(before);
     expect(await lane.rows()).toEqual(before);
@@ -256,7 +257,7 @@ describe("what is live", () => {
 
   it("a store that cannot be read answers as the store does, and a press on it starts nothing", async () => {
     const lane = await laterAttempts(cleanups);
-    const { answer } = await lane.attempt({ script: [readLoans(), complete("Listed.")] });
+    const { answer } = await lane.attempt({ taskProcessing: { process: {} }, script: [readLoans(), complete("Listed.")] });
     await writeFile(path.join(lane.stores.flows.flowDirectory(lane.projectId, "flow.loans"), "answer-attempts.json"), "{ not json");
     await expect(reads(lane).list(lane.projectId, "flow.loans")).rejects.toBeInstanceOf(AutomationStudioAnswerFirstAttemptsUnreadable);
     await expect(reads(lane).latest(lane.projectId, "flow.loans")).rejects.toBeInstanceOf(AutomationStudioAnswerFirstAttemptsUnreadable);

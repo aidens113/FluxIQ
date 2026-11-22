@@ -22,9 +22,9 @@ const CARD_TASK = "List every loan on my library account and renew the card.";
 const READ_STEP = 2;
 const CARD_STEP = 3;
 const FORWARD = (from: number) => toolCall("forward", "core.run_flow", { from });
-const firstAttempt = { script: [readLoans(), { kind: "complete", result: { summary: "Listed.", notes: { worked: "The list is on the account page.", quirks: "It takes a moment to show." } } }] };
+const firstAttempt = { taskProcessing: { process: {} }, script: [readLoans(), { kind: "complete", result: { summary: "Listed.", notes: { worked: "The list is on the account page.", quirks: "It takes a moment to show." } } }] };
 const pressCard = (callId = "card") => runNode(callId, RENEW_CARD, {}, ["modify_existing"], { add: true });
-const cardAttempt = { instruction: CARD_TASK, permittedConsequences: ["modify_existing" as const], script: [readLoans(), pressCard(), complete("Done.")] };
+const cardAttempt = { instruction: CARD_TASK, taskProcessing: { process: {} }, permittedConsequences: ["modify_existing" as const], script: [readLoans(), pressCard(), complete("Done.")] };
 
 describe("a later attempt at the same task", () => {
   it("attempt 1 explores, keeps its steps, and is not ready", async () => {
@@ -127,7 +127,7 @@ describe("a later attempt at the same task", () => {
 
   it("a build with notes and no steps is told them too, and is an exploration", async () => {
     const lane = await laterAttempts(cleanups);
-    const stopped = await lane.attempt({ script: [{ kind: "complete", result: { summary: "Nothing yet.", notes: { failed: "The list would not load." } } }] });
+    const stopped = await lane.attempt({ taskProcessing: { process: {} }, script: [{ kind: "complete", result: { summary: "Nothing yet.", notes: { failed: "The list would not load." } } }] });
     expect(stopped.answer.attempt.status).toBe("stopped_by_person");
     const kept = await lane.kept();
     expect(kept?.best).toBeUndefined();
@@ -277,7 +277,7 @@ describe("what carries between attempts", () => {
 
   it("the attempt before it ran out: what landed is carried and never pressed again, and the round is told", async () => {
     const lane = await laterAttempts(cleanups);
-    const first = await lane.attempt({ instruction: CARD_TASK, permittedConsequences: ["modify_existing"], maxTotalEstimatedCostUsd: 0.1, costUsd: 0.04, keepLooking: true, script: [readLoans(), pressCard()] });
+    const first = await lane.attempt({ instruction: CARD_TASK, taskProcessing: { process: {} }, permittedConsequences: ["modify_existing"], maxTotalEstimatedCostUsd: 0.1, costUsd: 0.04, keepLooking: true, script: [readLoans(), pressCard()] });
     expect(first.answer.attempt.status).toBe("budget_out");
     expect(lane.target.library.renewals.card).toBe(1);
     const second = await lane.attempt({ instruction: CARD_TASK, permittedConsequences: ["modify_existing"] });
@@ -288,9 +288,9 @@ describe("what carries between attempts", () => {
 
   it("another task ran on the Flow since: its record is not carried, and this task's own acts still are, so nothing is pressed twice", async () => {
     const lane = await laterAttempts(cleanups);
-    await lane.attempt({ instruction: CARD_TASK, permittedConsequences: ["modify_existing"], maxTotalEstimatedCostUsd: 0.1, costUsd: 0.04, keepLooking: true, script: [readLoans(), pressCard()] });
+    await lane.attempt({ instruction: CARD_TASK, taskProcessing: { process: {} }, permittedConsequences: ["modify_existing"], maxTotalEstimatedCostUsd: 0.1, costUsd: 0.04, keepLooking: true, script: [readLoans(), pressCard()] });
     expect(lane.target.library.renewals.card).toBe(1);
-    await lane.attempt({ instruction: "Renew the card again on my library account.", permittedConsequences: ["modify_existing"], script: [runNode("other", RENEW_LOAN, { title: "Atlas of Rivers" }, ["modify_existing"], { add: true }), complete("Renewed.")] });
+    await lane.attempt({ instruction: "Renew the card again on my library account.", taskProcessing: { process: null }, permittedConsequences: ["modify_existing"], script: [runNode("other", RENEW_LOAN, { title: "Atlas of Rivers" }, ["modify_existing"], { add: true }), complete("Renewed.")] });
     expect((await lane.actsOn())?.acts.map((act) => act.rowIdentity ?? act.id)).not.toContain("card");
     const third = await lane.attempt({ instruction: CARD_TASK, permittedConsequences: ["modify_existing"] });
     // The double press this closes: the Flow's one record had gone to the other task.
@@ -375,11 +375,12 @@ describe("a memory that fails", () => {
     const { get, update } = lane.memory;
     lane.memory.get = async () => { throw new Error("disk"); };
     lane.memory.update = async () => { throw new Error("disk"); };
-    const second = await lane.attempt({ script: [readLoans("again"), complete("Listed.")] });
+    const second = await lane.attempt({ taskProcessing: firstAttempt.taskProcessing, script: [readLoans("again"), complete("Listed.")] });
     lane.memory.get = get;
     lane.memory.update = update;
     expect(second.answer.attempt).toMatchObject({ status: "achieved", path: "explore" });
     expect(second.answer.attempt.ordinal).toBe(2);
+    expect((await lane.rows()).at(-1)?.processing?.task).toEqual(firstAttempt.taskProcessing);
     expect(lane.said.some((line) => line.startsWith("Part of the record was not written"))).toBe(true);
   });
 });
