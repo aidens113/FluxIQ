@@ -68,17 +68,62 @@ export function automationStudioAnthropicDeciderPrefix(wire: Record<string, unkn
  * trail (run-mwohvt8n-a57cad8a, 0021/0022: five route-state entries, and every judge of the run fell back).
  */
 export function automationStudioAnthropicJudgeContinuation(prefix: AutomationStudioAnthropicDeciderPrefix, judgeSystem: string, judgeUser: string): Record<string, unknown> {
-  const payload = JSON.parse(judgeUser) as { context?: { resultSummary?: { trail?: { entries?: { callId?: unknown }[]; [key: string]: unknown } } } };
+  const payload = JSON.parse(judgeUser) as { context?: { resultSummary?: { trail?: { entries?: TrailEntry[]; [key: string]: unknown } } } };
   const trail = payload.context?.resultSummary?.trail;
   if (trail && Array.isArray(trail.entries)) {
     const held = new Set(prefix.callIds);
     const shown = trail.entries.filter((entry) => typeof entry.callId !== "string" || !held.has(entry.callId));
     if (shown.length < trail.entries.length) trail.shownAbove = `${trail.entries.length - shown.length} of the attempt's calls are in its evidence above, each by the callId this trail gives, and are not repeated here.`;
-    trail.entries = shown;
+    trail.entries = withLeftOutValuesRestored(trail.entries, shown);
   }
   const messages: Message[] = [
     { role: "user", content: [...prefix.blocks, { type: "text", text: `\n\n${JSON.stringify(payload)}` }] },
     { role: "system", content: `${JUDGE_TURN}\n\n${judgeSystem}` }
   ];
   return { ...prefix.wire, messages };
+}
+
+type TrailEntry = { callId?: unknown; n?: unknown; found?: unknown };
+
+/**
+ * `shown` with every `{ sameAs }` that names an entry left out of it given that entry's value back (t978). The trail shows
+ * a repeated page view once and refers to its first holder (`../../../result-verification/run-trail/repeats.ts`); a holder
+ * left out because the decider's evidence above holds its call is not there with its page views (the decider carries a
+ * compact current view, not the trail's: run-mwoxglkg-e37fd49b held none of 31), so the first entry that refers to it
+ * carries the value whole and later references name that entry instead. Nothing the judge is shown is lost.
+ */
+function withLeftOutValuesRestored(all: readonly TrailEntry[], shown: TrailEntry[]): TrailEntry[] {
+  const kept = new Set(shown);
+  const leftOut = new Map<string, Record<string, unknown>>();
+  for (const entry of all) {
+    if (kept.has(entry) || !isObject(entry.found)) continue;
+    if (typeof entry.callId === "string") leftOut.set(entry.callId, entry.found);
+    if (typeof entry.n === "number") leftOut.set(`n:${entry.n}`, entry.found);
+  }
+  if (leftOut.size === 0) return shown;
+  const movedTo = new Map<string, string>();
+  return shown.map((entry) => {
+    if (!isObject(entry.found)) return entry;
+    const holder = typeof entry.callId === "string" ? entry.callId : `n:${String(entry.n)}`;
+    let changed = false;
+    const found: Record<string, unknown> = {};
+    for (const [name, value] of Object.entries(entry.found)) {
+      const target = isObject(value) && Object.keys(value).length === 1 && typeof value.sameAs === "string" ? value.sameAs : undefined;
+      const original = target === undefined ? undefined : leftOut.get(target)?.[name];
+      if (target === undefined || original === undefined) {
+        found[name] = value;
+        continue;
+      }
+      const key = `${name}\u0000${target}`;
+      const moved = movedTo.get(key);
+      if (moved === undefined) movedTo.set(key, holder);
+      found[name] = moved === undefined ? original : { sameAs: moved };
+      changed = true;
+    }
+    return changed ? { ...entry, found } : entry;
+  });
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
