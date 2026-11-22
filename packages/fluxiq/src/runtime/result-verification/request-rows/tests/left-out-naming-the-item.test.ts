@@ -93,7 +93,8 @@ describe("rows a condition alone left out that name the asked item", () => {
       metadata: { provider: "mock", model: "debug-model" },
       runTask: async (request: AutomationStudioLlmTaskRequest) => {
         seen.push(request);
-        const diagnosis = { answersRequest: "no", observed: "The Plus condition left out rows.", expected: "Plus pairs only." };
+        // A no naming its defect: a no naming none is a reply the harness cannot read, asked again until one is read (t979).
+        const diagnosis = { answersRequest: "no", observed: "The Plus condition left out rows.", expected: "Plus pairs only.", defects: [{ kind: "asked_missing", row: "rows not read", requestWords: "Plus" }] };
         return { response: { kind: "diagnosis", summary: "no", diagnosis }, usage: { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 } } as never;
       }
     };

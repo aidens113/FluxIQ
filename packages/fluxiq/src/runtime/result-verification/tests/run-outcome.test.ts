@@ -43,7 +43,8 @@ describe("verifyAutomationStudioRuntimeSessionResult", () => {
     expect(gate.providerCalls).toEqual([expect.objectContaining({ reported: { inputTokens: null, outputTokens: null, totalTokens: null, estimatedCostUsd: null }, charged: expect.objectContaining({ tokens: "reserved", cost: "reserved" }) })]);
   });
 
-  it("retains a settled paid first check when its actual second confirmation dispatch is pending at the deadline", async () => {
+  // t979: the deadline now stops the call it gave up on (`../deadline.ts`), so the pending dispatch is recorded aborted, charged nothing.
+  it("retains a settled paid first check when its actual second confirmation dispatch is pending at the deadline, and stops that dispatch", async () => {
     vi.useFakeTimers();
     const context = harness();
     const configured = provider(ANSWER.no, context.requests, undefined, undefined, [{ kind: "kept_not_asked", row: "Hollis Abbott", column: "role", value: "member", requestWords: "who are admins" }]);
@@ -71,8 +72,12 @@ describe("verifyAutomationStudioRuntimeSessionResult", () => {
         tokenUsage: expect.objectContaining({ inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 })
       })]));
       expect(detail?.metadata?.llmGate).toMatchObject({
-        costAccounting: { calls: 1, pendingCalls: 1, inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 },
-        providerCalls: [expect.objectContaining({ taskKind: "loop_verification" })], providerCallsOmitted: 0
+        costAccounting: { calls: 2, pendingCalls: 0, inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 },
+        providerCalls: [
+          expect.objectContaining({ taskKind: "loop_verification" }),
+          expect.objectContaining({ taskKind: "loop_verification", charged: expect.objectContaining({ estimatedCostUsd: 0 }), validation: expect.objectContaining({ ok: false, issueCodes: expect.arrayContaining(["llm.provider_aborted"]) }) })
+        ],
+        providerCallsOmitted: 0
       });
     } finally {
       const writes = context.saved.length;

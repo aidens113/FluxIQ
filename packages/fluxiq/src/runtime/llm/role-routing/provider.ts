@@ -33,6 +33,10 @@ export type AutomationStudioLlmProviderLadder = {
  * judge runs where the decider stands now and reads the decider's history from its cache, at a tenth
  * of the price or less (`../../models/providers/anthropic/continuation.ts`).
  *
+ * **Unreadable replies keep the same model (t979).** A continuing judge switches to its native
+ * standalone format with `metadata.judgeStandaloneAfterUnreadable`; routing keeps it on the
+ * decider's model. Re-asking never moves the judge to a stronger model.
+ *
  * A role with no provider of its own, or the explore model's own, is served by
  * the explore model; where every role is and there is no ladder, this is the explore
  * provider itself, unchanged, so a run that names no other model sends exactly what it sent.
@@ -48,10 +52,10 @@ export function automationStudioLlmProviderRoutedByRole(providers: { explore: Au
   const byRole: Readonly<Record<AutomationStudioLlmModelRole, AutomationStudioLlmProvider>> = { explore, judge: providers.judge ?? explore, repair: providers.repair ?? explore };
   if (!ladder && byRole.judge === explore && byRole.repair === explore) return explore;
   const distinct = [...new Set([...Object.values(byRole), ...(ladder?.tiers.map((tier) => tier.provider) ?? [])])];
-  const pick = ladder ? laddered(ladder, byRole) : (role: AutomationStudioLlmModelRole) => byRole[role];
+  const pick = ladder ? laddered(ladder, byRole) : (role: AutomationStudioLlmModelRole, _judge: JudgeServing) => byRole[role];
   // A role's own provider may route again; what serves is where routing stops.
   const servedBy = (request: AutomationStudioLlmTaskRequest): AutomationStudioLlmProvider => {
-    const provider = pick(automationStudioLlmModelRoleOf(request), request.metadata?.continuesDecider === true);
+    const provider = pick(automationStudioLlmModelRoleOf(request), judgeServing(request));
     return provider.servedBy?.(request) ?? provider;
   };
   const estimateCostUsd = explore.estimateCostUsd;
@@ -91,19 +95,32 @@ function automationStudioLlmRequestOfAttempt(request: AutomationStudioLlmTaskReq
   return key === undefined ? request : { ...request, metadata: { ...request.metadata, attemptKey: key } };
 }
 
-/** The provider a role is served by on the ladder: its start rung plus the rungs climbed, at most the top. Outside every ladder frame, its start rung. */
-function laddered(ladder: AutomationStudioLlmProviderLadder, byRole: Readonly<Record<AutomationStudioLlmModelRole, AutomationStudioLlmProvider>>): (role: AutomationStudioLlmModelRole, continuesDecider: boolean) => AutomationStudioLlmProvider {
+/** Where a judge's request asks to be served (header, t965, t979): on the decider's model. */
+type JudgeServing = { onDeciderRung: boolean };
+
+function judgeServing(request: AutomationStudioLlmTaskRequest): JudgeServing {
+  const metadata = request.metadata;
+  return {
+    onDeciderRung: metadata?.continuesDecider === true || metadata?.judgeStandaloneAfterUnreadable === true
+  };
+}
+
+/**
+ * The provider a role is served by on the ladder: its start rung plus the rungs climbed, at most the top. Outside every
+ * ladder frame, its start rung. A judge is served on the decider's rung where it asks to be, including a standalone retry after an unreadable reply (header).
+ */
+function laddered(ladder: AutomationStudioLlmProviderLadder, byRole: Readonly<Record<AutomationStudioLlmModelRole, AutomationStudioLlmProvider>>): (role: AutomationStudioLlmModelRole, judge: JudgeServing) => AutomationStudioLlmProvider {
   const top = ladder.tiers.length - 1;
   const climbed = ladder.tiers.slice(ladder.from.explore ?? 0).map((tier) => tier.model);
-  return (role, continuesDecider) => {
-    // A judge continuing the decider's conversation is served on the decider's rung, where its cache is (header).
-    if (role === "judge" && continuesDecider) return laddered(ladder, byRole)("explore", false);
-    const start = ladder.from[role];
-    if (start === undefined) return byRole[role];
+  return (role, judge) => {
+    // A judge continuing the decider's conversation, or asking on its own on the decider's model, is served on the decider's rung, where its cache is (header).
+    const servedAs = role === "judge" && judge.onDeciderRung ? "explore" : role;
+    const start = ladder.from[servedAs];
+    if (start === undefined) return byRole[servedAs];
     const frame = automationStudioLlmModelLadderFrame();
     frame?.serve(climbed);
-    // Any other judge never climbs (header).
-    const climb = role === "judge" ? 0 : frame?.level ?? 0;
+    // Any other judge stays on its starting model (header).
+    const climb = servedAs === "judge" ? 0 : frame?.level ?? 0;
     return ladder.tiers[Math.min(start + climb, top)]!.provider;
   };
 }

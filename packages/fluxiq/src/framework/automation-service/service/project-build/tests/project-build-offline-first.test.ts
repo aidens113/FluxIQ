@@ -28,7 +28,7 @@ const BINDING = { domainId: "test", deniedEvidenceKeys: [], tools: [], executeTo
 const REF = { projectId: SCOPE.buildId, flowId: "parent", buildId: SCOPE.buildId };
 const records = { read: async () => ({ record: { plans: [{ plan: { digest: SCOPE.planDigest } }], taskSpecs: [] } }) } as unknown as Pick<AutomationStudioProjectBuildRecordStore, "read">;
 
-const SAID = { expected: "Only lamps priced above the limit.", observed: "Too few rows were kept.", changed: "Keep every lamp above the limit." };
+const SAID = { defects: [], expected: "Only lamps priced above the limit.", observed: "Too few rows were kept.", changed: "Keep every lamp above the limit." };
 
 let harness: OfflineHarness | undefined;
 let uninstall: (() => void) | undefined;
@@ -124,7 +124,8 @@ describe("the offline judge's spend", () => {
     expect(trials.spent().estimatedCostUsd).toBeCloseTo(liveSpent.estimatedCostUsd * 2);
     expect(trials.records()).toHaveLength(1);
 
-    const whole = automationStudioProjectBuildWholeTrials({ candidateId: "candidate.offline", environment: h.ports as unknown as AutomationStudioProjectBuildTrialEnvironment, binding: BINDING, judge: { provider: mockProvider(async () => judgeReply("no", SAID)), instructions: [] } });
+    // A no naming its defect: a no naming none is a reply the harness cannot read, asked again until one is read (t979).
+    const whole = automationStudioProjectBuildWholeTrials({ candidateId: "candidate.offline", environment: h.ports as unknown as AutomationStudioProjectBuildTrialEnvironment, binding: BINDING, judge: { provider: mockProvider(async () => judgeReply("no", { ...SAID, defects: [{ kind: "asked_missing", row: "rows not read", requestWords: "lamps" }] })), instructions: [] } });
     await whole.port(requestFor(candidateOf({ query: "lamps", threshold: 10 })));
     const wholeSpent = whole.spent();
     await whole.port.offlineFirst!(requestFor(candidateOf({ query: "lamps", threshold: 15 }, 2)));

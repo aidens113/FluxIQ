@@ -24,7 +24,12 @@ P0 resumes interrupted paired task trees under C:/Users/osrs_/FluxStuff/fxwork/.
 Workers own only their task trees and reports; lead owns shared documents, verification and git.
 Written briefs are in the downstream main checkout's data-first-simplification-plan/briefs/.
 Reports are in each downstream task tree's data-first-simplification-plan/reports/.
-No new acceptance is claimed. No paid runs or full sweeps launched.
+**t979 lead acceptance, 2026-11-22:** after synchronizing current dev (including
+t978 trail deduplication), the lead ran 12 focused files: 125/125 tests passed
+in 87.51 s. `pnpm --filter fluxiq check` passed in 72.209 s. This covers same-model
+native fallback, billed malformed replies, aggregate purse, settled spend at
+deadline and parent trail-size compatibility. Source is checkpointed at 0.50.3;
+final structure/merge gates remain. No paid runs or full sweeps launched.
 
 After P0: establish a retained-row contract before parallel extraction and processing work.
 The lead froze that contract on 2026-11-22 after source discovery: keep JsonObject
@@ -52,6 +57,14 @@ Paid acceptance follows provider-free proofs, four attempts per task and the $50
 - Validation: `git status --short` in main Core -> no output; in task trees -> existing changes for all three P0 units. No product acceptance run yet.
 - Outcome: Partial.
 - Follow-up: independently verify workers, integrate P0, then fix retained-row contract.
+
+### 2026-11-22 — t979 independent acceptance after parent sync
+- Agent: Senior supervisor.
+- Changed: judge recovery, usage receipts and architecture note; source checkpoint 021b1f631 followed by parent merges.
+- Why: unreadable replies must recover on the same model without losing billed usage or exceeding the shared purse.
+- Validation: `pnpm --filter fluxiq exec vitest run --maxWorkers=1 --minWorkers=1 --fileParallelism=false src/runtime/result-verification/build-test/tests/judge.test.ts src/runtime/result-verification/flow-less/tests/judge-unreadable.test.ts src/runtime/result-verification/tests/judge-reply/tests/unreadable-reply.test.ts src/runtime/result-verification/tests/run-outcome.test.ts src/runtime/llm/harness/tests/paid-refusal.test.ts src/runtime/llm/build-purse/tests/refused-unbilled.test.ts src/runtime/llm/role-routing/tests/judge-same-model.test.ts src/runtime/llm/anthropic/tests/judge-continuation.test.ts src/runtime/models/providers/anthropic/tests/judge-trail-references.test.ts src/runtime/result-verification/build-test/tests/request-size.test.ts src/runtime/result-verification/flow-less/tests/judge-size.test.ts src/runtime/result-verification/run-trail/tests/repeats.test.ts` -> Test Files 12 passed; Tests 125 passed; 87.51 s. `pnpm --filter fluxiq check` -> exit 0, build-cache fluxiq:check 72209 ms.
+- Outcome: Partial.
+- Follow-up: final structure audit and paired task integration; live acceptance remains later.
 
 ## Open Questions
 

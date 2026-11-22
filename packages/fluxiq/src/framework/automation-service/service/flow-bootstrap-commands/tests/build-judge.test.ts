@@ -204,16 +204,35 @@ describe("a build's judge", () => {
   // Live run muqk713g (screenshot 00013): a judge reply the harness could not
   // read put "(llm_output.invalid_diagnosis_text)" into the chat. The chat says
   // what happened in words; the code stays on the verification record.
+  // t979: an unreadable reply is asked again until one is read, so a judge whose
+  // every reply stays unreadable ends at the judgement's existing deadline, and
+  // the chat says the replies could not be read. Fake time: each reply takes a
+  // second, and the 120-second deadline passes without a real wait.
   it("says a judge reply it could not read in words, with no diagnostic code in the chat", async () => {
+    vi.useFakeTimers();
+    let asked = 0;
     const provider: AutomationStudioLlmProvider = {
       metadata: { provider: "mock", model: "debug-model" },
-      runTask: async () => ({ response: { kind: "diagnosis", summary: "Judged.", diagnosis: { answersRequest: "no", observed: 42 } }, usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2, estimatedCostUsd: 0 } }) as never
+      runTask: async () => {
+        asked += 1;
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
+        return { response: { kind: "diagnosis", summary: "Judged.", diagnosis: { answersRequest: "no", observed: 42 } }, usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2, estimatedCostUsd: 0 } } as never;
+      }
     };
     const judge = automationStudioFlowBootstrapBuildJudge({
       provider, instructions: [instruction], deniedEvidenceKeys: DENIED, projectId: "project.1", flowId: "flow.1",
       instructionText: ASKS_FOR_A_TABLE, plan: () => undefined
     });
-    const judged = await judge.judge({ round: 1, loop: { ok: true, result: {}, trace: [], steps: [read], accounting: {} }, budget: { maxCostUsd: 1 } } as never);
+    let judged: Awaited<ReturnType<typeof judge.judge>>;
+    try {
+      const pending = judge.judge({ round: 1, loop: { ok: true, result: {}, trace: [], steps: [read], accounting: {} }, budget: { maxCostUsd: 1 } } as never);
+      await vi.advanceTimersByTimeAsync(121_000);
+      judged = await pending;
+    } finally {
+      vi.useRealTimers();
+    }
+    // Asked again while its replies stayed unreadable, never once only.
+    expect(asked).toBeGreaterThan(2);
     // A judge that could not answer did not judge (t473): never an unsure verdict, and never a no.
     expect(judged.verdict).toBe("not_judged");
     // A build no longer finishes unverified (t244): an unjudged verdict opens a

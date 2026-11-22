@@ -33,8 +33,24 @@
 // run as refuted. Core's own LLM policy calls such a reply a spent call -- the
 // next may succeed (`../llm/failure-disposition.ts`, `spend_call`) -- and so
 // does this check now: any spent call, or a reply the harness could not
-// validate (`llm_output.*`), is asked again under the same bound of
-// `AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK`, one extra ask.
+// validate (`llm_output.*`), is asked again.
+//
+// **And asked again until it is read, never by a count (t979).** Live run
+// `run-mwoznmcq-cd1d4618` (F25): judge replies broke part-way through their
+// JSON, and one more ask of the same request on the same model was all t515
+// gave. A check whose reply arrived and could not be read is now asked again
+// while its replies stay unreadable (`./unreadable-asks/`): each such ask
+// carries a short note of what could not be read, last in what the judge is
+// shown so a cached prefix still holds. Every re-ask stays on the same model.
+// The purse, the run's budget and the verification's
+// deadline end it, nothing else: the deadline now stops this loop too, through
+// the signal it hands its judge (`./deadline.ts`), so an abandoned check never
+// goes on asking. A readable reply after such asks is the check's answer,
+// read and reconciled exactly as a first readable reply is, and an unreadable
+// ask is not counted against
+// `AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK`, which still bounds
+// a check asked again for a temporary fault: nothing arrived there to name,
+// and the provider retry policy has already retried inside the call.
 //
 // **A reply cut off after its verdict is read for that verdict (t653).** Live
 // run `run-mva6mlo8-f519063c`: four of 21 judge replies looped inside `summary`
@@ -203,6 +219,15 @@ import { automationStudioResultAdviceKept, automationStudioResultExclusionEviden
 import { automationStudioResultFirstAskConfirmed, automationStudioResultModelSaid } from "./first-ask/index.ts";
 import { emitAutomationStudioActivity } from "../automation-activity/index.ts";
 import { AUTOMATION_STUDIO_RESULT_SIZE_REFUSED, automationStudioResultSummaryFormForWindow, automationStudioResultTrailFitting } from "./run-trail/index.ts";
+import { automationStudioLlmUnreadableReplySaid } from "../models/failures/index.ts";
+import {
+  automationStudioResultSummaryWithUnreadableNote,
+  automationStudioResultUnreadableAsks,
+  automationStudioResultUnreadableReplySaid,
+  automationStudioResultUnreadableRouting,
+  automationStudioResultUnreadableTurn,
+  type AutomationStudioResultUnreadableAsks
+} from "./unreadable-asks/index.ts";
 
 /**
  * Core's codes for a run that was not verified, and why. Never a verdict.
@@ -280,8 +305,10 @@ const VERIFICATION_SOURCE = "verifyAutomationStudioRunResult";
 
 /**
  * How many times one check is asked when its call did not come back for a
- * temporary reason: the first ask, and once more (header). A verification
- * makes at most twice this many calls.
+ * temporary reason: the first ask, and once more (header). An ask whose reply
+ * arrived and could not be read is not counted (t979): such a check is asked
+ * again until a reply is read, bounded by the purse, the run's budget and the
+ * deadline.
  */
 export const AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK = 2;
 
@@ -364,8 +391,9 @@ type CheckTrail = { interventions: AutomationStudioFlowIntervention[]; verdictCh
 
 /**
  * One check, asked again while its call did not come back for a temporary
- * reason, up to `AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK` asks
- * (header). Every ask's intervention is recorded, in order, under a name of its
+ * reason, up to `AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK` asks,
+ * and while its reply arrived and could not be read, uncounted (header, t979).
+ * Every ask's intervention is recorded, in order, under a name of its
  * own: two calls can finish within one millisecond of each other, and the
  * harness names an intervention by the run and the time. An ask whose verdict
  * word differs from an earlier ask's of this check marks the trail (t677).
@@ -385,8 +413,12 @@ async function askCheck(
   let advised: ReturnType<typeof automationStudioResultVerdict> | undefined;
   // The verdict word this check's first answering ask gave (`./first-ask/model-said.ts`); an ask that gave none sets nothing.
   let firstSaid: ReturnType<typeof automationStudioResultModelSaid>;
+  // This check's unreadable replies: the note its next ask carries (header, t979).
+  const unreadable = automationStudioResultUnreadableAsks({ continuesDecider: false });
+  // Asks that were read, or met a temporary fault: what the count bounds (header).
+  let counted = 0;
   for (let ask = 1; ; ask += 1) {
-    const reply = await askOnce(current, provider, check, ask, reask, evidenceRecheck);
+    const reply = await askOnce(current, provider, check, ask, reask, evidenceRecheck, unreadable);
     const asked: typeof reply = advised ? { ...reply, verification: automationStudioResultAdviceKept(reply.verification, advised) } : reply;
     if (asked.verification.changeAdvised) advised = asked.verification;
     const saidNow = automationStudioResultModelSaid(asked.verification);
@@ -396,8 +428,17 @@ async function askCheck(
     const intervention = taken.has(asked.intervention.interventionId) ? { ...asked.intervention, interventionId: `${asked.intervention.interventionId}.${interventions.length + 1}` } : asked.intervention;
     interventions.push(intervention);
     request.recordIntervention?.(intervention);
+    if (request.signal?.aborted) return asked.verification;
+    // Unreadable: asked again, uncounted, with the note and on the same model (header, t979).
+    if (asked.unread !== undefined) {
+      unreadable.unread(asked.unread);
+      await automationStudioResultUnreadableTurn();
+      continue;
+    }
+    unreadable.readable();
+    counted += 1;
     const correction = automationStudioResultExclusionEvidenceRecheck(asked.verification, request.deniedEvidenceKeys);
-    if ((!asked.temporary && !correction) || ask >= AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK || request.signal?.aborted) return asked.verification;
+    if ((!asked.temporary && !correction) || counted >= AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK) return asked.verification;
     if (correction) {
       current = { ...request, summary: { ...request.summary, recheck: [request.summary.recheck, correction].filter(Boolean).join("\n") } };
       evidenceRecheck = true;
@@ -429,10 +470,11 @@ function summaryWithComputedFacts(summary: AutomationStudioRunResultSummary, hol
 /**
  * One verification call and the verdict it reached. The second call of a
  * verification is this one repeated: the same request, the same evidence.
- * `temporary` when it gave no reply because of a fault that is asked again
- * (`askAgainAfter`): one the adapter called temporary -- its deadline passing
- * among them -- or a reply that arrived and could not be read, and the caller
- * was not cancelled.
+ * `unread` when its reply arrived and could not be read, saying what could not
+ * be read (`./unreadable-asks/`, t979); otherwise `temporary` when it gave no
+ * reply because of a fault that is asked again (`askAgainAfter`): one the
+ * adapter called temporary, its deadline passing among them. Neither once the
+ * caller was cancelled. After unreadable replies the call carries the note from `unreadable`.
  */
 async function askOnce(
   request: AutomationStudioResultVerificationRequest,
@@ -440,8 +482,9 @@ async function askOnce(
   check: 1 | 2,
   ask: number,
   reask: boolean,
-  evidenceRecheck: boolean
-): Promise<{ verification: ReturnType<typeof automationStudioResultVerdict>; intervention: AutomationStudioFlowIntervention; temporary: boolean }> {
+  evidenceRecheck: boolean,
+  unreadable: AutomationStudioResultUnreadableAsks
+): Promise<{ verification: ReturnType<typeof automationStudioResultVerdict>; intervention: AutomationStudioFlowIntervention; temporary: boolean; unread?: string }> {
   // With the instruction's named columns no stored column reads, said once
   // (`read-account/unread-columns.ts`): information for the judge, not a verdict.
   // And the rows a condition alone left out that name the asked item
@@ -461,7 +504,9 @@ async function askOnce(
   ))));
   // The forms of the judge's copy, whole first, and the first that fits the judging model's window by a conservative
   // measure; a refusal for size steps down one form, never read as no answer while one is left (`./run-trail/window.ts`, t965).
-  const forms = [judged, ...automationStudioResultTrailFitting(judged)];
+  // After an unreadable reply, every form carries the note on what could not be read, last (`./unreadable-asks/note.ts`, t979).
+  const noted = unreadable.said;
+  const forms = [judged, ...automationStudioResultTrailFitting(judged)].map((each) => (noted === undefined ? each : automationStudioResultSummaryWithUnreadableNote(each, noted)));
   let form = automationStudioResultSummaryFormForWindow(forms, request.tokenLimits, Buffer.byteLength(request.instructions.map((instruction) => instruction.body).join(" "), "utf8"));
   const harnessed = () => runAutomationStudioLlmHarness({
     taskKind: "loop_verification",
@@ -484,7 +529,8 @@ async function askOnce(
     ...(request.maxEstimatedCostUsd !== undefined ? { maxEstimatedCostUsd: request.maxEstimatedCostUsd } : {}),
     ...(request.signal ? { signal: request.signal } : {}),
     ...(request.now ? { now: request.now } : {}),
-    metadata: { source: VERIFICATION_SOURCE, expectedOutput: "diagnosis" }
+    // Standalone checks keep their original routing after unreadable replies (t979).
+    metadata: { source: VERIFICATION_SOURCE, expectedOutput: "diagnosis", ...automationStudioResultUnreadableRouting(unreadable, false) }
   });
   let result = await harnessed();
   while (!result.ok && form < forms.length - 1 && result.diagnostics.some((diagnostic) => diagnostic.severity === "error" && diagnostic.code === AUTOMATION_STUDIO_RESULT_SIZE_REFUSED)) {
@@ -515,9 +561,14 @@ async function askOnce(
   const verification = unreadYes ? automationStudioResultVerdict({ summary, basis: "model_unavailable", failureCode: CUT_REPLY_CODE, wording }) : read;
   // The harness records a call's own metadata, not the caller's, so the
   // intervention is told here which check it was and who asked.
-  const intervention = { ...result.intervention, metadata: { ...(result.intervention.metadata ?? {}), source: VERIFICATION_SOURCE, verificationCheck: check, ...(ask > 1 ? { verificationAsk: ask } : {}), ...(reask ? { verificationReask: true } : {}), ...(evidenceRecheck ? { verificationEvidenceRecheck: true } : {}), ...(truncatedAfterVerdict ? { truncatedAfterVerdict: true } : {}) } };
-  const temporary = request.signal?.aborted !== true && (unreadYes || (!response && askAgainAfter(firstError(result.diagnostics))));
-  return { verification, intervention, temporary };
+  const aborted = request.signal?.aborted === true;
+  // A cut yes its whole fields do not carry was cut off, as an unreadable reply is (t653); any other unreadable reply says what it was (t979).
+  const unread = aborted ? undefined : unreadYes ? automationStudioLlmUnreadableReplySaid({ issueCodes: [CUT_REPLY_CODE] }) : response || result.providerInvocation === "not_attempted" ? undefined : automationStudioResultUnreadableReplySaid(result.diagnostics);
+  // An unreadable ask says so on its own intervention (`verificationUnreadable`), for a caller whose deadline ends the check (`./build-test/judge.ts`).
+  const intervention = { ...result.intervention, metadata: { ...(result.intervention.metadata ?? {}), source: VERIFICATION_SOURCE, verificationCheck: check, ...(ask > 1 ? { verificationAsk: ask } : {}), ...(reask ? { verificationReask: true } : {}), ...(evidenceRecheck ? { verificationEvidenceRecheck: true } : {}), ...(truncatedAfterVerdict ? { truncatedAfterVerdict: true } : {}), ...(unreadable.inARow > 0 ? { verificationAfterUnreadable: unreadable.inARow } : {}), ...(unread !== undefined ? { verificationUnreadable: true } : {}) } };
+  if (aborted) return { verification, intervention, temporary: false };
+  if (unread !== undefined) return { verification, intervention, temporary: false, unread };
+  return { verification, intervention, temporary: !response && askAgainAfter(firstError(result.diagnostics)) };
 }
 
 /** The code a cut reply's unread yes is recorded under: the reply was cut off, as it was before its verdict could be read (t653). */

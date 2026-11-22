@@ -171,7 +171,8 @@ async function createWorld(options: { unlocked: string | null }) {
               const summaries = await service.listFlowAdaptationSummaries({ projectId: project.id, flowId: input.flowId!, limit: 50 }) as unknown as { adaptations?: Array<{ status: string }> };
               judgeAppliedCounts.push((summaries.adaptations ?? []).filter((entry) => entry.status === "applied").length);
               const answersRequest = judgeAnswers.shift() ?? "yes";
-              const diagnosis = answersRequest === "yes" ? { answersRequest } : { answersRequest, observed: "The catalog was searched, but no kettle was read.", expected: "The kettles in the catalog." };
+              // A no names its defect: a no naming none is a reply the harness cannot read, asked again until one is read (t979).
+              const diagnosis = answersRequest === "yes" ? { answersRequest } : { answersRequest, observed: "The catalog was searched, but no kettle was read.", expected: "The kettles in the catalog.", ...(answersRequest === "no" ? { defects: [{ kind: "asked_missing", row: "rows not read", requestWords: "kettles" }] } : {}) };
               return { response: { kind: "diagnosis", summary: "The Flow's test, judged.", diagnosis }, usage: { inputTokens: 40, outputTokens: 10, totalTokens: 50, estimatedCostUsd: 0.0005 } };
             }
             const latest = [...(request.context.evidenceLoop?.evidence ?? [])].reverse().find((entry) => entry.toolId === "core.submit_candidate")?.value as { revision?: number; digest?: string } | undefined;
@@ -364,13 +365,16 @@ describe("the extension's chat, end to end in Core", () => {
       ...Array.from({ length: 8 }, (_, index) => ({ kind: "tool_call", callId: `look.${index}`, toolId: "example.inspect", input: {} }))
     ]);
     // A round that stopped short is judged (t195 C2); judged no, the creation stays unfinished with its draft kept.
-    world.scriptJudge(["no", "no"]);
+    // Each no names a defect, so it is read (t979: a no naming none is asked again until one is read), and every
+    // re-ask of a no is answered no too; the continuation below is judged as before, yes.
+    world.scriptJudge(["no", "no", "no", "no", "no", "no"]);
     await world.say("Find the kettles here", { do: "flow.createHere", with: { instruction: "Search the catalog for kettles." } });
     await automationStudioConversationCommandWork.idle();
     const flow = await onlyFlow(world.service, world.project.id);
     expect(await world.service.getFlowRouter(world.project.id, flow.flowId)).toBeNull();
     const beforeInstructions = await world.service.listFlowInstructionSummaries({ projectId: world.project.id, flowId: flow.flowId, status: "active" });
     const beforeRequests = world.buildRequests.length;
+    world.scriptJudge([]);
     world.scriptBuild([
       { kind: "tool_call", callId: "continued.look", toolId: "example.inspect", input: {} },
       { kind: "complete", result: { summary: "Search the catalog for kettles." } }

@@ -33,7 +33,9 @@ async function candidateBuild(options: { judge?: Judged[]; maxCallsPerRun?: numb
     if (request.taskKind === "loop_verification") {
       const reply = judged[judgeRequests.length] ?? "unknown";
       judgeRequests.push(request);
-      return reply === "silent" ? { response: { kind: "diagnosis", summary: "Judged.", diagnosis: {} }, usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2, estimatedCostUsd: 0.0001 } } : judgeReply(reply);
+      // A no names its defect: a no naming none is a reply the harness cannot read, asked again until one is read (t979).
+      return reply === "silent" ? { response: { kind: "diagnosis", summary: "Judged.", diagnosis: {} }, usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2, estimatedCostUsd: 0.0001 } }
+        : judgeReply(reply, reply === "no" ? { observed: "The result is not what was asked.", defects: [{ kind: "other", row: "the result", requestWords: "the task" }] } : {});
     }
     decisions++;
     const latest = [...(request.context.evidenceLoop?.evidence ?? [])].reverse().find((entry) => entry.toolId === "core.submit_candidate")?.value as { revision?: number; digest?: string } | undefined;
@@ -79,10 +81,14 @@ describe("a candidate trial through the actual service", () => {
   });
 
   it.each([["unknown"], ["silent"], ["no"]] as const)("a first yes followed by %s gives no adaptation", async (second) => {
-    // A split's no is asked once more to name its defect (t725); here it says no again.
+    // A split's no is asked once more to name its defect (t725), and says no again; its defect names nothing Core's
+    // record holds, so it is asked once more to list each (t752), and the script's unknown answers. Each is a re-ask
+    // with Core's words (`recheck`), never an ask after an unreadable reply (t979: every reply here is read).
     const run = await candidateBuild({ judge: second === "no" ? ["yes", "no", "no"] : ["yes", second], maxCallsPerRun: 8 });
     await expect(run.build()).rejects.toThrow();
-    expect(run.judgeRequests).toHaveLength(second === "no" ? 3 : 2);
+    expect(run.judgeRequests).toHaveLength(second === "no" ? 4 : 2);
+    expect(run.judgeRequests.some((request) => request.context.resultSummary?.unreadableReply !== undefined)).toBe(false);
+    if (second === "no") expect(run.judgeRequests.slice(2).every((request) => typeof request.context.resultSummary?.recheck === "string")).toBe(true);
     expect(run.proposed).not.toHaveBeenCalled();
     expect(await adaptations(run.service, run.projectId, run.flowId)).toEqual([]);
     expect(await run.service.getFlowRouter(run.projectId, run.flowId)).toBeNull();
