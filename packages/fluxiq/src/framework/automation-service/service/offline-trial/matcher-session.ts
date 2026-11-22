@@ -36,70 +36,22 @@
 //
 // A cancelled build is not a verdict: whatever the runner throws goes on.
 
-import { ClientGatewayTraceMatcher, type ClientGatewayClientHello, type ClientGatewaySession, type ClientGatewayTraceMatcherClock, type ClientGatewayTraceMatcherGapReason, type ClientGatewayTraceMatcherSessionView } from "../../../../client-gateway/index.ts";
-import { AutomationStudioVirtualClock, createAutomationStudioScopedRunEnvironment, type AutomationStudioRunEnvironment } from "../../environment/index.ts";
-import { AutomationStudioGatewayTraceReplaySources } from "../../../../runtime/recording/gateway-trace/index.ts";
-import type { AutomationStudioOfflineTrialNormalization, AutomationStudioOfflineTrialRan, AutomationStudioOfflineTrialRefusal, AutomationStudioOfflineTrialRunOutcome, AutomationStudioOfflineTrialSessionInput } from "./contracts.ts";
-import { AUTOMATION_STUDIO_OFFLINE_TRIAL_READER_CONTRACTS } from "./reader-contracts.ts";
+import { ClientGatewayTraceMatcher, type ClientGatewayTraceMatcherClock } from "../../../../client-gateway/index.ts";
+import type { AutomationStudioRunEnvironment } from "../../environment/index.ts";
+import { automationStudioRecordedTraceLifecycle, type AutomationStudioRecordedTraceClient } from "../recorded-trace-session/index.ts";
+import type { AutomationStudioOfflineTrialRan, AutomationStudioOfflineTrialRefusal, AutomationStudioOfflineTrialRunOutcome, AutomationStudioOfflineTrialSessionInput } from "./contracts.ts";
 
-/** Why the matcher's session is closed when the trial is over. */
-const DETACHED = "offline_trial.ended";
-
-/** What a supplied session view is declared as: it came from the caller, not the trace. */
-const SUPPLIED_VIEW: AutomationStudioOfflineTrialNormalization = Object.freeze({
-  field: "session view",
-  reason: "the trace recorded no session.claimed view, so the matcher's session was attached with the view the caller supplied (the live session's public view for the same client); it decides which session the trial's commands go to, and every command and answer is still matched against the trace"
-});
-
-/** A session that ran: everything an offline trial answers but its evidence result, and the live episode the trace recorded, which that result names. */
+/** The trial runner retains its exploration restriction; recorded reproduction is a separate entry. */
+export type AutomationStudioOfflineTrialTraceClient<Report> = AutomationStudioRecordedTraceClient<Report>;
 type SessionRan<Trial extends AutomationStudioOfflineTrialRunOutcome> = Omit<AutomationStudioOfflineTrialRan<Trial>, "evidence"> & { sourceEpisodeId: string };
 
-/** What stands in for the client over a recorded trace: the matcher, or the state engine (`./state/run.ts`). */
-export type AutomationStudioOfflineTrialTraceClient<Report> = {
-  report(): Report & { refusal: { reason: ClientGatewayTraceMatcherGapReason; detail: string } | null };
-  sessionView(supplied?: ClientGatewayClientHello): ClientGatewayTraceMatcherSessionView | null;
-  attach(scopeId: string, supplied?: ClientGatewayClientHello): ClientGatewaySession;
-  deliverOpening(): Promise<void>;
-  settled(): Promise<void>;
-};
-
-/** Steps 1 to 5 of the header around any client of a recorded trace: refused before anything runs, or the run, its session view and the client's report. */
 export async function automationStudioOfflineTrialTraceSession<Trial, Report>(
   input: Pick<AutomationStudioOfflineTrialSessionInput, "source" | "gateway" | "phase" | "contractVersions" | "sessionView">,
   load: (clock: ClientGatewayTraceMatcherClock, contractVersions: Readonly<Record<string, string>>) => Promise<AutomationStudioOfflineTrialTraceClient<Report>>,
   run: (environment: AutomationStudioRunEnvironment) => Promise<Trial>
-): Promise<AutomationStudioOfflineTrialRefusal | { status: "ran"; trial: Trial; report: Report; sessionView: ClientGatewayTraceMatcherSessionView["source"]; normalizations: AutomationStudioOfflineTrialNormalization[]; sourceEpisodeId: string }> {
-  const { source, gateway } = input;
+) {
   if (input.phase === "exploration") return refused("offline_not_allowed_in_phase", "an offline trial never runs during exploration; exploration acts on the live site");
-  const manifest = await source.store.readManifest(source.traceId);
-  if (manifest === undefined) return refused("incomplete_capture", "the store holds no manifest for the source trace");
-  if (manifest.origin.kind !== "live") return refused("source_not_live", `the source trace is derived (${manifest.origin.derivation}): it holds no live episode's capture to run on`);
-  const clock = new AutomationStudioVirtualClock(manifest.clockOrigin.epochMs);
-  // `random` fixed at its midpoint, which the Wait node reads as no jitter, so the trial is reproducible.
-  const environment = createAutomationStudioScopedRunEnvironment({ kind: "trace", clock, random: () => 0.5 });
-  const advance: ClientGatewayTraceMatcherClock = { advance: async (ms) => clock.advance(ms) };
-  const matcher = await load(advance, input.contractVersions ?? AUTOMATION_STUDIO_OFFLINE_TRIAL_READER_CONTRACTS);
-  const refusal = matcher.report().refusal;
-  if (refusal !== null) return refused(refusal.reason, refusal.detail);
-  const view = matcher.sessionView(input.sessionView);
-  if (view === null) return refused("incomplete_capture", "the source trace recorded no session view (no session.claimed event) and the caller supplied none: there is no client for the trial's commands to reach");
-  const session = matcher.attach(environment.scopeId, input.sessionView);
-  let trial: Trial;
-  try {
-    await matcher.deliverOpening();
-    trial = await AutomationStudioGatewayTraceReplaySources.run([source.traceId], () => run(environment));
-    await matcher.settled();
-  } finally {
-    gateway.disconnect(session.sessionId, DETACHED);
-  }
-  return {
-    status: "ran",
-    trial,
-    report: matcher.report(),
-    sessionView: view.source,
-    normalizations: view.source === "supplied" ? [{ ...SUPPLIED_VIEW }] : [],
-    sourceEpisodeId: manifest.episodeId
-  };
+  return await automationStudioRecordedTraceLifecycle(input, load, run);
 }
 
 /** Runs `run` in a trace environment whose only client is a matcher session over `input.source` (header), or says why it was refused. */
