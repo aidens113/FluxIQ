@@ -11,6 +11,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioActionConsequence } from "../../../../../runtime/action-permission-requests/index.ts";
 import { automationStudioActivityHub } from "../../../../../runtime/activity/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
+import type { AutomationStudioFlowTaskProcessing } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { caller, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 import type { AutomationStudioFlowPaths, AutomationStudioProjectPaths } from "../../paths/index.ts";
@@ -32,6 +33,8 @@ export type LaterAttemptOptions = {
   instruction?: string;
   /** What the chat's reading declared the task will cause (t976): asked about once when the attempt starts. */
   taskActs?: AutomationStudioActionConsequence[];
+  /** Supplied by each task fixture; omission deliberately remains missing on a genuine new task. */
+  taskProcessing?: AutomationStudioFlowTaskProcessing;
   flowId?: string;
   startLocation?: string;
   script?: readonly Decision[];
@@ -133,7 +136,7 @@ export async function laterAttempts(cleanups: (() => Promise<void>)[], options: 
     const guard = setTimeout(() => service.buildCancellation.cancel(project.id, flowId), HANG_GUARD_MS);
     const generate = async (startLocation = given.startLocation) => await service.generateFlowBootstrapAdaptation({
       projectId: project.id, flowId, caller: caller(), evidenceGuided: true, authoringMode: "answer-first",
-      permittedConsequences: given.permittedConsequences ?? [], ...(given.taskActs ? { taskActs: given.taskActs } : {}), ...(startLocation ? { startLocation } : {}), ...(given.humanness === undefined ? {} : { humanness: given.humanness })
+      permittedConsequences: given.permittedConsequences ?? [], ...(given.taskActs ? { taskActs: given.taskActs } : {}), ...(given.taskProcessing === undefined ? {} : { taskProcessing: given.taskProcessing }), ...(startLocation ? { startLocation } : {}), ...(given.humanness === undefined ? {} : { humanness: given.humanness })
     });
     let pressed: string | undefined;
     const answered = given.runAgain ? await (async () => {

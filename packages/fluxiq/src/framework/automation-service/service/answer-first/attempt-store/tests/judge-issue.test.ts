@@ -108,7 +108,9 @@ it("preserves malformed issue metadata as explicit unknown without losing the st
   const p = await setup();
   const file = path.join(p.root, "answer-attempts.json");
   const raw = JSON.parse(await readFile(file, "utf8"));
-  raw.attempts[0].judgeEvidenceIssue = { version: 2, receipt: "invalid" };
+  expect(raw.version).toBe(1);
+  expect(raw.data.attempts).toHaveLength(1);
+  raw.data.attempts[0].judgeEvidenceIssue = { version: 2, receipt: "invalid" };
   await writeFile(file, JSON.stringify(raw));
   const held = (await p.open().get("project", "flow", "attempt"))!;
   expect(held.judgeEvidenceIssue).toBeNull();
