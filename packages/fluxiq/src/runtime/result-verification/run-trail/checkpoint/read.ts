@@ -1,11 +1,11 @@
 import type { JsonObject } from "../../../../core/index.ts";
-import { automationStudioStoredJudgeFinding } from "../../judge-evidence/stored-finding.ts";
+import { automationStudioJudgeEvidenceJsonValue, automationStudioStoredJudgeFinding } from "../../judge-evidence/index.ts";
 import type { AutomationStudioJudgeEvidenceCheckpoint } from "./types.ts";
 import { automationStudioResultFrameworkOutcome } from "../framework-outcome.ts";
 import { automationStudioResultEvidenceScreen } from "../../result-evidence/index.ts";
 import { readAutomationStudioResultEvidenceSourceRef } from "../../result-evidence/index.ts";
-import { automationStudioReadJudgeActionRef } from "../../judge-evidence/action-ref.ts";
-import { automationStudioReadJudgeWitnessAssociation } from "../../judge-evidence/witness-association.ts";
+import { automationStudioReadJudgeActionRef } from "../../judge-evidence/index.ts";
+import { automationStudioReadJudgeWitnessAssociation } from "../../judge-evidence/index.ts";
 
 const TOP = new Set(["version", "revision", "trail", "witnesses"]);
 const STEP = new Set(["callId", "did", "on", "outcome", "where", "framework", "judgeEvidence", "judgeSource", "judgeSources", "judgeAct"]);
@@ -38,13 +38,10 @@ export function automationStudioReadJudgeCheckpoint(value: unknown): AutomationS
       step.judgeAct = act;
     }
     if (raw.framework !== undefined) {
-      if (!object(raw.framework)) return undefined;
+      if (!object(raw.framework) || !automationStudioJudgeEvidenceJsonValue(raw.framework)) return undefined;
       const framework = automationStudioResultFrameworkOutcome(raw.framework);
-      try {
-        JSON.stringify(raw.framework);
-        if (!same(framework, raw.framework)) return undefined;
-        step.framework = structuredClone(framework) as JsonObject;
-      } catch { return undefined; }
+      if (!same(framework, raw.framework)) return undefined;
+      step.framework = structuredClone(framework);
     }
     if (!Object.hasOwn(raw, "judgeEvidence")) return undefined;
     const finding = automationStudioStoredJudgeFinding(raw.judgeEvidence);

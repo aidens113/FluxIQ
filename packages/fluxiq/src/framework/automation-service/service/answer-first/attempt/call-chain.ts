@@ -58,7 +58,7 @@ import { automationStudioResultTrailStepOfCall, type AutomationStudioResultTrail
 import type { AutomationStudioAnswerFirstResultFeed } from "../result-feed/index.ts";
 import type { AutomationStudioAnswerFirstRowSink } from "../rows/index.ts";
 import type { AutomationStudioAnswerFirstWitnesses } from "../witnesses/index.ts";
-import { AutomationStudioJudgeEvidenceOrigins } from "../../../../../runtime/result-verification/judge-evidence/origins.ts";
+import { AutomationStudioJudgeEvidenceOrigins } from "../../../../../runtime/result-verification/judge-evidence/index.ts";
 
 type Execute = AutomationStudioHarnessOptionLoopBinding["executeTool"];
 
@@ -169,7 +169,7 @@ export function automationStudioAnswerFirstCallChain(input: {
       pending.delete(call);
       if (step !== undefined) {
         try { await input.trailed?.(step); }
-        catch { /* Evidence persistence cannot change the actual call or settlement. */ }
+        catch { /* best-effort: Evidence persistence cannot change the actual call or settlement. */ }
       }
     }
   };

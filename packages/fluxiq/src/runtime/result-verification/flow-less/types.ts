@@ -7,7 +7,7 @@ import type { AutomationStudioLlmTokenLimits } from "../../models/limits/index.t
 import type { AutomationStudioResultEndView, AutomationStudioResultTrailStep } from "../contracts/index.ts";
 import type { AutomationStudioFlowLessReadLeftOut } from "./read-left-out.ts";
 import type { AutomationStudioResultEvidenceBundle } from "../result-evidence/index.ts";
-import type { AutomationStudioJudgeWitnessAssociation } from "../judge-evidence/witness-association.ts";
+import type { AutomationStudioJudgeWitnessAssociation } from "../judge-evidence/index.ts";
 
 /** What an attempt got, with no Flow behind it. */
 export type AutomationStudioFlowLessSummary = {

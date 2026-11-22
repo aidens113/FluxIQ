@@ -1,5 +1,5 @@
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioJudgeWitnessAssociation } from "../../../../../runtime/result-verification/judge-evidence/witness-association.ts";
+import type { AutomationStudioJudgeWitnessAssociation } from "../../../../../runtime/result-verification/judge-evidence/index.ts";
 
 /** Which side of the exploration a witness read is: before its first lasting act, or at its end. */
 export type AutomationStudioAnswerFirstWitnessSide = "before" | "after";

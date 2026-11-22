@@ -1,6 +1,6 @@
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
-import type { AutomationStudioJudgeEvidenceFinding } from "../judge-evidence/finding.ts";
-import type { AutomationStudioJudgeActionRef } from "../judge-evidence/action-ref.ts";
+import type { AutomationStudioJudgeEvidenceFinding } from "../judge-evidence/index.ts";
+import type { AutomationStudioJudgeActionRef } from "../judge-evidence/index.ts";
 import type { AutomationStudioResultEvidenceSourceRef } from "../result-evidence/index.ts";
 
 /**

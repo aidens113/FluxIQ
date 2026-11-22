@@ -11,7 +11,7 @@ import type { AutomationStudioAnswerFirstCarryOnHold } from "./hold.ts";
 import type { AutomationStudioAnswerFirstAttemptPrior } from "./prior.ts";
 import type { AutomationStudioAnswerFirstProcessingDeclaration } from "../result-processing/index.ts";
 import type { AutomationStudioResultEvidenceBundle, AutomationStudioJudgeEvidenceCheckpoint } from "../../../../../runtime/result-verification/index.ts";
-import type { AutomationStudioAnswerFirstJudgeEvidenceIssue } from "../attempt-store/judge-evidence-issue.ts";
+import type { AutomationStudioAnswerFirstJudgeEvidenceIssue } from "../attempt-store/index.ts";
 import type { AutomationStudioAnswerFirstAttemptRecord } from "../attempt-store/index.ts";
 
 export type AutomationStudioAnswerFirstCarriedOpening = {

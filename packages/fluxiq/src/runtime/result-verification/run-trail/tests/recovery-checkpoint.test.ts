@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioJudgeEvidenceProjector } from "../../../llm/harness-options/index.ts";
 import type { AutomationStudioResultTrailStep } from "../../contracts/index.ts";
-import { automationStudioFlowLessJudgedSummary } from "../../flow-less/judged-summary.ts";
-import type { AutomationStudioFlowLessSummary } from "../../flow-less/types.ts";
+import { automationStudioFlowLessJudgedSummary } from "../../flow-less/index.ts";
+import type { AutomationStudioFlowLessSummary } from "../../flow-less/index.ts";
 import { automationStudioResultVerdict } from "../../verdict/index.ts";
 import { automationStudioMakeJudgeCheckpoint, automationStudioReadJudgeCheckpoint } from "../checkpoint/index.ts";
 import { automationStudioAnswerFirstTrailsOf } from "../../../../framework/automation-service/service/answer-first/trail/index.ts";
@@ -13,6 +13,18 @@ const OPTIONS = { judgeEvidenceVersion: 1 as const, deniedEvidenceKeys: [], proj
 const step = (): AutomationStudioResultTrailStep => ({ did: "actual.update", callId: REF.callId, judgeAct: REF, framework: { effectApplied: true }, judgeEvidence: { version: 1, role: "action", evidence: { control: "Save" }, missing: ["example.action_response_missing"], withheld: true } });
 
 describe("durable source/witness recovery authority", () => {
+  it("rejects non-JSON framework metadata without losing known execution facts in a valid checkpoint", () => {
+    const checkpoint = automationStudioMakeJudgeCheckpoint([step()], {}, OPTIONS);
+    const cycle: { child?: unknown } = {};
+    cycle.child = cycle;
+    for (const extra of [() => null, 1n, Number.NaN, new Map(), cycle]) {
+      const malformed = { ...checkpoint, trail: [{ ...checkpoint.trail[0]!, framework: { effectApplied: true, extra } }] };
+      expect(automationStudioReadJudgeCheckpoint(malformed)).toBeUndefined();
+    }
+    expect(automationStudioReadJudgeCheckpoint(checkpoint)?.trail[0]?.framework).toEqual({ effectApplied: true });
+    expect(checkpoint.trail[0]?.judgeEvidence?.missing).toEqual(["example.action_response_missing"]);
+  });
+
   it("carries exact before-input authority only through Core's held wrappers, rescreens successful evidence and loses it on JSON restart", () => {
     const original = { checked: false, newlyPrivate: "OLD_ALLOWED_STATE_CELL", page: "PRIVATE_BEFORE_CAPTURE" };
     const actual = step();

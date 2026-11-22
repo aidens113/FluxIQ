@@ -7,8 +7,9 @@ const KEYS = new Set(["version", "role", "evidence", "missing", "withheld", "his
 /** Private persistence shape only. This grants no current disclosure policy; model copies must use the current-policy reader. */
 export function automationStudioStoredJudgeFinding(value: unknown): AutomationStudioJudgeEvidenceFinding | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
-  let held: Record<string, unknown>;
-  try { held = structuredClone(value) as Record<string, unknown>; } catch { return undefined; }
+  // The response/history readers validate and copy accepted fields; opaque input
+  // does not need to be cloned before its shape has been checked.
+  const held = value as Record<string, unknown>;
   if (held.version !== 1 || typeof held.withheld !== "boolean" || !Array.isArray(held.missing) || Object.keys(held).some((key) => !KEYS.has(key))) return undefined;
   if (held.role === undefined && (held.evidence !== undefined || held.missing.length === 0)) return undefined;
   const history = Object.hasOwn(held, "history") ? automationStudioReadJudgeEvidenceHistory(held.history) : undefined;

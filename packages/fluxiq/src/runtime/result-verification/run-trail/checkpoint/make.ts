@@ -1,15 +1,15 @@
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioResultTrailStep } from "../../contracts/index.ts";
-import { automationStudioJudgeEvidenceFinding, type AutomationStudioJudgeEvidenceFinding } from "../../judge-evidence/finding.ts";
-import { automationStudioStoredJudgeFinding } from "../../judge-evidence/stored-finding.ts";
-import { automationStudioProjectJudgeEvidence } from "../../judge-evidence/project.ts";
+import { automationStudioJudgeEvidenceFinding, type AutomationStudioJudgeEvidenceFinding } from "../../judge-evidence/index.ts";
+import { automationStudioStoredJudgeFinding } from "../../judge-evidence/index.ts";
+import { automationStudioProjectJudgeEvidence } from "../../judge-evidence/index.ts";
 import type { AutomationStudioResultTrailSemanticOptions } from "../semantic/options.ts";
 import type { AutomationStudioJudgeEvidenceCheckpoint } from "./types.ts";
 import { automationStudioResultFrameworkOutcome } from "../framework-outcome.ts";
 import { automationStudioResultEvidenceScreen } from "../../result-evidence/index.ts";
-import { AutomationStudioJudgeEvidenceRetry } from "../../judge-evidence/retry.ts";
-import { automationStudioJudgeEvidenceReplacement } from "../../judge-evidence/replacement.ts";
-import { automationStudioReadJudgeWitnessAssociation, type AutomationStudioJudgeWitnessAssociation } from "../../judge-evidence/witness-association.ts";
+import { AutomationStudioJudgeEvidenceRetry } from "../../judge-evidence/index.ts";
+import { automationStudioJudgeEvidenceReplacement } from "../../judge-evidence/index.ts";
+import { automationStudioReadJudgeWitnessAssociation, type AutomationStudioJudgeWitnessAssociation } from "../../judge-evidence/index.ts";
 
 /** Private checkpoint from actual ordered findings; safe existing cells are rescreened when a current policy is known. */
 export function automationStudioMakeJudgeCheckpoint(steps: readonly AutomationStudioResultTrailStep[], witnesses: { before?: JsonObject; after?: JsonObject; association?: AutomationStudioJudgeWitnessAssociation }, options: AutomationStudioResultTrailSemanticOptions, prior?: AutomationStudioJudgeEvidenceCheckpoint): AutomationStudioJudgeEvidenceCheckpoint {

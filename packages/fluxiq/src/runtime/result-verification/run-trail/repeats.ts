@@ -6,7 +6,7 @@
 
 import type { JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioResultTrailShownStep } from "../contracts/index.ts";
-import { AutomationStudioJudgeEvidenceRetry } from "../judge-evidence/retry.ts";
+import { AutomationStudioJudgeEvidenceRetry } from "../judge-evidence/index.ts";
 
 /** A member this short is no cheaper as a stub, and is often a flag or a count that merely happens to match. */
 const STUB_MINIMUM_CHARACTERS = 120;

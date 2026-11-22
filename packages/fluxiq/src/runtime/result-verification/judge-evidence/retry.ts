@@ -12,7 +12,7 @@ export class AutomationStudioJudgeEvidenceRetry {
 
   static remember(step: object, input: Input): void {
     try { this.sources.set(step, { input: structuredClone(input) }); }
-    catch { /* An input that cannot be copied supplies no retry authority. */ }
+    catch { /* best-effort: An input that cannot be copied supplies no retry authority; the evidence gap remains. */ }
   }
 
   static carry(from: object, to: object): void {

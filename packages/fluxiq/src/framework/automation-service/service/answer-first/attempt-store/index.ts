@@ -10,3 +10,4 @@ export { automationStudioAnswerFirstReplayVerdictRead, type AutomationStudioAnsw
 export { automationStudioAnswerFirstAttemptStoreOf } from "./store-of.ts";
 export { AutomationStudioAnswerFirstAttemptStore } from "./store.ts";
 export { AutomationStudioAnswerFirstAttemptsUnreadable } from "./unreadable.ts";
+export { readAutomationStudioAnswerFirstJudgeEvidenceIssue, type AutomationStudioAnswerFirstJudgeEvidenceIssue } from "./judge-evidence-issue.ts";

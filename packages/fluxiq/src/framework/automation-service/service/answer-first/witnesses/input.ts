@@ -1,7 +1,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioAnswerFirstWitnessSide } from "./reading.ts";
-import type { AutomationStudioJudgeActionRef } from "../../../../../runtime/result-verification/judge-evidence/action-ref.ts";
-import type { AutomationStudioJudgeWitnessAssociation } from "../../../../../runtime/result-verification/judge-evidence/witness-association.ts";
+import type { AutomationStudioJudgeActionRef } from "../../../../../runtime/result-verification/judge-evidence/index.ts";
+import type { AutomationStudioJudgeWitnessAssociation } from "../../../../../runtime/result-verification/judge-evidence/index.ts";
 
 export type AutomationStudioAnswerFirstWitnessesInput = {
   /** One look at the places the task's changes show, for one side. `undefined` is a look that read nothing. */

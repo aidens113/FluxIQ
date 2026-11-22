@@ -32,7 +32,7 @@ import { automationStudioFlowLessScreenedWords } from "./screened-words.ts";
 import type { AutomationStudioFlowLessSummary } from "./types.ts";
 import { automationStudioJudgeEvidenceCapability, type AutomationStudioJudgeEvidenceProjector } from "../../llm/harness-options/index.ts";
 import { automationStudioResultJudgeSummary } from "../judge-evidence/index.ts";
-import { AutomationStudioJudgeEvidenceRetry } from "../judge-evidence/retry.ts";
+import { AutomationStudioJudgeEvidenceRetry } from "../judge-evidence/index.ts";
 
 /** Stands in for a value that may not be sent, as a finished run's rows say it. */
 const WITHHELD_VALUE = "[withheld]";

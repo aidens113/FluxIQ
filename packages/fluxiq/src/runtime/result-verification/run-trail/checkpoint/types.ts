@@ -1,6 +1,6 @@
 import type { AutomationStudioResultTrailStep } from "../../contracts/index.ts";
-import type { AutomationStudioJudgeEvidenceFinding } from "../../judge-evidence/finding.ts";
-import type { AutomationStudioJudgeWitnessAssociation } from "../../judge-evidence/witness-association.ts";
+import type { AutomationStudioJudgeEvidenceFinding } from "../../judge-evidence/index.ts";
+import type { AutomationStudioJudgeWitnessAssociation } from "../../judge-evidence/index.ts";
 
 /** Private semantic journal; raw findings/asked payloads and functions never enter this checkpoint. */
 export type AutomationStudioJudgeEvidenceCheckpoint = {

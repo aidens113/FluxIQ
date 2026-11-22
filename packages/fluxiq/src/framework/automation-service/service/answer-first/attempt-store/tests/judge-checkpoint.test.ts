@@ -8,7 +8,7 @@ import { AutomationStudioAttemptActRecord } from "../../../../../../runtime/answ
 import { automationStudioAnswerFirstResult } from "../../../../../../runtime/answer-first/result/index.ts";
 import { automationStudioResultRunTrail, automationStudioResultSemanticTrail, type AutomationStudioJudgeEvidenceCheckpoint } from "../../../../../../runtime/result-verification/index.ts";
 import { AutomationStudioAnswerFirstAttemptStore, type AutomationStudioAnswerFirstAttemptRecord } from "../index.ts";
-import { automationStudioAnswerFirstCallChain } from "../../attempt/call-chain.ts";
+import { automationStudioAnswerFirstCallChain } from "../../attempt/index.ts";
 import { automationStudioAnswerFirstCarriedOpening } from "../../carry-on/index.ts";
 import { automationStudioAnswerFirstTrailsOf } from "../../trail/index.ts";
 import { automationStudioAnswerFirstWitnesses } from "../../witnesses/index.ts";
@@ -22,7 +22,8 @@ const ACT: AutomationStudioAttemptAct = { id: "act.1", what: "Updated a preferen
 const record = (): AutomationStudioAnswerFirstAttemptRecord => ({ attempt: { taskId: "task", attemptId: "attempt", ordinal: 1, projectId: "project", flowId: "flow", runId: "run.first", path: "explore", status: "working", spend: { calls: 0, inputTokens: 0, outputTokens: 0, usd: 0, ms: 0 }, budget: { usd: 5 }, liveSteps: 1, loopsCaught: automationStudioTaskAttemptNoLoopsCaught(), startedAtMs: REFERENCE }, tried: { version: 1, tried: [], approaches: 0 }, result: { ...automationStudioAnswerFirstResult({ attemptId: "attempt", label: "unverified", timesChecked: 0, acts: [ACT], skippedAsDone: 0 }), source: "exploration" } });
 const options = { judgeEvidenceVersion: 1 as const, deniedEvidenceKeys: [] as readonly string[], projectJudgeEvidence: (input: { evidence: unknown }) => ({ role: "action" as const, evidence: { preference: ((input.evidence as JsonObject).evidence as JsonObject).preference ?? false, newlyPrivate: "old allowed semantic value" } }) };
 async function disk() {
-  const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-judge-checkpoint-")); roots.push(root);
+  const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-judge-checkpoint-"));
+  roots.push(root);
   const open = () => new AutomationStudioAnswerFirstAttemptStore({ root }, { flowDirectory: () => root }, PROJECTS);
   return { root, open, store: open() };
 }

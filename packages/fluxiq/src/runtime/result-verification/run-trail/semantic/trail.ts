@@ -8,7 +8,7 @@ import { automationStudioResultFrameworkOutcome } from "../framework-outcome.ts"
 import type { AutomationStudioResultTrailSemanticOptions } from "./options.ts";
 import { AutomationStudioJudgeEvidenceRetry } from "../../judge-evidence/retry.ts";
 import { automationStudioJudgeEvidenceReplacement } from "../../judge-evidence/replacement.ts";
-import type { AutomationStudioJudgeEvidenceHistory } from "../../judge-evidence/history.ts";
+import type { AutomationStudioJudgeEvidenceHistory } from "../../judge-evidence/index.ts";
 
 const NOTE = "Core's ordered record of every call, read and act. found contains the domain's semantic finding, with raw captures deliberately omitted. framework contains actual execution status, failure and effect facts; a successful command alone does not prove its lasting effect. Data rows, source pages and processing/comparison/removal accounts are supplied separately in full. missing names unavailable semantic evidence; intentional omission of a capture is not a gap. Judge from these findings and the final data together, and name a concrete contradiction or the requested part for which evidence is missing.";
 

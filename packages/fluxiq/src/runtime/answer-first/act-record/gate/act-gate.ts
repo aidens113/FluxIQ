@@ -80,7 +80,7 @@ export function automationStudioAttemptActGate<Call extends AutomationStudioAtte
   const settled = (callId: string, act: AutomationStudioAttemptAct | undefined): void => {
     if (act === undefined) return;
     try { input.settled?.({ callId, actId: act.id }); }
-    catch { /* Evidence observers cannot change an act's actual outcome. */ }
+    catch { /* best-effort: Evidence observers cannot change an act's actual outcome. */ }
   };
   return async (call) => {
     const read = automationStudioAttemptActCallRead(call);

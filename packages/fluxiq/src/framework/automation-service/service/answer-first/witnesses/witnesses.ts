@@ -20,7 +20,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_ANSWER_FIRST_EARLIER_BEFORE_WORDS as WORDS } from "./earlier-words.ts";
 import type { AutomationStudioAnswerFirstWitnessesInput } from "./input.ts";
 import type { AutomationStudioAnswerFirstWitnessNote, AutomationStudioAnswerFirstWitnessRead, AutomationStudioAnswerFirstWitnessReadings, AutomationStudioAnswerFirstWitnessSide } from "./reading.ts";
-import type { AutomationStudioJudgeActionRef } from "../../../../../runtime/result-verification/judge-evidence/action-ref.ts";
+import type { AutomationStudioJudgeActionRef } from "../../../../../runtime/result-verification/judge-evidence/index.ts";
 
 export type AutomationStudioAnswerFirstWitnesses = {
   /** Reads the before side once; a later call, even a concurrent one, gets the same answer. */

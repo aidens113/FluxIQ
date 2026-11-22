@@ -15,7 +15,8 @@ const PROJECTS = { ensureProjectStructure: async () => undefined } as unknown as
 const record = (): AutomationStudioAnswerFirstAttemptRecord => ({ attempt: { taskId: "task", attemptId: "attempt", ordinal: 1, projectId: "project", flowId: "flow", runId: "run", path: "explore", status: "working", spend: { calls: 0, inputTokens: 0, outputTokens: 0, usd: 0, ms: 0 }, budget: { usd: 5 }, liveSteps: 1, loopsCaught: automationStudioTaskAttemptNoLoopsCaught(), startedAtMs: 1 }, tried: { version: 1, tried: [], approaches: 0 } });
 const OPTIONS = { judgeEvidenceVersion: 1 as const, deniedEvidenceKeys: [] as readonly string[], projectJudgeEvidence: (input: { evidence: unknown }) => ({ role: "observation" as const, evidence: { checked: ((input.evidence as JsonObject).evidence as JsonObject).checked ?? false } }) };
 async function setup() {
-  const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-judge-issue-")); roots.push(root);
+  const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-judge-issue-"));
+  roots.push(root);
   const open = () => new AutomationStudioAnswerFirstAttemptStore({ root }, { flowDirectory: () => root }, PROJECTS);
   const store = open();
   const journal = automationStudioAnswerFirstTrailsOf({});

@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import type { AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { automationStudioResultTrailFitting } from "../fitting.ts";
-import { automationStudioFlowLessSummaryFitting } from "../../flow-less/window-fitting.ts";
+import { automationStudioFlowLessSummaryFitting } from "../../flow-less/index.ts";
 
 it("keeps full semantic findings, answer values and accounts while leaving legacy fitting available", () => {
   const rows = Array.from({ length: 40 }, (_, row) => ({ name: `Item ${row}`, exact: "Original semantic fact ".repeat(100) }));

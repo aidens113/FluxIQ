@@ -12,12 +12,12 @@
 import { automationStudioMakeJudgeCheckpoint, type AutomationStudioJudgeEvidenceCheckpoint, type AutomationStudioResultTrailSemanticOptions, type AutomationStudioResultTrailStep } from "../../../../../runtime/result-verification/index.ts";
 import { automationStudioJudgeEvidenceCapability } from "../../../../../runtime/llm/harness-options/index.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioAnswerFirstJudgeEvidenceIssue } from "../attempt-store/judge-evidence-issue.ts";
+import type { AutomationStudioAnswerFirstJudgeEvidenceIssue } from "../attempt-store/index.ts";
 import { automationStudioAnswerFirstJournalOwners } from "./source-owner.ts";
-import { AutomationStudioJudgeEvidenceOrigins } from "../../../../../runtime/result-verification/judge-evidence/origins.ts";
+import { AutomationStudioJudgeEvidenceOrigins } from "../../../../../runtime/result-verification/judge-evidence/index.ts";
 import type { AutomationStudioResultEvidenceSourceRef } from "../../../../../runtime/result-verification/result-evidence/index.ts";
-import type { AutomationStudioJudgeWitnessAssociation } from "../../../../../runtime/result-verification/judge-evidence/witness-association.ts";
-import { AutomationStudioJudgeEvidenceRetry } from "../../../../../runtime/result-verification/judge-evidence/retry.ts";
+import type { AutomationStudioJudgeWitnessAssociation } from "../../../../../runtime/result-verification/judge-evidence/index.ts";
+import { AutomationStudioJudgeEvidenceRetry } from "../../../../../runtime/result-verification/judge-evidence/index.ts";
 
 type Witnesses = { before?: JsonObject; after?: JsonObject; association?: AutomationStudioJudgeWitnessAssociation };
 
