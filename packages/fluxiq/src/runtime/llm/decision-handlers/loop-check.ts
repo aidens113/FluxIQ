@@ -1,38 +1,10 @@
-// What the loop does about what the loop detector finds (`../repeat-guard/loop-detection/`).
-//
-// Every role that runs the evidence loop gets this, and no model is called for
-// it. Before a call runs, the ladder may refuse it (`automationStudioLlmEvidenceLoopCheck`,
-// through the same path as the repeat guard's refusals, `./refused-repeat.ts`).
-// After it ran, the ladder may steer: the model is told as evidence, the person
-// sees it as a step, and the run's record gets a row and a step folder
-// (`automationStudioLlmEvidenceLoopRan`).
-//
-// **The last two steps of the ladder are the caller's.** A fresh context and a
-// wait for a person need the single-loop path, so the loop only raises a typed
-// signal (`input.loopSignal`). A caller that gives none keeps steer and refuse,
-// and ends only the ways it always could: no signal is raised for it, and no new
-// way for a task to end exists.
-//
-// A call this lets through still goes to `executeTool` and whatever gate stands
-// behind it: nothing here grants anything, and a lasting act's refusal stays.
-//
-// **The model decides how to go on** (user, 2026-11-19). Where the loop offers
-// `core.loop_decision` (`../loop-decision/`), a steer names the repeat, how often, and what each
-// repeat came back with, and asks the model for one decision, which the loop carries out
-// (`./model-decision.ts`). Detection alone never stops anything.
-//
-// **When a steer climbs the model ladder by itself** (`../role-routing/ladder/`, t962): a window of
-// no progress, which is decisions going on with no new evidence, always climbs one rung; any other
-// repeat climbs only where no model is asked to decide, since there escalating is the model's
-// choice (`escalate_model`).
-
+// Loop recovery steers the task and preserves its starting model.
 import { automationStudioLlmEvidenceLoopDecisionOptions } from "./decision-options.ts";
 import type { JsonObject } from "../../../core/index.ts";
 import { emitAutomationStudioActivity } from "../../activity/index.ts";
 import { automationStudioFlowDraftDeclaresLasting, automationStudioFlowDraftStepWordsOf } from "../../flow-authoring/draft/index.ts";
 import { automationStudioLlmDecisionContextSupersede } from "../decision-context/supersede.ts";
 import { AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID, automationStudioLlmLoopDecisionAsk } from "../loop-decision/index.ts";
-import { automationStudioLlmModelLadderClimb } from "../role-routing/index.ts";
 import type { AutomationStudioLlmEvidenceLoopDecision, AutomationStudioLlmEvidenceLoopResult, AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop/index.ts";
 import { automationStudioLlmEvidenceCallWritten, automationStudioLlmEvidenceRetriesLater, type AutomationStudioLlmEvidenceRepeatedOutcome } from "../repeat-guard/index.ts";
 import {
@@ -80,8 +52,6 @@ function steer(context: AutomationStudioLlmEvidenceDecisionHandlerContext, itera
   automationStudioLlmLoopStepFolder(iteration, "steer", finding);
   const { title, text } = automationStudioLlmLoopChatWords(finding);
   emitAutomationStudioActivity({ phase: "thinking", label: title, detail: { kind: "thought", title, text, status: "succeeded" } });
-  if (finding.pattern === "no_progress") automationStudioLlmModelLadderClimb(context.loops.record.ladder, { reason: "no_new_evidence", pattern: finding.pattern }, iteration);
-  else if (!decides) automationStudioLlmModelLadderClimb(context.loops.record.ladder, { reason: "loop_detected", pattern: finding.pattern }, iteration);
 }
 
 /** Where a call left the work, from the page its route state names: a digest, compared for equality. Read by shape: a result with none has no place. */

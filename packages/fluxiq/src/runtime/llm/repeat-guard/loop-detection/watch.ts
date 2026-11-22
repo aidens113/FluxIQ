@@ -11,7 +11,7 @@
 //    it is only a typed signal (`./types.ts`), raised when refusing has not
 //    worked. Every fresh approach goes on the attempt's record with what it
 //    repeated, which the next round is steered off. It is the last rung, however
-//    often it comes, and climbs the model ladder one rung
+//    often it comes, while keeping the starting model
 //    (`../../decision-handlers/loop-signal.ts`); at the top a loop that comes back
 //    is stopped and steered again until the purse ends it. The watch never asks
 //    the person on its own (t962, run-mwo3dp11-a47a032d: an "ask the person" rung
@@ -22,7 +22,7 @@
 // it repeated, how often and what each repeat came back with (`cameBack`), and the
 // loop carries its decision out (`decided`): `continue` ends the incident, so the
 // repeat may run and a further catch asks again with the count; `change_approach`
-// keeps the repeat refused; `escalate_model` and `finish_with_best` end the incident.
+// keeps the repeat refused; `finish_with_best` end the incident.
 //
 // **A lasting act done again is refused only on the new path.** A caller with no
 // `loopSignal` has no way to act on what a refusal leads to, and a task may really
@@ -86,7 +86,7 @@ export type AutomationStudioLlmLoopWatch = {
   /** What each of the calls a finding is about came back with, oldest first. */
   cameBack(finding: AutomationStudioLlmLoopFinding): AutomationStudioLlmLoopCameBack[];
   /** The model decided how to go on (`../../decision-handlers/loop-decision.ts`): `change_approach` keeps the repeat refused, anything else ends the incident. */
-  decided(decision: "continue" | "change_approach" | "escalate_model" | "finish_with_best"): void;
+  decided(decision: "continue" | "change_approach" | "finish_with_best"): void;
   tally(): AutomationStudioLlmLoopTally;
   readonly record: AutomationStudioLlmLoopAttemptRecord;
 };
