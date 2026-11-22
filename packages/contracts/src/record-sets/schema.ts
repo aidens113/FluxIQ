@@ -3,6 +3,14 @@ export const AUTOMATION_STUDIO_RECORD_VALUE_TYPES = Object.freeze(["string", "nu
 
 export type AutomationStudioRecordValueType = (typeof AUTOMATION_STUDIO_RECORD_VALUE_TYPES)[number];
 
+/** Meaning of a field's values, independent of their original JSON representation. */
+export const AUTOMATION_STUDIO_RECORD_SEMANTIC_TYPES = Object.freeze(["text", "number", "currency", "count", "date", "datetime", "url", "id", "flag"] as const);
+export type AutomationStudioRecordSemanticType = (typeof AUTOMATION_STUDIO_RECORD_SEMANTIC_TYPES)[number];
+
+/** A row mark carried by an actual field value, never inferred from another occurrence. */
+export const AUTOMATION_STUDIO_RECORD_FIELD_MARKS = Object.freeze(["badge", "flag", "state"] as const);
+export type AutomationStudioRecordFieldMark = (typeof AUTOMATION_STUDIO_RECORD_FIELD_MARKS)[number];
+
 /**
  * What happens to a field's value. `include` (the default) keeps it. `exclude`
  * keeps it out of node outputs, stored rows, the stored schema, previews, and
@@ -28,6 +36,10 @@ export type AutomationStudioRecordField = {
   /** Human-readable column name, used as the CSV header. Unique within the schema. */
   label: string;
   valueType: AutomationStudioRecordValueType;
+  /** Typed interpretation for computation; stored values retain their original display form. */
+  semanticType?: AutomationStudioRecordSemanticType;
+  /** This field describes a mark on this occurrence of the row. */
+  mark?: AutomationStudioRecordFieldMark;
   /** A row missing a required field is invalid. */
   required?: boolean;
   handling?: AutomationStudioRecordFieldHandling;

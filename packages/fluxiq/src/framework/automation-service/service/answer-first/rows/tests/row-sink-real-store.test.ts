@@ -55,6 +55,23 @@ function sinkOf(datasets: AutomationStudioRunDatasets) {
 }
 
 describe("the ledger answer on the real run datasets", () => {
+  it("reloads an actual zero-row read's schema and dataset identity without treating it as missing input", async () => {
+    const datasets = await open();
+    const sink = sinkOf(datasets);
+    const answer = liveAnswer([]);
+    answer.recordSchema = { schemaVersion: "0.1", primaryKey: ["title"], fields: [{ id: "title", label: "Title", valueType: "string", semanticType: "id" }] };
+    const stored = await sink.fromCall(call("empty"), answer);
+    if (!stored?.datasetId) throw new Error("Known empty read lost its dataset identity");
+    await datasets.processRunDatasets({ projectId: PROJECT, runId: RUN });
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    pools.push(pool);
+    const projects = new AutomationStudioProjectStore(new AutomationStudioProjectPaths(path.join(rootDir, "projects")));
+    const restored = new AutomationStudioRunDatasets(projects, pool);
+    const page = await restored.getRunDatasetPage({ projectId: PROJECT, runId: RUN, datasetId: stored.datasetId }, { retained: "answer" });
+    expect(page).toMatchObject({ rows: [], schema: answer.recordSchema, summary: { datasetId: stored.datasetId, recordCount: 0 } });
+    expect(await restored.readRunDatasetEvidence({ projectId: PROJECT, runId: RUN })).toEqual([{ datasetId: stored.datasetId, batchKey: "read/empty" }]);
+  });
+
   it("publishes all pages and a reread in exact page order, including exports and source provenance", async () => {
     const datasets = await open();
     const p = resultPipeline(undefined, datasets.recordBatchHandler(PROJECT, RUN));

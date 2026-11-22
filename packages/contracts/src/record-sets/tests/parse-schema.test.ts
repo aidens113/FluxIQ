@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   AUTOMATION_STUDIO_RECORD_SCHEMA_LIMITS,
+  AUTOMATION_STUDIO_RECORD_SEMANTIC_TYPES,
+  AUTOMATION_STUDIO_RECORD_FIELD_MARKS,
   parseAutomationStudioRecordSchema,
   type AutomationStudioRecordParseOptions,
   type AutomationStudioRecordSchema
@@ -34,6 +36,31 @@ function manyFields(count: number): Array<{ id: string; label: string; valueType
 }
 
 describe("parseAutomationStudioRecordSchema", () => {
+  it("round-trips every supported semantic type and mark without changing the JSON type", () => {
+    for (const semanticType of AUTOMATION_STUDIO_RECORD_SEMANTIC_TYPES) {
+      for (const mark of AUTOMATION_STUDIO_RECORD_FIELD_MARKS) {
+        const field = { id: "value", label: "Value", valueType: "string", semanticType, mark };
+        expect(parseAutomationStudioRecordSchema(withFields([field], { primaryKey: ["value"] }))).toEqual({
+          ok: true, schema: { schemaVersion: "0.1", fields: [field], primaryKey: ["value"] }
+        });
+      }
+    }
+  });
+
+  it("rejects unknown semantic metadata and parsed samples instead of storing them as row truth", () => {
+    const field = { id: "value", label: "Value", valueType: "string" };
+    for (const semanticType of ["money", "", 1, null, { type: "number" }]) {
+      expect(issuesOf(withFields([{ ...field, semanticType }]))).toEqual(["record_schema.invalid_semantic_type"]);
+    }
+    for (const mark of ["sponsored", "", true, null, { kind: "badge" }]) {
+      expect(issuesOf(withFields([{ ...field, mark }]))).toEqual(["record_schema.invalid_mark"]);
+    }
+    expect(issuesOf(withFields([{ ...field, semanticType: "currency", parsed: 12.5 }]))).toEqual(["record_schema.unknown_field_key"]);
+    expect(parseAutomationStudioRecordSchema(withFields([{ ...field, semanticType: undefined, mark: undefined }]))).toEqual({
+      ok: true, schema: { schemaVersion: "0.1", fields: [field] }
+    });
+  });
+
   it("round-trips a valid schema into fresh objects", () => {
     const result = parseAutomationStudioRecordSchema(VALID);
     expect(result).toEqual({ ok: true, schema: VALID });
