@@ -143,7 +143,7 @@ export async function automationStudioFlowLessJudge(input: AutomationStudioFlowL
           resultSummary: noted(forms[form]!),
           // Where the judging model's window cannot hold even that, the harness sends a shorter form still, each saying what it summarised (`./window-fitting.ts`).
           resultSummaryFitting: forms.slice(form + 1).map(noted),
-          deniedEvidenceKeys: input.deniedEvidenceKeys,
+          ...(input.deniedEvidenceKeys === undefined ? {} : { deniedEvidenceKeys: input.deniedEvidenceKeys }),
           provider: input.provider,
           ...(callMs !== undefined ? { timeoutMs: callMs } : {}),
           ...(input.tokenLimits ? { tokenLimits: input.tokenLimits } : {}),
