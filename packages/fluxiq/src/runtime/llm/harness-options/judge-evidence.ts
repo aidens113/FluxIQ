@@ -13,3 +13,8 @@ export type AutomationStudioJudgeEvidenceProjector = (input: Readonly<{
   evidence?: JsonValue | undefined;
   missing?: readonly string[] | undefined;
 };
+
+/** Preserve true absence versus an explicitly malformed opt-in while forwarding host options. */
+export function automationStudioJudgeEvidenceCapability(input: { judgeEvidenceVersion?: 1 | undefined } | undefined): { judgeEvidenceVersion?: 1 | undefined } {
+  return input !== undefined && Object.hasOwn(input, "judgeEvidenceVersion") ? { judgeEvidenceVersion: input.judgeEvidenceVersion } : {};
+}

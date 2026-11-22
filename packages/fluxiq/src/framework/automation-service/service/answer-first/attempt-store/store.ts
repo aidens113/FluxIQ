@@ -27,6 +27,7 @@ import { AutomationStudioAnswerFirstAttemptsUnreadable } from "./unreadable.ts";
 import { automationStudioAnswerFirstReplayVerdictRead } from "./replay-verdict.ts";
 import { readAutomationStudioAnswerFirstProcessingDeclaration } from "../result-processing/index.ts";
 import { readAutomationStudioAnswerFirstResultEvidence } from "../result-feed/index.ts";
+import { automationStudioReadJudgeCheckpoint, type AutomationStudioJudgeEvidenceCheckpoint } from "../../../../../runtime/result-verification/index.ts";
 
 const STORE_FILE = "answer-attempts.json";
 const KIND = "answer_first_attempts";
@@ -65,14 +66,29 @@ export class AutomationStudioAnswerFirstAttemptStore {
     if (record.processingReferenceTimeMs !== undefined && (!Number.isSafeInteger(record.processingReferenceTimeMs) || record.processingReferenceTimeMs < 0)) throw new Error("Invalid processing reference time.");
     if (record.processing !== undefined && !readAutomationStudioAnswerFirstProcessingDeclaration(record.processing)) throw new Error("Invalid processing declaration.");
     if (record.resultEvidence !== undefined && !readAutomationStudioAnswerFirstResultEvidence(record.resultEvidence)) throw new Error("Invalid result page provenance.");
+    if (Object.hasOwn(record, "judgeEvidence") && record.judgeEvidence !== null && !automationStudioReadJudgeCheckpoint(record.judgeEvidence)) throw new Error("Invalid semantic evidence checkpoint.");
     await this.queued(projectId, flowId, async () => {
       const attempts = (await this.readOrSetAside(projectId, flowId))?.attempts ?? [];
       const at = attempts.findIndex((each) => each.attempt.attemptId === record.attempt.attemptId);
-      if (at >= 0) attempts[at] = structuredClone(record);
+      if (at >= 0) attempts[at] = withLatestCheckpoint(attempts[at]!, structuredClone(record));
       else attempts.push(structuredClone(record));
       await this.write({ kind: KIND, schemaVersion: 1, projectId, flowId, attempts: attempts.slice(-KEPT_ATTEMPTS) });
       // After the row, so a failure here costs the lookup by id and never the row; the caller's next save tries again.
       await this.locator.noteAttempt(projectId, record.attempt.attemptId, flowId);
+    });
+  }
+
+  /** Metadata-only ordered save after a real call/Flow. It never republishes or evaluates rows, or changes an action's outcome. */
+  async saveJudgeEvidence(projectId: string, flowId: string, attemptId: string, checkpoint: AutomationStudioJudgeEvidenceCheckpoint): Promise<void> {
+    const judgeEvidence = automationStudioReadJudgeCheckpoint(checkpoint);
+    if (judgeEvidence === undefined) throw new Error("Invalid semantic evidence checkpoint.");
+    await this.queued(projectId, flowId, async () => {
+      const stored = await this.read(projectId, flowId);
+      const at = stored?.attempts.findIndex((each) => each.attempt.attemptId === attemptId) ?? -1;
+      if (!stored || at < 0) throw new Error("The attempt's semantic evidence checkpoint has no stored attempt.");
+      const attempts = [...stored.attempts];
+      attempts[at] = withLatestCheckpoint(attempts[at]!, { ...attempts[at]!, judgeEvidence });
+      await this.write({ ...stored, attempts });
     });
   }
 
@@ -145,9 +161,18 @@ function readStored(value: JsonObject, projectId: string, flowId: string): Store
   return { kind: KIND, schemaVersion: 1, projectId, flowId, attempts };
 }
 
+/** A concurrent full-row save cannot erase a newer ordered journal already saved after a real call. */
+function withLatestCheckpoint(previous: AutomationStudioAnswerFirstAttemptRecord, next: AutomationStudioAnswerFirstAttemptRecord): AutomationStudioAnswerFirstAttemptRecord {
+  if (!Object.hasOwn(next, "judgeEvidence") && Object.hasOwn(previous, "judgeEvidence")) return { ...next, judgeEvidence: previous.judgeEvidence ?? null };
+  const prior = previous.judgeEvidence;
+  const incoming = next.judgeEvidence;
+  if (prior && incoming && incoming.trail.length < prior.trail.length && incoming.trail.every((step, at) => step.callId === prior.trail[at]?.callId && step.did === prior.trail[at]?.did && step.outcome === prior.trail[at]?.outcome)) return { ...next, judgeEvidence: prior };
+  return next;
+}
+
 function readRecord(value: unknown): AutomationStudioAnswerFirstAttemptRecord | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
-  const held = value as { attempt?: unknown; result?: unknown; tried?: unknown; steps?: unknown; candidateId?: unknown; draftKept?: unknown; replay?: unknown; processingReferenceTimeMs?: unknown; processing?: unknown; resultEvidence?: unknown };
+  const held = value as { attempt?: unknown; result?: unknown; tried?: unknown; steps?: unknown; candidateId?: unknown; draftKept?: unknown; replay?: unknown; processingReferenceTimeMs?: unknown; processing?: unknown; resultEvidence?: unknown; judgeEvidence?: unknown };
   if (held.processingReferenceTimeMs !== undefined && (!Number.isSafeInteger(held.processingReferenceTimeMs) || (held.processingReferenceTimeMs as number) < 0)) return undefined;
   const processing = held.processing === undefined ? undefined : readAutomationStudioAnswerFirstProcessingDeclaration(held.processing);
   if (held.processing !== undefined && processing === undefined) return undefined;
@@ -169,6 +194,9 @@ function readRecord(value: unknown): AutomationStudioAnswerFirstAttemptRecord | 
     ...(held.processingReferenceTimeMs === undefined ? {} : { processingReferenceTimeMs: held.processingReferenceTimeMs as number }),
     ...(processing === undefined ? {} : { processing }),
     ...(resultEvidence === undefined ? {} : { resultEvidence }),
+    // Reject only this optional metadata. The actual result, effects and
+    // processing/source provenance must survive a malformed new field.
+    ...(Object.hasOwn(held, "judgeEvidence") ? { judgeEvidence: automationStudioReadJudgeCheckpoint(held.judgeEvidence) ?? null } : {}),
     tried: tried.record,
     ...(result?.ok ? { result: result.result } : {}),
     ...(held.steps !== undefined ? { steps: held.steps as AutomationStudioAnswerFirstAttemptRecord["steps"] & object } : {}),

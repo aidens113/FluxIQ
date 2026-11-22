@@ -114,7 +114,7 @@ const CHARS_PER_TOKEN = 4;
 /** Stands in for a line, or an address, the screen dropped whole. */
 const WITHHELD = "(withheld)";
 
-type Look = { where: string; found: string };
+type Look = { where: string; found: string; callId?: string };
 
 /** The purse would not pay for the check: the round ends as a budget-out, not as a refusal the model is asked again over. */
 export class AutomationStudioAnswerFirstJudgeRefusedByPurse extends Error {
@@ -325,7 +325,7 @@ async function summaryOf(input: Parameters<typeof automationStudioAnswerFirstCom
 function shownLooks(looks: readonly Look[]): Look[] {
   const kept = new Map<string, Look>();
   for (const look of looks) {
-    const shown = { where: screened(look.where), found: look.found.split("\n").map(screened).join("\n") };
+    const shown = { where: screened(look.where), found: look.found.split("\n").map(screened).join("\n"), ...(look.callId === undefined ? {} : { callId: screened(look.callId) }) };
     const key = JSON.stringify([shown.where, shown.found]);
     if (!kept.has(key)) kept.set(key, shown);
   }

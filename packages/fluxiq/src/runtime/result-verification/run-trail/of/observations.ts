@@ -10,7 +10,7 @@ import type { AutomationStudioResultTrailStep } from "../../contracts/index.ts";
 import { automationStudioResultTrailSemanticStep, type AutomationStudioResultTrailSemanticOptions } from "../semantic/index.ts";
 import { automationStudioResultFrameworkOutcome } from "../framework-outcome.ts";
 
-type Observation = { step: number; resultCode?: string | undefined; evidence: JsonValue; pass?: number | undefined; of?: number | undefined; records?: readonly JsonObject[] | undefined; recordSchema?: unknown; effectApplied?: boolean; failure?: unknown };
+type Observation = { step: number; resultCode?: string | undefined; evidence: JsonValue; pass?: number | undefined; of?: number | undefined; records?: readonly JsonObject[] | undefined; recordSchema?: unknown; effectApplied?: boolean; failure?: unknown; consequences?: readonly string[] };
 
 export function automationStudioResultTrailOfObservations(observations: readonly Observation[] | undefined, actionOf: (step: number) => string | undefined, semantic?: AutomationStudioResultTrailSemanticOptions): AutomationStudioResultTrailStep[] {
   return (observations ?? []).map((observation) => {

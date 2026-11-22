@@ -4,6 +4,7 @@
 export { AUTOMATION_STUDIO_RESULT_TRAIL_NOTE } from "./note.ts";
 export { automationStudioResultRunTrail } from "./trail.ts";
 export { automationStudioResultTrailSemanticStep, automationStudioResultSemanticTrail, type AutomationStudioResultTrailSemanticOptions } from "./semantic/index.ts";
+export { automationStudioReadJudgeCheckpoint, automationStudioMakeJudgeCheckpoint, type AutomationStudioJudgeEvidenceCheckpoint } from "./checkpoint/index.ts";
 export { automationStudioResultTrailRepeatsOnce } from "./repeats.ts";
 export { automationStudioResultTrailScreened } from "./screen.ts";
 export { automationStudioResultTrailOfAttempts, automationStudioResultTrailOfObservations, automationStudioResultTrailStepOfCall } from "./of/index.ts";

@@ -104,3 +104,51 @@ parking it among the results once it has stood still, changes the bill by at mos
 
 The step log records `cacheWriteInputTokens` beside the hits and misses. `pricing.ts`
 holds the official rates; a hit on Sonnet 5.5 or Opus 5.5 is 0.05x input.
+
+## Semantic evidence for result judges
+
+A runtime explicitly declares `judgeEvidenceVersion: 1` and a pure
+`projectJudgeEvidence` callback to use semantic result evidence. Core gives the
+callback a cloned, deeply frozen adapter envelope and separately validates,
+clones and privacy-screens its output. The domain recognizes its own results;
+Core does not guess browser capture keys. An absent capability retains an
+untagged generic binding's existing behavior. An explicitly invalid capability,
+or a stored versioned finding/summary without its current callback or privacy
+declaration, is an explicit repairable evidence gap, with no raw fallback.
+
+Calls, traced Flow attempts and build observations use the same ordered trail.
+Core keeps actual status, routing, declared consequences, failure-control facts
+and reported effects separately from the domain finding. A reported applied or
+uncertain effect requires before/after witnesses even when the same step also
+returns data or omitted a consequence declaration. Successful command status is
+not effect proof. Historical uncertainty remains a fact; current evidence can
+resolve it. A capture deliberately omitted from otherwise complete data is not
+itself an evidence gap.
+
+The sent copy contains complete allowed answer rows, source pages and processing,
+removal and comparison accounts through their existing owners. Columns select
+presentation, not what evidence is retained. Semantic findings reference those
+sources rather than duplicating row stores or evaluating them again. Current
+privacy declarations screen old semantic cells again, without changing private
+evidence. Undefined policy never means an empty exclusion list. A looked entry
+is omitted as redundant only when its Core-issued call ID uniquely matches an
+actual trail entry; unmatched or duplicate sources must be projected or named
+as missing.
+
+An opted-in answer-first attempt stores a private `judgeEvidence` version-1
+checkpoint beside its existing result, processing declaration, reference time
+and page provenance. It contains ordered semantic findings/framework facts and
+semantic witnesses, never raw captures or functions. Metadata-only saves after
+real calls/Flow records neither publish nor process rows. A concurrent older
+full attempt save cannot erase a newer ordered checkpoint. Absence is legacy;
+explicitly unreadable new metadata becomes null while actual results/effects
+survive. Resume restores the logical before witness and takes its current after
+from fresh evidence, rather than offering a historical after as current state.
+
+Stored semantic summaries are read as semantic findings, not projected a second
+time. Unknown/malformed new formats cannot route to legacy raw rendering. A
+semantic evidence gap holds a model yes under existing unsure/repair handling;
+it adds no ending, retry or model call. Versioned request fitting retains the
+whole semantic evidence and exact rows/accounts. If they exceed a model's
+window, existing repairable window refusal applies; reduction in capture bytes
+does not promise that every task fits or is cheaper.

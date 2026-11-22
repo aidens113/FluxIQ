@@ -2,6 +2,7 @@ import type { AutomationStudioFlowInstruction } from "../../../../flows/authorin
 import { automationStudioCandidateTrialOffline, type AutomationStudioCandidateTrialPort } from "../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";
 import type { AutomationStudioSiteResetProjectLedger } from "../../../../runtime/flow-authoring/bootstrap/site-reset/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmProvider } from "../../../../runtime/llm/index.ts";
+import { automationStudioJudgeEvidenceCapability } from "../../../../runtime/llm/harness-options/index.ts";
 import { automationStudioBuildTestJudge } from "../../../../runtime/result-verification/index.ts";
 import { automationStudioCandidateTrialPort, type AutomationStudioCandidateTrialPorts } from "../candidate-trial/index.ts";
 import { AutomationStudioOfflineTrialInstallation, automationStudioOfflineFirstWhole } from "../offline-first/index.ts";
@@ -75,7 +76,7 @@ export function automationStudioProjectBuildWholeTrials(input: {
 }): AutomationStudioProjectBuildWholeTrials {
   const { environment, binding } = input;
   const { projectId, flowId } = environment;
-  const asked = automationStudioBuildTestJudge({ provider: input.judge.provider, timeoutMs: input.judge.timeoutMs, instructions: input.judge.instructions, deniedEvidenceKeys: binding.deniedEvidenceKeys, projectJudgeEvidence: binding.projectJudgeEvidence, projectId, flowId, signal: input.judge.signal });
+  const asked = automationStudioBuildTestJudge({ provider: input.judge.provider, timeoutMs: input.judge.timeoutMs, instructions: input.judge.instructions, deniedEvidenceKeys: binding.deniedEvidenceKeys, projectJudgeEvidence: binding.projectJudgeEvidence, ...automationStudioJudgeEvidenceCapability(binding), projectId, flowId, signal: input.judge.signal });
   const judge: typeof asked = async (judged) => {
     const taskChecklist = await AutomationStudioProjectBuildTaskChecklist.whole(environment);
     return await asked(taskChecklist ? { ...judged, taskChecklist } : judged);

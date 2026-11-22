@@ -81,7 +81,7 @@
 // after the step it reads therefore cannot send it either.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import { automationStudioFlowDraftReplayObservation } from "./observation.ts";
+import { automationStudioFlowDraftReplayObservation as observeReplay } from "./observation.ts";
 import type { AuthoringPartOfStep } from "../../../flow-authoring/bootstrap/record-defaults/index.ts";
 import {
   automationStudioFlowDraftExemptStepIds,
@@ -445,7 +445,7 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
     if (ran.readable) {
       // The rows a read stored, beside its evidence and never in it (`./replay-span.ts`, the observation's type).
       const records = value ? automationStudioFlowDraftReplayStoredRecords(ran, mode) : undefined;
-      observations.push(automationStudioFlowDraftReplayObservation({ step: step.position, stepId }, ran.result, records));
+      observations.push(observeReplay({ step: step.position, stepId, consequences: value?.consequences }, ran.result, records));
     }
     if (withheldBy === undefined && automationStudioFlowDraftReplayOutcomeVerified(outcome) && automationStudioFlowDraftStepWithholdsLater(step, proposed.slice(index + 1).find((next) => !automationStudioFlowDraftStepCarriedJoin(next)))) {
       withheldBy = step.position;

@@ -87,7 +87,7 @@
 // last pass's, so a stale value from an earlier row is never sent.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import { automationStudioFlowDraftReplayObservation, type AutomationStudioFlowDraftReplayObservation } from "./observation.ts";
+import { automationStudioFlowDraftReplayObservation as observeReplay, type AutomationStudioFlowDraftReplayObservation as ReplayObservation } from "./observation.ts";
 import type { AuthoringPartOfStep } from "../../../flow-authoring/bootstrap/authoring/index.ts";
 import { automationStudioFlowDraftScheduledCandidateCall } from "../../../flow-authoring/draft/scheduled-candidate/index.ts";
 import { getAutomationNodeDefinition, resolveAutomationNodeParameterValues, type AutomationStudioNodeDefinition } from "../../../../framework/automation-service/nodes/index.ts";
@@ -402,7 +402,7 @@ export type AutomationStudioFlowDraftReplaySpanRunInput = {
 /** What a span answered: an outcome per member that ran, what the calls showed, the first page that did not pass, and whether the walk stops. */
 export type AutomationStudioFlowDraftReplaySpanRunResult = {
   outcomes: AutomationStudioFlowDraftReplayOutcome[];
-  observations: AutomationStudioFlowDraftReplayObservation[];
+  observations: ReplayObservation[];
   evidence?: { callId: string; toolId: string; value: JsonValue };
   stopped: boolean;
   /** A forward run's list: the rows done, left out as already done, and failed on. Absent without `forward`, and for a repeat of no list. */
@@ -418,7 +418,7 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
   const { plan } = input;
   const bound = automationStudioFlowDraftReplayLoopBound();
   const passes = new Map<AutomationStudioFlowDraftStep, AutomationStudioFlowDraftReplayPass[]>(plan.members.map((member) => [member, []]));
-  const observations: AutomationStudioFlowDraftReplayObservation[] = [];
+  const observations: ReplayObservation[] = [];
   let evidence: AutomationStudioFlowDraftReplaySpanRunResult["evidence"];
   let stopped = false;
   let overBound = false;
@@ -434,7 +434,7 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
     if (!answer.readable) return;
     // The rows this pass's read stored, beside its evidence and never in it (see the observation's type).
     const records = automationStudioFlowDraftReplayStoredRecords(answer, mode);
-    observations.push(automationStudioFlowDraftReplayObservation({ step: step.position, stepId: automationStudioFlowDraftStepId(step), pass }, answer.result, records));
+    observations.push(observeReplay({ step: step.position, stepId: automationStudioFlowDraftStepId(step), pass, consequences: step.ranWith?.consequences ?? step.input.consequences }, answer.result, records));
     if (status !== "replayed" && !evidence) evidence = { callId, toolId: automationStudioNodeReplayToolId(step), value: answer.result.evidence };
   };
   // A call of pass `pass`, sent inside its step-log pass scope (see the header).

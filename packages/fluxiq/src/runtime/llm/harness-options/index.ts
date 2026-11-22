@@ -13,7 +13,7 @@ export {
   type AutomationStudioHarnessOptionStage
 } from "./option.ts";
 export type { AutomationStudioHarnessOptionHost, AutomationStudioHarnessOptionHostContext } from "./host.ts";
-export type { AutomationStudioJudgeEvidenceProjector } from "./judge-evidence.ts";
+export { automationStudioJudgeEvidenceCapability, type AutomationStudioJudgeEvidenceProjector } from "./judge-evidence.ts";
 export {
   AUTOMATION_STUDIO_BUILTIN_HARNESS_OPTION_IDS,
   builtinAutomationStudioHarnessOptions

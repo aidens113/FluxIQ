@@ -189,6 +189,8 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
    * framework outcomes and stored rows remain available. No raw fallback.
    */
   projectJudgeEvidence?: AutomationStudioJudgeEvidenceProjector | undefined;
+  /** Explicit host opt-in. Untagged legacy domains retain their existing judge format. */
+  judgeEvidenceVersion?: 1 | undefined;
   /**
    * The top-level keys of a tool result's value that are this domain's view of
    * its target as the call saw or left it -- for the web domain, the page.

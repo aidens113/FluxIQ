@@ -35,6 +35,7 @@ type TracedAttempt = {
   definitionId?: string | undefined;
   route?: string | undefined;
   status?: string | undefined;
+  effectApplied?: boolean | undefined;
   inputs?: Readonly<Record<string, unknown>> | undefined;
   outputs?: Readonly<Record<string, unknown>> | undefined;
   message?: string | undefined;
@@ -45,7 +46,7 @@ type TracedAttempt = {
 };
 
 /** A node of the Flow, as far as this reads it. */
-type Node = { id: string; definitionId?: string | undefined; label?: string | undefined; parameterValues?: JsonObject | undefined };
+type Node = { id: string; definitionId?: string | undefined; label?: string | undefined; parameterValues?: JsonObject | undefined; metadata?: JsonObject | undefined };
 
 export function automationStudioResultTrailOfAttempts(attempts: readonly TracedAttempt[] | undefined, nodes: readonly Node[], viewKeys: readonly string[] | undefined, semantic?: AutomationStudioResultTrailSemanticOptions): AutomationStudioResultTrailStep[] {
   const byId = new Map(nodes.map((node) => [node.id, node]));
@@ -101,7 +102,7 @@ function stepOf(attempt: TracedAttempt, node: Node | undefined, keys: readonly s
     ...(after === undefined ? {} : { after }),
     ...(diff === undefined ? {} : { changed: diff })
   };
-  return automationStudioResultTrailSemanticStep(step, { source: "flow-attempt", definitionId: step.did, evidence: envelope, ...(asked === undefined ? {} : { asked }), ...(step.on === undefined ? {} : { on: step.on }) }, semantic, automationStudioResultFrameworkOutcome(attempt));
+  return automationStudioResultTrailSemanticStep(step, { source: "flow-attempt", definitionId: step.did, evidence: envelope, ...(asked === undefined ? {} : { asked }), ...(step.on === undefined ? {} : { on: step.on }) }, semantic, automationStudioResultFrameworkOutcome({ ...attempt, consequences: node?.metadata?.declaredConsequences }));
 }
 
 /** What stands in for the host's capture of a page the views show (header). */

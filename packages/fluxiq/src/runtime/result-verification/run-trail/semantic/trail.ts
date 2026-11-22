@@ -1,6 +1,7 @@
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioResultTrail, AutomationStudioResultTrailShownStep, AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import { automationStudioJudgeEvidenceFinding } from "../../judge-evidence/finding.ts";
+import { automationStudioShownJudgeFinding } from "../../judge-evidence/shown.ts";
 import { automationStudioProjectJudgeEvidence, type AutomationStudioJudgeEvidenceProjection } from "../../judge-evidence/project.ts";
 import { automationStudioResultEvidenceScreen } from "../../result-evidence/index.ts";
 import { automationStudioResultFrameworkOutcome } from "../framework-outcome.ts";
@@ -24,8 +25,12 @@ export function automationStudioResultSemanticTrail(trail: AutomationStudioResul
     const identity = automationStudioResultEvidenceScreen({ n: step.n, did: step.did, ...(step.callId === undefined ? {} : { callId: step.callId }), ...(step.on === undefined ? {} : { on: step.on }), ...(step.outcome === undefined ? {} : { outcome: step.outcome }), ...(step.where === undefined ? {} : { where: step.where }) }, deniedKeys);
     withheld ||= identity.withheld;
     let finding: AutomationStudioJudgeEvidenceProjection | undefined;
-    if (Object.hasOwn(step, "judgeEvidence")) {
+    if (options.invalidFormat) finding = { missing: ["judge_evidence.version_invalid"], withheld: true };
+    else if (Object.hasOwn(step, "judgeEvidence")) {
       const reopened = automationStudioJudgeEvidenceFinding(step.judgeEvidence, deniedKeys);
+      finding = reopened.ok ? reopened.finding : { missing: [reopened.code], withheld: true };
+    } else if (options.alreadyProjected) {
+      const reopened = automationStudioShownJudgeFinding(step.found, deniedKeys);
       finding = reopened.ok ? reopened.finding : { missing: [reopened.code], withheld: true };
     } else if (step.found !== undefined) {
       const source = options.legacySource ?? "legacy";

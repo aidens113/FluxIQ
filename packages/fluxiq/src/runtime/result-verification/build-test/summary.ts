@@ -163,7 +163,7 @@ export type AutomationStudioBuildTestReportInput = {
    * span (t252 D6); absent elsewhere. `records`, the rows a read stored, feed
    * `stores` only and are never sent (`./stores.ts`).
    */
-  observations: readonly { step: number; stepId?: string | undefined; resultCode?: string | undefined; evidence: JsonValue; pass?: number | undefined; of?: number | undefined; records?: readonly JsonObject[] | undefined; effectApplied?: boolean; failure?: unknown; recordSchema?: unknown }[];
+  observations: readonly { step: number; stepId?: string | undefined; resultCode?: string | undefined; evidence: JsonValue; pass?: number | undefined; of?: number | undefined; records?: readonly JsonObject[] | undefined; effectApplied?: boolean; failure?: unknown; recordSchema?: unknown; consequences?: readonly string[] }[];
   reused: boolean;
 };
 
@@ -219,6 +219,7 @@ export function automationStudioBuildTestResultSummary(input: {
   arrival?: NonNullable<AutomationStudioLlmEvidenceRuntimeBinding["runsNodes"]>["arrival"] | undefined;
   deniedEvidenceKeys?: readonly string[] | undefined;
   projectJudgeEvidence?: AutomationStudioJudgeEvidenceProjector | undefined;
+  judgeEvidenceVersion?: 1 | undefined;
   /**
    * The keys under which the domain's step arguments carry the row a control
    * was found in, as the domain declares them (see the comment above
@@ -353,7 +354,7 @@ export function automationStudioBuildTestResultSummary(input: {
   if (started?.withheld) withheld = true;
   // Everything the test did, answer by answer, each whole with the page it showed: the judge reads the trial by it (`../run-trail/`, t963).
   const actionAt = new Map(proposed.map((step) => [step.position, step.actionId]));
-  const trail = automationStudioResultRunTrail(automationStudioResultTrailOfObservations(input.report?.observations, (position) => actionAt.get(position), Object.hasOwn(input, "projectJudgeEvidence") ? { projectJudgeEvidence: input.projectJudgeEvidence, deniedEvidenceKeys: denied } : undefined), denied);
+  const trail = automationStudioResultRunTrail(automationStudioResultTrailOfObservations(input.report?.observations, (position) => actionAt.get(position), Object.hasOwn(input, "judgeEvidenceVersion") ? { judgeEvidenceVersion: input.judgeEvidenceVersion, projectJudgeEvidence: input.projectJudgeEvidence, deniedEvidenceKeys: denied } : undefined), denied);
   if (trail.withheld) withheld = true;
   // The start view before what varies per test, as a finished run's summary places it (`../result-summary.ts`, t493).
   return {

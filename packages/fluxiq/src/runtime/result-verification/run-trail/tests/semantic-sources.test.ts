@@ -12,7 +12,7 @@ const FAILURE = { category: "expected_state_missing", code: "example.effect_not_
 type Source = "call" | "flow" | "build";
 
 function adapted(source: Source, evidence: JsonObject, projector: AutomationStudioJudgeEvidenceProjector | undefined): AutomationStudioResultTrailStep {
-  const semantic = { projectJudgeEvidence: projector, deniedEvidenceKeys: [] };
+  const semantic = { judgeEvidenceVersion: 1 as const, projectJudgeEvidence: projector, deniedEvidenceKeys: [] };
   if (source === "call") return automationStudioResultTrailStepOfCall({ callId: ID, toolId: "core.run_node", value: { node: "example.action", parameters: { capture: RAW } } }, { kind: "llm_evidence_tool_execution", resultCode: "example.succeeded", effectApplied: true, failure: FAILURE, evidence }, "Example item", semantic);
   if (source === "flow") return automationStudioResultTrailOfAttempts([{ nodeId: "n1", attemptId: ID, definitionId: "example.action", status: "succeeded", route: "success", failure: FAILURE, outputs: evidence, stateRefs: { afterAction: { summary: { page: RAW } } } }], [], ["page"], semantic)[0]!;
   return automationStudioResultTrailOfObservations([{ step: 1, resultCode: "example.succeeded", effectApplied: true, failure: FAILURE, evidence, records: ROWS }], () => "example.action", semantic)[0]!;

@@ -35,7 +35,7 @@ export function automationStudioResultTrailStepOfCall(call: { callId?: string | 
   };
   if (semantic === undefined) return step;
   const envelope: JsonObject = { evidence: evidence ?? null, ...(execution?.recordSchema === undefined ? {} : { recordSchema: execution.recordSchema }), ...(execution?.outputs === undefined ? {} : { outputs: execution.outputs }), ...(call.callId === undefined ? {} : { source: { callId: call.callId } }) };
-  return automationStudioResultTrailSemanticStep(step, { source: "call", definitionId: did, evidence: envelope, asked: call.value, ...(on === undefined ? {} : { on }) }, semantic, execution === undefined ? undefined : automationStudioResultFrameworkOutcome(execution));
+  return automationStudioResultTrailSemanticStep(step, { source: "call", definitionId: did, evidence: envelope, asked: call.value, ...(on === undefined ? {} : { on }) }, semantic, automationStudioResultFrameworkOutcome({ ...execution, consequences: call.value.consequences }));
 }
 
 function isExecution(answer: unknown): answer is Execution {

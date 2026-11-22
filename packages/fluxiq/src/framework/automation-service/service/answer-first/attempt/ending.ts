@@ -32,6 +32,7 @@ import { automationStudioAnswerFirstRemember } from "./remember.ts";
 import type { AutomationStudioAnswerFirstRoundsEnding } from "./rounds.ts";
 import { automationStudioAnswerFirstSay } from "./say.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
+import { automationStudioAnswerFirstTrailsOf } from "../trail/index.ts";
 
 const BUDGET_MISSING = "The budget ran out before this was confirmed.";
 const STOP_MISSING = "You stopped it before this was confirmed.";
@@ -115,10 +116,13 @@ async function endedSession(run: AutomationStudioAnswerFirstAttemptRun, ending: 
 
 async function storedEnding(run: AutomationStudioAnswerFirstAttemptRun, checked: ReturnType<typeof automationStudioAnswerFirstEnding>, candidateId: string | undefined, draftKept?: "not_assembled" | "not_saved"): Promise<{ ok: true } | { ok: false; errorName: string }> {
   try {
+    const journal = automationStudioAnswerFirstTrailsOf(run.input.owner);
+    const judgeEvidence = journal.checkpoint(run.trail, run.witnesses.readings(), { ...journal.capability(run.trail, run.input.binding), projectJudgeEvidence: run.input.binding?.projectJudgeEvidence, deniedEvidenceKeys: run.input.binding?.deniedEvidenceKeys });
     await run.store.save(run.input.projectId, run.input.flowId, {
       attempt: checked.attempt,
       ...(run.processingReferenceTimeMs === undefined ? {} : { processingReferenceTimeMs: run.processingReferenceTimeMs }),
       ...(run.result.processingDeclaration() === undefined ? {} : { processing: run.result.processingDeclaration()!, resultEvidence: run.result.evidence() }),
+      ...(judgeEvidence === undefined ? {} : { judgeEvidence }),
       ...(checked.result ? { result: checked.result } : {}),
       tried: automationStudioAnswerFirstTriedAsContract(run.tried.data()),
       ...(candidateId === undefined ? {} : { candidateId }),

@@ -220,7 +220,7 @@ import { automationStudioResultFirstAskConfirmed, automationStudioResultModelSai
 import { emitAutomationStudioActivity } from "../automation-activity/index.ts";
 import { AUTOMATION_STUDIO_RESULT_SIZE_REFUSED, automationStudioResultSummaryFormForWindow, automationStudioResultTrailFitting } from "./run-trail/index.ts";
 import { automationStudioLlmUnreadableReplySaid } from "../models/failures/index.ts";
-import type { AutomationStudioJudgeEvidenceProjector } from "../llm/harness-options/index.ts";
+import { automationStudioJudgeEvidenceCapability, type AutomationStudioJudgeEvidenceProjector } from "../llm/harness-options/index.ts";
 import { automationStudioResultJudgeSummary } from "./judge-evidence/index.ts";
 import {
   automationStudioResultSummaryWithUnreadableNote,
@@ -266,6 +266,7 @@ export type AutomationStudioResultVerificationRequest = {
   /** The bound domain's declared denied keys. Required once anything is sent. */
   deniedEvidenceKeys?: readonly string[] | undefined;
   projectJudgeEvidence?: AutomationStudioJudgeEvidenceProjector | undefined;
+  judgeEvidenceVersion?: 1 | undefined;
   provider?: AutomationStudioLlmProvider | undefined;
   policy?: AutomationStudioAdaptationPolicy | undefined;
   tokenLimits?: Partial<AutomationStudioLlmTokenLimits> | undefined;
@@ -505,7 +506,7 @@ async function askOnce(
     automationStudioResultSummaryWithUnreadColumns(request.summary, request.instructions),
     request.instructions
   ))));
-  const judged = automationStudioResultJudgeSummary(annotated, { projectJudgeEvidence: request.projectJudgeEvidence, deniedEvidenceKeys: request.deniedEvidenceKeys });
+  const judged = automationStudioResultJudgeSummary(annotated, { ...automationStudioJudgeEvidenceCapability(request), projectJudgeEvidence: request.projectJudgeEvidence, deniedEvidenceKeys: request.deniedEvidenceKeys });
   // The forms of the judge's copy, whole first, and the first that fits the judging model's window by a conservative
   // measure; a refusal for size steps down one form, never read as no answer while one is left (`./run-trail/window.ts`, t965).
   // After an unreadable reply, every form carries the note on what could not be read, last (`./unreadable-asks/note.ts`, t979).
@@ -546,7 +547,7 @@ async function askOnce(
   const truncatedAfterVerdict = response?.truncatedAfterVerdict === true;
   // The run's own summary, with the flagged rows the judge was shown: the
   // judge's paging words are not Core's observation.
-  const summary = { ...(judged.leftOutNamingTheItem ? { ...request.summary, leftOutNamingTheItem: judged.leftOutNamingTheItem } : request.summary), evidenceProjection: judged.evidenceProjection };
+  const summary = { ...(judged.leftOutNamingTheItem ? { ...request.summary, leftOutNamingTheItem: judged.leftOutNamingTheItem } : request.summary), ...(judged.evidenceProjection === undefined ? {} : { evidenceProjection: judged.evidenceProjection }) };
   // A yes over a row a condition alone left out quotes, beside it, the request's own words that exclude it (t515, `./verdict/`).
   const wording = automationStudioRequestWording(request.instructions, request.summary);
   const read = automationStudioResultVerdict({

@@ -211,6 +211,7 @@ export type AutomationStudioRunResultSummaryInput = {
   deniedEvidenceKeys?: readonly string[] | undefined;
   /** Explicitly present to capture durable semantic findings before legacy trail screening. */
   projectJudgeEvidence?: AutomationStudioJudgeEvidenceProjector | undefined;
+  judgeEvidenceVersion?: 1 | undefined;
   /** Numeric override for relative dates in value readings. Absent, use the execution reference, then summary time. */
   now?: number | undefined;
   /** The execution's fixed reference. A caller's numeric `now` override still wins. */
@@ -282,7 +283,7 @@ export function summarizeAutomationStudioRunResult(input: AutomationStudioRunRes
   const resultEvidence = input.deniedEvidenceKeys === undefined ? undefined : automationStudioResultEvidenceScreen(bundle, input.deniedEvidenceKeys);
   withheld ||= resultEvidence?.withheld === true;
   // Everything the run did, step by step, with what each answered and the page after it: the judge reads the result by it (`./run-trail/`, t963).
-  const trail = input.sessionAttempts ? automationStudioResultRunTrail(automationStudioResultTrailOfAttempts(input.sessionAttempts, flowNodes, input.observedStateKeys ?? viewKeysOf(input.endView), Object.hasOwn(input, "projectJudgeEvidence") ? { projectJudgeEvidence: input.projectJudgeEvidence, deniedEvidenceKeys: input.deniedEvidenceKeys } : undefined), input.deniedEvidenceKeys) : undefined;
+  const trail = input.sessionAttempts ? automationStudioResultRunTrail(automationStudioResultTrailOfAttempts(input.sessionAttempts, flowNodes, input.observedStateKeys ?? viewKeysOf(input.endView), Object.hasOwn(input, "judgeEvidenceVersion") ? { judgeEvidenceVersion: input.judgeEvidenceVersion, projectJudgeEvidence: input.projectJudgeEvidence, deniedEvidenceKeys: input.deniedEvidenceKeys } : undefined), input.deniedEvidenceKeys) : undefined;
   if (trail?.withheld) withheld = true;
   // The start view first: every trial of one build starts from the same reset
   // page, so it is the same bytes in each trial judge's request, and only bytes
