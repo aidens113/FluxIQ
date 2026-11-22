@@ -46,7 +46,8 @@ export function automationStudioAnswerFirstTrailsOf(owner: object): AutomationSt
       const stored = carried && Object.hasOwn(opening, "judgeEvidence");
       const invalid: AutomationStudioResultTrailStep = { did: "core.judge_checkpoint_unreadable", outcome: "not_held", judgeEvidence: { version: 1, missing: ["judge_evidence.checkpoint_invalid"], withheld: true } };
       const trail = earlier ?? (stored ? opening.judgeEvidence === null || opening.judgeEvidence === undefined ? [invalid] : structuredClone(opening.judgeEvidence.trail) : carried ? [NOT_HELD] : []);
-      if (stored) checkpoints.set(trail, opening.judgeEvidence ?? null);
+      const current = checkpoints.get(trail);
+      if (stored && (current == null || (opening.judgeEvidence != null && opening.judgeEvidence.revision > current.revision))) checkpoints.set(trail, opening.judgeEvidence ?? null);
       if (earlier && stored && opening.judgeEvidence == null) trail.push(invalid);
       trails.delete(attemptId);
       trails.set(attemptId, trail);

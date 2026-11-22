@@ -32,7 +32,7 @@ export function automationStudioMakeJudgeCheckpoint(steps: readonly AutomationSt
     if (earlier !== undefined) kept[phase] = read(earlier);
     else if (raw !== undefined) kept[phase] = Object.hasOwn(raw, "judgeEvidence") ? read(raw.judgeEvidence) : { version: 1, ...automationStudioProjectJudgeEvidence({ source: "state", phase, evidence: { evidence: raw } }, options.projectJudgeEvidence, options.deniedEvidenceKeys) };
   }
-  return { version: 1, trail, ...(Object.keys(kept).length ? { witnesses: kept } : {}) };
+  return { version: 1, revision: (prior?.revision ?? 0) + 1, trail, ...(Object.keys(kept).length ? { witnesses: kept } : {}) };
 }
 
 function gap(code: string): AutomationStudioJudgeEvidenceFinding {

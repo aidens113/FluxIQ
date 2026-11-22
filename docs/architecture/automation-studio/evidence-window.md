@@ -138,9 +138,14 @@ as missing.
 An opted-in answer-first attempt stores a private `judgeEvidence` version-1
 checkpoint beside its existing result, processing declaration, reference time
 and page provenance. It contains ordered semantic findings/framework facts and
-semantic witnesses, never raw captures or functions. Metadata-only saves after
-real calls/Flow records neither publish nor process rows. A concurrent older
-full attempt save cannot erase a newer ordered checkpoint. Absence is legacy;
+semantic witnesses, never raw captures or functions. Core assigns a positive
+safe-integer `revision` synchronously at each logical-attempt snapshot and seeds
+it from the checkpoint on restore. Metadata-only saves after real calls/Flow
+records neither publish nor process rows. Older revisions cannot replace newer
+metadata, regardless of trail length. Equal revisions require full semantic
+equality; conflicts preserve the prior journal. A full-row metadata conflict is
+reported after keeping the actual task/result/processing/source fields, while
+a metadata-only conflict changes nothing. Absence is legacy;
 explicitly unreadable new metadata becomes null while actual results/effects
 survive. Resume restores the logical before witness and takes its current after
 from fresh evidence, rather than offering a historical after as current state.

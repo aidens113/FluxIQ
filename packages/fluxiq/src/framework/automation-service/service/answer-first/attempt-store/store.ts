@@ -15,6 +15,7 @@
 // each other's record.
 
 import { rename } from "node:fs/promises";
+import { isDeepStrictEqual } from "node:util";
 import path from "node:path";
 import { parseAutomationStudioTaskAttempt, parseAutomationStudioTaskResult, parseAutomationStudioTriedRecord } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../../../core/index.ts";
@@ -66,15 +67,25 @@ export class AutomationStudioAnswerFirstAttemptStore {
     if (record.processingReferenceTimeMs !== undefined && (!Number.isSafeInteger(record.processingReferenceTimeMs) || record.processingReferenceTimeMs < 0)) throw new Error("Invalid processing reference time.");
     if (record.processing !== undefined && !readAutomationStudioAnswerFirstProcessingDeclaration(record.processing)) throw new Error("Invalid processing declaration.");
     if (record.resultEvidence !== undefined && !readAutomationStudioAnswerFirstResultEvidence(record.resultEvidence)) throw new Error("Invalid result page provenance.");
-    if (Object.hasOwn(record, "judgeEvidence") && record.judgeEvidence !== null && !automationStudioReadJudgeCheckpoint(record.judgeEvidence)) throw new Error("Invalid semantic evidence checkpoint.");
+    const hasJudgeEvidence = Object.hasOwn(record, "judgeEvidence");
+    const parsedJudgeEvidence = hasJudgeEvidence ? automationStudioReadJudgeCheckpoint(record.judgeEvidence) : undefined;
+    const rejectedJudgeEvidence = hasJudgeEvidence && record.judgeEvidence !== null && parsedJudgeEvidence === undefined;
+    const safeRecord = hasJudgeEvidence ? { ...record, judgeEvidence: parsedJudgeEvidence ?? null } : record;
     await this.queued(projectId, flowId, async () => {
       const attempts = (await this.readOrSetAside(projectId, flowId))?.attempts ?? [];
       const at = attempts.findIndex((each) => each.attempt.attemptId === record.attempt.attemptId);
-      if (at >= 0) attempts[at] = withLatestCheckpoint(attempts[at]!, structuredClone(record));
-      else attempts.push(structuredClone(record));
+      let conflict = false;
+      if (at >= 0) {
+        const merged = withLatestCheckpoint(attempts[at]!, structuredClone(safeRecord));
+        attempts[at] = merged.record;
+        conflict = merged.conflict;
+      } else attempts.push(structuredClone(safeRecord));
       await this.write({ kind: KIND, schemaVersion: 1, projectId, flowId, attempts: attempts.slice(-KEPT_ATTEMPTS) });
       // After the row, so a failure here costs the lookup by id and never the row; the caller's next save tries again.
       await this.locator.noteAttempt(projectId, record.attempt.attemptId, flowId);
+      // The actual result/effects and processing fields were kept above.
+      // Only the conflicting optional metadata was refused.
+      if (conflict || rejectedJudgeEvidence) throw new Error(conflict ? "Semantic evidence checkpoint revision conflict; actual attempt data was saved." : "Invalid semantic evidence checkpoint; actual attempt data was saved.");
     });
   }
 
@@ -87,7 +98,11 @@ export class AutomationStudioAnswerFirstAttemptStore {
       const at = stored?.attempts.findIndex((each) => each.attempt.attemptId === attemptId) ?? -1;
       if (!stored || at < 0) throw new Error("The attempt's semantic evidence checkpoint has no stored attempt.");
       const attempts = [...stored.attempts];
-      attempts[at] = withLatestCheckpoint(attempts[at]!, { ...attempts[at]!, judgeEvidence });
+      const previous = attempts[at]!;
+      const merged = withLatestCheckpoint(previous, { ...previous, judgeEvidence });
+      if (merged.conflict) throw new Error("Semantic evidence checkpoint revision conflict.");
+      if (merged.record.judgeEvidence === previous.judgeEvidence) return;
+      attempts[at] = merged.record;
       await this.write({ ...stored, attempts });
     });
   }
@@ -161,13 +176,17 @@ function readStored(value: JsonObject, projectId: string, flowId: string): Store
   return { kind: KIND, schemaVersion: 1, projectId, flowId, attempts };
 }
 
-/** A concurrent full-row save cannot erase a newer ordered journal already saved after a real call. */
-function withLatestCheckpoint(previous: AutomationStudioAnswerFirstAttemptRecord, next: AutomationStudioAnswerFirstAttemptRecord): AutomationStudioAnswerFirstAttemptRecord {
-  if (!Object.hasOwn(next, "judgeEvidence") && Object.hasOwn(previous, "judgeEvidence")) return { ...next, judgeEvidence: previous.judgeEvidence ?? null };
+/** Only Core-issued snapshot revisions establish chronology. Trail length/IDs do not. */
+function withLatestCheckpoint(previous: AutomationStudioAnswerFirstAttemptRecord, next: AutomationStudioAnswerFirstAttemptRecord): { record: AutomationStudioAnswerFirstAttemptRecord; conflict: boolean } {
+  if (!Object.hasOwn(next, "judgeEvidence") && Object.hasOwn(previous, "judgeEvidence")) return { record: { ...next, judgeEvidence: previous.judgeEvidence ?? null }, conflict: false };
   const prior = previous.judgeEvidence;
   const incoming = next.judgeEvidence;
-  if (prior && incoming && incoming.trail.length < prior.trail.length && incoming.trail.every((step, at) => step.callId === prior.trail[at]?.callId && step.did === prior.trail[at]?.did && step.outcome === prior.trail[at]?.outcome)) return { ...next, judgeEvidence: prior };
-  return next;
+  if (prior && incoming) {
+    if (incoming.revision < prior.revision) return { record: { ...next, judgeEvidence: prior }, conflict: false };
+    if (incoming.revision === prior.revision) return { record: { ...next, judgeEvidence: prior }, conflict: !isDeepStrictEqual(incoming, prior) };
+  }
+  if (prior && incoming === null) return { record: { ...next, judgeEvidence: prior }, conflict: true };
+  return { record: next, conflict: false };
 }
 
 function readRecord(value: unknown): AutomationStudioAnswerFirstAttemptRecord | undefined {

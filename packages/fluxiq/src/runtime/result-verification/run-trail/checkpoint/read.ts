@@ -2,13 +2,14 @@ import type { JsonObject } from "../../../../core/index.ts";
 import { automationStudioStoredJudgeFinding } from "../../judge-evidence/stored-finding.ts";
 import type { AutomationStudioJudgeEvidenceCheckpoint } from "./types.ts";
 import { automationStudioResultFrameworkOutcome } from "../framework-outcome.ts";
+import { automationStudioResultEvidenceScreen } from "../../result-evidence/index.ts";
 
-const TOP = new Set(["version", "trail", "witnesses"]);
+const TOP = new Set(["version", "revision", "trail", "witnesses"]);
 const STEP = new Set(["callId", "did", "on", "outcome", "where", "framework", "judgeEvidence"]);
 
 /** Validate private stored shape only. Current capability/privacy checks still govern every model-bound read. */
 export function automationStudioReadJudgeCheckpoint(value: unknown): AutomationStudioJudgeEvidenceCheckpoint | undefined {
-  if (!object(value) || value.version !== 1 || !Array.isArray(value.trail) || Object.keys(value).some((key) => !TOP.has(key))) return undefined;
+  if (!object(value) || value.version !== 1 || typeof value.revision !== "number" || !Number.isSafeInteger(value.revision) || value.revision < 1 || !Array.isArray(value.trail) || Object.keys(value).some((key) => !TOP.has(key))) return undefined;
   const trail: AutomationStudioJudgeEvidenceCheckpoint["trail"] = [];
   for (const raw of value.trail) {
     if (!object(raw) || typeof raw.did !== "string" || Object.keys(raw).some((key) => !STEP.has(key))) return undefined;
@@ -29,10 +30,13 @@ export function automationStudioReadJudgeCheckpoint(value: unknown): AutomationS
     if (!Object.hasOwn(raw, "judgeEvidence")) return undefined;
     const finding = automationStudioStoredJudgeFinding(raw.judgeEvidence);
     if (finding === undefined) return undefined;
+    // Structural credential enforcement only, not current domain disclosure
+    // policy. Opaque identities/framework facts cannot carry a credential.
+    if (automationStudioResultEvidenceScreen({ did: step.did, ...(step.callId === undefined ? {} : { callId: step.callId }), ...(step.on === undefined ? {} : { on: step.on }), ...(step.outcome === undefined ? {} : { outcome: step.outcome }), ...(step.where === undefined ? {} : { where: step.where }), ...(step.framework === undefined ? {} : { framework: step.framework }) }, []).withheld) return undefined;
     step.judgeEvidence = finding;
     trail.push(step);
   }
-  const result: AutomationStudioJudgeEvidenceCheckpoint = { version: 1, trail };
+  const result: AutomationStudioJudgeEvidenceCheckpoint = { version: 1, revision: value.revision, trail };
   if (value.witnesses !== undefined) {
     if (!object(value.witnesses) || Object.keys(value.witnesses).some((key) => key !== "before" && key !== "after")) return undefined;
     const witnesses: NonNullable<AutomationStudioJudgeEvidenceCheckpoint["witnesses"]> = {};
