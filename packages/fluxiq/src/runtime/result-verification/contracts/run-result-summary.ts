@@ -181,6 +181,11 @@ export type AutomationStudioRunResultSummary = {
    * prefix is unchanged. Never set on a finished run's summary.
    */
   earlierAdvice?: AutomationStudioResultEarlierAdvice[];
+  /**
+   * Core's note to a judge asked again after a reply that could not be read: what could not be read and what to send
+   * instead (`../unreadable-asks/note.ts`, t979). Only on that ask's copy, and last, after any cached prefix.
+   */
+  unreadableReply?: string;
 };
 
 /**

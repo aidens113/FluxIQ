@@ -257,9 +257,10 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
       // transport error did, and a deadline cannot say.
       providerInvocation: failure.provenance.providerInvocation,
       ...(failure.refusal ? { providerRefusal: failure.refusal } : {}),
+      ...(billedUsage(reported) ? { usage: paid } : {}),
       ...retryStated,
       diagnostics,
-      intervention: interventionFromLlmResult(input, request, diagnostics, now(), undefined, served.metadata)
+      intervention: interventionFromLlmResult(input, request, diagnostics, now(), undefined, served.metadata, billedUsage(reported) ? paid : undefined)
     };
   }
   let providerResult: ReturnType<typeof parseAutomationStudioLlmProviderResult>;
@@ -274,7 +275,7 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
     const diagnostics = [...context.instructions.diagnostics, { severity: "error" as const, code: "llm_output.invalid_provider_result", message: "LLM provider result parsing failed." }, ...retryDiagnostics];
     if (reservation?.ok) reservation.lease.complete(reported, callOutcome(diagnostics));
     if (held?.ok) held.hold.settle(reported);
-    return { ok: false, request, provider: served.metadata, providerInvocation: "attempted", ...retryStated, diagnostics, intervention: interventionFromLlmResult(input, request, diagnostics, now(), undefined, served.metadata) };
+    return { ok: false, request, provider: served.metadata, providerInvocation: "attempted", ...(reported ? { usage: reported } : {}), ...retryStated, diagnostics, intervention: interventionFromLlmResult(input, request, diagnostics, now(), undefined, served.metadata, reported) };
   }
   const usageDiagnostics = validateAutomationStudioLlmUsage(providerResult.usage, request.tokenLimits);
   const diagnostics = [...context.instructions.diagnostics, ...providerResult.diagnostics, ...usageDiagnostics, ...retryDiagnostics];

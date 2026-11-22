@@ -73,8 +73,8 @@
 // cost left is not asked at all. A build that runs under its purse
 // (`../../llm/build-purse/run.ts`, t234) has each judge call held there at its
 // true worst case, so the judge sets no cap of its own; one made outside any
-// purse is still capped at half of what is left per call, as verify asks twice
-// after any first answer. A refused call never surfaces as a throw or as an
+// purse opens one for the judgement at the supplied remaining budget, shared
+// by confirmations and every unreadable re-ask. A refused call never surfaces as a throw or as an
 // unsure verdict: the test was not judged, and the reason says the money ran
 // out. That holds for a refused confirmation of a first yes too: a yes checked
 // once is not confirmed (`../agreement/`, live run `run-mux6nxst-c9bca37c`,
@@ -109,7 +109,8 @@
 
 import { randomUUID } from "node:crypto";
 import type { AutomationStudioFlowInstruction, AutomationStudioFlowIntervention } from "../../../flows/authoring/model/index.ts";
-import { automationStudioLlmCurrentBuildPurse, type AutomationStudioLlmBuildPurseRefusal } from "../../llm/build-purse/index.ts";
+import { AutomationStudioCompletedVerificationChecks } from "../completed-checks/index.ts";
+import { AutomationStudioLlmBuildPurse, automationStudioLlmBuildPurseScope, automationStudioLlmCurrentBuildPurse, type AutomationStudioLlmBuildPurseRefusal } from "../../llm/build-purse/index.ts";
 import type { AutomationStudioLlmProvider } from "../../llm/index.ts";
 import { automationStudioResultVerificationFailsRun, type AutomationStudioResultRepairDirective, type AutomationStudioResultVerification, type AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioResultVerificationDeadlineMs, automationStudioResultVerificationWithinDeadline } from "../deadline.ts";
@@ -304,15 +305,20 @@ export function automationStudioBuildTestJudge(deps: {
       return { verdict: "not_judged", why: "The build had no cost left to ask the judge, so its test was not judged.", ...carried, spent: { ...NOTHING_SPENT } };
     }
     // The purse the harness holds each call against (`../../llm/build-purse/harness-hold.ts`); a refusal set after this one is the judge's.
-    const purse = automationStudioLlmCurrentBuildPurse();
+    const inheritedPurse = automationStudioLlmCurrentBuildPurse();
+    const localPurse = !inheritedPurse && maxCostUsd !== undefined && Number.isFinite(maxCostUsd) ? new AutomationStudioLlmBuildPurse({ ceilingUsd: maxCostUsd }) : undefined;
+    const purse = inheritedPurse ?? localPurse;
     const refusedBefore = purse?.refusal;
     const callsBefore = purse?.spentCalls();
     // What the judge is sent: the summary as given, or with a project build's checklist beside it (unit A9).
     const judged = input.taskChecklist ? automationStudioBuildTestSummaryWithTaskChecklist(input.summary, input.taskChecklist) : input.summary;
+    // Each finished ask, as it finishes: where the deadline ends a judge whose latest replies could not be read, the why says so (t979).
+    const asked = { calls: 0, lastUnreadable: false };
+    const completedChecks = new AutomationStudioCompletedVerificationChecks();
     const bounded = await automationStudioResultVerificationWithinDeadline({
       deadlineMs: deps.deadlineMs ?? automationStudioResultVerificationDeadlineMs(deps.timeoutMs),
       signal: deps.signal,
-      judge: () => verify({
+      judge: (ended) => automationStudioLlmBuildPurseScope(localPurse, () => verify({
         projectId: deps.projectId,
         flowId: deps.flowId,
         runId: `build-test.${randomUUID()}`,
@@ -322,28 +328,38 @@ export function automationStudioBuildTestJudge(deps: {
         ...(deps.provider ? { provider: deps.provider } : {}),
         // A yes finishes the build, so it is confirmed by a second call like any other answer (`../agreement/`).
         confirmAnswer: true,
-        // Under a purse each call is held at its true worst case there. Outside one, verify asks twice after any answer (`../verify.ts`), each call under this cap: half each, so the judgement never spends more than the build has left.
-        ...(maxCostUsd !== undefined && !purse ? { maxEstimatedCostUsd: maxCostUsd / 2 } : {}),
+        // One purse holds every ask against the aggregate budget, including unreadable billed replies.
+        // Keep the supplied per-call ceiling outside an inherited purse; the local purse enforces their sum.
+        ...(maxCostUsd !== undefined && !inheritedPurse ? { maxEstimatedCostUsd: maxCostUsd } : {}),
         ...(deps.timeoutMs !== undefined ? { timeoutMs: deps.timeoutMs } : {}),
-        ...(deps.signal ? { signal: deps.signal } : {}),
-        ...(deps.now ? { now: deps.now } : {})
-      })
+        // The build's cancellation and the judgement's deadline: a check still asking when either ends stops (`../deadline.ts`, t979).
+        signal: ended,
+        ...(deps.now ? { now: deps.now } : {}),
+        recordIntervention: (intervention) => {
+          completedChecks.record(intervention);
+          asked.calls += 1;
+          asked.lastUnreadable = intervention.metadata?.verificationUnreadable === true;
+        }
+      }))
     });
+    const retainedInterventions = completedChecks.finish();
     if (deps.signal?.aborted) throw deps.signal.reason ?? new DOMException("The build was cancelled.", "AbortError");
     // A call the purse refused reaches verify as a harness failure, which it reads as an unsure verdict; the judge says what it was.
     const refused = purse?.refusal !== undefined && purse.refusal !== refusedBefore ? purse.refusal : undefined;
     // A refused confirmation of a first yes confirms nothing (`../agreement/`, run-mux6nxst-c9bca37c): the outcome is unsure, so it is not judged here, with what the first call spent.
-    const judgeSpend = bounded.settled ? spentBy(bounded.value.interventions) : { ...NOTHING_SPENT };
+    const judgeSpend = spentBy(bounded.settled ? bounded.value.interventions : retainedInterventions);
     if (refused?.code === "llm_budget.run_call_limit" && purse && callsBefore !== undefined) judgeSpend.calls = Math.max(0, purse.spentCalls() - callsBefore);
     const yesStood = bounded.settled && bounded.value.outcome.performed && bounded.value.outcome.verdict === "answers";
     if (refused && !yesStood) return { verdict: "not_judged", why: refusedSaid(refused), ...carried, spent: judgeSpend };
     if (!bounded.settled) {
-      // An abandoned call's spend is not known: it is still running, and its
-      // interventions arrive only with its answer.
-      const why = bounded.reason === "timed_out"
-        ? "The judge did not answer inside its deadline, so the test was not judged."
-        : "The judge failed before it answered, so the test was not judged.";
-      return { verdict: "not_judged", why, ...carried, spent: { ...NOTHING_SPENT } };
+      // Settled receipts remain known even when a later call is still pending at the deadline.
+      // A judge whose replies could not be read is asked again until its deadline (`../verify.ts`, t979): that is the cause, and it is said.
+      const why = bounded.reason !== "timed_out"
+        ? "The judge failed before it answered, so the test was not judged."
+        : asked.lastUnreadable
+          ? `Until its deadline passed, the judge's reply could not be read: it was asked ${asked.calls} ${asked.calls === 1 ? "time" : "times"}, so the test was not judged.`
+          : "The judge did not answer inside its deadline, so the test was not judged.";
+      return { verdict: "not_judged", why, ...carried, spent: judgeSpend };
     }
     const spent = judgeSpend;
     const outcome = bounded.value.outcome;

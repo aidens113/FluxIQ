@@ -67,7 +67,10 @@ export function createAutomationStudioAnthropicProvider(options: AutomationStudi
  * run-mwohvt8n-a57cad8a's judges all fell back under t965's rule, which asked every call of the prefix's evidence to be
  * in the judge's trail, and Core's own entries in that evidence never are.
  *
- * Every judge's call says which way it went (`continuation`, written in its step meta): `used`, or why not.
+ * Every judge's call says which way it went (`continuation`, written in its step meta): `used`, or why not. A judge
+ * that continued the decider and is asked again on its own request after a reply that could not be read
+ * (`metadata.judgeStandaloneAfterUnreadable`, `../../result-verification/unreadable-asks/`, t979) says so:
+ * `standalone_after_unreadable`.
  */
 /** The attempts whose latest decider request a model's adapter holds, the oldest dropped first. */
 const DECIDERS_HELD = 8;
@@ -91,7 +94,7 @@ function continued(request: AutomationStudioLlmTaskRequest, prepared: ReturnType
   }
   if (request.taskKind !== "loop_verification") return prepared;
   const own = (reason: string): Prepared => ({ ...prepared, continuation: { used: false, reason } });
-  if (request.metadata?.continuesDecider !== true) return own("no_decision_in_this_attempt");
+  if (request.metadata?.continuesDecider !== true) return own(request.metadata?.judgeStandaloneAfterUnreadable === true ? "standalone_after_unreadable" : "no_decision_in_this_attempt");
   if (key === undefined) return own("no_attempt_key");
   const prefix = deciders.get(key);
   if (!prefix) return own("no_decider_request_held_for_this_attempt_on_this_model");

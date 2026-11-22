@@ -109,11 +109,15 @@ describe("a judge continuing the decider's conversation", () => {
       await provider.runTask(judge(["call.1"]));
       await provider.runTask(judge(["call.1"], true, "attempt.2")).catch(() => undefined);
       await provider.runTask(judge(["call.1"], false)).catch(() => undefined);
+      // t979: a continuing judge asked again on its own request after a reply it could not read.
+      const standalone = judge(["call.1"], false);
+      await provider.runTask({ ...standalone, metadata: { ...standalone.metadata, judgeStandaloneAfterUnreadable: true } }).catch(() => undefined);
       const metas = readdirSync(directory).filter((folder) => folder.endsWith("-judge")).sort().map((folder) => JSON.parse(readFileSync(join(directory, folder, "meta.json"), "utf8")) as { continuation?: unknown });
       expect(metas.map((meta) => meta.continuation)).toEqual([
         { used: true, reason: "continues_the_decider" },
         { used: false, reason: "no_decider_request_held_for_this_attempt_on_this_model" },
-        { used: false, reason: "no_decision_in_this_attempt" }
+        { used: false, reason: "no_decision_in_this_attempt" },
+        { used: false, reason: "standalone_after_unreadable" }
       ]);
     } finally {
       if (before === undefined) delete process.env.FLUXIQ_LLM_STEP_LOG_DIR;
