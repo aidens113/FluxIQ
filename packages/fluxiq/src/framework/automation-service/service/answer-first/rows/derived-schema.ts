@@ -3,13 +3,13 @@
 // values show. What a read mints afresh each time (`$` keys, handles,
 // evidence) is not a column, as a stored run dataset holds none
 // (`engine/automation/lifecycle-run/act-identity.ts` leaves the same out).
-import { AUTOMATION_STUDIO_RECORD_SCHEMA_LIMITS, type AutomationStudioRecordField, type AutomationStudioRecordSchema, type AutomationStudioRecordValueType } from "@fluxiq/contracts/automation";
+import type { AutomationStudioRecordField, AutomationStudioRecordSchema, AutomationStudioRecordValueType } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioAnswerFirstReadColumns } from "./carried-columns.ts";
 
 /** The schema of `rows`, or `undefined` when they carry no column to store. */
 export function automationStudioAnswerFirstReadSchema(rows: readonly JsonObject[]): AutomationStudioRecordSchema | undefined {
-  const columns = automationStudioAnswerFirstReadColumns(rows).slice(0, AUTOMATION_STUDIO_RECORD_SCHEMA_LIMITS.maxFields);
+  const columns = automationStudioAnswerFirstReadColumns(rows);
   if (!columns.length) return undefined;
   const fields: AutomationStudioRecordField[] = columns.map((id) => ({ id, label: id, valueType: valueTypeOf(rows.map((row) => row[id])) }));
   return { schemaVersion: "0.1", fields };

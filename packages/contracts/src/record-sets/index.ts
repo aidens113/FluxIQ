@@ -13,5 +13,6 @@ export * from "./process/index.ts";
 export * from "./project-dataset-summary.ts";
 export * from "./records-path.ts";
 export * from "./schema.ts";
+export * from "./merge-schema.ts";
 export * from "./stored-schema.ts";
 export * from "./validate-records.ts";

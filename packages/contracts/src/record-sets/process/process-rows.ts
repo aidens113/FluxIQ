@@ -101,6 +101,8 @@ export type AutomationStudioRecordProcessRowsInput = {
 export type AutomationStudioRecordProcessRowsResult = {
   /** The answer, as fresh objects in answer order. */
   rows: Record<string, unknown>[];
+  /** The exact selected originals: allowed schema fields and enumerable own symbol metadata, with no derived columns. Symbols never enter JSON. */
+  retainedRows: Record<string, unknown>[];
   account: AutomationStudioRecordProcessingAccount;
 };
 
@@ -140,7 +142,8 @@ export function processAutomationStudioRecordRows(input: AutomationStudioRecordP
 
   const sorted = sortAutomationStudioRecordRows(distinct, process.sort ?? [], input.now);
   const limited = process.limit === undefined ? sorted : sorted.slice(0, process.limit);
-  const rows = limited.map((row) => answerRow(stored.get(row)!.values, process.columns));
+  const retainedRows = limited.map((row) => retainedRow(stored.get(row)!.values, storedFields));
+  const rows = retainedRows.map((row) => answerRow(row, process.columns));
 
   const account: AutomationStudioRecordProcessingAccount = {
     collected: input.rows.length,
@@ -162,7 +165,7 @@ export function processAutomationStudioRecordRows(input: AutomationStudioRecordP
   if (rows.length === 0) account.keptNone = true;
   const minRows = process.minRows ?? AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS.minRowsDefault;
   if (rows.length < minRows) account.belowMinRows = minRows;
-  return { rows, account };
+  return { rows, retainedRows, account };
 }
 
 /** Each condition's rejected and alone counts, and the rows it alone left out, each label once, in capture order (header). */
@@ -312,6 +315,16 @@ function inKeyOrder(values: ReadonlyArray<number | string | undefined>, order: A
     if (order === "desc" ? compared < 0 : compared > 0) return false;
   }
   return true;
+}
+
+/** Keeps opaque source metadata through selection without admitting any extra string-keyed data. */
+function retainedRow(values: Readonly<Record<string, unknown>>, fields: readonly string[]): Record<string, unknown> {
+  const row = answerRow(values, fields);
+  for (const symbol of Object.getOwnPropertySymbols(values)) {
+    if (!Object.prototype.propertyIsEnumerable.call(values, symbol)) continue;
+    Object.defineProperty(row, symbol, { value: Reflect.get(values, symbol), enumerable: true, writable: true, configurable: true });
+  }
+  return row;
 }
 
 function answerRow(values: Readonly<Record<string, unknown>>, columns: readonly string[] | undefined): Record<string, unknown> {

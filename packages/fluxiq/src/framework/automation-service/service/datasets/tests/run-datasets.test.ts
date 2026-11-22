@@ -23,6 +23,7 @@ import { AutomationStudioProjectPaths } from "../../paths/index.ts";
 import { AutomationStudioProjectStore } from "../../projects/index.ts";
 import { AutomationStudioRunDatasets } from "../run-datasets.ts";
 import type { AutomationStudioRunDatasetExportLimits, AutomationStudioRunDatasetStream } from "../types.ts";
+import { automationStudioAnswerFirstCopyRows, automationStudioAnswerFirstRowSink } from "../../answer-first/rows/index.ts";
 
 // Its own directory per case: a fixed path under the working directory was
 // shared by every run of this file in the checkout, so two runs at once
@@ -50,6 +51,34 @@ type AuditView = { eventType: string; runId: string; datasetId?: string; actorId
 const pools: AutomationStudioProjectDatabasePool[] = [];
 
 describe("AutomationStudioRunDatasets", () => {
+  it("keeps carry-on and readBack complete while public pages and JSON/CSV exports remain projected", async () => {
+    const { datasets } = await openFixture([{ runId: RUN, flowId: "flow.a" }, { runId: "run.next", flowId: "flow.a" }]);
+    const schema: AutomationStudioRecordSchema = { ...SCHEMA, primaryKey: ["title"], fields: [SCHEMA.fields[0]!, { ...SCHEMA.fields[1]!, semanticType: "currency" }] };
+    const rows = [{ title: "synthetic low", price: 1 }, { title: "synthetic high", price: 2 }];
+    await datasets.recordBatchHandler(PROJECT, RUN)(batch({ schema, rows, process: { columns: ["title"], where: [{ field: "price", atLeast: 2 }] } }));
+    await datasets.processRunDatasets({ projectId: PROJECT, runId: RUN });
+    const request = { projectId: PROJECT, runId: RUN, datasetId: "listings" };
+    const view = await datasets.getRunDatasetPage(request);
+    expect(view?.rows).toEqual([{ title: "synthetic high" }]);
+    expect(view).not.toHaveProperty("displayColumns");
+    expect(JSON.parse(inline(await datasets.exportRunDataset({ ...request, format: "json" })).body)).toEqual(view?.rows);
+    expect(inline(await datasets.exportRunDataset({ ...request, format: "csv" })).body).toBe("Title\r\nsynthetic high\r\n");
+    expect(JSON.parse((await collect(required(await datasets.streamRunDataset({ ...request, format: "json" })))).join(""))).toEqual(view?.rows);
+    expect((await datasets.listProjectDatasets({ projectId: PROJECT, search: "Listings" })).datasets).toHaveLength(1);
+    const sink = automationStudioAnswerFirstRowSink({ runId: RUN, onRecordBatch: datasets.recordBatchHandler(PROJECT, RUN), reader: {
+      listDatasets: () => datasets.listRunDatasets({ projectId: PROJECT, runId: RUN }),
+      getPage: ({ retained, ...page }) => datasets.getRunDatasetPage({ ...request, ...page }, retained === undefined ? {} : { retained })
+    } });
+    expect(await sink.readBack("listings")).toMatchObject({ rows: [rows[1]], schema, columns: [{ id: "title", label: "Title" }], fromStore: true });
+    const copied = automationStudioAnswerFirstRowSink({ runId: "run.next", onRecordBatch: datasets.recordBatchHandler(PROJECT, "run.next") });
+    expect(await automationStudioAnswerFirstCopyRows({ sink: copied, shown: undefined, stored: {
+      runId: RUN, list: () => datasets.listRunDatasets({ projectId: PROJECT, runId: RUN }),
+      page: (page) => datasets.getRunDatasetPage({ ...request, ...page }, { retained: "collected" })
+    } })).toEqual({ ok: true, rows: 2 });
+    expect((await datasets.getRunDatasetPage({ ...request, runId: "run.next" }))?.rows).toEqual(rows);
+    expect(copied.summary("listings").schema).toEqual(schema);
+  });
+
   beforeEach(async () => {
     rootDir = await mkdtemp(path.join(os.tmpdir(), "automation-studio-run-datasets-collaborator-test-"));
   });

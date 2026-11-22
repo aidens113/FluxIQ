@@ -36,6 +36,25 @@ function nestedArrays(levels: number): unknown {
 }
 
 describe("validateAutomationStudioRecords", () => {
+  it("preserves actual row values and occurrences independently of semantic metadata", () => {
+    const schema: AutomationStudioRecordSchema = {
+      schemaVersion: "0.1",
+      fields: [
+        { id: "id", label: "Id", valueType: "string", semanticType: "id" },
+        { id: "price", label: "Price", valueType: "string", semanticType: "currency" },
+        { id: "count", label: "Count", valueType: "number", semanticType: "count" },
+        { id: "posted", label: "Posted", valueType: "string", semanticType: "date" },
+        { id: "promoted", label: "Promoted", valueType: "boolean", semanticType: "flag", mark: "state" }
+      ], primaryKey: ["id"]
+    };
+    const rows = [
+      { id: "same", price: "€12,50", count: 3, posted: "3 days ago", promoted: true },
+      { id: "same", price: "€11,75", count: 4, posted: "2 days ago", promoted: false }
+    ];
+    expect(validateAutomationStudioRecords(rows, schema)).toEqual({ rows, invalidCount: 0, truncated: false, issues: [] });
+    expect(accepts({ valueType: "number", semanticType: "currency" }, "€12,50")).toBe("INVALID");
+  });
+
   it("copies only include fields, in schema order, dropping exclude, encrypt, and unknown keys", () => {
     const row = { sneaky: "x", in_stock: true, details: { a: [1, "two"] }, listed: "2026-09-15T10:00:00Z", card: "4111", link: "https://example.com/p/1", session: "secret-cookie", price: 9.5, title: "Lamp" };
     const result = validateAutomationStudioRecords([row], SCHEMA);

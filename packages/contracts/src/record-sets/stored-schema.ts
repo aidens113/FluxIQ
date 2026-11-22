@@ -12,6 +12,8 @@ export function storedAutomationStudioRecordSchema(schema: AutomationStudioRecor
     const field: AutomationStudioRecordField = { id: source.id, label: source.label, valueType: source.valueType };
     if (source.required !== undefined) field.required = source.required;
     if (source.handling !== undefined) field.handling = source.handling;
+    if (source.semanticType !== undefined) field.semanticType = source.semanticType;
+    if (source.mark !== undefined) field.mark = source.mark;
     fields.push(field);
   }
   const stored: AutomationStudioRecordSchema = { schemaVersion: schema.schemaVersion, fields };

@@ -14,7 +14,7 @@
 // could not read ends the run or is fed back.
 
 import type { JsonObject, JsonValue } from "../../core/index.ts";
-import { parseAutomationStudioTargetActionabilityRecord, projectAutomationStudioFailureControlRecord, type AutomationStudioFailureRecord, type AutomationStudioTargetActionabilityRecord } from "@fluxiq/contracts/automation";
+import { parseAutomationStudioRecordSchema, parseAutomationStudioTargetActionabilityRecord, projectAutomationStudioFailureControlRecord, type AutomationStudioFailureRecord, type AutomationStudioTargetActionabilityRecord } from "@fluxiq/contracts/automation";
 import {
   AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID,
   AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_CHANGES,
@@ -123,10 +123,10 @@ const EVIDENCE_CLOSED_CODE = /^[a-z0-9_.:-]{1,100}$/i;
  * (live run `run-mup2u8o3-6697c4be`, call `search2`).
  */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_TOOL_EXECUTION_KEYS: readonly string[] = [
-  "kind", "evidence", "effectApplied", "failure", "actionability", "targetsUnchanged", "resultCode", "resultReason", "diagnostic", "ownRetestBound", "repeatedAnswer", "personNeeded", "nodeId", "stateDigests", "routeState", "clearedWait", "outputs", "draft"
+  "kind", "evidence", "effectApplied", "failure", "actionability", "targetsUnchanged", "resultCode", "resultReason", "diagnostic", "ownRetestBound", "repeatedAnswer", "personNeeded", "nodeId", "stateDigests", "routeState", "clearedWait", "outputs", "recordSchema", "draft"
 ];
 
-type ParsedToolExecution = { evidence: JsonValue; effectApplied: boolean; failure?: AutomationStudioFailureRecord; actionability?: AutomationStudioTargetActionabilityRecord; targetsUnchanged?: boolean; resultCode?: string; resultReason?: string; diagnostic?: JsonObject; ownRetestBound?: true; repeatedAnswer?: number; personNeeded?: true; nodeId?: string; stateDigests?: { before?: string; after?: string }; outputs?: JsonObject; draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] };
+type ParsedToolExecution = { evidence: JsonValue; effectApplied: boolean; failure?: AutomationStudioFailureRecord; actionability?: AutomationStudioTargetActionabilityRecord; targetsUnchanged?: boolean; resultCode?: string; resultReason?: string; diagnostic?: JsonObject; ownRetestBound?: true; repeatedAnswer?: number; personNeeded?: true; nodeId?: string; stateDigests?: { before?: string; after?: string }; outputs?: JsonObject; recordSchema?: AutomationStudioLlmEvidenceToolExecutionResult["recordSchema"]; draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] };
 
 /** The result read from what a tool returned, or nothing when it is not one. */
 export function automationStudioLlmEvidenceParseToolExecutionResult(
@@ -166,6 +166,7 @@ function readToolExecution(
     const draft = readCallRecord(value.draft, value.evidence, value.resultCode);
     if (draft && "refused" in draft) return draft;
     const diagnostic = automationStudioLlmEvidenceDiagnostic(value.diagnostic);
+    const recordSchema = value.recordSchema === undefined ? undefined : parseAutomationStudioRecordSchema(value.recordSchema);
     // **The key list had to widen before the domain emitted either of these.**
     // It is exact, so a member a caller learns to report and this check has not
     // learned is not an execution result arriving with a field too many -- it
@@ -180,6 +181,7 @@ function readToolExecution(
     const result: ParsedToolExecution = {
       evidence: value.evidence,
       effectApplied: value.effectApplied,
+      ...(recordSchema === undefined ? {} : { recordSchema: recordSchema.ok ? recordSchema.schema : null }),
       ...(value.targetsUnchanged === undefined ? {} : { targetsUnchanged: value.targetsUnchanged }),
       ...(value.resultCode ? { resultCode: value.resultCode } : {}),
       ...(closedCode(value.resultReason) ? { resultReason: value.resultReason as string } : {}),
