@@ -22,12 +22,15 @@ const check = (call: { value: JsonObject }): AutomationStudioLlmEvidenceToolExec
   draft: { actionId: String(call.value.node), input: call.value, effect: "observe", proposes: true, ranWith: { node: String(call.value.node), parameters: {} } }
 });
 
+// The one question is put when the attempt starts, about what the chat's reading declared, and never at
+// the press (t976; the user's rule: a dangerous act asks only when a Flow or chat starts).
 describe("a permission", () => {
   it("allowed continues in place, with no clock on the question", async () => {
     const hold = held();
     const seen: string[] = [];
     const generating = scriptedAttempt({
       instruction: "Renew the card on my library account.",
+      taskActs: ["send_or_publish"],
       before: hold.before,
       script: [
         runNode("card", RENEW_CARD, {}, ["send_or_publish"], { add: true }),
@@ -56,6 +59,7 @@ describe("a permission", () => {
     const declined: string[] = [];
     const generating = scriptedAttempt({
       instruction: "List every loan on my library account, renewing the card if you can.",
+      taskActs: ["send_or_publish"],
       before: hold.before,
       script: [
         runNode("card", RENEW_CARD, {}, ["send_or_publish"], { add: true }),
@@ -393,6 +397,7 @@ describe("a person's Stop", () => {
     const hold = held();
     const generating = scriptedAttempt({
       instruction: "Renew the card on my library account.",
+      taskActs: ["send_or_publish"],
       before: hold.before,
       script: [runNode("card", RENEW_CARD, {}, ["send_or_publish"], { add: true }), complete("Never asked.")]
     }, cleanups);

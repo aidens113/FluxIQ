@@ -60,18 +60,17 @@ const INPUT_USE_PRODUCER = "answer-first.flow-run";
 const WHOLE_RUN = "The saved Flow ran from its start to its end.";
 
 /** The stage's ending, or nothing where the rounds go on. Never throws. */
-export async function automationStudioAnswerFirstFlowStage(run: AutomationStudioAnswerFirstAttemptRun): Promise<AutomationStudioAnswerFirstRoundsEnding | undefined> {
+export async function automationStudioAnswerFirstFlowStage(run: AutomationStudioAnswerFirstAttemptRun, start?: (classes: readonly string[]) => Promise<void>): Promise<AutomationStudioAnswerFirstRoundsEnding | undefined> {
   const { route } = run;
   if (route.kind !== "use" || run.prior) return undefined;
-  const staged = await automationStudioAnswerFirstBestEffort(() => stage(run, route.saved));
+  const staged = await automationStudioAnswerFirstBestEffort(() => stage(run, route.saved, start));
   if (staged.ok) return staged.value;
   run.path = run.flowRun?.wentOut ? "run_flow_then_repair" : "explore";
   return undefined;
 }
 
-async function stage(run: AutomationStudioAnswerFirstAttemptRun, saved: Pick<AutomationStudioAnswerFirstSavedFlow, "steps" | "stepsDigest" | "stated" | "candidateId">): Promise<AutomationStudioAnswerFirstRoundsEnding | undefined> {
+async function stage(run: AutomationStudioAnswerFirstAttemptRun, saved: Pick<AutomationStudioAnswerFirstSavedFlow, "steps" | "stepsDigest" | "stated" | "candidateId">, start?: (classes: readonly string[]) => Promise<void>): Promise<AutomationStudioAnswerFirstRoundsEnding | undefined> {
   const { input } = run;
-  if (saved.steps.some(declaresLasting)) await run.witnesses.beforeFirstLastingAct();
   const sentBefore = run.liveSteps;
   let personStopped = false;
   run.path = "run_flow";
@@ -82,6 +81,10 @@ async function stage(run: AutomationStudioAnswerFirstAttemptRun, saved: Pick<Aut
   const inputUse = inputUseOf(run, (observation) => { evidence.inputUse = observation; });
   const outcome = await automationStudioAnswerFirstFlowRun({
     input, runId: run.runId, record: run.record, sink: run.sink, result: run.result, permissions: run.permissions,
+    starting: async (classes) => {
+      await start?.(classes);
+      if (saved.steps.some(declaresLasting)) await run.witnesses.beforeFirstLastingAct();
+    },
     ...(taskHumanness !== undefined ? { storedHumanness: { task: taskHumanness } } : {}),
     inputUse,
     stepped: () => {

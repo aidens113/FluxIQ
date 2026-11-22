@@ -24,6 +24,7 @@
 import { readModelAccessState, type ModelAccessState } from "@fluxiq/contracts/platform";
 import type { AutomationStudioConversationDecision, AutomationStudioConversationInterpretation } from "./decision.ts";
 import { automationStudioConversationFallbackDecision } from "./fallback.ts";
+import { automationStudioConversationDeclaredActs } from "./acts.ts";
 import { automationStudioConversationDeclaredIntent } from "./intent.ts";
 import type { AutomationStudioConversationDecisionContext } from "./invocation.ts";
 import type { AutomationStudioConversationCaller, AutomationStudioConversationModel, AutomationStudioConversationModelTurn } from "./model.ts";
@@ -106,7 +107,7 @@ export async function interpretAutomationStudioConversationTurn(input: Automatio
       const decision = parseAutomationStudioConversationDecision(raw, input.context);
       const intent = decision ? automationStudioConversationDeclaredIntent(raw) : null;
       const unanswered = decision ? automationStudioConversationUnansweredTask(decision, intent) : null;
-      if (decision && !unanswered) return { decision, source: "model", modelProblem: null, attempts, ...priced(costUsd, pricedCalls) };
+      if (decision && !unanswered) return { decision, source: "model", modelProblem: null, attempts, ...priced(costUsd, pricedCalls), ...declaredActs(decision, raw) };
       if (decision?.kind === "reply" && unanswered) {
         // A task answered in words, or a reply that declared nothing: ask the same model with clear feedback.
         lastReply = decision;
@@ -182,6 +183,15 @@ async function attemptWithin<T>(ms: number, attempt: (signal: AbortSignal) => Pr
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** What a decision that starts something declared it will cause (`./acts.ts`, t976); nothing for a reply, a question, or an answer that declared no list. */
+function declaredActs(decision: AutomationStudioConversationDecision, raw: unknown): { taskActs?: string[] } {
+  if (decision.kind !== "invoke") return {};
+  const acts = automationStudioConversationDeclaredActs(raw);
+  // Even a malformed or omitted declaration stays explicit: a chat invocation never pays for a
+  // separate interpretation. A missing risky class is refused if the task encounters it later.
+  return { taskActs: acts ?? [] };
 }
 
 /** The interpretation's `costUsd` and `pricedCalls`, present only when an attempt was priced. */

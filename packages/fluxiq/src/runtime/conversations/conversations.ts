@@ -415,8 +415,8 @@ export class AutomationStudioConversations {
       ...(input.limits ? { limits: input.limits } : {})
     });
     // What reading it cost stays off the answer the client sees; it travels to the command the turn runs (`commands/build.ts`).
-    const { costUsd, pricedCalls, ...reading } = interpretation;
-    const cost = costUsd === undefined ? {} : { interpretationCostUsd: costUsd, ...(pricedCalls === undefined ? {} : { interpretationCalls: pricedCalls }) };
+    const { costUsd, pricedCalls, taskActs, ...reading } = interpretation;
+    const cost = { ...(costUsd === undefined ? {} : { interpretationCostUsd: costUsd, ...(pricedCalls === undefined ? {} : { interpretationCalls: pricedCalls }) }), ...(taskActs === undefined ? {} : { taskActs }) };
     try {
       const written = await respondToAutomationStudioConversationTurn({ host: this, projectId: input.projectId, conversationId: input.conversationId, interpretation, flows: input.flows, pageUrl: onScreen.pageUrl ?? null, waitingAsks: waiting.asks });
       return { turn, response: { ...reading, ...written }, problem: null, ...cost };

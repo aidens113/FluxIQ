@@ -132,6 +132,21 @@ the Flow, so the step is written, or run with the value and bound after. A form
 the parse cannot translate is refused `run_node.binding_refused.<reason>`
 naming its parameter path (`runtime/llm/unusable-decision.ts`).
 
+### Repeat-safe draft amendments
+
+An amendment is refused where it would make a kept repeat unassemblable.
+Withdrawing a repeat's source or span endpoint returns `holds_a_repeat`;
+the author must remove or change the repeat first. Introducing routed steps
+inside a repeat body returns `span_holds_routing`, identifying the affected
+repeat, endpoint and routed step. This covers routing changes, moves and
+adding previously excluded steps, while preserving valid shared-source repeats.
+Refused edits retain the prior valid step state and ordering.
+
+Rerunning a source rebinds and reorders its replacement before withdrawing the
+old step. Loop-covered cleanup preserves referenced steps, and held feedback
+renumbers repeat references when the shown draft changes. Save/assembly
+validation remains strict; a refusal never silently removes a working repeat.
+
 ### What The Draft Entry Shows
 
 The authored draft entry (`runtime/flow-authoring/draft/entry.ts`) shows, per step,
@@ -561,6 +576,29 @@ for a broken span, all in the numbers shown, and `now`, `overNow`,
 it is never marked `repeated`, and an answer holding only such entries does not
 say the amendments changed nothing. `unrepeat` below is how a repeat is taken
 off by hand.
+
+**An amendment preserves repeat dependencies and bodies (t981, F26).** After
+the decision's moves and refused withdrawals settle, a `drop` or `exploratory`
+of a kept repeat's source or endpoint is restored and refused as
+`holds_a_repeat`. The refusal names the head and whether the withdrawn step
+was `over`, `through`, or the while-loop's last step. Remove the repeat with
+`unrepeat`, change its reference, or withdraw the head as well before removing
+its dependency. Routing written by the decision that would put another routed
+step inside a repeat is restored and refused as `span_holds_routing`, naming
+the head, endpoint and conflicting member. When both statements were written,
+the outer repeat is refused. Assembly's adjacent and overlapping repeats over
+one source still merge into one span; a new shared-source repeat that extends
+that span over routed steps is refused too. Implicit optional interruption
+steps count as routing. Moves and inclusions of previously routed steps are
+checked on a prospective copy first; an amendment that introduces a routed
+body is refused before changing order, settings, claims or disposition.
+Save-time validation remains unchanged.
+
+A successful rerun transfers routing, rebinds every reference and takes its
+original position before the replaced attempt is withdrawn. This keeps the
+withdrawal check from rejecting a valid replacement and lets loop-covered
+settlement inspect the actual new order. Loop-covered settlement never removes
+a step that another kept step's routing still names.
 
 ### Removing an accidental row repeat
 

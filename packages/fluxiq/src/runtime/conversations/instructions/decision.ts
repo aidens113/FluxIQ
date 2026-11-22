@@ -91,10 +91,17 @@ export type AutomationStudioConversationInterpretation = {
   costUsd?: number;
   /** How many model calls `costUsd` sums: the attempts the model priced. Present exactly beside `costUsd`. */
   pricedCalls?: number;
+  /**
+   * The consequence classes the model declared the task will cause (`./acts.ts`, t976), in Core's
+   * order, when the decision starts something and the answer declared a list. Like `costUsd`, not
+   * part of the endpoint's answer: it goes to the command the turn runs, and on to the attempt,
+   * which asks about the gated ones once when it starts.
+   */
+  taskActs?: string[];
 };
 
 /** What the endpoint answers with after a person's turn, beside the turn itself. */
-export type AutomationStudioConversationResponse = Omit<AutomationStudioConversationInterpretation, "costUsd" | "pricedCalls"> & {
+export type AutomationStudioConversationResponse = Omit<AutomationStudioConversationInterpretation, "costUsd" | "pricedCalls" | "taskActs"> & {
   /** The turn Core wrote in answer: the reply, the question, what it is doing, or the confirmation it asks for. */
   turnId: string;
   /** Set when the invocation waits for the person's confirmation; the ask's id. */
