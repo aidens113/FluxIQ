@@ -420,7 +420,7 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
     },
     evidence() { return replacements.evidence(sourceState.evidence(baseEvidence())); },
     sourceRefs(source) {
-      return sourceState.evidence(baseEvidence(false)).pages.filter((page) => page.source === source).map((page) => ({ source: page.source, step: page.step, version: page.version, ...(page.datasetId === undefined ? {} : { datasetId: page.datasetId }) }));
+      return baseEvidence(false).pages.filter((page) => page.source === source).map((page) => ({ source: page.source, step: page.step, version: page.version, ...(page.datasetId === undefined ? {} : { datasetId: page.datasetId }) }));
     },
   };
 }
