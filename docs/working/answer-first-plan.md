@@ -1,9 +1,9 @@
 # Answer First
 
-Status: Active
-Status detail: The attempt-2 road and the live lanes' first fixes are on dev; four live lanes stopped at the wrap-up with their later fixes committed on their branches. About $15 of $160 credit spent; next: integration round 2, the full sweep, the live checks.
+Status: Paused
+Status detail: Paused as a separate workstream during the approved data-first execution week; unresolved work and historical evidence are retained below.
 Created: 2026-11-03
-Last updated: 2026-11-06
+Last updated: 2026-11-22
 Owner: Senior supervisor agent
 Scope: One live exploration that reaches the person's result, a best-attempt Flow improved in simulation with the exact recorded inputs, the same loop on every later attempt, a searchable and runnable nested subflow library, and the extension and @fluxiq/ui-components experience for all of it. The web panel is out of scope until the user reopens it.
 Paired document: `docs/working/answer-first-plan.md` in FluxIQWebExtension (the Lab's scores and the extension's phases)
@@ -12,6 +12,8 @@ Related: [discovery](./answer-first-plan/reports/discovery.md), [simulation stud
 ---
 
 ## Current State
+
+**Priority reconciliation, 2026-11-22:** [Data-first simplification](./data-first-simplification-plan.md) is the current implementation plan of record (approved S7). This pauses this separate plan, does not mark its remaining work complete, and does not cancel another running session. The earlier snapshot below is historical; its code and acceptance were not revalidated by this documentation change. Prior status detail: The attempt-2 road and the live lanes' first fixes are on dev; four live lanes stopped at the wrap-up with their later fixes committed on their branches. About $15 of $160 credit spent; next: integration round 2, the full sweep, the live checks.
 
 **The idea, in the user's words (2026-11-03):**
 

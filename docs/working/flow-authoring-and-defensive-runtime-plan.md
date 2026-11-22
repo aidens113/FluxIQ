@@ -1,9 +1,9 @@
 # Flow Authoring And Defensive Runtime Plan (Core share)
 
-Status: Active
-Status detail: Executing 2026-09-22. Wave one landed in Core; the correction that makes exploration run the real node registry landed with it; four paired task branches are open.
+Status: Paused
+Status detail: Paused as a separate workstream during the approved data-first execution week; unresolved work and historical evidence are retained below.
 Created: 2026-09-22
-Last updated: 2026-09-22
+Last updated: 2026-11-22
 Owner: Senior supervisor agent
 Scope: Core's share of making a model-authored Flow faithful to what the model actually did, and of making a Flow's execution survive a site nobody controls: the build loop that explores by running real registry nodes, the accruing draft and its edit and dry-run seams, the per-node retry and recovery ladder that reads recorded state, and the permission gate a Flow's own steps must pass. It deliberately does not cover the browser, the DOM, selectors, the Testing Lab, or any judgement about what a particular page means, all of which stay downstream.
 Paired document: `F:\!FluxIQWebExtension\docs\working\flow-authoring-and-defensive-runtime-plan.md`
@@ -12,6 +12,8 @@ Related: [automation studio](../architecture/automation-studio.md), [code struct
 ---
 
 ## Current State
+
+**Priority reconciliation, 2026-11-22:** [Data-first simplification](./data-first-simplification-plan.md) is the current implementation plan of record (approved S7). This pauses this separate plan, does not mark its remaining work complete, and does not cancel another running session. The earlier snapshot below is historical; its code and acceptance were not revalidated by this documentation change. Prior status detail: Executing 2026-09-22. Wave one landed in Core; the correction that makes exploration run the real node registry landed with it; four paired task branches are open.
 
 The downstream document is authoritative for sequencing, evidence and the
 per-step plan. This document exists because the user authorized Core edits for

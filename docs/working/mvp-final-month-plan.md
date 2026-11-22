@@ -1,9 +1,9 @@
 # MVP Final Month Plan - Core implementation
 
-Status: Active
-Status detail: Instruction-led authority, long-path storage and truthful learned-state summaries integrated; current adaptation/breadth qualification and release journey remain open.
+Status: Paused
+Status detail: Paused as a separate workstream during the approved data-first execution week; unresolved work and historical evidence are retained below.
 Created: 2026-10-06
-Last updated: 2026-10-13
+Last updated: 2026-11-22
 Owner: Codex senior supervisor
 Scope: Generic Core acceptance, candidate authoring/execution/promotion, cancellation and uncertain-outcome contracts required by the downstream MVP plan. Browser behavior and live qualification remain downstream.
 Paired document: C:/Users/osrs_/FluxStuff/!FluxIQWebExtension/docs/working/mvp-final-month-plan.md
@@ -12,6 +12,8 @@ Related: [authoring](./flow-authoring-and-defensive-runtime-plan.md), [version h
 ---
 
 ## Current State
+
+**Priority reconciliation, 2026-11-22:** [Data-first simplification](./data-first-simplification-plan.md) is the current implementation plan of record (approved S7). This pauses this separate plan, does not mark its remaining work complete, and does not cancel another running session. The earlier snapshot below is historical; its code and acceptance were not revalidated by this documentation change. Prior status detail: Instruction-led authority, long-path storage and truthful learned-state summaries integrated; current adaptation/breadth qualification and release journey remain open.
 
 **User wrap for today, October 13.** User requested that work stop for today; this supersedes continuous execution for this session. Verified t525/t528/t527/t531/t530/t529 units are merged on both dev branches (latest paired task merges downstream `7b545504` / Core `a12d36a4`). Final helper/chat selection: 110 tests and Core source/test types passed; completion projections: 94 distinct tests plus affected types; judge/retry: 140 combined; rooted topology: 66; transport/read: 31 and two inspected Chromium content-harness passes. Both owning merge audits passed; no full-suite claim or changed-source live qualification. All workers are stopped.
 

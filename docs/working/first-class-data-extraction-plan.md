@@ -1,9 +1,9 @@
 # First-Class Data Extraction Plan (Core share)
 
-Status: Active
-Status detail: Executing 2026-09-15; K0-K9 and K12d are complete and verified in the working tree, K10 and K12c are deliberately held for the user's plan review, and K11 stays in Week 3.
+Status: Paused
+Status detail: Paused as a separate workstream during the approved data-first execution week; unresolved work and historical evidence are retained below.
 Created: 2026-09-15
-Last updated: 2026-09-15
+Last updated: 2026-11-22
 Owner: Senior supervisor agent
 Scope: Core's share of making structured data extraction a fundamental FluxIQ capability: domain-neutral dataset contracts (records with a schema), per-run persistence, table preview, CSV/JSON export, iteration over records by later nodes, the web-panel UI for them, the recording-proposal seam through which a domain proposes extract nodes, encrypted record fields, and the credential and key hardening they depend on.
 Paired document: `F:\!FluxIQWebExtension\docs\working\first-class-data-extraction-plan.md`
@@ -12,6 +12,8 @@ Related: [package boundaries](../architecture/package-boundaries.md), [code stru
 ---
 
 ## Current State
+
+**Priority reconciliation, 2026-11-22:** [Data-first simplification](./data-first-simplification-plan.md) is the current implementation plan of record (approved S7). This pauses this separate plan, does not mark its remaining work complete, and does not cancel another running session. The earlier snapshot below is historical; its code and acceptance were not revalidated by this documentation change. Prior status detail: Executing 2026-09-15; K0-K9 and K12d are complete and verified in the working tree, K10 and K12c are deliberately held for the user's plan review, and K11 stays in Week 3.
 
 **Phase, as of 2026-09-15: K0-K9 and K12d are complete and verified; the work
 now waits on the user's plan review.** The

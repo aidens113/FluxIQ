@@ -1,15 +1,17 @@
 # Adaptation And Recorded Replay - Core Contracts
 
-Status: Active
-Status detail: Instruction-led prerequisites pushed; current repair persistence attribution and store candidate exclusion-quotation acceptance are under investigation downstream.
+Status: Paused
+Status detail: Paused as a separate workstream during the approved data-first execution week; unresolved work and historical evidence are retained below.
 Created: 2026-10-13
-Last updated: 2026-10-13
+Last updated: 2026-11-22
 Owner: Codex senior supervisor
 Scope: Generic certain-no-effect failure/retry, interruption-learning promotion, and historical recording state-routing contracts required by the downstream adaptation gate.
 Paired document: C:/Users/osrs_/FluxStuff/!FluxIQWebExtension/docs/working/adaptation-and-breadth-plan.md
 Related: [MVP final month](./mvp-final-month-plan.md), [state-aware recovery](./state-aware-recovery-plan.md)
 
 ## Current State
+
+**Priority reconciliation, 2026-11-22:** [Data-first simplification](./data-first-simplification-plan.md) is the current implementation plan of record (approved S7). This pauses this separate plan, does not mark its remaining work complete, and does not cancel another running session. The earlier snapshot below is historical; its code and acceptance were not revalidated by this documentation change. Prior status detail: Instruction-led prerequisites pushed; current repair persistence attribution and store candidate exclusion-quotation acceptance are under investigation downstream.
 
 - Crossborder first current-pair pass now supervisor-qualified: complete immutable history and canonical rollback bind same runnable graph before/after, with independently differing executable parameter hashes; both provider-free reuse proofs pass. Reconstructed proof is explicitly labelled, and attribution/bootstrap suspicion is ruled out. Store judge deficiency involves row-local names/quotations, including short aliases rejected by existing matching bounds; t525 preserves those bounds and adds bounded evidence correction rather than weakening the task/oracle/acceptance. Older P4-held statements below are historical; current dispatch is downstream MVP plan.
 
