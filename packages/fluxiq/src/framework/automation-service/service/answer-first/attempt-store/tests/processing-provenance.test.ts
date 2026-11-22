@@ -7,6 +7,7 @@ import { AutomationStudioAnswerFirstAttemptStore, AutomationStudioAnswerFirstAtt
 import { automationStudioAnswerFirstCarriedOpening } from "../../carry-on/index.ts";
 import { automationStudioAnswerFirstRestoreResult, automationStudioAnswerFirstResultFeed } from "../../result-feed/index.ts";
 import { automaticFeed, REFERENCE, SCHEMA } from "../../result-feed/tests/automatic-support.ts";
+import { reread } from "../../result-feed/tests/source-validation-support.ts";
 
 const roots: string[] = [];
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 }); });
@@ -74,4 +75,47 @@ it("keeps one latest evidence snapshot per attempt and measures a realistic 120-
   const rows = evidence.pages.flatMap((page) => page.rows);
   expect(rows).toHaveLength(120);
   console.info(`[processing fixture] records=${rows.length} pages=${evidence.pages.length} rawRowsBytes=${Buffer.byteLength(JSON.stringify(rows))} evidenceBytes=${Buffer.byteLength(JSON.stringify(evidence))} recordBytes=${Buffer.byteLength(JSON.stringify(snapshot))} checkpointCopies=${kept.length}`);
+});
+
+it("persists, reopens and carries exact replacement authority through a successful full-page restore", async () => {
+  const p = automaticFeed({ columns: ["title"] });
+  const rows = [{ id: "a", title: "Actual", promoted: false, price: "$2" }];
+  const step = p.read("old", rows);
+  reread(p.feed, step, "fresh", rows, SCHEMA, "page=1");
+  const schema = { ...SCHEMA, fields: SCHEMA.fields.filter((field) => field.handling !== "exclude") };
+  p.sources.set("read.fresh", { schema, rows });
+  const original = p.feed.evidence();
+  expect(original.sourceReplacements?.receipts).toHaveLength(1);
+  const io = await disk();
+  await io.store.save("project", "flow", { ...record(), steps: p.steps, processing: p.processing, processingReferenceTimeMs: REFERENCE, resultEvidence: original });
+  const before = (await io.open().get("project", "flow", "attempt"))!;
+  expect(before.resultEvidence).toEqual(original);
+  const carried = automationStudioAnswerFirstCarriedOpening({ projectId: "project", flowId: "flow", taskId: "task", attemptId: "attempt", before, kept: undefined, acts: undefined, askedUsd: 5, budgetUsd: 5, opened: false });
+  const restored = automationStudioAnswerFirstRestoreResult({ evidence: carried.resultEvidence, steps: carried.steps, batches: [], source: (id) => p.sources.get(id) });
+  if (!restored.ok) throw new Error(restored.reason);
+  const feed = automationStudioAnswerFirstResultFeed({ instructionText: "List matching records.", readRowsKey: "read.extracted", processing: carried.processing, processingReferenceTimeMs: carried.processingReferenceTimeMs });
+  feed.restored(restored.entries, carried.resultEvidence?.sourceReplacements);
+  expect(feed.readiness()).toEqual({ state: "ready" });
+  expect(feed.evidence().sourceReplacements).toEqual(original.sourceReplacements);
+  expect(feed.evidence().pages[0]?.rows).toEqual(rows);
+  expect(feed.rows().rows).toEqual(rows);
+  expect(carried.processingReferenceTimeMs).toBe(REFERENCE);
+
+  // Corruption of optional authority leaves the exact task, full rows and clock readable.
+  const file = path.join(io.root, "answer-attempts.json");
+  const raw = JSON.parse(await readFile(file, "utf8"));
+  raw.data.attempts[0].resultEvidence.sourceReplacements = { version: 99, receipts: [null] };
+  await writeFile(file, JSON.stringify(raw));
+  const reopened = (await io.open().get("project", "flow", "attempt"))!;
+  expect(reopened.resultEvidence).toEqual({ ...original, sourceReplacements: null });
+  expect(reopened.attempt).toEqual(before.attempt);
+  expect(reopened.processingReferenceTimeMs).toBe(REFERENCE);
+  expect(reopened.processing).toEqual(before.processing);
+  const valid = automationStudioAnswerFirstRestoreResult({ evidence: reopened.resultEvidence, steps: reopened.steps!, batches: [], source: (id) => p.sources.get(id) });
+  if (!valid.ok) throw new Error(valid.reason);
+  const recovered = automationStudioAnswerFirstResultFeed({ instructionText: "List matching records.", readRowsKey: "read.extracted", processing: reopened.processing, processingReferenceTimeMs: reopened.processingReferenceTimeMs });
+  recovered.restored(valid.entries, reopened.resultEvidence?.sourceReplacements);
+  expect(recovered.readiness()).toEqual({ state: "ready" });
+  expect(recovered.rows().rows).toEqual(rows);
+  expect(recovered.evidence().sourceReplacements).toBeNull();
 });

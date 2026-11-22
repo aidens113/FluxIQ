@@ -1,5 +1,6 @@
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioFlowLessReadLeftOut } from "../flow-less/index.ts";
+import type { AutomationStudioResultEvidenceSourceReplacements } from "./replacement/index.ts";
 
 /** A contributing read, kept whole with its source and current authored version. Shared by both judges. */
 export type AutomationStudioResultEvidencePage = {
@@ -63,4 +64,6 @@ export type AutomationStudioResultEvidenceBundle = {
   processing?: AutomationStudioResultEvidenceProcessing;
   /** Older/unrecorded batches cannot supply page evidence; this is distinct from a validated empty page. */
   missingEvidence?: readonly { datasetId: string; batchKey?: string }[];
+  /** Exact framework replacement receipts. Null means optional authority was present but unreadable. */
+  sourceReplacements?: AutomationStudioResultEvidenceSourceReplacements | null;
 };
