@@ -13,6 +13,8 @@ import type { AutomationStudioResultTrail, AutomationStudioResultTrailShownStep,
 import { AUTOMATION_STUDIO_RESULT_TRAIL_NOTE } from "./note.ts";
 import { automationStudioResultTrailRepeatsOnce } from "./repeats.ts";
 import { automationStudioResultTrailScreened } from "./screen.ts";
+import { automationStudioJudgeEvidenceFinding } from "../judge-evidence/index.ts";
+import { automationStudioResultEvidenceScreen } from "../result-evidence/index.ts";
 
 /** The trail a judge is shown, or none for no steps; `withheld` where anything in it was screened. Absent `deniedEvidenceKeys`, nobody declared them, and nothing is carried. */
 export function automationStudioResultRunTrail(steps: readonly AutomationStudioResultTrailStep[] | undefined, deniedEvidenceKeys: readonly string[] | undefined): { trail?: AutomationStudioResultTrail; withheld: boolean } {
@@ -34,16 +36,21 @@ export function automationStudioResultRunTrail(steps: readonly AutomationStudioR
     const outcome = words(step.outcome);
     const where = words(step.where);
     const found = screened(step.found);
-    const callId = words(step.callId);
+    const callId = step.judgeEvidence === undefined ? words(step.callId) : automationStudioResultEvidenceScreen({ ...(step.callId === undefined ? {} : { callId: step.callId }) }, deniedEvidenceKeys).value.callId;
+    const framework = step.framework === undefined ? undefined : automationStudioResultEvidenceScreen(step.framework, deniedEvidenceKeys);
+    const semantic = step.judgeEvidence === undefined ? undefined : automationStudioJudgeEvidenceFinding(step.judgeEvidence, deniedEvidenceKeys);
+    withheld ||= framework?.withheld === true || semantic?.ok === false || (semantic?.ok === true && semantic.finding.withheld);
     return {
       n: at + 1,
-      ...(callId !== undefined ? { callId } : {}),
+      ...(typeof callId === "string" ? { callId } : {}),
       did: words(step.did) ?? "(withheld)",
       ...(on !== undefined ? { on } : {}),
       ...(asked !== undefined ? { asked } : {}),
       ...(outcome !== undefined ? { outcome } : {}),
       ...(where !== undefined ? { where } : {}),
-      ...(found !== undefined ? { found } : {})
+      ...(found !== undefined ? { found } : {}),
+      ...(framework === undefined ? {} : { framework: framework.value }),
+      ...(semantic === undefined ? {} : { judgeEvidence: semantic.ok ? semantic.finding : { version: 1 as const, missing: [semantic.code], withheld: true } })
     };
   });
   return { trail: { note: AUTOMATION_STUDIO_RESULT_TRAIL_NOTE, entries: automationStudioResultTrailRepeatsOnce(shown) }, withheld };

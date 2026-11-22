@@ -7,22 +7,27 @@
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioResultTrailStep } from "../../contracts/index.ts";
+import { automationStudioResultTrailSemanticStep, type AutomationStudioResultTrailSemanticOptions } from "../semantic/index.ts";
+import { automationStudioResultFrameworkOutcome } from "../framework-outcome.ts";
 
-type Observation = { step: number; resultCode?: string | undefined; evidence: JsonValue; pass?: number | undefined; of?: number | undefined };
+type Observation = { step: number; resultCode?: string | undefined; evidence: JsonValue; pass?: number | undefined; of?: number | undefined; records?: readonly JsonObject[] | undefined; recordSchema?: JsonValue; effectApplied?: boolean; failure?: unknown };
 
-export function automationStudioResultTrailOfObservations(observations: readonly Observation[] | undefined, actionOf: (step: number) => string | undefined): AutomationStudioResultTrailStep[] {
+export function automationStudioResultTrailOfObservations(observations: readonly Observation[] | undefined, actionOf: (step: number) => string | undefined, semantic?: AutomationStudioResultTrailSemanticOptions): AutomationStudioResultTrailStep[] {
   return (observations ?? []).map((observation) => {
     const action = actionOf(observation.step) ?? "step";
     const pass = observation.pass !== undefined ? ` (pass ${observation.pass}${observation.of !== undefined ? ` of ${observation.of}` : ""})` : "";
     const said = isObject(observation.evidence) ? observation.evidence : undefined;
     const where = typeof said?.location === "string" && said.location.trim() ? said.location.trim() : undefined;
     const { location: _shownAsWhere, ...found } = said ?? {};
-    return {
+    const step: AutomationStudioResultTrailStep = {
       did: `step ${observation.step}: ${action}${pass}`,
       ...(observation.resultCode ? { outcome: observation.resultCode } : {}),
       ...(where !== undefined ? { where } : {}),
       ...(said ? (Object.keys(found).length ? { found } : {}) : { found: observation.evidence })
     };
+    if (semantic === undefined) return step;
+    const envelope: JsonObject = { evidence: observation.evidence, source: { step: observation.step, ...(observation.pass === undefined ? {} : { pass: observation.pass }) }, ...(observation.records === undefined ? {} : { records: [...observation.records] }), ...(observation.recordSchema === undefined ? {} : { recordSchema: observation.recordSchema }) };
+    return automationStudioResultTrailSemanticStep(step, { source: "build-observation", definitionId: action, evidence: envelope }, semantic, automationStudioResultFrameworkOutcome(observation));
   });
 }
 

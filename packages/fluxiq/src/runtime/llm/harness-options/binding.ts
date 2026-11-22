@@ -31,6 +31,7 @@ import {
   type AutomationStudioLlmNodeDescriptions
 } from "../node-tools/index.ts";
 import type { AutomationStudioHarnessOptionHost } from "./host.ts";
+import type { AutomationStudioJudgeEvidenceProjector } from "./judge-evidence.ts";
 import type { AutomationStudioHarnessOption, AutomationStudioHarnessOptionBundle, AutomationStudioHarnessOptionImplementation } from "./option.ts";
 import { AutomationStudioHarnessOptionRegistry } from "./registry.ts";
 
@@ -181,6 +182,13 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
    * declaration at all, so the compile-time rule and the run-time rule agree.
    */
   deniedEvidenceKeys: readonly string[];
+  /**
+   * Pure semantic findings for every judge. Core supplies an immutable copy;
+   * the host selects actual data/action facts without full target captures.
+   * Absent or invalid, unknown domain evidence is explicitly missing, while
+   * framework outcomes and stored rows remain available. No raw fallback.
+   */
+  projectJudgeEvidence?: AutomationStudioJudgeEvidenceProjector | undefined;
   /**
    * The top-level keys of a tool result's value that are this domain's view of
    * its target as the call saw or left it -- for the web domain, the page.
