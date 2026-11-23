@@ -16,7 +16,6 @@
 //   step_failed          a step failed or was never reached
 //   step_routed          the page sent the run to another step than the saved order
 //   act_not_done         a step was passed over and what it does was not done
-//   step_retried         a step took more than its first attempt: the page was not as it was
 //   shape_unknown        the accepted run's read shape was not kept, so nothing to compare with
 //   shape_differs        the rows read are not in the accepted run's shape (other columns, or rows
 //                        where it had none, or none where it had rows)
@@ -36,6 +35,12 @@
 // gone exactly as saved. The contract keeps the word, because attempts stored before t972 carry it;
 // nothing writes it now.
 //
+// **A successful automatic retry is no deviation (t985, F24).** Retries are part of
+// the saved execution contract. Their count does not change the Flow or invalidate
+// a step whose final record passed. Failed/incomplete runs, repairs, routing and
+// shape changes still fail the independent checks below. Keep step_retried in the
+// public stored-attempt vocabulary for historical records, but never emit it here.
+//
 // **The quality guard** is the Lab's own oracle, which needs no model: a replay series per realistic
 // task must keep its right-answer rate (`docs/working/task-speed-plan.md`, S9). The rule's risk is a
 // site whose data changed under an unchanged structure; the shape check catches a read that came back
@@ -45,12 +50,12 @@ import { AUTOMATION_STUDIO_TASK_REPLAY_DEVIATIONS, type AutomationStudioTaskRepl
 import type { AutomationStudioAnswerFirstReadShape, AutomationStudioAnswerFirstReplayRecord } from "./replay-record.ts";
 
 /** The contract's word that stored attempts may still carry and this rule no longer names (header, t972). */
-type NoLongerNamed = "check_cleared";
+type NoLongerNamed = "check_cleared" | "step_retried";
 
 export type AutomationStudioAnswerFirstReplayDeviation = Exclude<AutomationStudioTaskReplayDeviation, NoLongerNamed>;
 
 /** Every deviation the rule names, in the order it is checked (header): the contract's closed words, since an attempt's outcome carries them (t897). */
-export const AUTOMATION_STUDIO_ANSWER_FIRST_REPLAY_DEVIATIONS: readonly AutomationStudioAnswerFirstReplayDeviation[] = AUTOMATION_STUDIO_TASK_REPLAY_DEVIATIONS.filter((deviation): deviation is AutomationStudioAnswerFirstReplayDeviation => deviation !== "check_cleared");
+export const AUTOMATION_STUDIO_ANSWER_FIRST_REPLAY_DEVIATIONS: readonly AutomationStudioAnswerFirstReplayDeviation[] = AUTOMATION_STUDIO_TASK_REPLAY_DEVIATIONS.filter((deviation): deviation is AutomationStudioAnswerFirstReplayDeviation => deviation !== "check_cleared" && deviation !== "step_retried");
 
 export function automationStudioAnswerFirstReplayStands(
   record: AutomationStudioAnswerFirstReplayRecord,
@@ -67,7 +72,6 @@ export function automationStudioAnswerFirstReplayStands(
   if (steps.length === 0 || steps.some((step) => step.ran === "failed" || step.ran === "not_reached")) return deviated("step_failed");
   if (steps.some((step) => step.ran === "skipped" && (step.skipped === undefined || step.skipped === "routed_elsewhere"))) return deviated("step_routed");
   if (steps.some((step) => step.skipped === "absent_not_done")) return deviated("act_not_done");
-  if (steps.some((step) => (step.retries ?? 0) > 0)) return deviated("step_retried");
   const accepted = record.saved.shape;
   if (!accepted) return deviated("shape_unknown");
   if (!sameShape(accepted, now.shape)) return deviated("shape_differs");
