@@ -1,8 +1,9 @@
 // Compares a replay's capture with the recording event by event, at every
 // delivery point, and writes the parity report (traces and offline trials,
 // P3). Each recorded sequence is matched, diverged or outside gateway parity
-// (a control input that bypassed the gateway, or the session view a trace
-// took when it first claimed a session). A sequence missing from the trace, an
+// (a control input that bypassed the gateway, an artifact a host recorded on
+// its own stream -- a capture's start receipt on the control stream -- or the
+// session view a trace took when it first claimed a session). A sequence missing from the trace, an
 // event the replay lacks, one only the replay has, a field that differs, a
 // delivery out of recorded order within its causal chain (D22,
 // `causal-chains.ts`) and a differing artifact list are each a classified
@@ -13,6 +14,7 @@
 
 import { CLIENT_GATEWAY_TRACE_LIFECYCLE_EVENTS } from "../../service/index.ts";
 import type { ClientGatewayTraceEvent, ClientGatewayTraceManifest } from "../../trace/index.ts";
+import { clientGatewayTraceEventSessionBound } from "../session-references/index.ts";
 import { clientGatewayTraceCausalChains } from "./causal-chains.ts";
 import { classifyClientGatewayTraceDivergence } from "./divergence-class.ts";
 import { clientGatewayTraceEventDifferences } from "./event-differences.ts";
@@ -104,7 +106,8 @@ class Comparison {
     }
     // A claim's session view is compared like any recorded event (lead, P3): the replay's own tap records the view
     // it attached the session with, so a match proves the replay set the session up as the original had it.
-    if (event.kind === "control") {
+    // A host's event on its own stream (the control stream, and the artifacts a control event carries) never passed through the gateway.
+    if (isOutsideGateway(event)) {
       this.entries.push({ sequence, kind: event.kind, messageType: event.messageType, status: "outside", replaySequence: null });
       return;
     }
@@ -141,7 +144,7 @@ class Comparison {
 
   /** The artifacts each manifest lists, by digest, type and size, in order; a capture gap when the trace could not supply an artifact event's replay, whatever the reason. */
   artifacts(): void {
-    const recorded = artifactSummaries(this.manifest);
+    const recorded = artifactSummaries(this.manifest, this.hostOnlyArtifactIds());
     const replayed = artifactSummaries(this.outcome.replayManifest);
     if (recorded.join("\n") === replayed.join("\n")) return;
     const gap = [...this.bySequence.values()].filter((event) => event.kind === "artifact").map((event) => this.gapOf(event)).find((reason) => reason !== undefined);
@@ -154,6 +157,18 @@ class Comparison {
       fields: ["manifest.artifacts"],
       detail: gap ?? `the replay took ${replayed.length} artifacts where the recording took ${recorded.length}, or different ones`
     }));
+  }
+
+  /** Ids of artifacts only a host recorded on its own stream: the replay never takes them, so they are no divergence. */
+  private hostOnlyArtifactIds(): ReadonlySet<string> {
+    const host = new Set<string>();
+    const gateway = new Set<string>();
+    for (const event of this.bySequence.values()) {
+      if (event.kind !== "artifact") continue;
+      for (const id of event.artifactIds) (clientGatewayTraceEventSessionBound(event) ? gateway : host).add(id);
+    }
+    for (const id of gateway) host.delete(id);
+    return host;
   }
 
   private comparePair(event: ClientGatewayTraceEvent, replay: ClientGatewayTraceEvent): void {
@@ -236,7 +251,12 @@ function chainName(chain: string): string {
   return "events correlated with no input or command";
 }
 
-/** The artifacts a manifest lists, in order, by digest, type and size. */
-function artifactSummaries(manifest: ClientGatewayTraceManifest): string[] {
-  return manifest.artifacts.map((artifact) => `${artifact.sha256} ${artifact.mediaType} ${artifact.byteLength}`);
+/** Whether `event` is a host's own: a control event, or an artifact the gateway tap did not record. */
+function isOutsideGateway(event: ClientGatewayTraceEvent): boolean {
+  return event.kind === "control" || (event.kind === "artifact" && !clientGatewayTraceEventSessionBound(event));
+}
+
+/** The artifacts a manifest lists, in order, by digest, type and size, leaving out the `skipped` ids. */
+function artifactSummaries(manifest: ClientGatewayTraceManifest, skipped: ReadonlySet<string> = new Set()): string[] {
+  return manifest.artifacts.filter((artifact) => !skipped.has(artifact.id)).map((artifact) => `${artifact.sha256} ${artifact.mediaType} ${artifact.byteLength}`);
 }

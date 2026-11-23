@@ -4,6 +4,8 @@
 // metadata. Node-only; browser code uses this entry's browser-safe subpaths.
 export * from "../../../api-contracts/automation.ts";
 export { recordAutomationStudioCreatedProjectOwner } from "../../persistence/automation/ownership/index.ts";
+export { runAutomationStudioRecordedTraceSession } from "../service/recorded-trace-session/index.ts";
+export type { AutomationStudioRecordedTraceEnvironment, AutomationStudioRecordedTraceGap, AutomationStudioRecordedTraceOutcome, AutomationStudioRecordedTraceSessionInput } from "../service/recorded-trace-session/index.ts";
 export { projectAutomationStudioFailureControlRecord } from "@fluxiq/contracts/automation";
 export * from "../actionability/index.ts";
 export type { AutomationStudioChangeFeedOperation } from "../../../api-contracts/automation.ts";

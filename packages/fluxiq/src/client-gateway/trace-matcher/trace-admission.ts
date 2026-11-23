@@ -10,7 +10,7 @@
 // `ambiguous_context`. A refused trace answers every command with its gap and
 // never with a recorded answer.
 
-import { CLIENT_GATEWAY_TRACE_SESSION_BOUND_KINDS, clientGatewayTraceEventsWithOnlySession, evaluateClientGatewayTraceSessionReferences, readClientGatewayTraceSessions } from "../trace-replay/index.ts";
+import { clientGatewayTraceEventSessionBound, clientGatewayTraceEventsWithOnlySession, evaluateClientGatewayTraceSessionReferences, readClientGatewayTraceSessions } from "../trace-replay/index.ts";
 import { evaluateClientGatewayTraceCompleteness, type ClientGatewayTraceCompletenessIssue, type ClientGatewayTraceEvent, type ClientGatewayTraceManifest, type ClientGatewayTraceStore } from "../trace/index.ts";
 import { clientGatewayTraceContractCompatibility } from "./contract-compatibility.ts";
 import { readClientGatewayTraceOperation } from "./operation/index.ts";
@@ -84,7 +84,8 @@ function servedSession(events: readonly ClientGatewayTraceEvent[], operations: r
   if (targeted.size > 1) return undefined;
   const [only] = targeted;
   if (only !== undefined) return only;
-  const sessions = new Set(events.filter((event) => CLIENT_GATEWAY_TRACE_SESSION_BOUND_KINDS.has(event.kind)).map((event) => event.session));
+  // A host's own stream belongs to no session (`../trace-replay/session-references/session-bound.ts`), so it never makes a second one.
+  const sessions = new Set(events.filter(clientGatewayTraceEventSessionBound).map((event) => event.session));
   const [single] = sessions;
   return sessions.size === 1 && single !== undefined ? single : null;
 }

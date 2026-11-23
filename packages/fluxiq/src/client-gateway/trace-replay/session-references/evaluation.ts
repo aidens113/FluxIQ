@@ -16,7 +16,7 @@
 // Session and client ids are compared here, never returned.
 
 import type { ClientGatewayTraceEvent } from "../../trace/index.ts";
-import { CLIENT_GATEWAY_TRACE_SESSION_BOUND_KINDS } from "./bound-kinds.ts";
+import { clientGatewayTraceEventSessionBound } from "./session-bound.ts";
 import type { ClientGatewayTraceSessionReferences } from "../types.ts";
 
 
@@ -60,7 +60,7 @@ function gather(events: readonly ClientGatewayTraceEvent[]): Evidence {
   let bound = 0;
   let disconnected = false;
   for (const event of events) {
-    if (!CLIENT_GATEWAY_TRACE_SESSION_BOUND_KINDS.has(event.kind)) continue;
+    if (!clientGatewayTraceEventSessionBound(event)) continue;
     if (event.session === undefined) evidence.unreferenced += 1;
     else evidence.referenced += 1;
     const lifecycle = event.kind === "lifecycle" ? event.messageType : null;

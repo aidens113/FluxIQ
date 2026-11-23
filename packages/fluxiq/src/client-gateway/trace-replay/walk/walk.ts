@@ -17,7 +17,7 @@
 import { CLIENT_GATEWAY_PROTOCOL_VERSION, type ClientGatewayClientHello, type ClientGatewayClientMessage, type ClientGatewaySocket } from "@fluxiq/contracts/client-gateway";
 import { CLIENT_GATEWAY_TRACE_LIFECYCLE_EVENTS, ClientGatewayCommandContext, type ClientGatewayCommandOwnerRef } from "../../service/index.ts";
 import type { ClientGatewayTraceEvent, ClientGatewayTraceManifest, ClientGatewayTraceStore } from "../../trace/index.ts";
-import { CLIENT_GATEWAY_TRACE_SESSION_BOUND_KINDS } from "../session-references/index.ts";
+import { clientGatewayTraceEventSessionBound } from "../session-references/index.ts";
 import { ClientGatewayTraceAlignment } from "./alignment.ts";
 import { readClientGatewayTraceHello } from "./hello.ts";
 import { readClientGatewayTraceInboundText } from "./inbound-text.ts";
@@ -110,7 +110,9 @@ export class ClientGatewayTraceReplayWalk {
   }
 
   private async drive(event: ClientGatewayTraceEvent, index: number): Promise<void> {
-    if (event.session === undefined && CLIENT_GATEWAY_TRACE_SESSION_BOUND_KINDS.has(event.kind)) this.gap(event, this.unreferencedGap);
+    if (event.session === undefined && clientGatewayTraceEventSessionBound(event)) this.gap(event, this.unreferencedGap);
+    // Content a host recorded on its own stream (Automation Studio's control artifacts) was never gateway traffic: nothing to feed.
+    else if (event.kind === "artifact" && !clientGatewayTraceEventSessionBound(event)) return;
     else if (event.kind === "inbound") await this.feedInbound(event, index);
     else if (event.kind === "artifact") await this.feedArtifact(event, index);
     else if (event.kind === "outbound") await this.driveOutbound(event, index);
