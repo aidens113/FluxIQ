@@ -20,6 +20,17 @@ describe("the answer-first system prompt", () => {
     expect(automationStudioLlmTaskSystemPrompt(request({ ...decision, domainInstructions: { domainId: "web", text: "Domain." } }))).toContain(GOAL);
   });
 
+  it("conditions automatic processing guidance and preserves action filtering in emitted decisions", () => {
+    for (const domainInstructions of [undefined, { domainId: "fluxiq.answer-first", text: "Role." }]) {
+      const prompt = automationStudioLlmTaskSystemPrompt(request({ taskKind: "evidence_tool_decision", ...(domainInstructions ? { domainInstructions } : {}) }));
+      expect(prompt).toContain("With declared automatic task processing");
+      expect(prompt).toContain("Without automatic processing");
+      expect(prompt).toContain("Explicit exclusions remain authoritative");
+      expect(prompt).toContain("Rows a later step acts on are still narrowed by the read's where");
+      expect(prompt).not.toContain("do not read every page while exploring");
+    }
+  });
+
   it("tells the attempt's judge nothing of a Flow's shape, and every other judge what it always was", () => {
     const judge = { taskKind: "loop_verification" };
     expect(automationStudioLlmTaskSystemPrompt(request({ ...judge, metadata: { source: "answerFirstJudge" } }))).not.toContain("flowShape");

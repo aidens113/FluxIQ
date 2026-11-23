@@ -40,3 +40,18 @@ nothing.
   counted as a change.
 - A remembered prompt that appears with the press that opens a dialog no longer stops a saved
   Flow once the page stops showing it again.
+
+## Successful automatic retries keep the replay proof
+
+A proven, confirmed saved Flow that reaches its end with successful steps and the
+same result shape can be accepted on its execution record without another judge
+call. Automatic retries are part of that execution contract: a successful retry
+alone does not invalidate the proof. This also applies after a person clears a
+site check and the step then succeeds.
+
+The independent proof checks still reject incomplete or failed execution, an
+unsettled act, changed routing, a repaired Flow, missing proof and changed result
+shape. Explicit always-judge and run-again policies retain their existing behavior.
+The stored deviation vocabulary still reads historical `step_retried` records;
+new completion decisions do not emit that reason. Retry limits and uncertain-act
+protection are unchanged.

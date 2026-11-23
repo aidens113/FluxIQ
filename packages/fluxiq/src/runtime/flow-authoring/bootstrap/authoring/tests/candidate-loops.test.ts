@@ -328,8 +328,8 @@ describe("a written loop the graph cannot honour is refused where it is said", (
     const refusal = errors(accepted.issues).find((issue) => issue.code === "flow_script.repeat_not_after_its_source");
     expect(refusal?.message).toContain("which is inside another repeat");
     expect(refusal?.message).toContain("A repeat inside a repeat is not supported, so a Flow cannot act on each kept row of every page of a paged list.");
-    expect(refusal?.message).toContain("read every page in one `repeat while` span and keep the rows the instruction asks for with the listing's `extractList.where`");
-    expect(refusal?.message).toContain("one of the site's own filters, set before that span");
+    expect(refusal?.message).toContain("read the required pages in one `repeat while` span");
+    expect(refusal?.message).toContain("a matching site filter or another real source");
   });
 
   // t738 (social `run-mvgf7ij5-a9747575` 0145-0152): the refusal named the outer span's line, the step that was right.

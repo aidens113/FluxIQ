@@ -48,7 +48,6 @@ describe("whether a replay stands on its own record", () => {
       ["step_failed", [step({ ran: "failed" }), { shape: SHAPE }]],
       ["step_routed", [step({ ran: "skipped", skipped: "routed_elsewhere" }), { shape: SHAPE }]],
       ["act_not_done", [step({ ran: "skipped", skipped: "absent_not_done" }), { shape: SHAPE }]],
-      ["step_retried", [step({ retries: 1 }), { shape: SHAPE }]],
       ["shape_unknown", [replay({ saved: { label: "confirmed", provenWhole: true } }), { shape: SHAPE }]],
       ["shape_differs", [replay(), { shape: { columns: ["title"], empty: false } }]]
     ];
@@ -63,8 +62,8 @@ describe("whether a replay stands on its own record", () => {
     // The word stays in the contract for attempts stored before t972, and the rule no longer names it.
     expect(AUTOMATION_STUDIO_ANSWER_FIRST_REPLAY_DEVIATIONS).not.toContain("check_cleared");
     expect(AUTOMATION_STUDIO_TASK_REPLAY_DEVIATIONS).toContain("check_cleared");
-    // What the clear left still counts: a step that failed after it, or one a retry was asked for.
-    expect(automationStudioAnswerFirstReplayStands(step({ personCleared: true, retries: 1 }), { shape: SHAPE })).toEqual({ stands: false, deviation: "step_retried" });
+    // What the clear left still counts: an incomplete run fails, a successful retry remains the saved run.
+    expect(automationStudioAnswerFirstReplayStands(step({ personCleared: true, retries: 1 }), { shape: SHAPE })).toEqual({ stands: true });
     expect(automationStudioAnswerFirstReplayStands(replay({ reachedEnd: false, steps: [{ position: 1, ran: "passed", personCleared: true }] }), { shape: SHAPE })).toEqual({ stands: false, deviation: "run_not_whole" });
   });
 
@@ -122,11 +121,23 @@ describe("a completion that closes a replay", () => {
   });
 
   it("asks the judge once for a replay that deviated, and says why", async () => {
-    const { check, judged } = made(step({ retries: 1 }));
+    const { check, judged } = made(replay({ repaired: true }));
     expect(await check.check({ summary: "The saved Flow ran from its start to its end." })).toEqual({ ok: true });
     expect(judged()).toBe(1);
-    expect(check.state).toMatchObject({ achieved: true, deviation: "step_retried", timesChecked: 1 });
+    expect(check.state).toMatchObject({ achieved: true, deviation: "repaired", timesChecked: 1 });
     expect(check.state.onRecord).toBeUndefined();
+  });
+
+  it.each([1, 3])("accepts a successful automatic retry count %i without another judge call", async (retries) => {
+    const { check, judged } = made(step({ retries }));
+    expect(await check.check({ summary: "The saved Flow ran whole after its automatic retry." })).toEqual({ ok: true });
+    expect(judged()).toBe(0);
+    expect(check.state).toMatchObject({ achieved: true, onRecord: true, timesChecked: 1 });
+    expect(check.state.deviation).toBeUndefined();
+    expect(AUTOMATION_STUDIO_TASK_REPLAY_DEVIATIONS).toContain("step_retried");
+    expect(AUTOMATION_STUDIO_ANSWER_FIRST_REPLAY_DEVIATIONS).not.toContain("step_retried");
+    expect(automationStudioAnswerFirstReplayStands(step({ retries, ran: "failed" }), { shape: SHAPE })).toEqual({ stands: false, deviation: "step_failed" });
+    expect(automationStudioAnswerFirstReplayStands(replay({ reachedEnd: false, steps: [{ position: 1, ran: "passed", retries }] }), { shape: SHAPE })).toEqual({ stands: false, deviation: "run_not_whole" });
   });
 
   it("asks the judge for every completion that is not a replay's", async () => {
