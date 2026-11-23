@@ -9,12 +9,12 @@ import { clientGatewayTraceEventsWithOnlySession, evaluateClientGatewayTraceSess
 
 let sequence = 0;
 
-function event(kind: ClientGatewayTraceEventKind, messageType: string | null, value: ClientGatewayTraceJsonValue, session?: string): ClientGatewayTraceEvent {
+function event(kind: ClientGatewayTraceEventKind, messageType: string | null, value: ClientGatewayTraceJsonValue, session?: string, stream = "gateway"): ClientGatewayTraceEvent {
   sequence += 1;
   return {
     traceId: "trace.evaluation",
     eventId: `event.${sequence}`,
-    stream: "gateway",
+    stream,
     sequence,
     source: { id: null, sequence: null },
     time: { logicalMs: sequence, observedAt: new Date(sequence).toISOString(), sourceTimestamp: null },
@@ -35,6 +35,10 @@ const sent = (sessionId: string, clientId = "client.one"): ClientGatewayTraceEve
 const received = (): ClientGatewayTraceEvent => event("inbound", "client.state_update", { type: "client.state_update" });
 const lifecycle = (name: string, sessionId: string): ClientGatewayTraceEvent => event("lifecycle", name, { event: name, sessionId, clientId: "client.one" });
 const settled = (): ClientGatewayTraceEvent => event("disposition", "client.state_update", { disposition: "settled", error: null });
+// An artifact a host records on its own stream, as Automation Studio records its control content: no session.
+const hostArtifact = (): ClientGatewayTraceEvent => event("artifact", "recorded.start", {}, undefined, "control");
+// An artifact a client uploaded, on the tap's own artifact stream.
+const uploaded = (session?: string): ClientGatewayTraceEvent => event("artifact", null, {}, session, "artifact");
 
 function refusal(events: readonly ClientGatewayTraceEvent[]): string | undefined {
   const references = evaluateClientGatewayTraceSessionReferences(events);
@@ -51,6 +55,14 @@ describe("a trace's session references", () => {
     const references = evaluateClientGatewayTraceSessionReferences([lifecycle("session.connected", "s.1"), sent("s.1"), received(), settled(), sent("s.1"), lifecycle("session.disconnected", "s.1"), settled()]);
     expect(references.status).toBe("single_session");
     expect(references.status === "single_session" ? references.checks : []).toHaveLength(5);
+  });
+
+  it("are recorded when every gateway event names its session beside a host's own artifact, which belongs to none", () => {
+    expect(evaluateClientGatewayTraceSessionReferences([event("outbound", "server.execute_action", { sessionId: "s.1" }, "session-1"), hostArtifact(), uploaded("session-1"), event("inbound", "client.action_result", {}, "session-1")])).toEqual({ status: "recorded" });
+  });
+
+  it("still refuse a trace whose client upload lacks its session among events that name theirs", () => {
+    expect(refusal([event("outbound", "server.execute_action", { sessionId: "s.1" }, "session-1"), uploaded()])).toBe("some of its events name their session and others do not");
   });
 
   it("refuse a trace whose events only partly name their session", () => {
@@ -82,5 +94,6 @@ describe("a trace's session references", () => {
     const events = [sent("s.1"), received(), event("synthesized", null, {}), event("control", null, {})];
     expect(clientGatewayTraceEventsWithOnlySession(events).map((item) => item.session)).toEqual(["session-1", "session-1", undefined, undefined]);
     expect(events.every((item) => item.session === undefined)).toBe(true);
+    expect(clientGatewayTraceEventsWithOnlySession([sent("s.1"), uploaded(), hostArtifact()]).map((item) => item.session)).toEqual(["session-1", "session-1", undefined]);
   });
 });

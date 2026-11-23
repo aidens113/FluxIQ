@@ -6,10 +6,10 @@
 // parity report as a normalization. The stored trace is never changed.
 
 import type { ClientGatewayTraceEvent } from "../../trace/index.ts";
-import { CLIENT_GATEWAY_TRACE_SESSION_BOUND_KINDS } from "./bound-kinds.ts";
+import { clientGatewayTraceEventSessionBound } from "./session-bound.ts";
 
 const ONLY_SESSION = "session-1";
 
 export function clientGatewayTraceEventsWithOnlySession(events: readonly ClientGatewayTraceEvent[]): ClientGatewayTraceEvent[] {
-  return events.map((event) => (event.session === undefined && CLIENT_GATEWAY_TRACE_SESSION_BOUND_KINDS.has(event.kind) ? Object.freeze({ ...event, session: ONLY_SESSION }) : event));
+  return events.map((event) => (event.session === undefined && clientGatewayTraceEventSessionBound(event) ? Object.freeze({ ...event, session: ONLY_SESSION }) : event));
 }
