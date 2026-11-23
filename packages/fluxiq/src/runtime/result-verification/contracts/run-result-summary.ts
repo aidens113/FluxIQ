@@ -37,6 +37,8 @@ export type AutomationStudioResultLeftOutNamingTheItem = {
  * and node ids are the same identifiers a run's recent actions already carry.
  */
 export type AutomationStudioRunResultSummary = {
+  /** The judge's semantic copy; explicit gaps hold a yes, while intentional capture omission and privacy withholding do not. */
+  evidenceProjection?: { version: 1; missing: readonly { source: string; codes: readonly string[] }[] };
   /** Both judges' screened source-page evidence. Missing legacy provenance is stated within it, never reconstructed. */
   resultEvidence?: JsonObject;
   schemaVersion: "automation-studio.run-result-summary.v1";

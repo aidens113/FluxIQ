@@ -30,7 +30,7 @@ const threeLoans: NonNullable<AutomationStudioAnswerFirstCallerOptions["check"]>
 describe("a caller's check", () => {
   it("passing, confirms with no judge call, by the check, and needs no answer-first flag", async () => {
     const attempt = await scriptedAttempt({
-      instruction: LIST,
+      instruction: LIST, taskProcessing: { process: {} },
       script: [runNode("read", READ_LOANS, {}, [], { add: true }), complete("Listed.")],
       before: (service) => drivenBy(service, () => ({ check: threeLoans }))
     }, cleanups);
@@ -45,6 +45,7 @@ describe("a caller's check", () => {
     const said: string[] = [];
     const attempt = await scriptedAttempt({
       instruction: "List every loan on my library account and renew the card.",
+      taskProcessing: { process: {} },
       permittedConsequences: ["modify_existing"],
       script: [
         runNode("read", READ_LOANS, {}, [], { add: true }),
@@ -71,7 +72,7 @@ describe("a caller's check", () => {
 describe("the judge's mode, through the service", () => {
   it("off with no check: achieved with no judge call, its result unverified, marked checking off, and never stored as a person's Stop", async () => {
     const attempt = await scriptedAttempt({
-      instruction: LIST,
+      instruction: LIST, taskProcessing: { process: {} },
       script: [runNode("read", READ_LOANS, {}, [], { add: true }), complete("Listed.")],
       before: (service) => drivenBy(service, () => ({ judge: "off" }))
     }, cleanups);
@@ -88,7 +89,7 @@ describe("the judge's mode, through the service", () => {
 
   it("always: a passing check is judged too, and the judge confirms it", async () => {
     const attempt = await scriptedAttempt({
-      instruction: LIST,
+      instruction: LIST, taskProcessing: { process: {} },
       script: [runNode("read", READ_LOANS, {}, [], { add: true }), complete("Listed.")],
       before: (service) => drivenBy(service, () => ({ judge: "always", check: threeLoans }))
     }, cleanups);
@@ -100,7 +101,7 @@ describe("the judge's mode, through the service", () => {
 
   it("auto with no check, as empty options: the judge, as the chat has it", async () => {
     const attempt = await scriptedAttempt({
-      instruction: LIST,
+      instruction: LIST, taskProcessing: { process: {} },
       script: [runNode("read", READ_LOANS, {}, [], { add: true }), complete("Listed.")],
       before: (service) => drivenBy(service, () => ({}))
     }, cleanups);
@@ -120,7 +121,7 @@ describe("a caller's budget and model", () => {
   const priced = (provider: AutomationStudioLlmProvider): AutomationStudioLlmProvider => ({ ...provider, estimateCostUsd: () => 1.2 });
 
   it("a raised budget is honoured: the purse opens at it and the attempt spends past $5 to its result", async () => {
-    const attempt = await scriptedAttempt({ instruction: LIST, usage: pricey, resolver, wrapProvider: priced, script: fiveDecisions, before: (service) => drivenBy(service, () => ({ budgetUsd: 12 })) }, cleanups);
+    const attempt = await scriptedAttempt({ instruction: LIST, taskProcessing: { process: {} }, usage: pricey, resolver, wrapProvider: priced, script: fiveDecisions, before: (service) => drivenBy(service, () => ({ budgetUsd: 12 })) }, cleanups);
     const answer = answered(attempt);
     expect(answer.attempt.budget.usd).toBe(12);
     expect(answer.attempt.status).toBe("achieved");
@@ -128,7 +129,7 @@ describe("a caller's budget and model", () => {
   });
 
   it("without it, the same attempt is held to $5 and ends budget_out, as the chat's does", async () => {
-    const attempt = await scriptedAttempt({ instruction: LIST, usage: pricey, resolver, wrapProvider: priced, script: fiveDecisions }, cleanups);
+    const attempt = await scriptedAttempt({ instruction: LIST, taskProcessing: { process: {} }, usage: pricey, resolver, wrapProvider: priced, script: fiveDecisions }, cleanups);
     const answer = answered(attempt);
     expect(answer.attempt.budget.usd).toBe(5);
     expect(answer.attempt.status).toBe("budget_out");
@@ -146,11 +147,11 @@ describe("a caller's budget and model", () => {
       }
     };
     const script = [runNode("read", READ_LOANS, {}, [], { add: true }), complete("Listed.")];
-    await scriptedAttempt({ instruction: LIST, script, wrapProvider: keep, over, before: (service) => drivenBy(service, () => ({ model: "claude-haiku-5-5" })) }, cleanups);
+    await scriptedAttempt({ instruction: LIST, taskProcessing: { process: {} }, script, wrapProvider: keep, over, before: (service) => drivenBy(service, () => ({ model: "claude-haiku-5-5" })) }, cleanups);
     expect(models.length).toBeGreaterThan(0);
     expect(new Set(models)).toEqual(new Set(["claude-haiku-5-5"]));
     models.splice(0);
-    await scriptedAttempt({ instruction: LIST, script, wrapProvider: keep, over }, cleanups);
+    await scriptedAttempt({ instruction: LIST, taskProcessing: { process: {} }, script, wrapProvider: keep, over }, cleanups);
     expect(new Set(models)).toEqual(new Set(["claude-haiku-5-5"]));
   });
 });
@@ -162,6 +163,7 @@ describe("a caller's person port and scope", () => {
     // asked once when the attempt starts, before the press, and never at the press (t976).
     const attempt = await scriptedAttempt({
       instruction: "Renew the card on my library account.",
+      taskProcessing: null,
       taskActs: ["send_or_publish"],
       script: [runNode("card", RENEW_CARD, {}, ["send_or_publish"], { add: true }), complete("Renewed the card.")],
       before: (service) => drivenBy(service, () => ({
@@ -181,7 +183,7 @@ describe("a caller's person port and scope", () => {
     const said: string[] = [];
     const raised: string[] = [];
     const attempt = await scriptedAttempt({
-      instruction: LIST,
+      instruction: LIST, taskProcessing: { process: {} },
       // The request permits a change; the scope, which is the grant, does not.
       permittedConsequences: ["modify_existing"],
       script: [
@@ -216,7 +218,7 @@ describe("a caller's task key", () => {
     const lane = await laterAttempts(cleanups, { bindSelectedModel: true });
     let options: AutomationStudioAnswerFirstCallerOptions = { taskKey: "fixed-model-task", model: "claude-sonnet-5-5", check: threeLoans };
     drivenBy(lane.service, () => options);
-    const first = await lane.attempt({ instruction: LIST, script: [readLoans(), complete("Listed.")] });
+    const first = await lane.attempt({ instruction: LIST, taskProcessing: { process: {} }, script: [readLoans(), complete("Listed.")] });
     options = { ...options, model: "claude-opus-5-5" };
     const second = await lane.attempt({ instruction: "Show the loans once more." });
     expect(second.answer.attempt.taskId).toBe(first.answer.attempt.taskId);
@@ -229,7 +231,7 @@ describe("a caller's task key", () => {
     expect(third.answer.attempt.taskId).toBe(first.answer.attempt.taskId);
     expect(restarted.resolvedModels).toEqual(["claude-sonnet-5-5"]);
     options = { taskKey: "deliberately-new-task", model: "claude-opus-5-5", check: threeLoans };
-    await restarted.attempt({ instruction: LIST, script: [readLoans(), complete("Listed anew.")] });
+    await restarted.attempt({ instruction: LIST, taskProcessing: { process: {} }, script: [readLoans(), complete("Listed anew.")] });
     expect(restarted.resolvedModels.at(-1)).toBe("claude-opus-5-5");
   });
 
@@ -237,7 +239,7 @@ describe("a caller's task key", () => {
     const lane = await laterAttempts(cleanups);
     let options: AutomationStudioAnswerFirstCallerOptions | undefined = { taskKey: "library.loans:spec-1", check: threeLoans };
     drivenBy(lane.service, () => options);
-    const first = await lane.attempt({ instruction: LIST, script: [readLoans(), complete("Listed.")] });
+    const first = await lane.attempt({ instruction: LIST, taskProcessing: { process: {} }, script: [readLoans(), complete("Listed.")] });
     expect(first.answer.attempt).toMatchObject({ status: "achieved", ordinal: 1 });
     expect(first.answer.confirmedBy).toBe("check");
     expect(first.judgeCalls).toHaveLength(0);
@@ -251,7 +253,7 @@ describe("a caller's task key", () => {
 
     // The same other words with no key are another task, with nothing kept.
     options = { check: threeLoans };
-    const third = await lane.attempt({ instruction: "Show me all the books I have out.", script: [readLoans(), complete("Listed.")] });
+    const third = await lane.attempt({ instruction: "Show me all the books I have out.", taskProcessing: { process: {} }, script: [readLoans(), complete("Listed.")] });
     expect(third.answer.attempt.taskId).not.toBe(first.answer.attempt.taskId);
     expect(third.answer.attempt).toMatchObject({ ordinal: 1, path: "explore" });
   });

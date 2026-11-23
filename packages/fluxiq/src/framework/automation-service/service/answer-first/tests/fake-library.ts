@@ -11,6 +11,7 @@ import path from "node:path";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioActionConsequence } from "../../../../../runtime/action-permission-requests/index.ts";
 import { automationStudioActivityHub } from "../../../../../runtime/activity/index.ts";
+import type { AutomationStudioFlowTaskProcessing } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmEvidenceToolExecutionResult, AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../../../runtime/native-nodes/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
@@ -197,6 +198,8 @@ export type ScriptedAttemptOptions = {
   permittedConsequences?: AutomationStudioActionConsequence[];
   /** What the chat's reading declared the task will cause (t976): asked about once when the attempt starts. */
   taskActs?: AutomationStudioActionConsequence[];
+  /** Explicit fixture intent only; absence still exercises the real declaration-repair path. */
+  taskProcessing?: AutomationStudioFlowTaskProcessing;
   /** Replaces the scripted provider's call, for a test of a provider that is silent or refuses. */
   wrapProvider?: (provider: AutomationStudioLlmProvider, requests: AutomationStudioLlmTaskRequest[]) => AutomationStudioLlmProvider;
   /** The resolver's extras: a total, or a per-call limit. */
@@ -275,7 +278,8 @@ export async function scriptedAttempt(options: ScriptedAttemptOptions, cleanups:
   const answered = await service.generateFlowBootstrapAdaptation({
     projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true, authoringMode: "answer-first",
     permittedConsequences: options.permittedConsequences ?? [],
-    ...(options.taskActs ? { taskActs: options.taskActs } : {})
+    ...(options.taskActs ? { taskActs: options.taskActs } : {}),
+    ...(Object.hasOwn(options, "taskProcessing") ? { taskProcessing: options.taskProcessing } : {})
   });
   clearTimeout(guard);
   stopListening();

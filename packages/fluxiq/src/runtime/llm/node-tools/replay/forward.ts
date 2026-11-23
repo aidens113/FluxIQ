@@ -42,7 +42,7 @@
 // No reset and no re-anchor is ever sent with these, and every call still goes
 // through the loop's executor, so the permission gate sees each one.
 
-import type { JsonObject } from "../../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../flow-authoring/draft/index.ts";
 import type { automationStudioLlmEvidenceParseToolExecutionResult } from "../../evidence-loop-decision.ts";
 
@@ -54,6 +54,12 @@ export type AutomationStudioFlowDraftReplayAnsweredCall = NonNullable<ReturnType
 
 /** What the forward run asks of its caller, and tells it. */
 export type AutomationStudioFlowDraftReplayForward = {
+  /** Actual nonsecret caller inputs, separate from prior node output/row state. Absent is unknown. */
+  callerInputs?: Readonly<Record<string, JsonValue>> | undefined;
+  /** Existing next-read sequence, sampled before this actual invocation. Never model input. */
+  started?(): number;
+  /** Only a successful un-aborted walk issues this receipt; the result owner still verifies actual coverage and occurrences. */
+  completed?(receipt: { from: number; to: number; callIds: readonly string[]; readSince: number }): JsonObject | undefined;
   /** This row already took its lasting act: the pass is excluded, nothing is sent for it. */
   rowDone(row: JsonObject): boolean;
   /** This step's own lasting act already landed: it is checked, never sent again. */

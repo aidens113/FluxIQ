@@ -1,4 +1,5 @@
 import type { AutomationStudioTaskAttempt, AutomationStudioTaskResult } from "@fluxiq/contracts/automation";
+import type { AutomationStudioFlowTaskProcessing } from "../../../../runtime/flow-authoring/draft/index.ts";
 import type { JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioActionConsequence, AutomationStudioActionPermissionRequest } from "../../../../runtime/action-permission-requests/index.ts";
 import type { AutomationStudioBootstrapAdaptation, AutomationStudioBootstrapAdaptationMode } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
@@ -77,6 +78,7 @@ export type AutomationStudioGenerateFlowBootstrapAdaptationInput = {
   interpretationCalls?: number;
   /** The consequence classes the chat's reading declared the task will cause (t976): asked about once when the work starts. */
   taskActs?: AutomationStudioActionConsequence[];
+  taskProcessing?: AutomationStudioFlowTaskProcessing;
 };
 
 export type AutomationStudioGenerateFlowBootstrapAdaptationProposal = {
@@ -208,6 +210,8 @@ export type AutomationStudioAnswerFirstCallerOptions = {
   judge?: "auto" | "always" | "off";
   /** The caller's own check of a completion, run before any judge and at no cost. */
   check?: AutomationStudioAnswerFirstCallerCheck;
+  /** Positive restriction from the caller's real output mapping. Never model input, and never an assertion that missing data is N/A. */
+  requiresDataOutput?: true;
   /** Where a question only a person can answer goes, in place of the Flow's conversation. */
   personAsk?: AutomationStudioAnswerFirstPersonAskSink;
   /** The standing grant. Present, it replaces the request's permitted consequences, nothing is asked about a lasting act, and an act outside it is refused so the rounds find another way. */
@@ -235,7 +239,7 @@ export type AutomationStudioAnswerFirstCallerOptions = {
  * runs as the kept mode says with no check (`auto` judges, `off` takes the result unverified), and no
  * `personAsk`, so a question goes to the Flow's conversation, where the person who pressed is.
  */
-export type AutomationStudioAnswerFirstKeptCallerOptions = Pick<AutomationStudioAnswerFirstCallerOptions, "taskKey" | "actScope" | "model" | "budgetUsd" | "judge" | "scope" | "inputs" | "runOverrides" | "humanness">;
+export type AutomationStudioAnswerFirstKeptCallerOptions = Pick<AutomationStudioAnswerFirstCallerOptions, "taskKey" | "actScope" | "model" | "budgetUsd" | "judge" | "scope" | "inputs" | "runOverrides" | "humanness" | "requiresDataOutput">;
 
 /**
  * The caller's check of what the attempt got: Core's own summary of it (rows from reads, acts from

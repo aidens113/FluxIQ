@@ -32,6 +32,7 @@ import { automationStudioAnswerFirstRemember } from "./remember.ts";
 import type { AutomationStudioAnswerFirstRoundsEnding } from "./rounds.ts";
 import { automationStudioAnswerFirstSay } from "./say.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
+import { automationStudioAnswerFirstTrailsOf } from "../trail/index.ts";
 
 const BUDGET_MISSING = "The budget ran out before this was confirmed.";
 const STOP_MISSING = "You stopped it before this was confirmed.";
@@ -43,10 +44,15 @@ export async function automationStudioAnswerFirstFinish(run: AutomationStudioAns
   // The step the saved Flow broke at leaves it where this attempt put its fix in the Flow, before the path reads the Flow and anything saves it (`../flow-run/stand-in.ts`).
   automationStudioAnswerFirstStandIn(run);
   run.path = automationStudioAnswerFirstPathAtEnding(run, ending);
-  await run.witnesses.atEnd();
+  await run.witnesses.atEnd(true);
   const flushed = await flushedRecord(run);
   run.result.draft(run.steps);
-  await run.sink.publish(run.result.rows(), run.result.evidence());
+  let withheld = true;
+  if (run.result.readiness().state === "missing-evidence") {
+    try { await run.sink.withhold(); }
+    catch { withheld = false; } // Completion already refuses this state; a storage failure cannot add a terminal ending.
+  }
+  else await run.sink.publish(run.result.rows(), run.result.evidence());
   const sessionEnded = await endedSession(run, ending);
   // Read back for what it does to the store: the run's datasets are processed for the Data window and an export. The answer is the attempt's one result (`../result-feed/`), the draft's output step.
   await run.sink.readBack();
@@ -63,7 +69,7 @@ export async function automationStudioAnswerFirstFinish(run: AutomationStudioAns
   const candidateId = draft.kind === "saved" ? draft.record.candidateId : undefined;
   const remembered = await automationStudioAnswerFirstRemember(run, ending, { label: checked.result?.label ?? "unverified", candidateId, stated: draft.kind === "saved" ? draft.stated : automationStudioAnswerFirstHeldStated(run), spend: { calls: checked.attempt.spend.calls, usd: checked.attempt.spend.usd }, atMs: checked.attempt.endedAtMs ?? Date.now() });
   const applied = await automationStudioAnswerFirstApplyProven(run, ending, draft.kind === "saved" ? { record: draft.record } : {});
-  if (!flushed.ok || !sessionEnded.ok || !saved.ok || !remembered.ok || !applied.ok) automationStudioAnswerFirstSay("Part of the record was not written", "I have the result, but part of what goes with it could not be written down.");
+  if (!flushed.ok || !sessionEnded.ok || !saved.ok || !remembered.ok || !applied.ok || !withheld) automationStudioAnswerFirstSay("Part of the record was not written", "Part of the attempt's record could not be written down.");
   const answer: AutomationStudioGenerateFlowBootstrapAdaptationAnswered = {
     projectId: input.projectId,
     flowId: input.flowId,
@@ -110,8 +116,14 @@ async function endedSession(run: AutomationStudioAnswerFirstAttemptRun, ending: 
 
 async function storedEnding(run: AutomationStudioAnswerFirstAttemptRun, checked: ReturnType<typeof automationStudioAnswerFirstEnding>, candidateId: string | undefined, draftKept?: "not_assembled" | "not_saved"): Promise<{ ok: true } | { ok: false; errorName: string }> {
   try {
-    await run.store.save(run.input.projectId, run.input.flowId, {
+    const journal = automationStudioAnswerFirstTrailsOf(run.input.owner);
+    const judgeEvidence = journal.checkpoint(run.trail, run.witnesses.readings(), { ...journal.capability(run.trail, run.input.binding), projectJudgeEvidence: run.input.binding?.projectJudgeEvidence, deniedEvidenceKeys: run.input.binding?.deniedEvidenceKeys, resultEvidence: run.result.sourceProof() });
+    const kept = {
       attempt: checked.attempt,
+      publications: run.sink.publicationState(),
+      ...(run.processingReferenceTimeMs === undefined ? {} : { processingReferenceTimeMs: run.processingReferenceTimeMs }),
+      ...(run.result.processingDeclaration() === undefined ? {} : { processing: run.result.processingDeclaration()!, resultEvidence: run.result.evidence() }),
+      ...(judgeEvidence === undefined ? {} : { judgeEvidence }),
       ...(checked.result ? { result: checked.result } : {}),
       tried: automationStudioAnswerFirstTriedAsContract(run.tried.data()),
       ...(candidateId === undefined ? {} : { candidateId }),
@@ -119,7 +131,12 @@ async function storedEnding(run: AutomationStudioAnswerFirstAttemptRun, checked:
       ...automationStudioAnswerFirstReplayKept(run.completion.state),
       // Always: they are what the next attempt seeds from, and what a carry-on goes on from.
       steps: run.steps
-    });
+    };
+    const sourceOwner = journal.sourceOwner(run.trail);
+    if (judgeEvidence !== undefined && sourceOwner !== undefined) {
+      await run.store.save(run.input.projectId, run.input.flowId, kept, { sourceOwner });
+      journal.recovered(run.trail, await run.store.saveJudgeEvidence(run.input.projectId, run.input.flowId, run.attemptId, judgeEvidence, { sourceOwner }));
+    } else await run.store.save(run.input.projectId, run.input.flowId, kept);
     return { ok: true };
   } catch (error) {
     return { ok: false, errorName: error instanceof Error ? error.name : "unknown" };

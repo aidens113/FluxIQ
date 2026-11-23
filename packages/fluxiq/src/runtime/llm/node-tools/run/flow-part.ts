@@ -114,8 +114,13 @@ export async function runAutomationStudioFlowDraftPart(input: AutomationStudioFl
   let before: string | undefined;
   let after: string | undefined;
   let first = true;
+  const readSince = input.signal?.aborted ? undefined : input.forward?.started?.();
+  const invoked: string[] = [];
   const done = await automationStudioFlowDraftReplaySteps({
-    executeTool: input.executeTool,
+    executeTool: (call) => {
+      invoked.push(call.callId);
+      return input.executeTool(call);
+    },
     ...(input.signal ? { signal: input.signal } : {}),
     steps: input.steps,
     run: proposed.filter((each) => each.position >= range.from && each.position <= to),
@@ -152,12 +157,14 @@ export async function runAutomationStudioFlowDraftPart(input: AutomationStudioFl
   const rowsStepFailed = done.rowsStepFailed ?? [];
   const noRows = done.outcomes.at(-1)?.resultCode === AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_NO_ROWS_CODE;
   const passed = stoppedAt === undefined && rowsNotDone.length === 0;
+  const replacement = passed && !input.signal?.aborted && readSince !== undefined ? input.forward?.completed?.({ from: range.from, to, callIds: invoked, readSince }) : undefined;
   const seen = input.forward && input.look ? await pageAsItStands(input, input.look) : undefined;
   if (seen?.after !== undefined) after = seen.after;
   const evidence: JsonObject = {
     ...seen?.view,
     ...(seen?.read === false ? { pageNotRead: true } : {}),
     ok: true, passed, from: range.from, to, steps: ran,
+    ...(replacement === undefined ? {} : { sourceReplacement: replacement }),
     ...(stoppedAt === undefined ? {} : { stoppedAt }),
     ...(shown ? { last: shown } : {}),
     ...(input.forward && done.rows ? { rows: done.rows } : {}),

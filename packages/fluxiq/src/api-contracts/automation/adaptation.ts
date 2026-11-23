@@ -1,5 +1,6 @@
 import type { AutomationStudioActionConsequence, AutomationStudioActionPermissionRequest, AutomationStudioGenerateFlowBootstrapAdaptationResult } from "../../framework/automation-service/index.ts";
 import type { FlowIdProjectRequest } from "./flow.ts";
+import type { AutomationStudioFlowTaskProcessing } from "../../runtime/flow-authoring/draft/index.ts";
 
 export type AutomationStudioFlowBootstrapGenerationReadiness = {
   contractVersion: "automation-studio.flow-bootstrap-generation-readiness.v2";
@@ -176,6 +177,8 @@ export type GenerateFlowBootstrapAdaptationRequest = FlowIdProjectRequest & {
    * refuses the request. Omitted, nothing was declared.
    */
   taskActs?: string[];
+  /** Unbound data conditions from this interpretation; null explicitly declares an action-only task. */
+  taskProcessing?: AutomationStudioFlowTaskProcessing;
 };
 
 export type GenerateFlowBootstrapAdaptationFailureDiagnostic = {

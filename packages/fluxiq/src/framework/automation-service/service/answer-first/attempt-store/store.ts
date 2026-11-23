@@ -15,6 +15,8 @@
 // each other's record.
 
 import { rename } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import path from "node:path";
 import { parseAutomationStudioTaskAttempt, parseAutomationStudioTaskResult, parseAutomationStudioTriedRecord } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../../../core/index.ts";
@@ -25,6 +27,11 @@ import { AutomationStudioAnswerFirstAttemptLocator } from "./locator.ts";
 import type { AutomationStudioAnswerFirstAttemptRecord } from "./record.ts";
 import { AutomationStudioAnswerFirstAttemptsUnreadable } from "./unreadable.ts";
 import { automationStudioAnswerFirstReplayVerdictRead } from "./replay-verdict.ts";
+import { readAutomationStudioAnswerFirstProcessingDeclaration } from "../result-processing/index.ts";
+import { readAutomationStudioAnswerFirstResultEvidence } from "../result-feed/index.ts";
+import { automationStudioReadJudgeCheckpoint, type AutomationStudioJudgeEvidenceCheckpoint } from "../../../../../runtime/result-verification/index.ts";
+import { readAutomationStudioAnswerFirstJudgeEvidenceIssue, type AutomationStudioAnswerFirstJudgeEvidenceIssue } from "./judge-evidence-issue.ts";
+import { automationStudioAnswerFirstJournalOwners } from "../trail/index.ts";
 
 const STORE_FILE = "answer-attempts.json";
 const KIND = "answer_first_attempts";
@@ -36,6 +43,7 @@ type Stored = { kind: typeof KIND; schemaVersion: 1; projectId: string; flowId: 
 export class AutomationStudioAnswerFirstAttemptStore {
   private readonly memory = new Map<string, Stored>();
   private readonly queues = new Map<string, Promise<unknown>>();
+  private readonly issueOwners = new WeakMap<object, string>();
   /** Where each attempt is, and which Flows a thread holds (`./locator.ts`). */
   readonly locator: AutomationStudioAnswerFirstAttemptLocator;
 
@@ -59,16 +67,86 @@ export class AutomationStudioAnswerFirstAttemptStore {
   }
 
   /** Writes this attempt, in its place if it is there already and at the end if not. */
-  async save(projectId: string, flowId: string, record: AutomationStudioAnswerFirstAttemptRecord): Promise<void> {
+  async save(projectId: string, flowId: string, record: AutomationStudioAnswerFirstAttemptRecord, options?: { sourceOwner?: object | undefined }): Promise<void> {
+    if (record.processingReferenceTimeMs !== undefined && (!Number.isSafeInteger(record.processingReferenceTimeMs) || record.processingReferenceTimeMs < 0)) throw new Error("Invalid processing reference time.");
+    if (record.processing !== undefined && !readAutomationStudioAnswerFirstProcessingDeclaration(record.processing)) throw new Error("Invalid processing declaration.");
+    if (record.resultEvidence !== undefined && !readAutomationStudioAnswerFirstResultEvidence(record.resultEvidence)) throw new Error("Invalid result page provenance.");
+    const publications = Object.hasOwn(record, "publications") ? readPublications(record.publications) : undefined;
+    const hasJudgeEvidence = Object.hasOwn(record, "judgeEvidence");
+    const parsedJudgeEvidence = hasJudgeEvidence ? automationStudioReadJudgeCheckpoint(record.judgeEvidence) : undefined;
+    const rejectedJudgeEvidence = hasJudgeEvidence && record.judgeEvidence !== null && parsedJudgeEvidence === undefined;
+    const hasIssue = Object.hasOwn(record, "judgeEvidenceIssue");
+    const parsedIssue = hasIssue ? readAutomationStudioAnswerFirstJudgeEvidenceIssue(record.judgeEvidenceIssue) : undefined;
+    const rejectedIssue = hasIssue && record.judgeEvidenceIssue !== null && parsedIssue === undefined;
+    const safeRecord = { ...record, ...(publications === undefined ? {} : { publications }), ...(hasJudgeEvidence ? { judgeEvidence: parsedJudgeEvidence ?? null } : {}), ...(hasIssue ? { judgeEvidenceIssue: parsedIssue ?? null } : {}) };
     await this.queued(projectId, flowId, async () => {
       const attempts = (await this.readOrSetAside(projectId, flowId))?.attempts ?? [];
       const at = attempts.findIndex((each) => each.attempt.attemptId === record.attempt.attemptId);
-      if (at >= 0) attempts[at] = structuredClone(record);
-      else attempts.push(structuredClone(record));
+      const previous = at < 0 ? undefined : attempts[at];
+      const rejectedRecovery = parsedIssue?.recoveredAtRevision !== undefined && !isDeepStrictEqual(parsedIssue, previous?.judgeEvidenceIssue);
+      let conflict = false;
+      if (at >= 0) {
+        const merged = withLatestCheckpoint(attempts[at]!, structuredClone(safeRecord));
+        attempts[at] = merged.record;
+        conflict = merged.conflict;
+      } else attempts.push(structuredClone(safeRecord));
+      const slot = at < 0 ? attempts.length - 1 : at;
+      const rejected = conflict || rejectedJudgeEvidence || rejectedIssue || rejectedRecovery;
+      const warning = rejected ? this.withJudgeIssue(previous ?? safeRecord, attempts[slot]!, rejectedIssue || rejectedRecovery ? "checkpoint_issue_invalid" : conflict ? "checkpoint_conflict" : "checkpoint_rejected", options?.sourceOwner) : undefined;
+      if (warning) attempts[slot] = warning.record;
+      else attempts[slot] = this.unclaimedJudgeIssue(attempts[slot]!, options?.sourceOwner);
       await this.write({ kind: KIND, schemaVersion: 1, projectId, flowId, attempts: attempts.slice(-KEPT_ATTEMPTS) });
+      if (warning?.owner) this.issueOwners.set(warning.owner, warning.issue.receipt);
       // After the row, so a failure here costs the lookup by id and never the row; the caller's next save tries again.
       await this.locator.noteAttempt(projectId, record.attempt.attemptId, flowId);
+      // The actual result/effects and processing fields were kept above.
+      // Only the conflicting optional metadata was refused.
+      if (rejected) throw new Error(conflict ? "Semantic evidence checkpoint revision conflict; actual attempt data was saved." : "Invalid semantic evidence checkpoint; actual attempt data was saved.");
     });
+  }
+
+  /** Metadata-only ordered save after a real call/Flow. It never republishes or evaluates rows, or changes an action's outcome. */
+  async saveJudgeEvidence(projectId: string, flowId: string, attemptId: string, checkpoint: AutomationStudioJudgeEvidenceCheckpoint, options?: { sourceOwner?: object | undefined }): Promise<{ recoveredReceipt: string; revision: number } | undefined> {
+    const judgeEvidence = automationStudioReadJudgeCheckpoint(checkpoint);
+    return await this.queued(projectId, flowId, async () => {
+      const stored = await this.read(projectId, flowId);
+      const at = stored?.attempts.findIndex((each) => each.attempt.attemptId === attemptId) ?? -1;
+      if (!stored || at < 0) throw new Error("The attempt's semantic evidence checkpoint has no stored attempt.");
+      const attempts = [...stored.attempts];
+      const previous = attempts[at]!;
+      const merged = judgeEvidence === undefined ? undefined : withLatestCheckpoint(previous, { ...previous, judgeEvidence });
+      if (merged === undefined || merged.conflict) {
+        // Only the durable coverage warning changes on refusal; prior
+        // journal, actual task/result and all P2 fields stay intact.
+        const warning = this.withJudgeIssue(previous, previous, merged?.conflict ? "checkpoint_conflict" : "checkpoint_rejected", options?.sourceOwner);
+        attempts[at] = warning.record;
+        await this.write({ ...stored, attempts });
+        if (warning.owner) this.issueOwners.set(warning.owner, warning.issue.receipt);
+        throw new Error(merged?.conflict ? "Semantic evidence checkpoint revision conflict." : "Invalid semantic evidence checkpoint.");
+      }
+      const issue = previous.judgeEvidenceIssue;
+      const sourceOwner = options?.sourceOwner;
+      const clear = issue != null && issue.recoveredAtRevision === undefined && judgeEvidence !== undefined && judgeEvidence.revision > issue.revision && judgeEvidence.revision >= (previous.judgeEvidence?.revision ?? 0) && automationStudioAnswerFirstJournalOwners.has(sourceOwner) && this.issueOwners.get(sourceOwner) === issue.receipt;
+      if (merged.record.judgeEvidence === previous.judgeEvidence && !clear) return;
+      attempts[at] = clear ? { ...merged.record, judgeEvidenceIssue: { ...issue!, recoveredAtRevision: judgeEvidence!.revision } } : this.unclaimedJudgeIssue(merged.record, sourceOwner);
+      await this.write({ ...stored, attempts });
+      if (clear && sourceOwner) this.issueOwners.delete(sourceOwner);
+      return clear ? { recoveredReceipt: issue!.receipt, revision: judgeEvidence!.revision } : undefined;
+    });
+  }
+
+  private withJudgeIssue(previous: AutomationStudioAnswerFirstAttemptRecord, record: AutomationStudioAnswerFirstAttemptRecord, code: AutomationStudioAnswerFirstJudgeEvidenceIssue["code"], sourceOwner: object | undefined): { record: AutomationStudioAnswerFirstAttemptRecord; issue: AutomationStudioAnswerFirstJudgeEvidenceIssue; owner?: object } {
+    const earlier = previous.judgeEvidenceIssue;
+    const owner = automationStudioAnswerFirstJournalOwners.has(sourceOwner) && (!Object.hasOwn(previous, "judgeEvidenceIssue") || (earlier != null && (earlier.recoveredAtRevision !== undefined || this.issueOwners.get(sourceOwner) === earlier.receipt))) ? sourceOwner : undefined;
+    const issue: AutomationStudioAnswerFirstJudgeEvidenceIssue = { version: 1, receipt: randomUUID(), revision: Math.max(previous.judgeEvidence?.revision ?? 0, record.judgeEvidence?.revision ?? 0), code: Object.hasOwn(previous, "judgeEvidenceIssue") && earlier === null ? "checkpoint_issue_invalid" : code };
+    return { record: { ...record, judgeEvidenceIssue: issue }, issue, ...(owner === undefined ? {} : { owner }) };
+  }
+
+  /** A writer without the original uninterrupted source cannot preserve an old owner's clearing receipt. */
+  private unclaimedJudgeIssue(record: AutomationStudioAnswerFirstAttemptRecord, sourceOwner: object | undefined): AutomationStudioAnswerFirstAttemptRecord {
+    const issue = record.judgeEvidenceIssue;
+    if (issue == null || issue.recoveredAtRevision !== undefined || (automationStudioAnswerFirstJournalOwners.has(sourceOwner) && this.issueOwners.get(sourceOwner) === issue.receipt)) return record;
+    return { ...record, judgeEvidenceIssue: { ...issue, receipt: randomUUID() } };
   }
 
   /**
@@ -140,9 +218,28 @@ function readStored(value: JsonObject, projectId: string, flowId: string): Store
   return { kind: KIND, schemaVersion: 1, projectId, flowId, attempts };
 }
 
+/** Only Core-issued snapshot revisions establish chronology. Trail length/IDs do not. */
+function withLatestCheckpoint(previous: AutomationStudioAnswerFirstAttemptRecord, next: AutomationStudioAnswerFirstAttemptRecord): { record: AutomationStudioAnswerFirstAttemptRecord; conflict: boolean } {
+  if (Object.hasOwn(previous, "judgeEvidenceIssue")) next = { ...next, judgeEvidenceIssue: previous.judgeEvidenceIssue ?? null };
+  if (!Object.hasOwn(next, "judgeEvidence") && Object.hasOwn(previous, "judgeEvidence")) return { record: { ...next, judgeEvidence: previous.judgeEvidence ?? null }, conflict: false };
+  const prior = previous.judgeEvidence;
+  const incoming = next.judgeEvidence;
+  if (prior && incoming) {
+    if (incoming.revision < prior.revision) return { record: { ...next, judgeEvidence: prior }, conflict: false };
+    if (incoming.revision === prior.revision) return { record: { ...next, judgeEvidence: prior }, conflict: !isDeepStrictEqual(incoming, prior) };
+  }
+  if (prior && incoming === null) return { record: { ...next, judgeEvidence: prior }, conflict: true };
+  return { record: next, conflict: false };
+}
+
 function readRecord(value: unknown): AutomationStudioAnswerFirstAttemptRecord | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
-  const held = value as { attempt?: unknown; result?: unknown; tried?: unknown; steps?: unknown; candidateId?: unknown; draftKept?: unknown; replay?: unknown };
+  const held = value as { attempt?: unknown; result?: unknown; tried?: unknown; steps?: unknown; candidateId?: unknown; draftKept?: unknown; replay?: unknown; processingReferenceTimeMs?: unknown; processing?: unknown; resultEvidence?: unknown; publications?: unknown; judgeEvidence?: unknown; judgeEvidenceIssue?: unknown };
+  if (held.processingReferenceTimeMs !== undefined && (!Number.isSafeInteger(held.processingReferenceTimeMs) || (held.processingReferenceTimeMs as number) < 0)) return undefined;
+  const processing = held.processing === undefined ? undefined : readAutomationStudioAnswerFirstProcessingDeclaration(held.processing);
+  if (held.processing !== undefined && processing === undefined) return undefined;
+  const resultEvidence = held.resultEvidence === undefined ? undefined : readAutomationStudioAnswerFirstResultEvidence(held.resultEvidence);
+  if (held.resultEvidence !== undefined && resultEvidence === undefined) return undefined;
   const attempt = parseAutomationStudioTaskAttempt(held.attempt);
   if (!attempt.ok) return undefined;
   const tried = parseAutomationStudioTriedRecord(held.tried);
@@ -156,6 +253,14 @@ function readRecord(value: unknown): AutomationStudioAnswerFirstAttemptRecord | 
   if (held.replay !== undefined && replay === undefined) return undefined;
   return {
     attempt: attempt.attempt,
+    ...(held.processingReferenceTimeMs === undefined ? {} : { processingReferenceTimeMs: held.processingReferenceTimeMs as number }),
+    ...(processing === undefined ? {} : { processing }),
+    ...(resultEvidence === undefined ? {} : { resultEvidence }),
+    ...(Object.hasOwn(held, "publications") ? { publications: readPublications(held.publications) } : {}),
+    // Reject only this optional metadata. The actual result, effects and
+    // processing/source provenance must survive a malformed new field.
+    ...(Object.hasOwn(held, "judgeEvidence") ? { judgeEvidence: automationStudioReadJudgeCheckpoint(held.judgeEvidence) ?? null } : {}),
+    ...(Object.hasOwn(held, "judgeEvidenceIssue") ? { judgeEvidenceIssue: readAutomationStudioAnswerFirstJudgeEvidenceIssue(held.judgeEvidenceIssue) ?? null } : {}),
     tried: tried.record,
     ...(result?.ok ? { result: result.result } : {}),
     ...(held.steps !== undefined ? { steps: held.steps as AutomationStudioAnswerFirstAttemptRecord["steps"] & object } : {}),
@@ -163,6 +268,17 @@ function readRecord(value: unknown): AutomationStudioAnswerFirstAttemptRecord | 
     ...(held.draftKept === "not_assembled" || held.draftKept === "not_saved" ? { draftKept: held.draftKept } : {}),
     ...(replay ? { replay } : {})
   };
+}
+
+/** Optional bookkeeping corruption cannot erase the task, real result, original clock or source evidence. */
+function readPublications(value: unknown): NonNullable<AutomationStudioAnswerFirstAttemptRecord["publications"]> {
+  const unknown = (): NonNullable<AutomationStudioAnswerFirstAttemptRecord["publications"]> => ({ version: 1, knownDatasetIds: [], complete: false });
+  if (!value || typeof value !== "object" || Array.isArray(value) || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) return unknown();
+  const held = value as { version?: unknown; knownDatasetIds?: unknown; complete?: unknown };
+  if (Reflect.ownKeys(value).some((key) => key !== "version" && key !== "knownDatasetIds" && key !== "complete") || held.version !== 1 || typeof held.complete !== "boolean" || !Array.isArray(held.knownDatasetIds)) return unknown();
+  const ids = held.knownDatasetIds;
+  if (!Array.from({ length: ids.length }, (_, index) => Object.hasOwn(ids, index) && typeof ids[index] === "string" && ids[index].trim().length > 0).every(Boolean) || new Set(ids).size !== ids.length) return unknown();
+  return { version: 1, knownDatasetIds: [...ids] as string[], complete: held.complete };
 }
 
 /** Whether a list reads as a draft's steps: each one what the loop's seed needs of it. */

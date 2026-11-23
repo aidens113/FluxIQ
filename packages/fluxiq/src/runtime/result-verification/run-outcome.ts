@@ -77,6 +77,7 @@ import {
 import { automationStudioAttemptInputs, type AutomationStudioGraphExecutionTrace, type AutomationStudioNodeAttemptTrace } from "../../framework/automation-service/executor/index.ts";
 import { automationStudioReferenceNow } from "../reference-time/index.ts";
 import { AutomationStudioLlmRunPurse, automationStudioLlmBuildTrace, type AutomationStudioLlmProvider, type AutomationStudioLlmTokenLimits } from "../llm/index.ts";
+import { automationStudioJudgeEvidenceCapability, type AutomationStudioJudgeEvidenceProjector } from "../llm/harness-options/index.ts";
 import { resolveAutomationStudioRecoveryRunBudget } from "../adaptation/recovery/annotation/index.ts";
 
 import {
@@ -165,6 +166,8 @@ export type AutomationStudioResultVerificationPorts = {
   resolveProvider?: ((input: { projectId: string; flowId: string }) => Promise<AutomationStudioResultVerificationProvider | undefined>) | undefined;
   /** The bound domain's declared denied keys. Absent means nobody declared any, and no row is sampled. */
   deniedEvidenceKeys?: readonly string[] | undefined;
+  projectJudgeEvidence?: AutomationStudioJudgeEvidenceProjector | undefined;
+  judgeEvidenceVersion?: 1 | undefined;
   /**
    * Reads the view of its target -- the page -- the run ended on, as the domain
    * produces it, for the check to judge from (t174-w87; run
@@ -567,6 +570,8 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
   const batchEvidence = await input.ports.readRunDatasetEvidence?.({ projectId: input.projectId, runId: session.runId });
   const instructions = await input.ports.flowInstructionSet({ projectId: input.projectId, flowId: session.flowId, ...(input.subflowId ? { subflowId: input.subflowId } : {}) });
   const summary = summarizeAutomationStudioRunResult({
+    ...automationStudioJudgeEvidenceCapability(input.ports),
+    projectJudgeEvidence: input.ports.projectJudgeEvidence,
     recordSets,
     ...(batchEvidence === undefined ? {} : { batchEvidence }),
     instructionText: instructions.map((instruction) => `${instruction.title}\n${instruction.body}`).join("\n"),
@@ -613,6 +618,8 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
   } }, instructionDigest);
   const requestedOutput = await input.ports.requestedOutput?.({ projectId: input.projectId, flowId: session.flowId });
   const verified = await verifyAutomationStudioRunResult({
+    ...automationStudioJudgeEvidenceCapability(input.ports),
+    projectJudgeEvidence: input.ports.projectJudgeEvidence,
     projectId: input.projectId,
     flowId: session.flowId,
     runId: session.runId,

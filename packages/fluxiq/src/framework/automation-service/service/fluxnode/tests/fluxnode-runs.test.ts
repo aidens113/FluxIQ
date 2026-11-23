@@ -30,7 +30,7 @@ function expectContractShapes(run: { events: FluxNodeRunEvent[]; result: unknown
 describe("a FluxNode run is an Answer First attempt", () => {
   it("explores once to typed outputs with lineage, then replays the saved Flow on new inputs with no model call", async () => {
     const lane = await fluxNodeLane(cleanups);
-    const first = await lane.run({ spec: findLoansSpec(), inputs: { title: "Atlas" } }, { script: [findLoans("Atlas"), complete("Found the loans.")], answers: passing });
+    const first = await lane.run({ spec: findLoansSpec(), inputs: { title: "Atlas" } }, { taskProcessing: { process: { where: [{ field: "title", contains: { $input: "title", test: "Atlas" } }], columns: ["title", "due"] } }, script: [findLoans("Atlas"), complete("Found the loans.")], answers: passing });
     expectContractShapes(first);
     expect(first.result).toMatchObject({ status: "achieved", path: "explored", flowPath: "nodes/library/find-loans", verdict: { label: "confirmed", by: "check" } });
     expect(first.result.outputs).toEqual({ loans: [{ title: "Atlas of Rivers", due: "2030-01-01" }] });
@@ -55,7 +55,10 @@ describe("a FluxNode run is an Answer First attempt", () => {
     // At most one loan: a read of every loan with an "o" finds three, which the type refuses.
     const spec = findLoansSpec({ outputs: { type: "object", properties: { loans: { type: "array", minItems: 1, maxItems: 1, items: { type: "object", properties: { title: { type: "string" }, due: { type: "string" } }, required: ["title", "due"] } } }, required: ["loans"] } });
     // Changed by lane t905 (mvp-launch-plan/reports/result-evidence-design.md; `answer-first/result/output-group.ts`): the answer is what the saved Flow fills, where a second read appending to `loans` keeps the first read's rows, so the model drops the "o" read, the step its draft shows in the result, and then reads Birds.
+    // The model declares the columns and not the title condition (t984): the guard under test is the type, which must
+    // refuse what an incomplete declaration lets through. Declared in full, the data stage drops those rows itself (`./processing.test.ts`).
     const run = await lane.run({ spec, inputs: { title: "Birds" } }, {
+      taskProcessing: { process: { columns: ["title", "due"] } },
       script: [findLoans("o"), complete("Found the loans."), (request) => {
         said.push(JSON.stringify(request.context.evidenceLoop?.evidence ?? null));
         const draft = request.context.evidenceLoop?.evidence.find((entry) => entry.toolId === "core.flow_draft")?.value as { steps?: { step: number; inResult: boolean }[] } | undefined;
@@ -76,7 +79,9 @@ describe("a FluxNode run is an Answer First attempt", () => {
     const lane = await fluxNodeLane(cleanups);
     const said: string[] = [];
     let checks = 0;
+    // As above, only the columns are declared, so the wrong loans reach the program's check, which is the guard under test.
     const run = await lane.run({ spec: findLoansSpec(), inputs: { title: "Clock" } }, {
+      taskProcessing: { process: { columns: ["title", "due"] } },
       script: [findLoans("Atlas"), complete("Found the loans."), (request) => {
         said.push(JSON.stringify(request.context.evidenceLoop?.evidence ?? null));
         return findLoans("Clock", "find.clock");
@@ -96,7 +101,7 @@ describe("a FluxNode run is an Answer First attempt", () => {
 
   it("judge off with no check and no type is achieved and unverified, with Core's records and their inferred type", async () => {
     const lane = await fluxNodeLane(cleanups);
-    const run = await lane.run({ spec: findLoansSpec({ hasCheck: false, outputs: undefined, options: { judge: "off" } }), inputs: { title: "Birds" } }, { script: [findLoans("Birds"), complete("Found the loans.")] });
+    const run = await lane.run({ spec: findLoansSpec({ hasCheck: false, outputs: undefined, options: { judge: "off" } }), inputs: { title: "Birds" } }, { taskProcessing: { process: { where: [{ field: "title", contains: { $input: "title", test: "Birds" } }], columns: ["title", "due"] } }, script: [findLoans("Birds"), complete("Found the loans.")] });
     expectContractShapes(run);
     expect(run.judgeCalls).toHaveLength(0);
     expect(run.events.some((event) => event.type === "check_needed")).toBe(false);

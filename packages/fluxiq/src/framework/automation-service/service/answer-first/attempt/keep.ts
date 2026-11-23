@@ -10,6 +10,7 @@ import { automationStudioAnswerFirstReplayKept } from "../completion/index.ts";
 import { automationStudioAnswerFirstTriedAsContract } from "../loop-signal/index.ts";
 import type { AutomationStudioAnswerFirstRowsSummary } from "../rows/index.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
+import { automationStudioAnswerFirstTrailsOf } from "../trail/index.ts";
 
 /** Where a result came from, by how the attempt went: the contract's word for each path. */
 const SOURCE_OF_PATH: Readonly<Record<AutomationStudioTaskAttemptPath, AutomationStudioTaskResultSource>> = { explore: "exploration", run_flow: "flow", run_flow_then_repair: "both", run_flow_then_explore: "both" };
@@ -104,11 +105,21 @@ export async function automationStudioAnswerFirstKeep(run: AutomationStudioAnswe
   try {
     const waiting = run.waitingFor !== undefined;
     run.result.draft(run.steps);
-    await run.sink.publish(run.result.rows(), run.result.evidence());
+    if (run.result.readiness().state === "missing-evidence") await run.sink.withhold();
+    else await run.sink.publish(run.result.rows(), run.result.evidence());
     const processing = waiting ? await processed(run) : { ok: true as const };
     const attempt = automationStudioAnswerFirstAttemptAs(run, run.waitingFor ? { status: "waiting_for_person", waitingFor: run.waitingFor } : { status: "working" });
     const result = automationStudioAnswerFirstResultAs(run, run.result.rows());
-    await run.store.save(run.input.projectId, run.input.flowId, { attempt, result, tried: automationStudioAnswerFirstTriedAsContract(run.tried.data()), steps: run.steps, ...automationStudioAnswerFirstReplayKept(run.completion.state) });
+    const journal = automationStudioAnswerFirstTrailsOf(run.input.owner);
+    const judgeEvidence = journal.checkpoint(run.trail, run.witnesses.readings(), { ...journal.capability(run.trail, run.input.binding), projectJudgeEvidence: run.input.binding?.projectJudgeEvidence, deniedEvidenceKeys: run.input.binding?.deniedEvidenceKeys, resultEvidence: run.result.sourceProof() });
+    const kept = { attempt, result, publications: run.sink.publicationState(), tried: automationStudioAnswerFirstTriedAsContract(run.tried.data()), steps: run.steps, ...(run.processingReferenceTimeMs === undefined ? {} : { processingReferenceTimeMs: run.processingReferenceTimeMs }), ...(run.result.processingDeclaration() === undefined ? {} : { processing: run.result.processingDeclaration()!, resultEvidence: run.result.evidence() }), ...(judgeEvidence === undefined ? {} : { judgeEvidence }), ...automationStudioAnswerFirstReplayKept(run.completion.state) };
+    const sourceOwner = journal.sourceOwner(run.trail);
+    if (judgeEvidence !== undefined && sourceOwner !== undefined) {
+      await run.store.save(run.input.projectId, run.input.flowId, kept, { sourceOwner });
+      journal.recovered(run.trail, await run.store.saveJudgeEvidence(run.input.projectId, run.input.flowId, run.attemptId, judgeEvidence, { sourceOwner }));
+    } else await run.store.save(run.input.projectId, run.input.flowId, kept);
+    const declaration = run.result.processingDeclaration();
+    if (declaration !== undefined) await run.memory.update(run.input.projectId, run.taskId, (current) => ({ ...current, processing: declaration }), { scoped: run.input.caller?.actScope !== undefined });
     return processing;
   } catch (error) {
     return failed(error);

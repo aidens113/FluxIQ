@@ -8,7 +8,7 @@
 // goes through `parseAutomationStudioFlowBootstrapPlan` and
 // `validateAutomationStudioFlowBootstrapPlan` exactly as before, and a plan
 // that cannot pass them is still refused and still creates nothing.
-import type { JsonValue } from "../../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../../framework/automation-service/nodes/index.ts";
 import { automationStudioFlowBootstrapInstructionColumns } from "../answerability/index.ts";
 import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS } from "../plan/index.ts";
@@ -19,7 +19,10 @@ import { authoringKey } from "./keys.ts";
 import type { AuthoringPartOfStep } from "../record-defaults/index.ts";
 import { parseAutomationStudioFlowScript } from "./parse.ts";
 import { automationStudioFlowBootstrapPlanLocator } from "./plan-locator.ts";
-import { isJsonObject } from "./values.ts";
+import { authoringNestedValue, authoringSetAtPath, isJsonObject } from "./values.ts";
+import { authoringNodeList, readAuthoringPlanSubflows } from "./plan-shapes.ts";
+import { automationStudioAuthoredProcessingIssue } from "../../draft/index.ts";
+import { authoringError } from "./issue.ts";
 
 /** Keys a reply may carry a Flow script under. */
 const SCRIPT_KEYS = new Set(["flow", "script", "steps", "lines", "text", "body", "plan"]);
@@ -44,21 +47,44 @@ export function acceptAutomationStudioFlowBootstrapResult(input: {
   const stated = statedSummary(input.result);
   if (script !== undefined) {
     const read = parseAutomationStudioFlowScript(script);
+    for (const block of read.script.blocks) for (const step of block.steps) {
+      const parameters: JsonObject = {};
+      for (const entry of step.entries) {
+        const path = entry.key.split(".");
+        if (authoringKey(path[0] ?? "") !== "recordoutput") continue;
+        authoringSetAtPath(parameters, ["recordOutput", ...path.slice(1)], authoringNestedValue(entry.lines.join("\n")));
+      }
+      const issue = automationStudioAuthoredProcessingIssue(parameters);
+      if (issue) return { ok: false, script, issues: [processingRefusal(issue, `flow.line.${step.line}`)] };
+    }
     const summary = boundedSummary(stated ?? read.script.summary ?? read.script.blocks[0]?.steps[0]?.description);
     const assembled = assembleAutomationStudioFlowScriptPlan({ script: read.script, registry: input.registry, resolution: input.resolution, summary, namedColumns, partOf: input.partOf });
     const issues = [...read.issues, ...assembled.issues];
+    const processingIssue = assembled.plan?.subflows.flatMap((flow) => flow.nodes).map((node) => automationStudioAuthoredProcessingIssue(node.parameters)).find((issue) => issue === "record_output.process_declaration_framework_owned");
+    if (processingIssue) return { ok: false, script, issues: [...issues, processingRefusal(processingIssue, "plan")] };
     // Where each refusal from here on is in the script (`./script-locator.ts`).
     const located = assembled.locator ? { locator: assembled.locator } : {};
     if (assembled.plan) return { ok: true, summary, plan: assembled.plan, issues, script, ...located };
     return { ok: false, issues, ...(assembled.refusedPlan ? { refusedPlan: assembled.refusedPlan } : {}), script, ...located };
   }
   const written = planValue(input.result);
+  const raw = readAuthoringPlanSubflows(written);
+  if (!("refusal" in raw)) for (const flow of raw.subflows) for (const node of authoringNodeList(flow.written) ?? []) {
+    const issue = automationStudioAuthoredProcessingIssue(node);
+    if (issue) return { ok: false, issues: [processingRefusal(issue, "plan")] };
+  }
   const summary = boundedSummary(stated);
   const normalised = normaliseAutomationStudioFlowBootstrapJsonPlan({ value: written, registry: input.registry, resolution: input.resolution, summary, namedColumns, partOf: input.partOf });
+  const processingIssue = normalised.plan?.subflows.flatMap((flow) => flow.nodes).map((node) => automationStudioAuthoredProcessingIssue(node.parameters)).find((issue) => issue === "record_output.process_declaration_framework_owned");
+  if (processingIssue) return { ok: false, issues: [...normalised.issues, processingRefusal(processingIssue, "plan")] };
   // A JSON plan has no lines: a refusal names the node by its name and key (`./plan-locator.ts`).
   return normalised.plan
     ? { ok: true, summary, plan: normalised.plan, issues: normalised.issues, locator: automationStudioFlowBootstrapPlanLocator(normalised.plan, written) }
     : { ok: false, issues: normalised.issues, locator: automationStudioFlowBootstrapPlanLocator(written) };
+}
+
+function processingRefusal(code: string, path: string) {
+  return authoringError(code, "Processing provenance belongs to the framework. Bind only explicit caller $input values; raw state, row and step bindings cannot declare task criteria.", path);
 }
 
 /** The Flow script a result carries, however it carried it. */

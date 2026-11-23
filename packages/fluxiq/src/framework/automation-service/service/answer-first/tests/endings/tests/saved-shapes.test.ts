@@ -25,6 +25,7 @@ describe("the saved-run shapes", () => {
     const library = fakeLibrary();
     let revision = 0;
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       library,
       judge: [judgedNo("Not it."), judgedNo("Still not it."), judgedNo("Not that either.")],
       script: [
@@ -50,6 +51,7 @@ describe("the saved-run shapes", () => {
   // R7: a stuck attempt is steered and never parks, with or without a person to ask (refused-completion.test.ts); a task ends only with its result, its budget or a Stop.
   it("the same refused evidence again and again spends no judge call, and with nobody to ask it is steered on until the purse ends it", async () => {
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       judge: [judgedNo("Not it.")],
       usage: USAGE,
       resolver: { maxTotalEstimatedCostUsd: 0.4 },
@@ -102,6 +104,7 @@ describe("the saved-run shapes", () => {
     const library = fakeLibrary();
     let fresh = false;
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       library,
       before: noWaiting(),
       permittedConsequences: ["modify_existing"],

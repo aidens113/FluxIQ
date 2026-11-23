@@ -2,11 +2,12 @@
 
 import type { AutomationStudioAttemptAct } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../core/index.ts";
-import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmProvider, AutomationStudioLlmTaskResult } from "../../llm/index.ts";
+import type { AutomationStudioJudgeEvidenceProjector, AutomationStudioLlmHarnessInput, AutomationStudioLlmProvider, AutomationStudioLlmTaskResult } from "../../llm/index.ts";
 import type { AutomationStudioLlmTokenLimits } from "../../models/limits/index.ts";
 import type { AutomationStudioResultEndView, AutomationStudioResultTrailStep } from "../contracts/index.ts";
 import type { AutomationStudioFlowLessReadLeftOut } from "./read-left-out.ts";
 import type { AutomationStudioResultEvidenceBundle } from "../result-evidence/index.ts";
+import type { AutomationStudioJudgeWitnessAssociation } from "../judge-evidence/index.ts";
 
 /** What an attempt got, with no Flow behind it. */
 export type AutomationStudioFlowLessSummary = {
@@ -23,9 +24,9 @@ export type AutomationStudioFlowLessSummary = {
   /** How the site looked at the end, as the domain produced it. */
   endView?: AutomationStudioResultEndView;
   /** The same reading of the site before the first lasting act and at the end: the change is what is judged. */
-  witnesses?: { before?: JsonObject; after?: JsonObject };
+  witnesses?: { before?: JsonObject; after?: JsonObject; association?: AutomationStudioJudgeWitnessAssociation };
   /** What looks at the site found after the first lasting act, from each call's own answer and never a model's words: where (the page's address) and what was found, screened line by line; every distinct look, never cut. */
-  looked?: readonly { where: string; found: string }[];
+  looked?: readonly { where: string; found: string; callId?: string }[];
   /**
    * For a result made of rows: one entry per read that makes up the list, oldest first, with where it read (the view of
    * the site and the place in it, where said), how many rows it kept and, where held, those rows (`rows`) and what its
@@ -57,7 +58,10 @@ export type AutomationStudioFlowLessJudgeInput = {
    * "deny nothing" (`../../llm/harness/request-evidence-check.ts`). A domain with
    * nothing to deny declares `[]`.
    */
-  deniedEvidenceKeys: readonly string[];
+  deniedEvidenceKeys?: readonly string[] | undefined;
+  /** Optional host projector; unknown domain evidence never falls back to raw captures. */
+  projectJudgeEvidence?: AutomationStudioJudgeEvidenceProjector | undefined;
+  judgeEvidenceVersion?: 1 | undefined;
   timeoutMs?: number | undefined;
   /**
    * The judging model's window, as its resolution gives it (the attempt's provider's, when no role routes the judge

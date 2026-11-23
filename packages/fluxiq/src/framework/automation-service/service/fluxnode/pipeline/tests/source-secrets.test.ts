@@ -25,7 +25,7 @@ describe("secure source configuration", () => {
   it("rebinds declared input secrets after restart without storing them in task or snapshot JSON", async () => {
     const lane = await fluxNodeLane(cleanups);
     const secret = "fixture-equal-declared-secrets";
-    await lane.run({ spec: secretSpec(), inputs: { note: secret, token: secret } }, { script: [runNode("save", RENEW_CARD, {}, ["modify_existing"], { add: true }), complete("Saved.")] });
+    await lane.run({ spec: secretSpec(), inputs: { note: secret, token: secret } }, { taskProcessing: null, script: [runNode("save", RENEW_CARD, {}, ["modify_existing"], { add: true }), complete("Saved.")] });
     const request = {
       pipeline: { name: "library.secret-source", source: { kind: "input", field: "rows" }, steps: [mapping] },
       inputs: { rows: [{ note: secret, token: secret }] }, idempotencyKey: "secret-source"

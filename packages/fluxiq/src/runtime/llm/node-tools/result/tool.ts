@@ -12,11 +12,12 @@ import type { AutomationStudioLlmEvidenceTool } from "../../evidence-loop/index.
 import { AUTOMATION_STUDIO_LLM_SET_RESULT_PROCESSING_TOOL_ID } from "./tool-id.ts";
 
 const DESCRIPTION = [
-  "Set what is done to the result's rows after they are read: which rows are kept, their order, how many, and which columns the answer shows.",
-  "It runs on the rows already read, touches no page, needs no step and no re-read, can be changed at any time, and every later run of the Flow applies it with no model call.",
-  "Use it when each row states what decides it (a value, a mark, a badge, a label): read that as a column, even one the answer must not show, and filter here; a column only filtered by stays out of the answer when columns names the ones to show.",
-  "process: where (every condition holds: is present or absent; atLeast, atMost, lessThan, greaterThan or equals on the number a value states, or on a date written as text with as: date; contains, startsWith, endsWith, matches; not), anyOf (groups of conditions, a row kept when any one in each group holds), compare (two columns of a row: {field, lessThan: otherField}), derive (a column from part of another: {id, from, pattern, as: number|date|text}), dedupe {by}, sort [{field, order}], limit, columns.",
-  "The answer shows the rows kept and, per condition, the rows it left out; check them against the request. clear: true removes it.",
+  "Inspect or explicitly amend declarative result processing. Held criteria apply automatically as source evidence arrives and on every saved run, without a processing model call, page change or step.",
+  "Keep full source fields, including hidden conditions, marks and sort keys; columns only controls display. Missing evidence must be captured, never silently dropped or guessed.",
+  "process: where [{field, is: present|absent, atLeast, atMost, lessThan, greaterThan, within, equals, contains, startsWith, endsWith, matches, not}]; anyOf [[conditions]]; compare [{field, lessThan: otherField}]; derive [{id, from, pattern, as: number|date|text}]; dedupe {by}; sort [{field, order: asc|desc, as: number|date|text}]; limit; minRows; columns. Bounds compare numbers or written dates with as: date.",
+  "An automatic amendment requires why naming changed source evidence or the person's correction. Identical criteria read back the same account; do not repeat calls to make processing run. Never supply declaration/source/revision/bindings metadata.",
+  "A direct task may still lack its first semantic declaration: capture actual schema, then declare the requested process with why. Only while that first declaration is missing, process: null with why may declare action-only N/A; an explicit records/output requirement or existing data criteria cannot be erased this way.",
+  "The answer reports kept rows and removal counts. clear: true amends automatic criteria to {} with why; it retains automatic identity/readiness. On a legacy task clear removes the held declaration.",
   "Rows a later step acts on are still narrowed by that read's where."
 ].join(" ");
 
@@ -28,7 +29,7 @@ export function automationStudioLlmSetResultProcessingTool(): AutomationStudioLl
     inputSchema: {
       type: "object",
       properties: {
-        process: { type: "object", description: "The whole declaration; it replaces the one held." },
+        process: { type: ["object", "null"], description: "The whole data declaration; null may explicitly complete only a missing first action-only declaration." },
         clear: { type: "boolean", description: "true removes the declaration held, in place of process." },
         dataset: { type: "string", maxLength: 200, description: "The list it shapes, when the result is not the one meant; absent, the result." },
         why: { type: "string", maxLength: 500 }

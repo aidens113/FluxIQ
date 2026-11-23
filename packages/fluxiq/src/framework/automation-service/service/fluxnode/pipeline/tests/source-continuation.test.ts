@@ -22,9 +22,9 @@ describe("a pipeline's original source enumeration", () => {
       { title: "last title", due: "2030-01-03" }
     ];
     const original = structuredClone(lane.library.loans);
-    const learned = await lane.run({ spec: sourceSpec(), inputs: { title: "" } }, { script: [findLoans(""), complete("Read the source rows.")] });
+    const learned = await lane.run({ spec: sourceSpec(), inputs: { title: "" } }, { taskProcessing: { process: { columns: ["title", "due"] } }, script: [findLoans(""), complete("Read the source rows.")] });
     expect(learned.result.outputs).toEqual(original);
-    await lane.run({ spec: saver(), inputs: { note: "learn" } }, { script: [press(), complete("Saved.")] });
+    await lane.run({ spec: saver(), inputs: { note: "learn" } }, { taskProcessing: null, script: [press(), complete("Saved.")] });
     const request = {
       pipeline: { name: "library.frozen-source", source: { kind: "flow", target: { fluxNode: SOURCE }, inputs: { title: { value: "" } } }, steps: [
         { id: "save", kind: "map", target: { fluxNode: SAVE }, inputs: { note: { value: "equal note" } }, concurrency: 1, as: "saved" }

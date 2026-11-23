@@ -57,6 +57,29 @@ import {
   type AutomationStudioNodeDefinition
 } from "../../../../framework/automation-service/nodes/index.ts";
 import type { AutomationStudioFlowBootstrapIssueDetail } from "./contracts.ts";
+import { automationStudioProcessingInputs } from "../../../../components/automation/index.ts";
+
+/** Static examples validate the saved template; execution still resolves real current inputs. */
+export function automationStudioFlowBootstrapRecordOutputStaticValue(value: JsonValue): JsonValue {
+  if (!isPlainObject(value) || !isPlainObject(value.process)) return value;
+  const inputs: JsonObject = {};
+  const examples = (entry: JsonValue): void => {
+    if (Array.isArray(entry)) {
+      entry.forEach(examples);
+      return;
+    }
+    if (!isPlainObject(entry)) return;
+    if (isPlainObject(entry.$state) && typeof entry.$state.path === "string" && entry.$state.fallback !== undefined) {
+      const name = entry.$state.path;
+      if (!Object.hasOwn(inputs, name)) Object.defineProperty(inputs, name, { value: entry.$state.fallback, enumerable: true, configurable: true, writable: true });
+      return;
+    }
+    Object.values(entry).forEach(examples);
+  };
+  examples(value.process);
+  const resolved = automationStudioProcessingInputs({ process: value.process, schema: value.schema, inputs });
+  return resolved.ok ? { ...value, process: resolved.process } : value;
+}
 
 export type AutomationStudioFlowBootstrapRecordOutputContract = {
   /** Every top-level key a record output may have. */
@@ -109,7 +132,8 @@ export function automationStudioFlowBootstrapDeclaredRecordsPath(definition: Aut
 export function automationStudioFlowBootstrapRecordOutputIssues(definition: AutomationStudioNodeDefinition, value: JsonValue | undefined): string[] {
   const written = writtenRecordsPath(definition);
   if (written === undefined && (value === undefined || value === null)) return [];
-  const parsed = parseAutomationStudioRecordOutput(written !== undefined ? asWritten(value, written) : asDispatched(definition, value!));
+  const example = value === undefined ? undefined : automationStudioFlowBootstrapRecordOutputStaticValue(value);
+  const parsed = parseAutomationStudioRecordOutput(written !== undefined ? asWritten(example, written) : asDispatched(definition, example!));
   return parsed.ok ? [] : parsed.issues;
 }
 

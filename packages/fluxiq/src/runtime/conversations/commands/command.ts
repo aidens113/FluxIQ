@@ -1,4 +1,5 @@
 import type { AutomationStudioCandidateAuthoringResult } from "../../flow-authoring/bootstrap/authoring-result/index.ts";
+import type { AutomationStudioFlowTaskProcessing } from "../../flow-authoring/draft/index.ts";
 // What a conversation command is, what it runs against, and what it answers.
 //
 // Types only. A command is a capability the chat can choose that Core runs
@@ -94,6 +95,7 @@ export type AutomationStudioConversationCommandContext = {
   interpretationCalls?: number;
   /** What the chat's reading declared the task will cause (`../instructions/acts.ts`, t976), handed to the attempt or build so it asks once when it starts. */
   taskActs?: string[];
+  taskProcessing?: AutomationStudioFlowTaskProcessing;
   /** The person's humanness (integer 0-100) from the turn that started this command, passed on to the build or run it starts. Absent means 0. */
   humanness?: number;
   /**

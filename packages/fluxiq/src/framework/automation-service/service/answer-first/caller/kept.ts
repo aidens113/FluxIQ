@@ -6,8 +6,9 @@
 import type { AutomationStudioAnswerFirstCallerOptions, AutomationStudioAnswerFirstKeptCallerOptions } from "../../flow-bootstrap-commands/index.ts";
 
 export function automationStudioAnswerFirstKeptCallerOptions(options: AutomationStudioAnswerFirstCallerOptions): AutomationStudioAnswerFirstKeptCallerOptions {
-  const { taskKey, actScope, model, budgetUsd, judge, scope, inputs, runOverrides, humanness } = options;
+  const { taskKey, actScope, model, budgetUsd, judge, scope, inputs, runOverrides, humanness, requiresDataOutput } = options;
   return structuredClone({
+    ...(requiresDataOutput === undefined ? {} : { requiresDataOutput }),
     ...(taskKey === undefined ? {} : { taskKey }),
     // Which execution the attempt's acts belong to: what a later attempt's opening matches before it carries them (`../attempt/opening.ts`).
     ...(actScope === undefined ? {} : { actScope }),

@@ -1,4 +1,7 @@
-import type { JsonValue } from "../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../core/index.ts";
+import type { AutomationStudioJudgeEvidenceFinding } from "../judge-evidence/index.ts";
+import type { AutomationStudioJudgeActionRef } from "../judge-evidence/index.ts";
+import type { AutomationStudioResultEvidenceSourceRef } from "../result-evidence/index.ts";
 
 /**
  * One thing a run or an attempt did on its target, from Core's own record of it (`../run-trail/`, t963): a look at a
@@ -17,6 +20,16 @@ export type AutomationStudioResultTrailStep = {
   outcome?: string | undefined;
   where?: string | undefined;
   found?: JsonValue | undefined;
+  /** Actual framework status/failure/effect facts; a domain projector cannot overwrite them. */
+  framework?: JsonObject | undefined;
+  /** Private, versioned semantic checkpoint. Request construction reads/rescreens it and never sends this beside raw findings. */
+  judgeEvidence?: AutomationStudioJudgeEvidenceFinding | undefined;
+  /** Actual Core capture identity, prior to producer-owned canonical result-page assignment. */
+  judgeSource?: { source: string; datasetId?: string };
+  /** Exact source tuples stamped by the actual result producer when it records this capture. */
+  judgeSources?: readonly AutomationStudioResultEvidenceSourceRef[];
+  /** The act record's actual settlement, never a domain/model claim. */
+  judgeAct?: AutomationStudioJudgeActionRef;
 };
 
 /**

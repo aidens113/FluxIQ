@@ -49,6 +49,7 @@ export async function automationStudioAnswerFirstRemember(run: AutomationStudioA
       const scoped = scope !== undefined && current.actsByScope && Object.hasOwn(current.actsByScope, scope) ? current.actsByScope[scope] : undefined;
       return {
         ...current, flowId, ...(best ? { best } : {}), latest: next,
+        ...(run.result.processingDeclaration() === undefined ? {} : { processing: run.result.processingDeclaration()! }),
         // An attempt that ended achieved says the task is done: what stood is marked, so the same words again press none of it once more (`runtime/answer-first/act-record/done-in-achieved.ts`).
         ...(achieved && current.acts?.attemptId === run.attemptId ? { acts: { ...current.acts, data: automationStudioAttemptActMarkDoneInAchieved(current.acts.data) } } : {}),
         ...(achieved && scope !== undefined && scoped?.attemptId === run.attemptId ? { actsByScope: { ...current.actsByScope, [scope]: { ...scoped, data: automationStudioAttemptActMarkDoneInAchieved(scoped.data) } } } : {}),

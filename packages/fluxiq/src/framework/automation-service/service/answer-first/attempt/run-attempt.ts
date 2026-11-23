@@ -49,7 +49,7 @@ import { automationStudioAnswerFirstKeepBackJudge } from "../../../../../runtime
 import { automationStudioLlmLoopAttemptRecord } from "../../../../../runtime/llm/repeat-guard/index.ts";
 import { AUTOMATION_STUDIO_PERMISSION_ASK_TIMEOUT_MS } from "../../../../../runtime/automation-parking/index.ts";
 import { automationStudioFlowBootstrapActionPermissions, flowBootstrapPhaseFailure } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
-import { automationStudioFlowLessJudge, type AutomationStudioResultEndView } from "../../../../../runtime/result-verification/index.ts";
+import { automationStudioFlowLessJudge, automationStudioResultEvidenceFromBatches, type AutomationStudioResultEndView } from "../../../../../runtime/result-verification/index.ts";
 import { automationStudioAnswerFirstTrailsOf } from "../trail/index.ts";
 import { automationStudioRunOverrides, runWithAutomationStudioRunOverrides } from "../../../../../runtime/run-overrides/index.ts";
 import { automationStudioLlmStepLogScope } from "../../../../../runtime/llm/step-log/index.ts";
@@ -66,7 +66,7 @@ import { automationStudioAnswerFirstAttemptsRead, automationStudioAnswerFirstLiv
 import type { AutomationStudioGenerateFlowBootstrapAdaptationAnswered } from "../../flow-bootstrap-commands/index.ts";
 import { automationStudioAnswerFirstCopyRows, automationStudioAnswerFirstRowSink, automationStudioAnswerFirstSession } from "../rows/index.ts";
 import { automationStudioAnswerFirstRunActStoreOf } from "../run-acts/index.ts";
-import { automationStudioAnswerFirstResultFeed } from "../result-feed/index.ts";
+import { automationStudioAnswerFirstResultFeed, automationStudioAnswerFirstRestoreResult } from "../result-feed/index.ts";
 import { automationStudioAnswerFirstRunAgainScope, type AutomationStudioAnswerFirstRunAgainHold } from "../run-again/index.ts";
 import { automationStudioAnswerFirstTaskMemoryOf } from "../task-memory/index.ts";
 import { automationStudioAnswerFirstBeforeReadingsOf, automationStudioAnswerFirstEarlierBefore, automationStudioAnswerFirstWitnesses } from "../witnesses/index.ts";
@@ -166,7 +166,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
   const acts = automationStudioAnswerFirstRunActStoreOf(input.owner, stores);
   const carried = hold ? automationStudioAnswerFirstCarriedOpening(hold) : undefined;
   const opening = hold && carried
-    ? { taskId: hold.taskId, memory: automationStudioAnswerFirstTaskMemoryOf(input.owner, stores), route: carried.route, ordinal: carried.ordinal, steps: carried.steps, seed: hold.acts, seedFrom: attemptId, actsHeldHere: true, startedFrom: carried.startedFrom, setAside: hold.kept?.acts?.attemptId === attemptId ? hold.kept.acts.earlier : undefined, humanness: hold.kept?.humanness }
+    ? { taskId: hold.taskId, memory: automationStudioAnswerFirstTaskMemoryOf(input.owner, stores), route: carried.route, ordinal: carried.ordinal, steps: carried.steps, seed: hold.acts, seedFrom: attemptId, actsHeldHere: true, startedFrom: carried.startedFrom, setAside: hold.kept?.acts?.attemptId === attemptId ? hold.kept.acts.earlier : undefined, humanness: hold.kept?.humanness, processing: carried.processing ?? hold.kept?.processing }
     : await automationStudioAnswerFirstOpening(input, { store: automationStudioAnswerFirstAttemptsRead(input.owner, stores), acts }, again);
   // The instruction is the person's: Core refuses to save or count one written from a command's argument (`../../flow-bootstrap-commands/save-goal.ts`, `../../instruction-led/task.ts`).
   const asked = automationStudioAnswerFirstAskedRepeats(input.instructionText);
@@ -187,7 +187,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
   const record = new AutomationStudioAttemptActRecord({ ...(opening.seed ? { seed: opening.seed } : {}), persist, asked: () => asked(run.claim) });
   input.partActs?.use(record);
   const tried = automationStudioLlmLoopAttemptRecord(carried?.tried);
-  const session = await automationStudioAnswerFirstSession({ openSession: stores.openSession, writeSession: stores.writeSession, runId, attemptId });
+  const session = await automationStudioAnswerFirstSession({ openSession: stores.openSession, writeSession: stores.writeSession, runId, attemptId, ...(carried ? { processingReferenceTimeMs: carried.processingReferenceTimeMs ?? null } : {}) });
   let sessionEnded = false;
   const ending = {
     ...session,
@@ -215,7 +215,8 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
     }
   });
   // The attempt's one result: which of the rows the sink stores are the answer (header).
-  const result = automationStudioAnswerFirstResultFeed({ instructionText: input.instructionText, readRowsKey: input.binding?.readRowsKey });
+  if (carried?.publications?.complete === false) sink.publicationsUnavailable();
+  const result = automationStudioAnswerFirstResultFeed({ instructionText: input.instructionText, readRowsKey: input.binding?.readRowsKey, processing: opening.processing, processingReferenceTimeMs: session.processingReferenceTimeMs, requiresDataOutput: input.caller?.requiresDataOutput, inputs: input.caller?.inputs, publicationTrackingComplete: sink.publicationState().complete, sourceRecorded: (refs, call) => journal.sourceRecorded(trail, refs, call) });
   const look = automationStudioEndViewLook({ tools: input.harnessOptions.tools, viewKeys: input.harnessOptions.observedStateKeys });
   let looks = 0;
   // Through the domain alone: a look is no call of the task's, and it reaches none of its records.
@@ -223,20 +224,34 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
   // Carried acts come with the before reading taken ahead of them, held in memory and never beside the Flow (`../witnesses/before-readings.ts`).
   const befores = automationStudioAnswerFirstBeforeReadingsOf(input.owner);
   const earlier = automationStudioAnswerFirstEarlierBefore(befores, { acts: opening.seed !== undefined, from: opening.seedFrom, sameAttempt: hold !== undefined });
-  const witnesses = automationStudioAnswerFirstWitnesses({ read: async () => (await lookNow())?.view as JsonObject | undefined, earlier, keep: (before) => befores.keep(attemptId, before) });
   // What the model's own looks found after the first lasting act: the chain hands each new one on, the check bounds, screens and judges it (`./call-chain.ts`).
-  const looked: { where: string; found: string }[] = [];
+  const looked: { where: string; found: string; callId?: string }[] = [];
   // Everything the attempt did, for its judge: every call the chain sent to the domain with its answer (`./call-chain.ts`), and every step
   // a saved Flow's run made (`./flow-stage.ts`), held across a resume so a carried-on attempt's judge still sees all of it (`../trail/`, t963).
-  const trail = automationStudioAnswerFirstTrailsOf(input.owner).of(attemptId, { carriedOn: hold !== undefined, askedAgain: again !== undefined });
+  const journal = automationStudioAnswerFirstTrailsOf(input.owner);
+  const trail = journal.of(attemptId, { carriedOn: hold !== undefined, askedAgain: again !== undefined, ...(carried && Object.hasOwn(carried, "judgeEvidence") ? { judgeEvidence: carried.judgeEvidence ?? null } : {}), ...(carried && Object.hasOwn(carried, "judgeEvidenceIssue") ? { judgeEvidenceIssue: carried.judgeEvidenceIssue ?? null } : {}) });
+  const restoredWitnesses = journal.witnesses(trail, {});
+  const witnesses = automationStudioAnswerFirstWitnesses({ read: async () => (await lookNow())?.view as JsonObject | undefined, earlier: restoredWitnesses.before === undefined ? earlier : { before: restoredWitnesses.before }, earlierActions: trail.flatMap((step) => step.judgeAct === undefined ? [] : [step.judgeAct]), ...(restoredWitnesses.association === undefined ? {} : { earlierAssociation: restoredWitnesses.association }), keep: (before) => befores.keep(attemptId, before) });
+  const judgeEvidence = { ...journal.capability(trail, input.binding), projectJudgeEvidence: input.binding?.projectJudgeEvidence, deniedEvidenceKeys: input.binding?.deniedEvidenceKeys };
   const completion = automationStudioAnswerFirstCompletionCheck({
     instructions: input.instructionText,
     rows: async () => result.rows(),
     readsRan: () => sink.readsAnswered() > 0,
     emptyResult: () => result.emptyRefusal(),
+    processingReadiness: async () => {
+      const readiness = result.readiness();
+      if (readiness.state === "missing-evidence") {
+        try { await sink.withhold(); }
+        catch { return { state: "missing-evidence", code: "answer_first.publication_retirement_pending", reason: "The previous answer could not yet be retired. Repair the result storage and retry; stale rows cannot confirm this task." }; }
+      }
+      return readiness;
+    },
     acts: () => record.acts(),
-    endView: async () => (await automationStudioAnswerFirstEndViewRead(lookNow)).view,
-    witnesses: () => witnesses.readings(),
+    endView: async () => (await automationStudioAnswerFirstEndViewRead(async () => {
+      const read = await witnesses.atEnd(true);
+      return read.kind === "read" ? { view: read.reading } : undefined;
+    })).view,
+    witnesses: () => journal.witnesses(trail, witnesses.readings()),
     looked: () => looked,
     trail: () => trail,
     readPages: () => result.readPages(),
@@ -251,7 +266,8 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
     replay: () => automationStudioAnswerFirstReplayOf(run),
     judge: (summary) => automationStudioFlowLessJudge({
       personHeldMs: () => run.waitedMs,
-      summary, provider: input.provider.provider, projectId, flowId, runId, deniedEvidenceKeys: input.binding?.deniedEvidenceKeys ?? [],
+      summary, provider: input.provider.provider, projectId, flowId, runId, deniedEvidenceKeys: input.binding?.deniedEvidenceKeys,
+      ...journal.capability(trail, input.binding), projectJudgeEvidence: input.binding?.projectJudgeEvidence,
       // Once the decider has decided, the judge continues its cached conversation on its current model; a saved Flow's replay judged before any decision has a judge of its own (t965).
       ...(run.decidedAt !== undefined ? { continuesDecider: true } : {}),
       ...(input.provider.timeoutMs !== undefined ? { timeoutMs: input.provider.timeoutMs } : {}),
@@ -274,11 +290,19 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
     domain: (call) => run.options.executeTool(call),
     record, sink, witnesses, result,
     readRowsKey: input.binding?.readRowsKey,
+    judgeEvidence,
     describe: describe ? (call) => describe({ projectId, flowId, ...call }) : undefined,
     stepped: () => { run.liveSteps += 1; },
     answered: () => { run.arrived = true; },
     looked: (look) => { looked.push(look); },
-    trailed: (step) => { trail.push(step); }
+    trailed: async (step) => {
+      trail.push(step);
+      const checkpoint = journal.checkpoint(trail, witnesses.readings(), { ...judgeEvidence, resultEvidence: result.sourceProof() });
+      if (checkpoint !== undefined) {
+        try { journal.recovered(trail, await store.saveJudgeEvidence(projectId, flowId, attemptId, checkpoint, { sourceOwner: journal.sourceOwner(trail) })); }
+        catch { automationStudioAnswerFirstSay("Part of the record was not written", "The call's semantic evidence could not be saved for a restart. Its actual outcome remains in this attempt; I will try saving its record again."); }
+      }
+    }
   }));
   const ground = input.permissionGround;
   const permissions = automationStudioFlowBootstrapActionPermissions({
@@ -296,13 +320,12 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
     } : undefined,
     executeTool: cancellation.tool(chain)
   });
-  const now = Date.now();
   // A carried-on attempt that has been on the site goes on from the page as it stands, and only one that never got there goes to the start location.
   const arrived = (carried?.prior.liveSteps ?? 0) > 0;
   const run: AutomationStudioAnswerFirstAttemptRun = {
     input, ports: automationStudioAnswerFirstAttemptPorts(input.owner), store, memory: opening.memory,
     taskId: opening.taskId, route: opening.route, startedFrom: opening.startedFrom, startedWith: carried?.startedWith ?? opening.steps, path: carried?.path ?? "explore", decidedAfterRun: carried?.decidedAfterRun ?? false, forwardPassed: new Set(), askedAgain: again !== undefined || carried?.askedAgain === true,
-    attemptId, ordinal: opening.ordinal, runId, startedAtMs: carried?.startedAtMs ?? now, segmentStartedAtMs: now, ...(carried ? { prior: carried.prior } : {}),
+    attemptId, ordinal: opening.ordinal, runId, startedAtMs: carried?.startedAtMs ?? session.startedAt, segmentStartedAtMs: session.startedAt, ...(session.processingReferenceTimeMs === null ? {} : { processingReferenceTimeMs: session.processingReferenceTimeMs }), ...(carried ? { prior: carried.prior } : {}),
     record, tried, asked, sink, result, session: ending, witnesses, completion, trail, permissions, options: arrived ? input.continuingOptions() : input.harnessOptions,
     steps: [...opening.steps], usage: { estimatedInputTokens: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0 },
     liveSteps: carried?.prior.liveSteps ?? 0, arrived, loopsCaught: carried?.loopsCaught ?? automationStudioTaskAttemptNoLoopsCaught(), backoffs: 0, waitedMs: 0, askPerson: false
@@ -334,9 +357,16 @@ async function carriedOn(run: AutomationStudioAnswerFirstAttemptRun, carried: Au
   state.answerText = carried.result?.answerText?.text;
   state.checkedWhat = carried.result?.checkedWhat;
   const lastRun = carried.runId;
+  const shown = carried.result?.rows;
+  const knownPublications = new Set(carried.publications?.knownDatasetIds);
+  if (shown) knownPublications.add(shown.datasetId);
   const copied = await automationStudioAnswerFirstCopyRows({
     sink: run.sink,
-    shown: carried.result?.rows,
+    copied: (receipt) => {
+      if (receipt.fromRunId === (lastRun ?? shown?.runId) && knownPublications.has(receipt.fromDatasetId)) run.sink.carried(receipt.datasetId);
+    },
+    // An automatic task's preview is never an original capture or a retained schema.
+    shown: carried.processing !== undefined && carried.processing.task !== null ? undefined : carried.result?.rows,
     stored: datasets.available && lastRun !== undefined ? {
       runId: lastRun,
       list: () => datasets.listRunDatasetsForVerification({ projectId, runId: lastRun }),
@@ -344,10 +374,17 @@ async function carriedOn(run: AutomationStudioAnswerFirstAttemptRun, carried: Au
     } : undefined
   });
   // What it found so far is the answer again, as its output step's page carried from the earlier segment (`../result-feed/feed.ts`).
-  const shown = carried.result?.rows;
-  // The copy of the earlier segment's publication is a result too: it leaves once this run publishes under another id.
-  if (shown) run.sink.carried(shown.datasetId);
-  if (shown?.previewRows.length) run.result.carried(run.steps, shown.previewRows, shown.datasetId);
+  // Only successful copy receipts can transfer the earlier segment's exact publication ownership into this run.
+  const declaration = run.result.processingDeclaration();
+  if (declaration !== undefined && declaration.task !== null) {
+    try {
+      const entries = datasets.available && lastRun !== undefined ? await datasets.readRunDatasetEvidence?.({ projectId, runId: lastRun }) : undefined;
+      const evidence = carried.resultEvidence ?? (shown && entries ? automationStudioResultEvidenceFromBatches({ datasets: [shown.datasetId], entries }) : undefined);
+      const restored = automationStudioAnswerFirstRestoreResult({ evidence, steps: run.steps, batches: entries ?? [], source: (datasetId) => run.sink.summary(datasetId) });
+      if (restored.entries.length) run.result.restored(restored.entries, evidence?.sourceReplacements);
+      if (!restored.ok) run.result.sourceUnavailable(restored.reason, restored.evidence ?? evidence);
+    } catch { run.result.sourceUnavailable("The original contributing page provenance could not be read. Repair its stored reference or collect the full source evidence again; a preview cannot stand in for it."); }
+  } else if (shown?.previewRows.length) run.result.carried(run.steps, shown.previewRows, shown.datasetId);
   if (!copied.ok) automationStudioAnswerFirstSay("Part of the record was not written", "I am carrying on, but some of the rows found so far could not be brought along. I will read them again if I need them.");
   automationStudioAnswerFirstSay("Carrying on", "Carrying on from where it got to.");
   await automationStudioAnswerFirstKeep(run);

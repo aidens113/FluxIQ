@@ -49,7 +49,7 @@ export function automationStudioAnswerFirstDecide(run: AutomationStudioAnswerFir
     input.creation.endIfReadingRefused();
     run.decidedAt = iteration;
     run.result.draft(run.steps);
-    const slot = { callId: RESULT_TOOL_ID, toolId: RESULT_TOOL_ID, value: { result: run.result.slot() } };
+    const slot = { callId: RESULT_TOOL_ID, toolId: RESULT_TOOL_ID, value: { result: run.result.slot(), processingMode: run.result.processingDeclaration() === undefined ? "legacy" : "automatic" } };
     const window = [...(round.note ? [{ callId: `${NOTE_TOOL_ID}.${round.ordinal}`, toolId: NOTE_TOOL_ID, value: round.note }] : []), ...evidence, slot];
     const shown = input.routing.shown(window, denied);
     for (;;) {

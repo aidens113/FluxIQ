@@ -18,7 +18,7 @@ const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
 
 /** A purse with room for three decisions and little past them: a call is held at four cents, and one is kept back for the judge (as `carry-on.test.ts`). */
-const TIGHT = { instruction: LOAN_TASK, ...PERMITTED, costUsd: 0.04, maxTotalEstimatedCostUsd: 0.13, keepLooking: true };
+const TIGHT = { instruction: LOAN_TASK, taskProcessing: { process: {} }, ...PERMITTED, costUsd: 0.04, maxTotalEstimatedCostUsd: 0.13, keepLooking: true };
 /** The first attempt's honest work up to its repeat, with no forward run and no completion: what a budget that goes mid-round leaves. */
 const written = () => [readLoans(), runNode("first", RENEW_LOAN, { title: ATLAS }, ["modify_existing"], { add: true }), repeatOverRows()];
 type Read = Parameters<typeof outcomeRead>[0];
@@ -40,7 +40,7 @@ const repeatKept = (memory: Awaited<ReturnType<typeof taskKept>>) => memory?.bes
 describe("every ending keeps the best attempt where it is read", () => {
   it("achieved: the draft with its repeat, saved as a draft that never ran", async () => {
     const lane = await laterAttempts(cleanups, { titles: TITLES });
-    const { answer } = await lane.attempt({ instruction: LOAN_TASK, ...PERMITTED, script: [...written(), forwardFrom(READ_STEP), complete("Renewed every loan and listed them.")] });
+    const { answer } = await lane.attempt({ instruction: LOAN_TASK, taskProcessing: { process: {} }, ...PERMITTED, script: [...written(), forwardFrom(READ_STEP), complete("Renewed every loan and listed them.")] });
     expect(answer.attempt.status).toBe("achieved");
     const { memory, row } = await expectKept({ service: lane.service, projectId: lane.projectId, answered: answer }, "partly_works");
     expect(row?.candidateId).toMatch(/^candidate\./u);
@@ -59,7 +59,7 @@ describe("every ending keeps the best attempt where it is read", () => {
 
   it("budget_out with the purse gone at the judge: the same", async () => {
     const attempt = await scriptedAttempt({
-      instruction: LOAN_TASK, ...PERMITTED, resolver: { maxTotalEstimatedCostUsd: 0.1 }, keepLooking: true,
+      instruction: LOAN_TASK, taskProcessing: { process: {} }, ...PERMITTED, resolver: { maxTotalEstimatedCostUsd: 0.1 }, keepLooking: true,
       // The completion's own reply bills far past its estimate, so what was kept back no longer pays for the check (as `judge.test.ts`).
       wrapProvider: (provider) => ({
         ...provider,
@@ -84,7 +84,7 @@ describe("every ending keeps the best attempt where it is read", () => {
       lane.service.buildCancellation.cancel(lane.projectId, "flow.loans");
       return toolCall("look.after", LOOK_TOOL, {});
     };
-    const { answer } = await lane.attempt({ instruction: LOAN_TASK, ...PERMITTED, script: [...written(), stop, complete("Never asked.")] });
+    const { answer } = await lane.attempt({ instruction: LOAN_TASK, taskProcessing: { process: {} }, ...PERMITTED, script: [...written(), stop, complete("Never asked.")] });
     expect(answer.attempt.status).toBe("stopped_by_person");
     const { memory } = await expectKept({ service: lane.service, projectId: lane.projectId, answered: answer }, "partly_works");
     expect(repeatKept(memory)).toBe(true);
@@ -93,7 +93,7 @@ describe("every ending keeps the best attempt where it is read", () => {
   it("a provider failing at the very end costs nothing that was kept", async () => {
     let decided = 0;
     const attempt = await scriptedAttempt({
-      instruction: LOAN_TASK, ...PERMITTED, judge: [judgedNo("Not yet.")],
+      instruction: LOAN_TASK, taskProcessing: { process: {} }, ...PERMITTED, judge: [judgedNo("Not yet.")],
       wrapProvider: (provider) => ({
         ...provider,
         runTask: async (request, execution) => {
@@ -110,7 +110,7 @@ describe("every ending keeps the best attempt where it is read", () => {
 
   it("steps that could not be assembled stay as notes, and saved says so", async () => {
     // The lane's read names a column this plain target's node does not take, so the draft is refused: a real refusal of a real check.
-    const attempt = await scriptedAttempt({ instruction: LOAN_TASK, ...PERMITTED, script: [readLoans(), complete("Listed.")] }, cleanups);
+    const attempt = await scriptedAttempt({ instruction: LOAN_TASK, taskProcessing: { process: {} }, ...PERMITTED, script: [readLoans(), complete("Listed.")] }, cleanups);
     const answer = expectEnded(attempt, "achieved");
     expect(answer.candidateId).toBeUndefined();
     const { row } = await expectKept(attempt, "notes_only");
@@ -120,7 +120,7 @@ describe("every ending keeps the best attempt where it is read", () => {
 
   it("budget_out with a draft that could not be assembled: the steps stay as notes, and saved says so (the paid run's shape)", async () => {
     const attempt = await scriptedAttempt({
-      instruction: LOAN_TASK, ...PERMITTED, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.04 }, resolver: { maxTotalEstimatedCostUsd: 0.3 },
+      instruction: LOAN_TASK, taskProcessing: { process: {} }, ...PERMITTED, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.04 }, resolver: { maxTotalEstimatedCostUsd: 0.3 },
       wrapProvider: (provider) => ({ ...provider, estimateCostUsd: () => 0.04 }), keepLooking: true,
       script: [readLoans()]
     }, cleanups);

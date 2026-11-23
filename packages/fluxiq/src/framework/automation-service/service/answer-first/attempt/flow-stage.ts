@@ -40,6 +40,7 @@
 // nothing authenticates stays unknown. Either way the run does and answers exactly what it would without it.
 
 import type { AutomationStudioInputUseObservation } from "../../../../../engine/automation/input-use/index.ts";
+import { automationStudioProcessingInputs } from "../../../../../components/automation/index.ts";
 import { automationStudioFlowDraftDeclaresLasting, type AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import type { AutomationStudioInputScope } from "../../../../../runtime/input-basis/index.ts";
 import { readAutomationStudioFlowBootstrapGenerationRequest } from "../../flow-bootstrap-commands/index.ts";
@@ -50,6 +51,8 @@ import { automationStudioAnswerFirstBestEffort } from "./best-effort.ts";
 import { automationStudioAnswerFirstKeep } from "./keep.ts";
 import type { AutomationStudioAnswerFirstRoundsEnding } from "./rounds.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
+import { automationStudioAnswerFirstTrailsOf } from "../trail/index.ts";
+import { automationStudioAnswerFirstSay } from "./say.ts";
 
 type FlowRun = NonNullable<AutomationStudioAnswerFirstAttemptRun["flowRun"]>;
 
@@ -70,30 +73,65 @@ export async function automationStudioAnswerFirstFlowStage(run: AutomationStudio
 }
 
 async function stage(run: AutomationStudioAnswerFirstAttemptRun, saved: Pick<AutomationStudioAnswerFirstSavedFlow, "steps" | "stepsDigest" | "stated" | "candidateId">, start?: (classes: readonly string[]) => Promise<void>): Promise<AutomationStudioAnswerFirstRoundsEnding | undefined> {
+  // Saved routing (repeat/on_failed included) references siblings in this flat array.
+  // Check every contributing configuration before an earlier lasting action can run.
+  for (const step of saved.steps) {
+    const nested = step.input.parameters;
+    const parameters = nested && typeof nested === "object" && !Array.isArray(nested) ? nested : step.input;
+    const output = parameters.recordOutput;
+    if (!output || typeof output !== "object" || Array.isArray(output)) continue;
+    const process = output.process;
+    if (!process || typeof process !== "object" || Array.isArray(process) || !Object.hasOwn(process, "declaration")) continue;
+    const current = automationStudioProcessingInputs({ process, schema: output.schema, inputs: run.input.caller?.inputs });
+    if (!current.ok) {
+      run.flowRun = { outcome: { kind: "not_assembled", codes: ["answer_first.processing_inputs_unavailable"] }, wentOut: false };
+      run.path = "explore";
+      return undefined;
+    }
+  }
   const { input } = run;
   const sentBefore = run.liveSteps;
   let personStopped = false;
+  // Pages the run told the result since the row was last written (`../flow-run/live-pages.ts`).
+  let pagedSinceKept = false;
+  const result: Pick<typeof run.result, "batches"> = { batches: (entries) => {
+    run.result.batches(entries);
+    pagedSinceKept = true;
+  } };
   run.path = "run_flow";
   // The task's own level as it stands now, a person's change since the attempt opened included; unread, it reads as none and the next source decides (`../flow-run/flow-run.ts`).
   const kept = await automationStudioAnswerFirstBestEffort(() => run.memory.get(input.projectId, run.taskId));
   const taskHumanness = kept.ok ? kept.value?.humanness : undefined;
   const evidence: { inputUse?: AutomationStudioInputUseObservation } = {};
   const inputUse = inputUseOf(run, (observation) => { evidence.inputUse = observation; });
+  const journal = automationStudioAnswerFirstTrailsOf(input.owner);
+  const semantic = { ...journal.capability(run.trail, input.binding), projectJudgeEvidence: input.binding?.projectJudgeEvidence, deniedEvidenceKeys: input.binding?.deniedEvidenceKeys };
   const outcome = await automationStudioAnswerFirstFlowRun({
-    input, runId: run.runId, record: run.record, sink: run.sink, result: run.result, permissions: run.permissions,
+    input, runId: run.runId, record: run.record, sink: run.sink, result, permissions: run.permissions,
     starting: async (classes) => {
       await start?.(classes);
       if (saved.steps.some(declaresLasting)) await run.witnesses.beforeFirstLastingAct();
     },
     ...(taskHumanness !== undefined ? { storedHumanness: { task: taskHumanness } } : {}),
     inputUse,
-    stepped: () => {
+    // The row is written as the first step goes out, and again before any later step once the run has read a page
+    // since: a Core that dies mid-press then still holds what the run read, and carrying on needs no read again.
+    stepped: async () => {
       run.liveSteps += 1;
-      if (run.liveSteps === sentBefore + 1) void automationStudioAnswerFirstKeep(run);
+      if (run.liveSteps !== sentBefore + 1 && !pagedSinceKept) return;
+      pagedSinceKept = false;
+      await automationStudioAnswerFirstKeep(run);
     },
     arrived: () => { run.arrived = true; },
     // What the run did, to the attempt's trail for its judge (`../flow-run/flow-run.ts`, t963).
-    trail: { viewKeys: input.harnessOptions.observedStateKeys, add: (steps) => { run.trail.push(...steps); } },
+    trail: { viewKeys: input.harnessOptions.observedStateKeys, semantic, add: async (steps) => {
+      run.trail.push(...steps);
+      const checkpoint = journal.checkpoint(run.trail, run.witnesses.readings(), { ...semantic, resultEvidence: run.result.sourceProof() });
+      if (checkpoint !== undefined) {
+        try { journal.recovered(run.trail, await run.store.saveJudgeEvidence(input.projectId, input.flowId, run.attemptId, checkpoint, { sourceOwner: journal.sourceOwner(run.trail) })); }
+        catch { automationStudioAnswerFirstSay("Part of the record was not written", "The Flow's semantic evidence could not be saved for a restart. Its actual outcome remains in this attempt; I will try saving its record again."); }
+      }
+    } },
     engine: () => automationStudioAnswerFirstFlowRunEngineOf(input),
     sourceAuthority: automationStudioAnswerFirstSourceAuthority({ projectId: input.projectId, flowId: input.flowId, owner: input.owner, drafts: input.stores.drafts }),
     // A check only a person can clear is put to them on the Flow's thread, and the attempt says it waits for one while it stands (`../flow-run/person-check-port.ts`).

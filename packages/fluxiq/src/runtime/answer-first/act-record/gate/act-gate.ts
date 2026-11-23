@@ -73,8 +73,15 @@ export function automationStudioAttemptActGate<Call extends AutomationStudioAtte
   readRowsKey?: string;
   /** What the domain says this call would be, before it is sent. Must not throw: the caller answers nothing instead. */
   foresee?: (call: Call) => AutomationStudioAttemptActForeseen | undefined;
+  /** The actual settlement's identities; correspondence only, never a claim about state. */
+  settled?: (ref: { callId: string; actId: string }) => void;
 }): (call: Call) => Promise<Result | AutomationStudioLlmEvidenceToolExecutionResult> {
   const { record } = input;
+  const settled = (callId: string, act: AutomationStudioAttemptAct | undefined): void => {
+    if (act === undefined) return;
+    try { input.settled?.({ callId, actId: act.id }); }
+    catch { /* best-effort: Evidence observers cannot change an act's actual outcome. */ }
+  };
   return async (call) => {
     const read = automationStudioAttemptActCallRead(call);
     let begunWords: { what: string; where: string } | undefined;
@@ -94,7 +101,7 @@ export function automationStudioAttemptActGate<Call extends AutomationStudioAtte
     try {
       answer = await input.executeTool(call);
     } catch (error) {
-      if (read.kind === "act" && (begunWords || read.act.consequences.length > 0)) record.settled(read.act, { effectApplied: false, uncertain: true, words: begunWords ?? wordsFor(input.wordsOf?.(call, undefined)) });
+      if (read.kind === "act" && (begunWords || read.act.consequences.length > 0)) settled(call.callId, record.settled(read.act, { effectApplied: false, uncertain: true, words: begunWords ?? wordsFor(input.wordsOf?.(call, undefined)) }));
       try { await record.flushed(); }
       catch (storageError) { throw new AggregateError([error, storageError], "The act's dispatch and settlement persistence both failed."); }
       throw error;
@@ -105,11 +112,11 @@ export function automationStudioAttemptActGate<Call extends AutomationStudioAtte
     for (const rows of said.reads) record.noteReadRows(rows);
     if (read.kind === "look" ? said.looked || !said.applied : said.looked) record.looked();
     if (read.kind === "act") {
-      if (recordable(read.act, said)) record.settled(read.act, {
+      if (recordable(read.act, said)) settled(call.callId, record.settled(read.act, {
         // A press may only say what it pressed once it has answered, so words still blank are asked for again with the answer in hand.
         effectApplied: said.applied, uncertain: said.uncertain, words: begunWords?.what ? begunWords : wordsFor(input.wordsOf?.(call, answer)),
         ...(said.ranWith ? { ranWith: said.ranWith } : {}), ...(said.actedOn !== undefined ? { actedOn: said.actedOn } : {}), ...(said.card !== undefined ? { card: said.card } : {}), ...(said.changedState ? { changedState: true } : {})
-      });
+      }));
       const url = read.act.parameters.url;
       record.notePlace({ ...(said.location !== undefined ? { location: said.location } : {}), ...(typeof url === "string" ? { url } : {}), ...(said.actedOn !== undefined ? { actedOn: said.actedOn } : {}) });
     }

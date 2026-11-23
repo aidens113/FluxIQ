@@ -54,9 +54,10 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../runt
 
 import type { AutomationStudioFlowInstruction, AutomationStudioFlowNode } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioFlowBootstrapBuildPhasesInput, AutomationStudioFlowBootstrapPlan } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
-import { automationStudioLlmBuildTrace, type AutomationStudioFlowDraftDryRunGateInput, type AutomationStudioFlowDraftTestReport, type AutomationStudioLlmProvider } from "../../../../runtime/llm/index.ts";
+import { automationStudioLlmBuildTrace, type AutomationStudioFlowDraftDryRunGateInput, type AutomationStudioFlowDraftTestReport, type AutomationStudioJudgeEvidenceProjector, type AutomationStudioLlmProvider } from "../../../../runtime/llm/index.ts";
 import { automationStudioBuildTestJudge, automationStudioBuildTestResultSummary, type AutomationStudioBuildTestNote } from "../../../../runtime/result-verification/index.ts";
 import { automationStudioEndViewLook, type AutomationStudioEndViewLook } from "../end-view/index.ts";
+import { automationStudioJudgeEvidenceCapability } from "../../../../runtime/llm/harness-options/index.ts";
 
 type BuildJudge = NonNullable<AutomationStudioFlowBootstrapBuildPhasesInput["judge"]>;
 
@@ -100,6 +101,8 @@ export function automationStudioFlowBootstrapBuildJudge(input: {
   /** The Flow's own instructions, as its runs are judged against them. */
   instructions: readonly AutomationStudioFlowInstruction[];
   deniedEvidenceKeys?: readonly string[] | undefined;
+  projectJudgeEvidence?: AutomationStudioJudgeEvidenceProjector | undefined;
+  judgeEvidenceVersion?: 1 | undefined;
   projectId: string;
   flowId: string;
   signal?: AbortSignal | undefined;
@@ -124,7 +127,7 @@ export function automationStudioFlowBootstrapBuildJudge(input: {
     return verdict;
   };
   const ask = automationStudioBuildTestJudge({
-    provider: input.provider, instructions: input.instructions, deniedEvidenceKeys: input.deniedEvidenceKeys,
+    provider: input.provider, instructions: input.instructions, deniedEvidenceKeys: input.deniedEvidenceKeys, projectJudgeEvidence: input.projectJudgeEvidence, ...automationStudioJudgeEvidenceCapability(input),
     projectId: input.projectId, flowId: input.flowId, signal: input.signal, timeoutMs: input.timeoutMs
   });
   const look = input.look && automationStudioEndViewLook({ tools: input.look.tools, viewKeys: input.observedStateKeys });
@@ -145,7 +148,7 @@ export function automationStudioFlowBootstrapBuildJudge(input: {
       const verdict = counted(await automationStudioLlmBuildTrace.timed("judge", () => ask({
         summary: automationStudioBuildTestResultSummary({
           steps: loop.steps, report: judgedTest, nodes: planNodes(input.plan()), instructionText: input.instructionText,
-          result: loop.result, startLocation: input.startLocation, arrival: input.arrival, deniedEvidenceKeys: input.deniedEvidenceKeys,
+          result: loop.result, startLocation: input.startLocation, arrival: input.arrival, deniedEvidenceKeys: input.deniedEvidenceKeys, projectJudgeEvidence: input.projectJudgeEvidence, ...automationStudioJudgeEvidenceCapability(input),
           observedStateKeys: input.observedStateKeys, rowContextKeys: input.rowContextKeys, notes: input.notes?.(),
           referenceNow: judgedTest?.referenceNow,
           // The pages the test started and ended on, looked at just before its replay and as it passed (`../../llm/node-tools/dry-run-gate.ts`).

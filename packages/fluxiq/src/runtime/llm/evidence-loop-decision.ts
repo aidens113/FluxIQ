@@ -28,6 +28,8 @@ import {
   automationStudioFlowDraftControlWords,
   automationStudioFlowDraftHoldsBinding,
   automationStudioFlowDraftTranslateBindings,
+  automationStudioAuthoredProcessingIssue,
+  automationStudioAuthoredProcessingAmendmentsIssue,
   type AutomationStudioFlowDraftAmendmentChange,
   type AutomationStudioFlowDraftBindingContext
 } from "../flow-authoring/draft/index.ts";
@@ -126,7 +128,7 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_TOOL_EXECUTION_KEYS: readonly string
   "kind", "evidence", "effectApplied", "failure", "actionability", "targetsUnchanged", "resultCode", "resultReason", "diagnostic", "ownRetestBound", "repeatedAnswer", "personNeeded", "nodeId", "stateDigests", "routeState", "clearedWait", "outputs", "recordSchema", "draft"
 ];
 
-type ParsedToolExecution = { evidence: JsonValue; effectApplied: boolean; failure?: AutomationStudioFailureRecord; actionability?: AutomationStudioTargetActionabilityRecord; targetsUnchanged?: boolean; resultCode?: string; resultReason?: string; diagnostic?: JsonObject; ownRetestBound?: true; repeatedAnswer?: number; personNeeded?: true; nodeId?: string; stateDigests?: { before?: string; after?: string }; outputs?: JsonObject; recordSchema?: AutomationStudioLlmEvidenceToolExecutionResult["recordSchema"]; draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] };
+type ParsedToolExecution = { evidence: JsonValue; effectApplied: boolean; failure?: AutomationStudioFailureRecord; actionability?: AutomationStudioTargetActionabilityRecord; targetsUnchanged?: boolean; resultCode?: string; resultReason?: string; diagnostic?: JsonObject; ownRetestBound?: true; repeatedAnswer?: number; personNeeded?: true; nodeId?: string; stateDigests?: { before?: string; after?: string }; outputs?: JsonObject; recordSchema?: Exclude<AutomationStudioLlmEvidenceToolExecutionResult["recordSchema"], undefined>; draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] };
 
 /** The result read from what a tool returned, or nothing when it is not one. */
 export function automationStudioLlmEvidenceParseToolExecutionResult(
@@ -515,6 +517,7 @@ export function automationStudioLlmEvidenceParseDecision(value: unknown, binding
     };
   }
   if (value.kind === "amend_draft" && exactKeys(value, ["kind", "amendments", "usage"]) && validUsage(value.usage)) {
+    if (automationStudioAuthoredProcessingAmendmentsIssue(value.amendments)) return undefined;
     const amendments = readAmendments(value.amendments);
     if (amendments) return { kind: "amend_draft", amendments, ...(value.usage ? { usage: value.usage as AutomationStudioLlmUsageSummary } : {}) };
   }
@@ -548,6 +551,8 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_RERUN_NEEDS_INPUT_CODE = "llm_eviden
  */
 export function automationStudioLlmEvidenceDecisionIssueCodes(value: unknown, binding?: AutomationStudioFlowDraftBindingContext): string[] | undefined {
   if (isRecord(value) && value.kind === "amend_draft" && exactKeys(value, ["kind", "amendments", "usage"]) && validUsage(value.usage)) {
+    const processingIssue = automationStudioAuthoredProcessingAmendmentsIssue(value.amendments);
+    if (processingIssue) return [processingIssue];
     if (readAmendments(value.amendments) || !Array.isArray(value.amendments)) return undefined;
     return value.amendments.some((item) => readAmendment(item) === "rerun_needs_input") ? [AUTOMATION_STUDIO_LLM_EVIDENCE_RERUN_NEEDS_INPUT_CODE] : undefined;
   }
@@ -591,6 +596,8 @@ function validPlace(value: unknown): boolean {
  */
 function readNodeCall(toolId: string, input: JsonObject, binding?: AutomationStudioFlowDraftBindingContext): { input: JsonObject; written: boolean } | { refused: string[] } {
   if (toolId !== RUN_NODE_TOOL_ID) return { input, written: false };
+  const processingIssue = automationStudioAuthoredProcessingIssue(input);
+  if (processingIssue) return { refused: [processingIssue] };
   const parameters = input.parameters;
   if (input[WRITE_KEY] !== true) {
     return automationStudioFlowDraftHoldsBinding(parameters) ? { refused: [AUTOMATION_STUDIO_LLM_EVIDENCE_BINDING_NEEDS_WRITE_CODE] } : { input, written: false };

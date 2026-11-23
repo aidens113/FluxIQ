@@ -25,7 +25,7 @@ afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(
 const TITLES = ["Atlas of Rivers", "Birds of the Coast", "Clockmaking", "Dune Walks"];
 const [ATLAS, BIRDS, CLOCKS, DUNES] = TITLES as [string, string, string, string];
 const ALL = "Renew every loan on my library account and list them.";
-const PERMITTED = { instruction: ALL, permittedConsequences: ["modify_existing" as const] };
+const PERMITTED = { instruction: ALL, taskProcessing: { process: {} }, permittedConsequences: ["modify_existing" as const] };
 const press = (title: string) => runNode(`renew.${title.replace(/\W+/gu, "-")}`, RENEW_LOAN, { title }, ["modify_existing"], { add: true });
 /** A purse with room for the read and two presses, and little past them: a call is held at four cents and billed at a tenth of one, and one is kept back for the judge. */
 const TIGHT = { ...PERMITTED, costUsd: 0.04, maxTotalEstimatedCostUsd: 0.09, keepLooking: true };
@@ -46,6 +46,14 @@ const byHandPresses = (lane: Lane) => lane.target.library.calls.filter((call) =>
 const titlesIn = (rows: readonly Record<string, unknown>[] | undefined) => rows?.map((row) => row.title);
 
 describe("add budget and carry on", () => {
+  it("keeps a genuinely missing data declaration repairable and reports its actual refusal before the scripted person stops", async () => {
+    const lane = await laterAttempts(cleanups);
+    const first = await lane.attempt({ script: [readLoans(), complete("Listed.")] });
+    expect(first.answer.attempt.status).toBe("stopped_by_person");
+    expect(first.judgeCalls).toHaveLength(0);
+    expect(JSON.stringify(first.decisions)).toContain("semantic processing declaration is missing");
+  });
+
   it("the same attempt reaches its result: every row once, budget and spend cumulative, and the rows it found still in the result", async () => {
     const lane = await laterAttempts(cleanups, { titles: TITLES });
     const first = await lane.attempt({ ...TIGHT, script: [readLoans(), press(ATLAS), press(BIRDS)] });
@@ -167,16 +175,16 @@ describe("add budget and carry on", () => {
 
   it("a run the judge could not be paid for reads as a run, and the rounds finish it without running it again", async () => {
     const lane = await laterAttempts(cleanups);
-    await lane.attempt({ script: [readLoans(), complete("Listed.")] });
-    const second = await lane.attempt({ maxTotalEstimatedCostUsd: 0.01, costUsd: 0.04 });
+    await lane.attempt({ taskProcessing: { process: {} }, script: [readLoans(), complete("Listed.")] });
+    const second = await lane.attempt({ taskProcessing: { process: {} }, maxTotalEstimatedCostUsd: 0.01, costUsd: 0.04 });
     const before = second.answer.attempt;
     expect(before).toMatchObject({ status: "budget_out", path: "run_flow" });
     expect(lane.target.reads).toBe(1);
     // A press that buys no decision worked nothing out either, and a run went out, so it reads neither `explore` nor anything more.
-    const short = await pressedAndFinished(lane, before.attemptId, 0.001, { costUsd: 0.04, keepLooking: true });
+    const short = await pressedAndFinished(lane, before.attemptId, 0.001, { taskProcessing: { process: {} }, costUsd: 0.04, keepLooking: true });
     expect(short.decisions).toHaveLength(0);
     expect(short.answer.attempt).toMatchObject({ status: "budget_out", path: "run_flow", attemptId: before.attemptId });
-    const third = await pressedAndFinished(lane, before.attemptId, 0.5, { costUsd: 0.04, script: [complete("Listed.")] });
+    const third = await pressedAndFinished(lane, before.attemptId, 0.5, { taskProcessing: { process: {} }, costUsd: 0.04, script: [complete("Listed.")] });
     expect(third.judgeCalls).toHaveLength(1);
     expect(lane.target.reads).toBe(1);
     expect(third.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow_then_explore" });
@@ -253,7 +261,7 @@ describe("a press that is refused", () => {
 
   it("an unknown attempt, one that reached its result, and a stopped one a later attempt at the task has followed", async () => {
     const lane = await laterAttempts(cleanups);
-    const achieved = await lane.attempt({ script: [readLoans(), complete("Listed.")] });
+    const achieved = await lane.attempt({ taskProcessing: { process: {} }, script: [readLoans(), complete("Listed.")] });
     await expectRefused(lane, "attempt.none", 1, "unknown_attempt");
     await expectRefused(lane, achieved.answer.attempt.attemptId, 1, "achieved");
     const stopped = await lane.attempt({ instruction: "Tell me about my loans on my library account.", script: [] });
@@ -350,7 +358,7 @@ describe("the look before a press on the page", () => {
 });
 
 describe("a Run again a person stopped part way (t869)", () => {
-  const loans = { instruction: LOAN_TASK, permittedConsequences: ["modify_existing" as const] };
+  const loans = { instruction: LOAN_TASK, taskProcessing: { process: {} }, permittedConsequences: ["modify_existing" as const] };
   const itemOf = (request: { inputs?: Record<string, unknown> | undefined }) => (request.inputs?.item as { title?: string } | undefined)?.title;
   /** Waits until a Stop reaches the press, as the page would answer nothing before it. */
   const answerAtTheStop = (signal: AbortSignal | undefined) => new Promise<{ status: "failed"; route: string; message: string; failure: AutomationStudioFailureRecord }>((resolve) => {
@@ -361,7 +369,7 @@ describe("a Run again a person stopped part way (t869)", () => {
 
   it("is finished by Carry on: the other rows once each, the first not again, a second Run again refused, and the same words after it press nothing", async () => {
     const { lane, target, over } = await siteLane(cleanups);
-    await lane.attempt(honestFirstAttempt());
+    await lane.attempt({ ...honestFirstAttempt(), taskProcessing: { process: {} } });
     expect(target.library.renewals).toEqual(onceEach(TITLES));
 
     // The Run again's run presses the first row, and the person stops it there.
@@ -404,7 +412,7 @@ describe("a Run again a person stopped part way (t869)", () => {
 
   it("that pressed nothing before the Stop can still be run again: there is nothing to press twice", async () => {
     const { lane, target, over } = await siteLane(cleanups);
-    await lane.attempt(honestFirstAttempt());
+    await lane.attempt({ ...honestFirstAttempt(), taskProcessing: { process: {} } });
     // Stopped while it reads the list, before any press is sent: a press sent and cut off may have landed, and is held as such.
     over((request) => {
       if (request.nodeId !== READ_LOANS) return undefined;

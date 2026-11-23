@@ -25,7 +25,7 @@ export type AutomationStudioAnswerFirstFlowRunWatch = {
   anySent(): boolean;
 };
 
-export function automationStudioAnswerFirstFlowRunWatch(stepped: () => void): AutomationStudioAnswerFirstFlowRunWatch {
+export function automationStudioAnswerFirstFlowRunWatch(stepped: () => void | Promise<void>): AutomationStudioAnswerFirstFlowRunWatch {
   const sent = new Map<string, number>();
   const asked = new Map<string, number>();
   const succeeded = new Map<string, number>();
@@ -42,7 +42,7 @@ export function automationStudioAnswerFirstFlowRunWatch(stepped: () => void): Au
         add(sent, request.node.id);
         if (!order.includes(request.node.id)) order.push(request.node.id);
         any = true;
-        stepped();
+        await stepped();
         const execution = await native(request);
         if (execution?.result.status === "success") add(succeeded, request.node.id);
         fromNative = (execution?.result.effects ?? []).filter((effect) => effect.type === POLICY_OUTPUT_EFFECT).length;
@@ -53,7 +53,7 @@ export function automationStudioAnswerFirstFlowRunWatch(stepped: () => void): Au
         if (effect.type === POLICY_OUTPUT_EFFECT && fromNative > 0) fromNative -= 1;
         else if (effect.type === POLICY_OUTPUT_EFFECT) {
           any = true;
-          stepped();
+          await stepped();
         }
         return await dispatcher(effect, context);
       }) as Dispatcher;

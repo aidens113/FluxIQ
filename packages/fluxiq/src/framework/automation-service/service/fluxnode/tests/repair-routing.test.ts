@@ -1,8 +1,6 @@
 // @fluxiq-test-group real-sql
-// A FluxNode run's repair of a broken saved Flow calls `overrides.models.repair` (W3, t899), on the lending library
-// (`./library-lane.ts`) behind several priced models (`./priced-models.ts`): the decision calls of the round that
-// repairs the Flow are served and priced by the repair model; a fresh exploration is the explore model's; and a run
-// with no models is one model, whatever the Flow does.
+// A broken saved Flow is repaired on the run's starting model. A distinct obsolete repair selector exposes
+// accidental routing, while the existing result, saved-Flow and actual charge assertions remain in force.
 import type { FluxNodeEventAnswer, FluxNodeRunEvent } from "@fluxiq/contracts/fluxnode";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
@@ -28,10 +26,10 @@ const breaksOldLabel = (parameters: Readonly<Record<string, unknown>>): Automati
 const decisionsBy = (served: readonly { model: string; taskKind: string }[]) => served.filter((call) => call.taskKind === "evidence_tool_decision").map((call) => call.model);
 
 describe("a FluxNode run's repair of a broken saved Flow", () => {
-  it("calls the repair model for the repairing round, priced at it, and the explore model for a fresh exploration", async () => {
+  it("keeps the starting model through exploration and repair and prices the actual repair calls at it", async () => {
     const lane = await fluxNodeLane(cleanups, { models: PRICES });
     const models = { explore: "explorer", repair: "repairer" };
-    const learned = await lane.run({ spec: findLoansSpec(), inputs: { title: "Atlas" }, overrides: { models } }, { script: [findLoans("Atlas"), complete("Found the loans.")], answers: passing });
+    const learned = await lane.run({ spec: findLoansSpec(), inputs: { title: "Atlas" }, overrides: { models } }, { taskProcessing: { process: { where: [{ field: "title", contains: { $input: "title", test: "Atlas" } }], columns: ["title", "due"] } }, script: [findLoans("Atlas"), complete("Found the loans.")], answers: passing });
     expect(learned.result).toMatchObject({ status: "achieved", path: "explored" });
     // The first run explores fresh: every decision call is the explore model's, and the repair model served none.
     expect(new Set(decisionsBy(lane.served))).toEqual(new Set(["explorer"]));
@@ -43,16 +41,16 @@ describe("a FluxNode run's repair of a broken saved Flow", () => {
     expect(repaired.result).toMatchObject({ status: "achieved", path: "repaired" });
     const served = lane.served.slice(before);
     expect(repaired.decisions.length).toBeGreaterThan(0);
-    expect(decisionsBy(served)).toEqual(repaired.decisions.map(() => "repairer"));
-    expect(lane.priced).toContain("repairer");
+    expect(decisionsBy(served)).toEqual(repaired.decisions.map(() => "explorer"));
+    expect(lane.priced).not.toContain("repairer");
     const charged = served.reduce((sum, call) => sum + call.costUsd, 0);
     expect(repaired.result.cost.usd).toBeCloseTo(charged, 9);
-    expect(served.every((call) => call.costUsd === 15 * PRICES.repairer || call.taskKind !== "evidence_tool_decision")).toBe(true);
+    expect(served.every((call) => call.costUsd === 15 * PRICES.explorer || call.taskKind !== "evidence_tool_decision")).toBe(true);
   });
 
   it("is one model for a repair too, where the run names no models", async () => {
     const lane = await fluxNodeLane(cleanups, { models: PRICES });
-    await lane.run({ spec: findLoansSpec(), inputs: { title: "Atlas" } }, { script: [findLoans("Atlas"), complete("Found the loans.")], answers: passing });
+    await lane.run({ spec: findLoansSpec(), inputs: { title: "Atlas" } }, { taskProcessing: { process: { where: [{ field: "title", contains: { $input: "title", test: "Atlas" } }], columns: ["title", "due"] } }, script: [findLoans("Atlas"), complete("Found the loans.")], answers: passing });
     lane.engine.over = breaksOldLabel;
     const before = lane.served.length;
     const repaired = await lane.run({ name: NAME, inputs: { title: "Birds" } }, { script: [findByTitle("Birds"), complete("Found the loans.")], answers: passing });

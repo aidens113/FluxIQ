@@ -51,6 +51,7 @@ export function automationStudioLlmSetResultProcessing(input: {
   if (!isObject(input.value.process)) {
     return { held: input.held, answer: refused("result_processing.missing", ["result_processing.missing"], "Give process, the whole declaration, or clear: true.") };
   }
+  if (Object.hasOwn(input.value.process, "declaration")) return { held: input.held, answer: refused("result_processing.invalid", ["record_output.process_declaration_framework_owned"], "Processing provenance is framework-owned. Give only the requested criteria; the framework binds and stamps actual captured fields.") };
   const read = input.rowsOf(dataset);
   if (read === undefined) {
     return {

@@ -36,6 +36,8 @@ export async function runAutomationStudioDetachedCandidate(input: {
   fromNodeKey?: string;
   /** The Flow's size bounds, where they were raised: the setting's default when omitted, as for a trial. A Flow its own setting let assemble must also be let run. */
   size?: AutomationStudioFlowBootstrapSizeLimits;
+  /** Told a copy of the selected graph (the `graph` this returns) once routing chose it and before its first node runs. */
+  selected?: (graph: AutomationStudioFlowArtifact) => void;
 }): Promise<{ receipt: AutomationStudioCandidateExecutionReceipt; code?: string; trace?: AutomationStudioGraphExecutionTrace; route?: AutomationStudioRouterExecutionResult; graph?: AutomationStudioFlowArtifact; candidateGraphs?: AutomationStudioFlowArtifact[] }> {
   // Clone owner-controlled artifacts before the first await; a mutable builder cannot swap graphs during routing.
   const identity = structuredClone(input.identity), candidate = structuredClone(input.candidate), parent = structuredClone(input.parentFlow), fromNodeKey = input.fromNodeKey;
@@ -89,6 +91,7 @@ export async function runAutomationStudioDetachedCandidate(input: {
     if (from && "refused" in from) return { ...refused(from.refused), route };
     if (parent.executionDefaults) graph.executionDefaults = structuredClone(parent.executionDefaults);
     returnedGraph = structuredClone(graph);
+    input.selected?.(structuredClone(graph));
     // Definitions for attributing invoked child evidence, never proof that every alternative graph ran.
     candidateGraphs = topology.subflows.map((entry) => structuredClone(entry.graphFlow));
     // No model, patch, reroute or subflow recovery: the candidate runs as

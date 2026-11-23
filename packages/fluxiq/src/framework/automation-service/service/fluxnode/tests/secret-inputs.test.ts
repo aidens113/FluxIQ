@@ -68,7 +68,7 @@ describe("a FluxNode's secret input", () => {
   it("is entered through its binding, never sent to the model, saved, exported or told, and a replay enters the new one", async () => {
     const steps = await stepLog();
     const lane = await fluxNodeLane(cleanups);
-    const first = await lane.run({ spec: spec(), inputs: { title: FIRST } }, { script: [writtenFind(), toolCall("forward", "core.run_flow", { from: 2 }), complete("Found the loans.")], answers: passing });
+    const first = await lane.run({ spec: spec(), inputs: { title: FIRST } }, { taskProcessing: { process: { columns: ["title", "due"] } }, script: [writtenFind(), toolCall("forward", "core.run_flow", { from: 2 }), complete("Found the loans.")], answers: passing });
     expect(first.result).toMatchObject({ status: "achieved", path: "explored" });
     expect(first.result.outputs).toEqual({ loans: [{ title: "Clockmaking", due: "2030-01-03" }] });
     // The build's test entered the secret itself, through the binding the model wrote.
@@ -104,7 +104,7 @@ describe("a FluxNode's secret input", () => {
 
   it("typed out by the model, is still bound with no default, and withheld from what the model is sent next", async () => {
     const lane = await fluxNodeLane(cleanups);
-    const first = await lane.run({ spec: spec(), inputs: { title: FIRST } }, { script: [findLoans(FIRST), complete("Found the loans.")], answers: passing });
+    const first = await lane.run({ spec: spec(), inputs: { title: FIRST } }, { taskProcessing: { process: { columns: ["title", "due"] } }, script: [findLoans(FIRST), complete("Found the loans.")], answers: passing });
     expect(first.result).toMatchObject({ status: "achieved", path: "explored" });
     // The scripted model typed it, which a model never shown it cannot; every request after that call withholds it.
     expect(first.decisions.length).toBeGreaterThan(1);
