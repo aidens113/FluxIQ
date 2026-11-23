@@ -12,8 +12,14 @@
 import { automationStudioMakeJudgeCheckpoint, type AutomationStudioJudgeEvidenceCheckpoint, type AutomationStudioResultTrailSemanticOptions, type AutomationStudioResultTrailStep } from "../../../../../runtime/result-verification/index.ts";
 import { automationStudioJudgeEvidenceCapability } from "../../../../../runtime/llm/harness-options/index.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioAnswerFirstJudgeEvidenceIssue } from "../attempt-store/judge-evidence-issue.ts";
+import type { AutomationStudioAnswerFirstJudgeEvidenceIssue } from "../attempt-store/index.ts";
 import { automationStudioAnswerFirstJournalOwners } from "./source-owner.ts";
+import { AutomationStudioJudgeEvidenceOrigins } from "../../../../../runtime/result-verification/judge-evidence/index.ts";
+import type { AutomationStudioResultEvidenceSourceRef } from "../../../../../runtime/result-verification/result-evidence/index.ts";
+import type { AutomationStudioJudgeWitnessAssociation } from "../../../../../runtime/result-verification/judge-evidence/index.ts";
+import { AutomationStudioJudgeEvidenceRetry } from "../../../../../runtime/result-verification/judge-evidence/index.ts";
+
+type Witnesses = { before?: JsonObject; after?: JsonObject; association?: AutomationStudioJudgeWitnessAssociation };
 
 /** The most attempts whose trail is held per service: the oldest goes first. */
 const MOST_HELD = 32;
@@ -29,8 +35,9 @@ export type AutomationStudioAnswerFirstTrails = {
   /** The trail `attemptId` adds to: the one held for it on a carry-on, a fresh one otherwise. */
   of(attemptId: string, opening: { carriedOn: boolean; askedAgain: boolean; judgeEvidence?: AutomationStudioJudgeEvidenceCheckpoint | null; judgeEvidenceIssue?: AutomationStudioAnswerFirstJudgeEvidenceIssue | null }): AutomationStudioResultTrailStep[];
   capability(trail: readonly AutomationStudioResultTrailStep[], binding: { judgeEvidenceVersion?: 1 | undefined } | undefined): { judgeEvidenceVersion?: 1 | undefined };
-  checkpoint(trail: readonly AutomationStudioResultTrailStep[], witnesses: { before?: JsonObject; after?: JsonObject }, options: AutomationStudioResultTrailSemanticOptions): AutomationStudioJudgeEvidenceCheckpoint | undefined;
-  witnesses(trail: readonly AutomationStudioResultTrailStep[], current: { before?: JsonObject; after?: JsonObject }): { before?: JsonObject; after?: JsonObject };
+  checkpoint(trail: readonly AutomationStudioResultTrailStep[], witnesses: Witnesses, options: AutomationStudioResultTrailSemanticOptions): AutomationStudioJudgeEvidenceCheckpoint | undefined;
+  witnesses(trail: readonly AutomationStudioResultTrailStep[], current: Witnesses): Witnesses;
+  sourceRecorded(trail: readonly AutomationStudioResultTrailStep[], refs: readonly AutomationStudioResultEvidenceSourceRef[], call?: object): void;
   sourceOwner(trail: readonly AutomationStudioResultTrailStep[]): object | undefined;
   recovered(trail: AutomationStudioResultTrailStep[], proof: { recoveredReceipt: string; revision: number } | undefined): void;
 };
@@ -85,9 +92,15 @@ export function automationStudioAnswerFirstTrailsOf(owner: object): AutomationSt
       return checkpoint;
     },
     witnesses(trail, current) {
-      const before = checkpoints.get(trail)?.witnesses?.before;
-      return { ...current, ...(before === undefined ? {} : { before: { judgeEvidence: before } }) };
+      const saved = checkpoints.get(trail)?.witnesses;
+      const before = saved?.before;
+      const prior = saved?.association;
+      const association = current.association === undefined ? prior === undefined ? undefined : { version: 1 as const, before: structuredClone(prior.before), after: [] } : { ...current.association, before: [...(prior?.before ?? []), ...current.association.before].filter((ref, at, all) => all.findIndex((other) => other.callId === ref.callId && other.actId === ref.actId) === at) };
+      const wrapper = before === undefined ? undefined : { judgeEvidence: before };
+      if (before !== undefined && wrapper !== undefined) AutomationStudioJudgeEvidenceRetry.carry(before, wrapper);
+      return { ...current, ...(wrapper === undefined ? {} : { before: wrapper }), ...(association === undefined ? {} : { association }) };
     },
+    sourceRecorded: (trail, refs, call) => AutomationStudioJudgeEvidenceOrigins.recorded(trail, refs, call),
     sourceOwner: (trail) => sourceOwners.get(trail),
     recovered(trail, proof) {
       if (proof === undefined || sourceOwners.get(trail) === undefined) return;

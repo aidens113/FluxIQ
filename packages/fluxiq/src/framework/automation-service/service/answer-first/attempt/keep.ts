@@ -111,7 +111,7 @@ export async function automationStudioAnswerFirstKeep(run: AutomationStudioAnswe
     const attempt = automationStudioAnswerFirstAttemptAs(run, run.waitingFor ? { status: "waiting_for_person", waitingFor: run.waitingFor } : { status: "working" });
     const result = automationStudioAnswerFirstResultAs(run, run.result.rows());
     const journal = automationStudioAnswerFirstTrailsOf(run.input.owner);
-    const judgeEvidence = journal.checkpoint(run.trail, run.witnesses.readings(), { ...journal.capability(run.trail, run.input.binding), projectJudgeEvidence: run.input.binding?.projectJudgeEvidence, deniedEvidenceKeys: run.input.binding?.deniedEvidenceKeys });
+    const judgeEvidence = journal.checkpoint(run.trail, run.witnesses.readings(), { ...journal.capability(run.trail, run.input.binding), projectJudgeEvidence: run.input.binding?.projectJudgeEvidence, deniedEvidenceKeys: run.input.binding?.deniedEvidenceKeys, resultEvidence: run.result.sourceProof() });
     const kept = { attempt, result, publications: run.sink.publicationState(), tried: automationStudioAnswerFirstTriedAsContract(run.tried.data()), steps: run.steps, ...(run.processingReferenceTimeMs === undefined ? {} : { processingReferenceTimeMs: run.processingReferenceTimeMs }), ...(run.result.processingDeclaration() === undefined ? {} : { processing: run.result.processingDeclaration()!, resultEvidence: run.result.evidence() }), ...(judgeEvidence === undefined ? {} : { judgeEvidence }), ...automationStudioAnswerFirstReplayKept(run.completion.state) };
     const sourceOwner = journal.sourceOwner(run.trail);
     if (judgeEvidence !== undefined && sourceOwner !== undefined) {

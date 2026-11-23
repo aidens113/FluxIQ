@@ -169,6 +169,42 @@ on reopen, retaining the earlier warning as history. New rejection rotates to a
 new unresolved receipt; an unclaimed foreign update cannot retain stale clearing
 authority. Tokens, callbacks and raw captures are never persisted.
 
+Historical missing codes remain recorded when a current requirement is repaired.
+A failed projection may retry only from an exact original adapter input retained
+privately in memory. The successful repair is memoized and checkpointed; neither
+a restored finding nor a later equal-looking read reconstructs that input. Safe
+data requirements may also be resolved by validated result-feed source replacement
+receipts, matching the full original source/step/version/dataset tuple and actual
+current targets. Producer callbacks retain the actual call object through a
+forward pass; a reused call id cannot assign a newer tuple to an older occurrence.
+Repeated indistinguishable durable tuples remain ambiguous. Receipts never clear
+a lasting or uncertain effect, a binding/privacy failure, or missing current state.
+
+Receipt-based resolutions are revalidated on current request/checkpoint copies,
+including resolved findings reopened from disk. Every intermediate and terminal
+tuple must remain unambiguous across the journal, and a terminal must identify
+exactly one known-valid current page. Lost authority restores only codes whose
+latest resolution depended on that receipt, preserving the earlier repair fact
+and independent original-source resolutions. Valid rechecks add no duplicate
+history. The sourceProof accessor supplies current pages/receipts without another
+processing evaluation.
+
+Core's held-before finding and wrappers explicitly carry an existing private
+input association through their own in-memory copies. Successful findings are
+rescreened under the current denied keys without another domain projection. JSON
+or history cannot recreate that association. Witness reads hold independent Core
+snapshots so a host reusing one mutable object cannot rewrite the logical before.
+
+Flow-less witnesses keep Core-owned call/act pairs observed between their reads.
+The exact association survives semantic checkpoint/reopen, while a restored after
+stays historical and a new act invalidates the current after. Association proves
+correspondence only. It cannot clear a historical action projection gap from a
+generic later view or status; that still needs exact original-source recovery.
+Witness-only recovery would require a trusted domain seam establishing that the
+typed state bears on the specific act, without claiming task success. No such
+domain coverage API is part of this change, and the gap remains repairable through
+the existing unsure/continue path rather than adding a task ending.
+
 Stored semantic summaries are read as semantic findings, not projected a second
 time. Unknown/malformed new formats cannot route to legacy raw rendering. A
 semantic evidence gap holds a model yes under existing unsure/repair handling;

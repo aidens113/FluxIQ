@@ -1,11 +1,14 @@
 import type { JsonObject } from "../../../../core/index.ts";
-import { automationStudioStoredJudgeFinding } from "../../judge-evidence/stored-finding.ts";
+import { automationStudioJudgeEvidenceJsonValue, automationStudioStoredJudgeFinding } from "../../judge-evidence/index.ts";
 import type { AutomationStudioJudgeEvidenceCheckpoint } from "./types.ts";
 import { automationStudioResultFrameworkOutcome } from "../framework-outcome.ts";
 import { automationStudioResultEvidenceScreen } from "../../result-evidence/index.ts";
+import { readAutomationStudioResultEvidenceSourceRef } from "../../result-evidence/index.ts";
+import { automationStudioReadJudgeActionRef } from "../../judge-evidence/index.ts";
+import { automationStudioReadJudgeWitnessAssociation } from "../../judge-evidence/index.ts";
 
 const TOP = new Set(["version", "revision", "trail", "witnesses"]);
-const STEP = new Set(["callId", "did", "on", "outcome", "where", "framework", "judgeEvidence"]);
+const STEP = new Set(["callId", "did", "on", "outcome", "where", "framework", "judgeEvidence", "judgeSource", "judgeSources", "judgeAct"]);
 
 /** Validate private stored shape only. Current capability/privacy checks still govern every model-bound read. */
 export function automationStudioReadJudgeCheckpoint(value: unknown): AutomationStudioJudgeEvidenceCheckpoint | undefined {
@@ -18,33 +21,53 @@ export function automationStudioReadJudgeCheckpoint(value: unknown): AutomationS
       if (raw[key] !== undefined && typeof raw[key] !== "string") return undefined;
       if (typeof raw[key] === "string") step[key] = raw[key];
     }
+    if (Object.hasOwn(raw, "judgeSource")) {
+      const source = raw.judgeSource;
+      if (!object(source) || Object.keys(source).some((key) => key !== "source" && key !== "datasetId") || typeof source.source !== "string" || !source.source.trim() || (Object.hasOwn(source, "datasetId") && typeof source.datasetId !== "string")) return undefined;
+      step.judgeSource = { source: source.source, ...(typeof source.datasetId === "string" ? { datasetId: source.datasetId } : {}) };
+    }
+    if (Object.hasOwn(raw, "judgeSources")) {
+      if (!Array.isArray(raw.judgeSources) || raw.judgeSources.length === 0) return undefined;
+      const sources = raw.judgeSources.map(readAutomationStudioResultEvidenceSourceRef);
+      if (sources.some((source) => source === undefined)) return undefined;
+      step.judgeSources = sources as NonNullable<typeof step.judgeSources>;
+    }
+    if (Object.hasOwn(raw, "judgeAct")) {
+      const act = automationStudioReadJudgeActionRef(raw.judgeAct);
+      if (act === undefined || (step.callId !== undefined && step.callId !== act.callId)) return undefined;
+      step.judgeAct = act;
+    }
     if (raw.framework !== undefined) {
-      if (!object(raw.framework)) return undefined;
+      if (!object(raw.framework) || !automationStudioJudgeEvidenceJsonValue(raw.framework)) return undefined;
       const framework = automationStudioResultFrameworkOutcome(raw.framework);
-      try {
-        JSON.stringify(raw.framework);
-        if (!same(framework, raw.framework)) return undefined;
-        step.framework = structuredClone(framework) as JsonObject;
-      } catch { return undefined; }
+      if (!same(framework, raw.framework)) return undefined;
+      step.framework = structuredClone(framework);
     }
     if (!Object.hasOwn(raw, "judgeEvidence")) return undefined;
     const finding = automationStudioStoredJudgeFinding(raw.judgeEvidence);
     if (finding === undefined) return undefined;
     // Structural credential enforcement only, not current domain disclosure
     // policy. Opaque identities/framework facts cannot carry a credential.
-    if (automationStudioResultEvidenceScreen({ did: step.did, ...(step.callId === undefined ? {} : { callId: step.callId }), ...(step.on === undefined ? {} : { on: step.on }), ...(step.outcome === undefined ? {} : { outcome: step.outcome }), ...(step.where === undefined ? {} : { where: step.where }), ...(step.framework === undefined ? {} : { framework: step.framework }) }, []).withheld) return undefined;
+    if (automationStudioResultEvidenceScreen(step as unknown as JsonObject, []).withheld) return undefined;
     step.judgeEvidence = finding;
     trail.push(step);
   }
   const result: AutomationStudioJudgeEvidenceCheckpoint = { version: 1, revision: value.revision, trail };
   if (value.witnesses !== undefined) {
-    if (!object(value.witnesses) || Object.keys(value.witnesses).some((key) => key !== "before" && key !== "after")) return undefined;
+    if (!object(value.witnesses) || Object.keys(value.witnesses).some((key) => key !== "before" && key !== "after" && key !== "association")) return undefined;
     const witnesses: NonNullable<AutomationStudioJudgeEvidenceCheckpoint["witnesses"]> = {};
     for (const phase of ["before", "after"] as const) {
       if (value.witnesses[phase] === undefined) continue;
       const finding = automationStudioStoredJudgeFinding(value.witnesses[phase]);
       if (finding === undefined) return undefined;
       witnesses[phase] = finding;
+    }
+    if (Object.hasOwn(value.witnesses, "association")) {
+      const association = automationStudioReadJudgeWitnessAssociation(value.witnesses.association);
+      if (association === undefined) return undefined;
+      const actual = trail.flatMap((step) => step.judgeAct === undefined ? [] : [step.judgeAct]);
+      if ([...association.before, ...association.after].some((ref) => actual.filter((act) => act.callId === ref.callId && act.actId === ref.actId).length !== 1)) return undefined;
+      witnesses.association = association;
     }
     result.witnesses = witnesses;
   }

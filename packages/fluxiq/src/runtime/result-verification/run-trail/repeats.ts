@@ -6,6 +6,7 @@
 
 import type { JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioResultTrailShownStep } from "../contracts/index.ts";
+import { AutomationStudioJudgeEvidenceRetry } from "../judge-evidence/index.ts";
 
 /** A member this short is no cheaper as a stub, and is often a flag or a count that merely happens to match. */
 const STUB_MINIMUM_CHARACTERS = 120;
@@ -35,6 +36,9 @@ export function automationStudioResultTrailRepeatsOnce(entries: readonly Automat
         changed = true;
       }
     }
-    return changed ? { ...entry, found: members } : entry;
+    if (!changed) return entry;
+    const result = { ...entry, found: members };
+    AutomationStudioJudgeEvidenceRetry.carry(entry, result);
+    return result;
   });
 }

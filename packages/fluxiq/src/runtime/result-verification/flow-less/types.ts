@@ -7,6 +7,7 @@ import type { AutomationStudioLlmTokenLimits } from "../../models/limits/index.t
 import type { AutomationStudioResultEndView, AutomationStudioResultTrailStep } from "../contracts/index.ts";
 import type { AutomationStudioFlowLessReadLeftOut } from "./read-left-out.ts";
 import type { AutomationStudioResultEvidenceBundle } from "../result-evidence/index.ts";
+import type { AutomationStudioJudgeWitnessAssociation } from "../judge-evidence/index.ts";
 
 /** What an attempt got, with no Flow behind it. */
 export type AutomationStudioFlowLessSummary = {
@@ -23,7 +24,7 @@ export type AutomationStudioFlowLessSummary = {
   /** How the site looked at the end, as the domain produced it. */
   endView?: AutomationStudioResultEndView;
   /** The same reading of the site before the first lasting act and at the end: the change is what is judged. */
-  witnesses?: { before?: JsonObject; after?: JsonObject };
+  witnesses?: { before?: JsonObject; after?: JsonObject; association?: AutomationStudioJudgeWitnessAssociation };
   /** What looks at the site found after the first lasting act, from each call's own answer and never a model's words: where (the page's address) and what was found, screened line by line; every distinct look, never cut. */
   looked?: readonly { where: string; found: string; callId?: string }[];
   /**

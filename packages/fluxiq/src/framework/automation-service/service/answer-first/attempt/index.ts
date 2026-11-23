@@ -8,3 +8,4 @@ export { automationStudioAnswerFirstSay } from "./say.ts";
 export { runAutomationStudioAnswerFirstAttempt } from "./run-attempt.ts";
 export { automationStudioAnswerFirstAnswerOnStop } from "./stop-answer.ts";
 export { automationStudioAnswerFirstTaskWords } from "./task-words.ts";
+export { automationStudioAnswerFirstCallChain } from "./call-chain.ts";

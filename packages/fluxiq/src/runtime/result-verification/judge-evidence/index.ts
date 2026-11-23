@@ -1,3 +1,11 @@
 export { automationStudioProjectJudgeEvidence, type AutomationStudioJudgeEvidenceProjection } from "./project.ts";
 export { automationStudioJudgeEvidenceFinding, type AutomationStudioJudgeEvidenceFinding } from "./finding.ts";
 export { automationStudioResultJudgeSummary } from "./summary.ts";
+export { automationStudioJudgeEvidenceJsonValue } from "./json-value.ts";
+export { automationStudioStoredJudgeFinding } from "./stored-finding.ts";
+export { AutomationStudioJudgeEvidenceRetry } from "./retry.ts";
+export { AutomationStudioJudgeEvidenceOrigins } from "./origins.ts";
+export { automationStudioJudgeEvidenceReplacement } from "./replacement.ts";
+export type { AutomationStudioJudgeEvidenceHistory } from "./history.ts";
+export { automationStudioReadJudgeActionRef, type AutomationStudioJudgeActionRef } from "./action-ref.ts";
+export { automationStudioReadJudgeWitnessAssociation, type AutomationStudioJudgeWitnessAssociation } from "./witness-association.ts";
