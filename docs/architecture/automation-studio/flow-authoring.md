@@ -839,3 +839,26 @@ names the connection correction, separately from successful step outcomes.
 It never forwards the frame's free-text message, node identifiers, page text
 or selectors. An untested or incompletely executed candidate still cannot
 complete or be promoted.
+
+## Collection and result-processing guidance
+
+Answer-first guidance `answer-first.3` treats the current task's final result as
+the completion target. It gathers required pages during that task, including
+by executing the general paging loop forward, while leaving a reusable Flow.
+Safe condition, identity, mark and date fields remain original evidence;
+requested output columns are a view and explicit exclusions remain authoritative.
+
+Where a task declares automatic processing, Core applies that declaration to
+retained candidate rows. The model does not need a processing-tool call after
+each read. The offered tool can supply a missing declaration or amend criteria
+from evidence. Legacy build-only requests retain their supported saved-result
+processing and may leave execution for later. Missing source fields require
+source evidence, never a weaker condition or invented value.
+
+Result processing does not select the rows a repeat acts on. The listing must
+narrow action targets before any lasting act and provide the action order
+where it matters. Generic decision prose, loop diagnostics and answer-first
+guidance preserve that boundary. Prompt pins regenerate from the actual
+producer under `FLUXIQ_UPDATE_SYSTEM_PROMPT_PINS=1` in the owning
+`runtime/llm/deepseek/tests/system-prompt.test.ts` check; normal tests only compare
+pins. Provider-task snapshots use Vitest's explicit snapshot update mode.
