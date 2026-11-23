@@ -150,6 +150,54 @@ describe("producer-owned exact source replacement recovery", () => {
     expect(recovered.trail[0]?.judgeEvidence?.history).toEqual(first.trail[0]?.judgeEvidence?.history);
   });
 
+  it.each([["absent current evidence", undefined], ["current evidence without receipts", "no-receipts"], ["receipts naming only another tuple", "unrelated"]] as const)("reopens a stored receipt resolution under %s at the next revision and clears it again only when exact authority returns", (_label, variant) => {
+    const input = summary([gap()]);
+    const first = automationStudioMakeJudgeCheckpoint([gap()], {}, { ...OPTIONS, resultEvidence: input.resultEvidence });
+    const closed = automationStudioReadJudgeCheckpoint(JSON.parse(JSON.stringify(first)))!;
+    expect(closed.trail[0]?.judgeEvidence?.missing).toEqual([]);
+    const current = variant === undefined ? undefined : structuredClone(input.resultEvidence!);
+    if (variant === "no-receipts") delete current!.sourceReplacements;
+    if (variant === "unrelated") current!.sourceReplacements = { version: 1, receipts: [{ kind: "page", from: [{ ...OLD, source: "read.other" }], to: [NEW] }] };
+    const held = automationStudioMakeJudgeCheckpoint(closed.trail, {}, current === undefined ? OPTIONS : { ...OPTIONS, resultEvidence: current }, closed);
+    expect(held.revision).toBe(closed.revision + 1);
+    expect(held.trail[0]?.judgeEvidence?.missing).toEqual(["example.schema_missing"]);
+    expect(held.trail[0]?.judgeEvidence?.history).toEqual(first.trail[0]?.judgeEvidence?.history);
+    const reopened = automationStudioReadJudgeCheckpoint(JSON.parse(JSON.stringify(held)))!;
+    const base = summary(reopened.trail);
+    if (current === undefined) delete base.resultEvidence;
+    else base.resultEvidence = current;
+    const shown = automationStudioResultJudgeSummary(base, OPTIONS);
+    expect(shown.evidenceProjection?.missing).toContainEqual({ source: OLD.source, codes: ["example.schema_missing"] });
+    expect(automationStudioResultVerdict({ summary: shown, basis: "model", diagnosis: { answersRequest: "yes" } }).verdict).toBe("unsure");
+    const recovered = automationStudioMakeJudgeCheckpoint(reopened.trail, {}, { ...OPTIONS, resultEvidence: input.resultEvidence }, reopened);
+    expect(recovered.trail[0]?.judgeEvidence?.missing).toEqual([]);
+    expect(recovered.trail[0]?.judgeEvidence?.history).toEqual(first.trail[0]?.judgeEvidence?.history);
+  });
+
+  it("keeps a stored unresolved gap held across higher revisions that add only an unrelated authorised read and an unrelated state", () => {
+    const otherOld = { source: "read.other.old", step: "other.read", version: 1, datasetId: "dataset.other.old" };
+    const otherNew = { source: "read.other.new", step: "other.read", version: 1, datasetId: "dataset.other.new" };
+    const first = automationStudioMakeJudgeCheckpoint([gap()], {}, OPTIONS);
+    const stored = automationStudioReadJudgeCheckpoint(JSON.parse(JSON.stringify(first)))!;
+    expect(stored.trail[0]?.judgeEvidence?.missing).toEqual(["example.schema_missing"]);
+    const unrelated: AutomationStudioResultTrailStep[] = [
+      { did: "actual.other.read", callId: "actual.other.read", judgeSources: [otherNew], judgeEvidence: { version: 1, role: "data", evidence: { rows: 1 }, missing: [], withheld: false } },
+      { did: "actual.state", callId: "actual.state", judgeEvidence: { version: 1, role: "observation", evidence: { semanticStatus: "current" }, missing: [], withheld: false } },
+    ];
+    const current = { pages: [{ ...otherNew, invalidCount: 0, rows: ROWS }], sourceReplacements: { version: 1, receipts: [{ kind: "page", from: [otherOld], to: [otherNew] }] }, processing: ACCOUNT } as JsonObject;
+    let checkpoint = stored;
+    for (const revision of [2, 3]) {
+      checkpoint = automationStudioMakeJudgeCheckpoint([...checkpoint.trail.slice(0, 1), ...unrelated], {}, { ...OPTIONS, resultEvidence: current }, automationStudioReadJudgeCheckpoint(JSON.parse(JSON.stringify(checkpoint)))!);
+      expect(checkpoint.revision).toBe(revision);
+      expect(checkpoint.trail[0]?.judgeEvidence?.missing).toEqual(["example.schema_missing"]);
+      expect(checkpoint.trail[0]?.judgeEvidence?.history).toBeUndefined();
+      expect(checkpoint.trail.slice(1).map((step) => step.judgeEvidence?.missing)).toEqual([[], []]);
+    }
+    const shown = automationStudioResultJudgeSummary({ ...summary(checkpoint.trail), resultEvidence: current }, OPTIONS);
+    expect(shown.evidenceProjection?.missing).toEqual([{ source: OLD.source, codes: ["example.schema_missing"] }]);
+    expect(automationStudioResultVerdict({ summary: shown, basis: "model", diagnosis: { answersRequest: "yes" } }).verdict).toBe("unsure");
+  });
+
   it("keeps independent original-source resolutions and unrelated observation gaps separate from receipt revalidation", () => {
     const input = summary([gap()]);
     const first = automationStudioMakeJudgeCheckpoint([gap()], {}, { ...OPTIONS, resultEvidence: input.resultEvidence });
