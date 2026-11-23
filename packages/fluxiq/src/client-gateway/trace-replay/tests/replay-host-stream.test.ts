@@ -62,7 +62,9 @@ describe("replaying a trace that carries a host's own artifact", () => {
     expect(report.divergences.filter((divergence) => divergence.detail.startsWith(UNREFERENCED))).toEqual([]);
     // Nothing was uploaded in its name: every event the replay derived matches the recording without it.
     expect(report.entries.filter((entry) => entry.sequence !== hostSequence)).toEqual(plain.entries);
-    expect(report.divergences.filter((divergence) => divergence.sequence !== hostSequence)).toEqual(plain.divergences);
+    expect(report.divergences).toEqual(plain.divergences);
+    // The host's artifact never passed through the gateway: the report classes it outside, never a divergence.
+    expect(report.entries.find((entry) => entry.sequence === hostSequence)).toMatchObject({ kind: "artifact", status: "outside" });
   });
 
   it("still reports a client upload that lost its session", async () => {
