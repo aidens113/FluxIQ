@@ -60,12 +60,14 @@ describe("a FluxNode idempotency key", () => {
 
   it("owns its resume execution while another facade retries the original key", async () => {
     const lane = await fluxNodeLane(cleanups);
-    const body = request({ spec: { ...spec(), hasCheck: true }, inputs: { note: "first note" }, options: { budgetUsd: 0.001 }, idempotencyKey: "resume-owner" });
-    const first = await lane.run(body, { script: [press()] });
+    // The run declares itself action-only (t984) in a one-line call and presses; its purse pays for no completion, so the
+    // resume's one decision is the completion the check is asked about.
+    const body = request({ spec: { ...spec(), hasCheck: true }, inputs: { note: "first note" }, options: { budgetUsd: 0.0011 }, idempotencyKey: "resume-owner" });
+    const first = await lane.run(body, { taskProcessing: null, declarationUsd: 0.0001, script: [press()] });
     expect(first.result.status).toBe("budget_out");
     await vi.waitFor(async () => expect((await readdir(lane.dataDir, { recursive: true })).filter((file) => file.endsWith(".owner"))).toHaveLength(0));
     const owning = lane.fluxNodes;
-    lane.arm({ taskProcessing: null, script: [complete("Saved.")] });
+    lane.arm({ script: [complete("Saved.")] });
     const resumed = await owning.start(OWNER, request({ resumeHandle: first.result.resumeHandle }));
     if (!resumed.ok) throw new Error(resumed.refusal.code);
     const events = await owning.events(OWNER, resumed.value.runId, 0, new AbortController().signal);

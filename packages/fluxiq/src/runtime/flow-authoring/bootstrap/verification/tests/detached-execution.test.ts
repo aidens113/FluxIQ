@@ -50,6 +50,17 @@ describe("detached candidate normal execution", () => {
     expect(await runAutomationStudioDetachedCandidate(input)).not.toHaveProperty("graph");
   });
 
+  it("tells a copy of the selected graph it returns, and tells nothing when nothing ran", async () => {
+    const { input } = fixture();
+    const told: string[][] = [];
+    const result = await runAutomationStudioDetachedCandidate({ ...input, selected: (graph) => { told.push(graph.nodes.map((node) => node.id)); } });
+    expect(told).toEqual([result.graph!.nodes.map((node) => node.id)]);
+    told.splice(0);
+    input.candidate.revision = 2;
+    await runAutomationStudioDetachedCandidate({ ...input, selected: (graph) => { told.push(graph.nodes.map((node) => node.id)); } });
+    expect(told).toEqual([]);
+  });
+
   it("routes only the selected submitted subflow and never requires unselected branch outputs", async () => {
     const { input, plan, recompile } = fixture();
     plan.subflows.push({ key: "alternate", name: "Alternate", role: "fallback", nodes: [{ key: "alt", definitionId: "builtin.data.constant", definitionVersion: "1.0.0", parameters: { value: "alternate" } }], edges: [] });

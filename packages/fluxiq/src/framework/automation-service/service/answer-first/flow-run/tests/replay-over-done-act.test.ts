@@ -64,7 +64,7 @@ describe("a later attempt whose asked act already stands", () => {
     const site: Site = { formOpen: false, formOpened: 0, noteTyped: 0 };
     const lane = await laterAttempts(cleanups, { fault: byHand(site) });
     const first = await lane.attempt({
-      instruction: TASK, taskProcessing: { process: null }, permittedConsequences: ["modify_existing"],
+      instruction: TASK, taskProcessing: null, permittedConsequences: ["modify_existing"],
       script: [
         runNode("open", CLOSE_PROMPT, { control: OPEN_FORM }, [], { add: true }),
         runNode("note", RENEW_LOAN, { control: NOTE_FIELD, title: "back in May" }, [], { add: true }),

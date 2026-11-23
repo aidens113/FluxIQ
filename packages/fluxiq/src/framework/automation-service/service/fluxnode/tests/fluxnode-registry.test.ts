@@ -77,7 +77,8 @@ describe("the FluxNode service's bookkeeping", () => {
     const lane = await fluxNodeLane(cleanups);
     const learn = await lane.run({ spec: unchecked(), inputs: { title: "Atlas" } }, { taskProcessing: { process: { where: [{ field: "title", contains: { $input: "title", test: "Atlas" } }], columns: ["title", "due"] } }, script: [findLoans("Atlas"), complete("Found the loans.")] });
     expect(learn.result).toMatchObject({ status: "achieved", path: "explored" });
-    const fresh = await lane.run({ name: "library.find-loans", inputs: { title: "Birds" }, options: { mode: "explore" } }, { script: [findLoans("Birds"), complete("Found the loans.")] });
+    // Explore starts the task fresh, its declaration included, so the model declares it again (t984).
+    const fresh = await lane.run({ name: "library.find-loans", inputs: { title: "Birds" }, options: { mode: "explore" } }, { taskProcessing: { process: { where: [{ field: "title", contains: { $input: "title", test: "Birds" } }], columns: ["title", "due"] } }, script: [findLoans("Birds"), complete("Found the loans.")] });
     expect(fresh.result).toMatchObject({ status: "achieved", path: "explored", flowId: learn.result.flowId });
     expect(fresh.decisions.length).toBeGreaterThan(0);
     const replayed = await lane.run({ name: "library.find-loans", inputs: { title: "Clock" } });

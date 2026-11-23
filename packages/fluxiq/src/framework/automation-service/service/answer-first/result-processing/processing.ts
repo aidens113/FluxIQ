@@ -103,6 +103,10 @@ function withResultProcessing(step: AutomationStudioFlowDraftStep, declared: Aut
   const parameters = isObject(input.parameters) ? input.parameters : undefined;
   const holder = parameters ?? input;
   const base = isObject(holder.recordOutput) ? holder.recordOutput : {};
+  // An automatic declaration is the task's own (kept in its memory and applied by the result feed), so it is
+  // written only into a record output the step already has. A step that never had one may run a node that
+  // takes none: inventing one would leave the saved steps unassemblable for every data task that reads it.
+  if (declared.declaration !== undefined && !isObject(holder.recordOutput) && !isObject(step.settings?.recordOutput)) return step;
   const output = declared.declaration !== undefined && isObject(step.settings?.recordOutput) ? { ...base, ...step.settings.recordOutput } : base;
   const own = isObject(output.process) ? output.process : {};
   const canonical = JSON.parse(JSON.stringify(declared)) as JsonObject;

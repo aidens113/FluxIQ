@@ -155,7 +155,7 @@ describe("a later attempt at the same task", () => {
     const lane = await laterAttempts(cleanups);
     await lane.attempt(cardAttempt);
     lane.target.page = "elsewhere";
-    const second = await lane.attempt({ instruction: CARD_TASK, permittedConsequences: ["modify_existing"], script: [readLoans("again", {}), complete("Listed, and the card is not done.")] });
+    const second = await lane.attempt({ instruction: CARD_TASK, permittedConsequences: ["modify_existing"], script: [readLoans("again"), complete("Listed, and the card is not done.")] });
     expect(second.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow_then_explore" });
   });
 
@@ -290,7 +290,7 @@ describe("what carries between attempts", () => {
     const lane = await laterAttempts(cleanups);
     await lane.attempt({ instruction: CARD_TASK, taskProcessing: { process: {} }, permittedConsequences: ["modify_existing"], maxTotalEstimatedCostUsd: 0.1, costUsd: 0.04, keepLooking: true, script: [readLoans(), pressCard()] });
     expect(lane.target.library.renewals.card).toBe(1);
-    await lane.attempt({ instruction: "Renew the card again on my library account.", taskProcessing: { process: null }, permittedConsequences: ["modify_existing"], script: [runNode("other", RENEW_LOAN, { title: "Atlas of Rivers" }, ["modify_existing"], { add: true }), complete("Renewed.")] });
+    await lane.attempt({ instruction: "Renew the card again on my library account.", taskProcessing: null, permittedConsequences: ["modify_existing"], script: [runNode("other", RENEW_LOAN, { title: "Atlas of Rivers" }, ["modify_existing"], { add: true }), complete("Renewed.")] });
     expect((await lane.actsOn())?.acts.map((act) => act.rowIdentity ?? act.id)).not.toContain("card");
     const third = await lane.attempt({ instruction: CARD_TASK, permittedConsequences: ["modify_existing"] });
     // The double press this closes: the Flow's one record had gone to the other task.

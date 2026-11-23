@@ -70,12 +70,16 @@ export class FluxNodePins {
     if (mode === "explore") return { flowId, replaysPin: false, pin, settle: async () => pin };
     const memory = await this.memory();
     const taskId = await taskIdOf(registered, true);
-    const notes = (await memory.get(registered.projectId, await taskIdOf(registered, false)))?.notes ?? [];
+    const learned = await memory.get(registered.projectId, await taskIdOf(registered, false));
+    const notes = learned?.notes ?? [];
     await memory.update(registered.projectId, taskId, (current) => {
       const { best: _replaced, ...rest } = current;
       // A first pinned run is told what the learned Flow's runs noted; later ones keep their own.
       const first = current.attempts.length === 0 && current.notes.length === 0;
-      return { ...rest, flowId, ...(record.saved ? { best: structuredClone(record.saved) } : {}), notes: first ? notes : current.notes };
+      // The pinned Flow's steps hold the spec's data declaration, which is the learned task's (t984): without it the
+      // seeded Flow would read as a legacy task's and its stamped criteria could not be applied.
+      const processing = current.processing ?? learned?.processing;
+      return { ...rest, flowId, ...(record.saved ? { best: structuredClone(record.saved) } : {}), notes: first ? notes : current.notes, ...(processing === undefined ? {} : { processing: structuredClone(processing) }) };
     });
     return {
       flowId, replaysPin: true, pin,

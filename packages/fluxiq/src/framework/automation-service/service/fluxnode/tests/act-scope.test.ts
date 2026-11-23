@@ -156,11 +156,11 @@ describe("a FluxNode run's lasting act", () => {
         { id: "later", kind: "map", target: { fluxNode: later }, inputs: { note: { field: "note" } }, as: "later", concurrency: 1 }
       ] },
       inputs: { jobs: [{ note: "same note" }, { note: "same note" }] },
-      options: { budgetUsd: 0.002 }, idempotencyKey: "two-rounds"
+      options: { budgetUsd: 0.0011 }, idempotencyKey: "two-rounds"
     };
-    // The new child's real classification call precedes its press; both calls
-    // exhaust this purse while preserving the same partial-act resume boundary.
-    const first = await lane.run(request, { taskProcessing: null, script: [pressCard()] });
+    // The new child first declares itself action-only (t984), a one-line call, then presses: the purse pays for both
+    // and not for the completion, so the child ends with its act landed and unconfirmed, the boundary this resumes over.
+    const first = await lane.run(request, { taskProcessing: null, declarationUsd: 0.0001, script: [pressCard()] });
     expect(first.result.status).toBe("budget_out");
     expect(lane.library.renewals.card).toBe(4); // One learned separately, two complete children, one partial child.
     const resumed = await lane.run({ resumeHandle: first.result.resumeHandle });

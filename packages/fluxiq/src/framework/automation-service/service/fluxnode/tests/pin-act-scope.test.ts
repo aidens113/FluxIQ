@@ -78,7 +78,7 @@ it("retains an admitted child version during a run and resolves a fresh version 
   const spec = { name: "library.admitted-child", runtime: "library", start: "library://account", goal: "Renew the card.", scope: { acts: ["change"] }, options: { judge: "off" } };
   const script = [runNode("save", RENEW_CARD, {}, ["modify_existing"], { add: true }), complete("Saved.")];
   const learned = await lane.run({ spec, inputs: {} }, { taskProcessing: null, script });
-  await lane.run({ spec: findLoansSpec({ name: source, hasCheck: false, options: { judge: "off" }, outputs: { type: "array", items: { type: "object", properties: { title: { type: "string" }, due: { type: "string" } }, required: ["title", "due"] } } }), inputs: { title: "" } }, { taskProcessing: { process: { where: [{ field: "title", contains: { $input: "title", test: "" } }], columns: ["title", "due"] } }, script: [findLoans(""), complete("Read the source.")] });
+  await lane.run({ spec: findLoansSpec({ name: source, hasCheck: false, options: { judge: "off" }, outputs: { type: "array", items: { type: "object", properties: { title: { type: "string" }, due: { type: "string" } }, required: ["title", "due"] } } }), inputs: { title: "" } }, { taskProcessing: { process: { columns: ["title", "due"] } }, script: [findLoans(""), complete("Read the source.")] });
   let reached = (): void => undefined;
   let release = (): void => undefined;
   const reading = new Promise<void>((resolve) => { reached = resolve; });

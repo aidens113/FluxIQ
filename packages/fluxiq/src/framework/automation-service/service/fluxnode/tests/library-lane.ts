@@ -73,14 +73,32 @@ export function titleAsked(request: AutomationStudioLlmTaskRequest): string {
 export const findLoansAsked = (request: AutomationStudioLlmTaskRequest): JsonObject => findLoans(titleAsked(request));
 
 type Decision = JsonObject | ((request: AutomationStudioLlmTaskRequest) => JsonObject | Promise<JsonObject>);
-type Script = { script?: readonly Decision[]; taskProcessing?: AutomationStudioFlowTaskProcessing };
+type Script = {
+  script?: readonly Decision[];
+  taskProcessing?: AutomationStudioFlowTaskProcessing;
+  /**
+   * What the declaration's own call reports costing, where a test's purse boundary must fall after a later act: a
+   * one-line declaration is a far smaller call than a decision on a page. Absent, it costs what every call does.
+   */
+  declarationUsd?: number;
+};
 
-/** Explicit fixture setup still declares through the real model tool; omitted/unknown declarations remain omitted. */
+const DECLARE_CALL = "declare.result-processing";
+
+/**
+ * A FluxNode run has no chat reading to declare its processing, so the model declares it through the real tool, as
+ * `./processing.test.ts` does; omitted declarations stay omitted. Action-only N/A may be declared before anything is
+ * read. Data criteria bind to the captured schema, which the tool refuses to amend before a read, so they are declared
+ * after the script's reads, just before its first completion.
+ */
 function declaredScript(given: Script): readonly Decision[] {
   const script = given.script ?? [];
   const process = given.taskProcessing === null ? null : given.taskProcessing?.process;
   if (process === undefined) return script;
-  return [toolCall("declare.result-processing", "core.set_result_processing", { process, why: "Declare this fixture task's explicit instruction criteria before returning its result." }), ...script];
+  const declare = toolCall(DECLARE_CALL, "core.set_result_processing", { process, why: "Declare this fixture task's explicit instruction criteria before returning its result." });
+  if (process === null) return [declare, ...script];
+  const at = script.findIndex((decision) => typeof decision !== "function" && decision.kind === "complete");
+  return at < 0 ? [...script, declare] : [...script.slice(0, at), declare, ...script.slice(at)];
 }
 
 export type FluxNodeLane = Awaited<ReturnType<typeof fluxNodeLane>>;
@@ -89,7 +107,7 @@ export type FluxNodeLane = Awaited<ReturnType<typeof fluxNodeLane>>;
 export async function fluxNodeLane(cleanups: (() => Promise<void>)[], options: { personWaitMs?: number; hosts?: Parameters<typeof createFluxNodeService>[0]["hosts"]; /** Models the host resolves, each at its price per token (`./priced-models.ts`); absent, one model for everything. */ models?: Readonly<Record<string, number>> } = {}) {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-fluxnode-"));
   const library = fakeLibrary(["Atlas of Rivers", "Birds of the Coast", "Clockmaking"]);
-  const current: { script: readonly Decision[]; judge: unknown[]; decided: number; runId?: string } = { script: [], judge: [], decided: 0 };
+  const current: { script: readonly Decision[]; judge: unknown[]; decided: number; runId?: string; declarationUsd?: number | undefined } = { script: [], judge: [], decided: 0 };
   const requests: AutomationStudioLlmTaskRequest[] = [];
   /** The engine's own presses of "Find loans", with the title each ran with. */
   const engineFinds: unknown[] = [];
@@ -111,7 +129,9 @@ export async function fluxNodeLane(cleanups: (() => Promise<void>)[], options: {
     // Past the script nothing would end the attempt but its purse, so the program stops it, as a person would.
     if (current.decided >= current.script.length && fluxNodes) void stopRunning(fluxNodes, current.runId);
     current.decided += 1;
-    return { response: { kind: "evidence_tool_decision", summary: "Scripted.", decision: typeof next === "function" ? await next(request) : next }, usage: USAGE };
+    const decision = typeof next === "function" ? await next(request) : next;
+    const usage = decision.callId === DECLARE_CALL && current.declarationUsd !== undefined ? { ...USAGE, estimatedCostUsd: current.declarationUsd } : USAGE;
+    return { response: { kind: "evidence_tool_decision", summary: "Scripted.", decision }, usage };
   };
   const provider = mockProvider(answer);
   const priced = options.models ? fluxNodePricedModels(options.models, answer) : undefined;
@@ -152,7 +172,7 @@ export async function fluxNodeLane(cleanups: (() => Promise<void>)[], options: {
   const run = async (body: unknown, given: Script & { judge?: readonly unknown[]; answers?: (event: FluxNodeRunEvent) => FluxNodeEventAnswer | undefined; onStarted?: (state: FluxNodeRunStateBody) => void | Promise<void> } = {}) => {
     const parsed = parseFluxNodeRunRequest(body);
     if (!parsed.ok) throw new Error(`a bad request in the test: ${JSON.stringify(parsed.issues)}`);
-    Object.assign(current, { script: declaredScript(given), judge: [...(given.judge ?? [])], decided: 0 });
+    Object.assign(current, { script: declaredScript(given), judge: [...(given.judge ?? [])], decided: 0, declarationUsd: given.declarationUsd });
     const firstRequest = requests.length;
     const started = await nodes.start(OWNER, parsed.value as FluxNodeRunRequest);
     if (!started.ok) throw new Error(`start refused: ${JSON.stringify(started.refusal)}`);
@@ -176,7 +196,7 @@ export async function fluxNodeLane(cleanups: (() => Promise<void>)[], options: {
    * not through `run`. What the model and the judge were asked since then is read from the returned handle.
    */
   const arm = (given: Script & { judge?: readonly unknown[] } = {}) => {
-    Object.assign(current, { script: declaredScript(given), judge: [...(given.judge ?? [])], decided: 0, runId: undefined });
+    Object.assign(current, { script: declaredScript(given), judge: [...(given.judge ?? [])], decided: 0, runId: undefined, declarationUsd: given.declarationUsd });
     const from = requests.length;
     return {
       /** Every model request since arming, whatever its kind. */

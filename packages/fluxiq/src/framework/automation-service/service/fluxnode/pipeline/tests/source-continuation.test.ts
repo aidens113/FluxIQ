@@ -22,7 +22,7 @@ describe("a pipeline's original source enumeration", () => {
       { title: "last title", due: "2030-01-03" }
     ];
     const original = structuredClone(lane.library.loans);
-    const learned = await lane.run({ spec: sourceSpec(), inputs: { title: "" } }, { taskProcessing: { process: { where: [{ field: "title", contains: { $input: "title", test: "" } }], columns: ["title", "due"] } }, script: [findLoans(""), complete("Read the source rows.")] });
+    const learned = await lane.run({ spec: sourceSpec(), inputs: { title: "" } }, { taskProcessing: { process: { columns: ["title", "due"] } }, script: [findLoans(""), complete("Read the source rows.")] });
     expect(learned.result.outputs).toEqual(original);
     await lane.run({ spec: saver(), inputs: { note: "learn" } }, { taskProcessing: null, script: [press(), complete("Saved.")] });
     const request = {

@@ -52,14 +52,14 @@ describe("a FluxNode run is an Answer First attempt", () => {
   it("a declared type the outputs do not fit is a no before the program is asked, and the attempt goes on", async () => {
     const lane = await fluxNodeLane(cleanups);
     const said: string[] = [];
-    // The wrong title read has no requested Birds rows after automatic filtering,
-    // so the declared nonempty output type refuses it before asking the program.
+    // At most one loan: a read of every loan with an "o" finds three, which the type refuses.
     const spec = findLoansSpec({ outputs: { type: "object", properties: { loans: { type: "array", minItems: 1, maxItems: 1, items: { type: "object", properties: { title: { type: "string" }, due: { type: "string" } }, required: ["title", "due"] } } }, required: ["loans"] } });
-    // Drop the original wrong read before the corrected read, retaining the
-    // existing saved-Flow/output-group repair and final typed-output assertions.
+    // Changed by lane t905 (mvp-launch-plan/reports/result-evidence-design.md; `answer-first/result/output-group.ts`): the answer is what the saved Flow fills, where a second read appending to `loans` keeps the first read's rows, so the model drops the "o" read, the step its draft shows in the result, and then reads Birds.
+    // The model declares the columns and not the title condition (t984): the guard under test is the type, which must
+    // refuse what an incomplete declaration lets through. Declared in full, the data stage drops those rows itself (`./processing.test.ts`).
     const run = await lane.run({ spec, inputs: { title: "Birds" } }, {
-      taskProcessing: { process: { where: [{ field: "title", contains: { $input: "title", test: "Birds" } }], columns: ["title", "due"] } },
-      script: [findLoans("Atlas"), complete("Found the loans."), (request) => {
+      taskProcessing: { process: { columns: ["title", "due"] } },
+      script: [findLoans("o"), complete("Found the loans."), (request) => {
         said.push(JSON.stringify(request.context.evidenceLoop?.evidence ?? null));
         const draft = request.context.evidenceLoop?.evidence.find((entry) => entry.toolId === "core.flow_draft")?.value as { steps?: { step: number; inResult: boolean }[] } | undefined;
         const read = draft?.steps?.find((line) => line.inResult);
@@ -79,22 +79,21 @@ describe("a FluxNode run is an Answer First attempt", () => {
     const lane = await fluxNodeLane(cleanups);
     const said: string[] = [];
     let checks = 0;
+    // As above, only the columns are declared, so the wrong loans reach the program's check, which is the guard under test.
     const run = await lane.run({ spec: findLoansSpec(), inputs: { title: "Clock" } }, {
-      taskProcessing: { process: { where: [{ field: "title", contains: { $input: "title", test: "Clock" } }], columns: ["title", "due"] } },
-      // The program requests another read even though the first read fits the
-      // declared title criterion; a wrong-title read now fails the data/type gate first.
-      script: [findLoans("Clock"), complete("Found the loans."), (request) => {
+      taskProcessing: { process: { columns: ["title", "due"] } },
+      script: [findLoans("Atlas"), complete("Found the loans."), (request) => {
         said.push(JSON.stringify(request.context.evidenceLoop?.evidence ?? null));
         return findLoans("Clock", "find.clock");
       }, complete("Found the loans with Clock.")],
       answers: (event) => {
         if (event.type !== "check_needed") return undefined;
         checks += 1;
-        return checks === 1 ? { type: "check_answer", eventId: event.eventId, pass: false, reason: "Read the current loan list once more before accepting it." } : { type: "check_answer", eventId: event.eventId, pass: true };
+        return checks === 1 ? { type: "check_answer", eventId: event.eventId, pass: false, reason: "those are not the loans whose title has Clock" } : { type: "check_answer", eventId: event.eventId, pass: true };
       }
     });
     expectContractShapes(run);
-    expect(said[0]).toContain("Read the current loan list once more before accepting it.");
+    expect(said[0]).toContain("those are not the loans whose title has Clock");
     expect(checks).toBe(2);
     expect(run.result).toMatchObject({ status: "achieved", verdict: { label: "confirmed", by: "check" } });
     expect(run.judgeCalls).toHaveLength(0);

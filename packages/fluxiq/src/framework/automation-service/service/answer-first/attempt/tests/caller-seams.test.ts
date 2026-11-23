@@ -163,7 +163,7 @@ describe("a caller's person port and scope", () => {
     // asked once when the attempt starts, before the press, and never at the press (t976).
     const attempt = await scriptedAttempt({
       instruction: "Renew the card on my library account.",
-      taskProcessing: { process: null },
+      taskProcessing: null,
       taskActs: ["send_or_publish"],
       script: [runNode("card", RENEW_CARD, {}, ["send_or_publish"], { add: true }), complete("Renewed the card.")],
       before: (service) => drivenBy(service, () => ({

@@ -55,7 +55,7 @@ describe("rows skipped as already done", () => {
     const lane = await laterAttempts(cleanups, { titles: TITLES });
     // Not added to the Flow, so nothing is run before the rounds, and only its record carries.
     await lane.attempt({ ...TIGHT, script: [readLoans("read", {}), press(ATLAS, {}), press(BIRDS, {})] });
-    const second = await lane.attempt({ ...PERMITTED, script: [press(CLOCKS, {}), press(DUNES, {}), complete("All renewed.")] });
+    const second = await lane.attempt({ ...PERMITTED, script: [readLoans("list"), press(CLOCKS, {}), press(DUNES, {}), complete("All renewed and listed.")] });
     expect(second.answer.attempt.status).toBe("achieved");
     expect(second.answer.result).not.toHaveProperty("skippedAsDone");
     expect(second.answer.result?.acts).toHaveLength(4);

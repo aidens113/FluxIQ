@@ -20,3 +20,17 @@ it("saves actual full retained schema and identity metadata separately from disp
   if (!output) throw new Error("The actual writer omitted the canonical record output");
   expect(JSON.parse(output.value)).toMatchObject({ schema: { ...SCHEMA, fields: SCHEMA.fields.filter((field) => field.handling !== "exclude") }, process: { columns: ["title"], declaration: { version: 1 } } });
 });
+
+it("never invents a record output on a ready step whose node was given none, so its saved steps still assemble", () => {
+  const p = automaticFeed({ where: [{ field: "promoted", equals: "false" }], columns: ["title"] });
+  const step = p.read("one", [{ id: "a", title: "A", promoted: false, price: "$2" }]);
+  const parameters = step.input.parameters;
+  if (!parameters || typeof parameters !== "object" || Array.isArray(parameters)) throw new Error("Missing read parameters");
+  const { recordOutput: _none, ...rest } = parameters;
+  step.input = { ...step.input, parameters: rest };
+  delete step.settings;
+  const before = structuredClone(step);
+  expect(p.feed.storedProcessing()).toMatchObject({ columns: ["title"] });
+  const saved = automationStudioAnswerFirstStepsWithResultProcessing({ result: p.feed, steps: p.steps });
+  expect(saved[0]).toEqual(before);
+});

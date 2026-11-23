@@ -14,7 +14,7 @@ const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
 
 const TITLES = ["Atlas of Rivers", "Birds of the Coast", "Clockmaking", "Dune Walks"];
-const PERMITTED = { instruction: "Renew a loan on my library account.", taskProcessing: { process: null }, permittedConsequences: ["modify_existing" as const] };
+const PERMITTED = { instruction: "Renew a loan on my library account.", taskProcessing: null, permittedConsequences: ["modify_existing" as const] };
 const press = (title: string) => runNode(`renew.${title.replace(/\W+/gu, "-")}`, RENEW_LOAN, { title }, ["modify_existing"], {});
 const UNLISTED = "Zephyr Tales";
 

@@ -50,8 +50,8 @@ export type AutomationStudioAnswerFirstFlowRunPorts = {
   permissions: Pick<AutomationStudioFlowBootstrapActionPermissions, "planStep" | "shown"> & { exploredToggles?: Pick<AutomationStudioFlowBootstrapActionPermissions["exploredToggles"], "trial"> | undefined };
   /** Every actual assembled consequence, together, before the start question and any run or witness read. */
   starting?: ((classes: readonly string[]) => Promise<void>) | undefined;
-  /** One call really reached the target. */
-  stepped(): void;
+  /** One call is about to reach the target: awaited before it goes, so what the run read so far can be kept first. */
+  stepped(): void | Promise<void>;
   /** The run moved the page, so the attempt carries on from where it left it. */
   arrived(): void;
   /**

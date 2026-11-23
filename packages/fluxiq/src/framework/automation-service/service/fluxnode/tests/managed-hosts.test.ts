@@ -49,7 +49,7 @@ function deferred() {
   return { promise, resolve: () => settle() };
 }
 
-/** Either mapped input may explore first; declare that actual call's public title binding. */
+/** Either mapped input may explore first; after its read, declare that actual call's public title binding. */
 const declareTitle = (request: Parameters<typeof titleAsked>[0]) => toolCall("declare.result-processing", "core.set_result_processing", { process: { where: [{ field: "title", contains: { $input: "title", test: titleAsked(request) } }], columns: ["title", "due"] }, why: "Return the loans matching this mapped call's title input." });
 
 function owners(onRelease: (ordinal: number) => Promise<void> = async () => undefined) {
@@ -108,10 +108,10 @@ describe("leased FluxNode leaf execution", () => {
       steps: [{ id: "find", kind: "map", target: { fluxNode: "library.find-loans" }, inputs: { title: { field: "title" } }, concurrency: 2, as: "found" }] });
     if (!pipeline.ok) throw new Error("The fixture pipeline is invalid.");
     // Either call may explore (`explores`), so the scripted model finds what the call it answers was asked for.
-    const result = await lane.run({ pipeline: pipeline.value, inputs: { titles: [{ title: "Atlas" }, { title: "Clock" }] } }, { script: [declareTitle, (request) => {
+    const result = await lane.run({ pipeline: pipeline.value, inputs: { titles: [{ title: "Atlas" }, { title: "Clock" }] } }, { script: [(request) => {
       expect(AutomationStudioHostLeaseScope.current()?.sessionId).toBe("isolated-one");
       return findLoansAsked(request);
-    }, complete("Found the loans.")] });
+    }, declareTitle, complete("Found the loans.")] });
     expect(result.result.status).toBe("achieved");
     expect(result.result.outputs).toEqual([
       { title: "Atlas", found: { loans: [{ title: "Atlas of Rivers", due: "2030-01-01" }] } },
@@ -133,10 +133,10 @@ describe("leased FluxNode leaf execution", () => {
       steps: [{ id: "find", kind: "map", target: { fluxNode: "library.find-loans" }, inputs: { title: { field: "title" } }, concurrency: 2, as: "found" }] });
     if (!pipeline.ok) throw new Error("The fixture pipeline is invalid.");
     const explored: string[] = [];
-    const result = await lane.run({ pipeline: pipeline.value, inputs: { titles: [{ title: "Atlas" }, { title: "Clock" }] } }, { script: [declareTitle, (request) => {
+    const result = await lane.run({ pipeline: pipeline.value, inputs: { titles: [{ title: "Atlas" }, { title: "Clock" }] } }, { script: [(request) => {
       explored.push(titleAsked(request));
       return findLoansAsked(request);
-    }, complete("Found the loans.")] });
+    }, declareTitle, complete("Found the loans.")] });
     expect(result.result.status).toBe("achieved");
     expect(explored).toEqual([first]);
     // The later call replays the Flow the first saved, on its own title: the engine pressed "Find loans" once, with it.

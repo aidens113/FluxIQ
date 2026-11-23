@@ -15,27 +15,35 @@ afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(
 const read = (callId: string, over: Record<string, string> = {}) => runNode(callId, READ_LOANS, over, [], { add: true });
 
 describe("a completion and its judge never end a task", () => {
+  // Changed by t984: a data task's completion with nothing read is refused by its data stage before any judge is asked
+  // (`../../../result-feed/stage.ts`), so the give-up goes back as missing data evidence, never as a judge's no, and the
+  // one judged completion is the one that holds the rows.
   it("a completion that says it cannot be done keeps going, and reaches the result", async () => {
+    let refusal = "";
     const attempt = await scriptedAttempt({
-      judge: [judgedNo("It says this cannot be done, and nothing was looked at.")],
+      taskProcessing: { process: {} },
       script: [
         complete("This cannot be done.", "It cannot be done."),
         (request) => {
-          expect(JSON.stringify(request.context.evidenceLoop?.evidence)).toContain("answer_first.judged_no");
+          refusal = JSON.stringify(request.context.evidenceLoop?.evidence);
           return read("read");
         },
         complete("Listed every loan.")
       ]
     }, cleanups);
+    expect(refusal).toMatch(/answer_first\.processing_[a-z_]+/u);
+    expect(refusal).not.toContain("answer_first.judged_");
     const answer = expectReached(attempt);
-    expect(answer.result).toMatchObject({ kind: "rows", timesChecked: 2 });
+    expect(answer.result).toMatchObject({ kind: "rows", timesChecked: 1 });
     expect(answer.result?.rows?.totalRows).toBe(3);
+    expect(judgeCalls(attempt)).toHaveLength(1);
     expectPresses(attempt, {});
   });
 
   it("a judge's no goes back with its reason, and the task reaches its result", async () => {
     const library = fakeLibrary();
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       library,
       judge: [judgedNo("One of the loans is missing.")],
       script: [
@@ -57,6 +65,7 @@ describe("a completion and its judge never end a task", () => {
   it("a judge's unsure keeps it looking for evidence, and the task reaches its result", async () => {
     const library = fakeLibrary();
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       library,
       judge: [judgedUnsure()],
       script: [
@@ -77,6 +86,7 @@ describe("a completion and its judge never end a task", () => {
 
   it("a judge that gave nothing is not judged: the same evidence may be asked again, and it is not a no", async () => {
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       // A no with no located defect is a reply that does not say.
       judge: [{ response: { kind: "diagnosis", summary: "Said nothing.", diagnosis: {} }, usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2, estimatedCostUsd: 0.0001 } }],
       script: [
@@ -95,6 +105,7 @@ describe("a completion and its judge never end a task", () => {
 
   it("a judge refused by the purse is a budget-out, with the best result and an honest label", async () => {
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       resolver: { maxTotalEstimatedCostUsd: 0.1 },
       keepLooking: true,
       // The completion's own reply bills far past its estimate, so what was kept back no longer pays for the check.
@@ -123,6 +134,7 @@ describe("a completion and its judge never end a task", () => {
   it("no lasting act is repeated however often a judge says no", async () => {
     const library = fakeLibrary();
     const attempt = await scriptedAttempt({
+      taskProcessing: null,
       library,
       instruction: "Renew the card on my library account.",
       permittedConsequences: ["modify_existing"],
