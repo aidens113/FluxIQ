@@ -785,7 +785,7 @@ describe("the policy where the result is a Flow", () => {
   // t690 (t686 fix 2): two site filters, each one word of one request phrase, keep rows meeting each word apart;
   // only a row's own text shows it meets the phrase. The example is a venue listing's, no Lab scenario's.
   it("says a site filter's option words do not show each kept row meets the request; a row's own text does", () => {
-    const sentence = "A site filter's option words do not show that each row it keeps meets the request's words; a row's own text does: on a venue listing with separate Outdoor and Weekend filters, a request for outdoor seating this weekend is still checked against each row's own text in the read's where.";
+    const sentence = "A site filter's option words do not show that each row it keeps meets the request's words; a row's own text does: on a venue listing with separate Outdoor and Weekend filters, a request for outdoor seating this weekend still needs each condition checked against row evidence, by declared result processing for data or the read's where before acting on rows.";
     expect(AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION).toContain(sentence);
     expect(sentence).not.toMatch(/shop|store|seller|retailer|pickup|cart|order|feed|social|job|towel|valueridge|auction|classified|marketplace|photo|company|professional|friend/iu);
   });
