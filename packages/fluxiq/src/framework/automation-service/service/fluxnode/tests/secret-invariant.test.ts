@@ -78,7 +78,7 @@ describe("a FluxNode's secret input is never in the caller options' inputs, nor 
       return await generate(input, caller);
     });
 
-    const first = await lane.run({ spec: secretSpec(), inputs: { title: FIRST, note: OPEN } }, { script: script(), answers: passing });
+    const first = await lane.run({ spec: secretSpec(), inputs: { title: FIRST, note: OPEN } }, { taskProcessing: { process: { where: [{ field: "title", contains: { $input: "title", test: "stand-in" } }], columns: ["title", "due"] } }, script: script(), answers: passing });
     expect(first.result).toMatchObject({ status: "achieved", path: "explored" });
     const second = await lane.run({ name: "library.find-loans", inputs: { title: SECOND, note: OPEN } }, { answers: passing });
     expect(second.result).toMatchObject({ status: "achieved", path: "replayed" });

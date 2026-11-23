@@ -57,7 +57,7 @@ describe("a pipeline maps a record field into a FluxNode's secret input", () => 
   it("withholds the value from the pipeline run's events, result, datasets, the call's own run and every file", async () => {
     const lane = await fluxNodeLane(cleanups);
     expect(await lane.fluxNodes.register(OWNER, { spec: spec() })).toMatchObject({ ok: true });
-    const run = await lane.run({ pipeline: parsed(pipeline()), inputs: { rows: [{ user: "ann", password: SECRET }] } }, { script: [writtenFind(), toolCall("forward", "core.run_flow", { from: 2 }), complete("Found the loans.")] });
+    const run = await lane.run({ pipeline: parsed(pipeline()), inputs: { rows: [{ user: "ann", password: SECRET }] } }, { taskProcessing: { process: { where: [{ field: "title", contains: { $input: "title", test: "stand-in" } }], columns: ["title", "due"] } }, script: [writtenFind(), toolCall("forward", "core.run_flow", { from: 2 }), complete("Found the loans.")] });
     expect(run.result).toMatchObject({ status: "achieved" });
     // The call itself ran with the value: its rows came back.
     expect(lane.library.calls.some((call) => (call.value.parameters as JsonObject | undefined)?.title === SECRET)).toBe(true);

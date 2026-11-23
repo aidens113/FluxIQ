@@ -46,7 +46,7 @@ describe("a pipeline maps a FluxNode over records", () => {
     const lane = await fluxNodeLane(cleanups);
     expect(await lane.fluxNodes.register(OWNER, { spec: finder() })).toMatchObject({ ok: true });
 
-    const first = await lane.run({ pipeline: REPORT, inputs: TITLES }, { script: [findLoans("Atlas"), complete("Found the loans.")] });
+    const first = await lane.run({ pipeline: REPORT, inputs: TITLES }, { taskProcessing: { process: { where: [{ field: "title", contains: { $input: "title", test: "Atlas" } }], columns: ["title", "due"] } }, script: [findLoans("Atlas"), complete("Found the loans.")] });
     expectContractShapes(first);
     const expected = [
       { title: "Atlas", found: { loans: [{ title: "Atlas of Rivers", due: "2030-01-01" }] } },
@@ -58,7 +58,7 @@ describe("a pipeline maps a FluxNode over records", () => {
     expect(first.result.outputsType).toBeUndefined();
     expect(first.result.cost.calls).toBeGreaterThan(0);
     // The second record replayed what the first learned: one exploration made every model call.
-    expect(first.decisions).toHaveLength(2);
+    expect(first.decisions).toHaveLength(3); // Explicit declaration, read, completion; the second child replays.
     expect(first.result.lineage).toEqual(expect.arrayContaining([
       expect.objectContaining({ pointer: "/0/found/loans/0", source: expect.objectContaining({ kind: "read" }) }),
       expect.objectContaining({ pointer: "/1/found/loans/0", source: expect.objectContaining({ kind: "read" }) })

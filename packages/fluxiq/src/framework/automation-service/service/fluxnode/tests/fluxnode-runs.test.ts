@@ -30,7 +30,7 @@ function expectContractShapes(run: { events: FluxNodeRunEvent[]; result: unknown
 describe("a FluxNode run is an Answer First attempt", () => {
   it("explores once to typed outputs with lineage, then replays the saved Flow on new inputs with no model call", async () => {
     const lane = await fluxNodeLane(cleanups);
-    const first = await lane.run({ spec: findLoansSpec(), inputs: { title: "Atlas" } }, { script: [findLoans("Atlas"), complete("Found the loans.")], answers: passing });
+    const first = await lane.run({ spec: findLoansSpec(), inputs: { title: "Atlas" } }, { taskProcessing: { process: { where: [{ field: "title", contains: { $input: "title", test: "Atlas" } }], columns: ["title", "due"] } }, script: [findLoans("Atlas"), complete("Found the loans.")], answers: passing });
     expectContractShapes(first);
     expect(first.result).toMatchObject({ status: "achieved", path: "explored", flowPath: "nodes/library/find-loans", verdict: { label: "confirmed", by: "check" } });
     expect(first.result.outputs).toEqual({ loans: [{ title: "Atlas of Rivers", due: "2030-01-01" }] });
@@ -52,11 +52,14 @@ describe("a FluxNode run is an Answer First attempt", () => {
   it("a declared type the outputs do not fit is a no before the program is asked, and the attempt goes on", async () => {
     const lane = await fluxNodeLane(cleanups);
     const said: string[] = [];
-    // At most one loan: a read of every loan with an "o" finds three, which the type refuses.
+    // The wrong title read has no requested Birds rows after automatic filtering,
+    // so the declared nonempty output type refuses it before asking the program.
     const spec = findLoansSpec({ outputs: { type: "object", properties: { loans: { type: "array", minItems: 1, maxItems: 1, items: { type: "object", properties: { title: { type: "string" }, due: { type: "string" } }, required: ["title", "due"] } } }, required: ["loans"] } });
-    // Changed by lane t905 (mvp-launch-plan/reports/result-evidence-design.md; `answer-first/result/output-group.ts`): the answer is what the saved Flow fills, where a second read appending to `loans` keeps the first read's rows, so the model drops the "o" read, the step its draft shows in the result, and then reads Birds.
+    // Drop the original wrong read before the corrected read, retaining the
+    // existing saved-Flow/output-group repair and final typed-output assertions.
     const run = await lane.run({ spec, inputs: { title: "Birds" } }, {
-      script: [findLoans("o"), complete("Found the loans."), (request) => {
+      taskProcessing: { process: { where: [{ field: "title", contains: { $input: "title", test: "Birds" } }], columns: ["title", "due"] } },
+      script: [findLoans("Atlas"), complete("Found the loans."), (request) => {
         said.push(JSON.stringify(request.context.evidenceLoop?.evidence ?? null));
         const draft = request.context.evidenceLoop?.evidence.find((entry) => entry.toolId === "core.flow_draft")?.value as { steps?: { step: number; inResult: boolean }[] } | undefined;
         const read = draft?.steps?.find((line) => line.inResult);
@@ -77,18 +80,21 @@ describe("a FluxNode run is an Answer First attempt", () => {
     const said: string[] = [];
     let checks = 0;
     const run = await lane.run({ spec: findLoansSpec(), inputs: { title: "Clock" } }, {
-      script: [findLoans("Atlas"), complete("Found the loans."), (request) => {
+      taskProcessing: { process: { where: [{ field: "title", contains: { $input: "title", test: "Clock" } }], columns: ["title", "due"] } },
+      // The program requests another read even though the first read fits the
+      // declared title criterion; a wrong-title read now fails the data/type gate first.
+      script: [findLoans("Clock"), complete("Found the loans."), (request) => {
         said.push(JSON.stringify(request.context.evidenceLoop?.evidence ?? null));
         return findLoans("Clock", "find.clock");
       }, complete("Found the loans with Clock.")],
       answers: (event) => {
         if (event.type !== "check_needed") return undefined;
         checks += 1;
-        return checks === 1 ? { type: "check_answer", eventId: event.eventId, pass: false, reason: "those are not the loans whose title has Clock" } : { type: "check_answer", eventId: event.eventId, pass: true };
+        return checks === 1 ? { type: "check_answer", eventId: event.eventId, pass: false, reason: "Read the current loan list once more before accepting it." } : { type: "check_answer", eventId: event.eventId, pass: true };
       }
     });
     expectContractShapes(run);
-    expect(said[0]).toContain("those are not the loans whose title has Clock");
+    expect(said[0]).toContain("Read the current loan list once more before accepting it.");
     expect(checks).toBe(2);
     expect(run.result).toMatchObject({ status: "achieved", verdict: { label: "confirmed", by: "check" } });
     expect(run.judgeCalls).toHaveLength(0);
@@ -96,7 +102,7 @@ describe("a FluxNode run is an Answer First attempt", () => {
 
   it("judge off with no check and no type is achieved and unverified, with Core's records and their inferred type", async () => {
     const lane = await fluxNodeLane(cleanups);
-    const run = await lane.run({ spec: findLoansSpec({ hasCheck: false, outputs: undefined, options: { judge: "off" } }), inputs: { title: "Birds" } }, { script: [findLoans("Birds"), complete("Found the loans.")] });
+    const run = await lane.run({ spec: findLoansSpec({ hasCheck: false, outputs: undefined, options: { judge: "off" } }), inputs: { title: "Birds" } }, { taskProcessing: { process: { where: [{ field: "title", contains: { $input: "title", test: "Birds" } }], columns: ["title", "due"] } }, script: [findLoans("Birds"), complete("Found the loans.")] });
     expectContractShapes(run);
     expect(run.judgeCalls).toHaveLength(0);
     expect(run.events.some((event) => event.type === "check_needed")).toBe(false);

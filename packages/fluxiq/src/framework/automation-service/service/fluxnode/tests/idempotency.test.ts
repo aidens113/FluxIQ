@@ -39,7 +39,7 @@ describe("a FluxNode idempotency key", () => {
     await expect(lane.fluxNodes.start(OWNER, body)).rejects.toThrow("registration broke");
     expect((await readdir(lane.dataDir, { recursive: true })).filter((file) => file.endsWith(".owner"))).toHaveLength(0);
     add.mockRestore();
-    const again = await lane.run(body, { script: script() });
+    const again = await lane.run(body, { taskProcessing: null, script: script() });
     expect(again.result.status).toBe("achieved");
     expect(lane.library.renewals.card).toBe(1);
   });
@@ -54,7 +54,7 @@ describe("a FluxNode idempotency key", () => {
     await vi.waitFor(async () => expect((await readdir(lane.dataDir, { recursive: true })).filter((file) => file.endsWith(".owner"))).toHaveLength(0));
     generating.mockRestore();
     fallback.mockRestore();
-    const again = await lane.run({ name: "library.keyed-card", inputs: { note: "new execution" } }, { script: script() });
+    const again = await lane.run({ name: "library.keyed-card", inputs: { note: "new execution" } }, { taskProcessing: null, script: script() });
     expect(again.result.status).toBe("achieved");
   });
 
@@ -65,7 +65,7 @@ describe("a FluxNode idempotency key", () => {
     expect(first.result.status).toBe("budget_out");
     await vi.waitFor(async () => expect((await readdir(lane.dataDir, { recursive: true })).filter((file) => file.endsWith(".owner"))).toHaveLength(0));
     const owning = lane.fluxNodes;
-    lane.arm({ script: [complete("Saved.")] });
+    lane.arm({ taskProcessing: null, script: [complete("Saved.")] });
     const resumed = await owning.start(OWNER, request({ resumeHandle: first.result.resumeHandle }));
     if (!resumed.ok) throw new Error(resumed.refusal.code);
     const events = await owning.events(OWNER, resumed.value.runId, 0, new AbortController().signal);
@@ -89,7 +89,7 @@ describe("a FluxNode idempotency key", () => {
     const lane = await fluxNodeLane(cleanups);
     const first = await lane.run({ spec: spec(), inputs: { note: "first note" }, options: { budgetUsd: 0.001 }, idempotencyKey: "two-resumes" }, { script: [press()] });
     expect(first.result.status).toBe("budget_out");
-    lane.arm({ script: [complete("Saved.")] });
+    lane.arm({ taskProcessing: null, script: [complete("Saved.")] });
     const body = request({ resumeHandle: first.result.resumeHandle });
     const starts = await Promise.all([lane.fluxNodes.start(OWNER, body), lane.fluxNodes.start(OWNER, body)]);
     const ids = starts.map((value) => {
@@ -104,7 +104,7 @@ describe("a FluxNode idempotency key", () => {
   it("still refuses changed non-secret inputs after Core restarts, before any further act", async () => {
     const lane = await fluxNodeLane(cleanups);
     const first = request({ spec: spec(), inputs: { note: "first note" }, idempotencyKey: "card-1" });
-    await lane.run(first, { script: script() });
+    await lane.run(first, { taskProcessing: null, script: script() });
     await lane.restartCore();
     const changed = await lane.fluxNodes.start(OWNER, { ...first, inputs: { note: "other note" } });
     if (changed.ok) {
@@ -117,7 +117,7 @@ describe("a FluxNode idempotency key", () => {
 
   it("allocates one execution for concurrent starts of the same key", async () => {
     const lane = await fluxNodeLane(cleanups);
-    lane.arm({ script: [...script(), ...script()] });
+    lane.arm({ taskProcessing: null, script: [...script(), ...script()] });
     const body = request({ spec: spec(), inputs: { note: "first note" }, idempotencyKey: "concurrent" });
     const started = await Promise.all([lane.fluxNodes.start(OWNER, body), lane.fluxNodes.start(OWNER, body)]);
     const ids = started.map((value) => {
@@ -136,7 +136,7 @@ describe("a FluxNode idempotency key", () => {
     const lane = await fluxNodeLane(cleanups);
     const secret = "fixture-credential-low-entropy";
     const body = request({ spec: spec(true), inputs: { note: secret }, idempotencyKey: "secret-binding" });
-    const first = await lane.run(body, { script: script() });
+    const first = await lane.run(body, { taskProcessing: null, script: script() });
     const rawVerifier = createHash("sha256").update(canonicalJson(JSON.parse(JSON.stringify({ key: body.idempotencyKey, request: body })))).digest("hex");
     const files = (await readdir(lane.dataDir, { recursive: true })).filter((entry) => entry.endsWith(".json"));
     for (const file of files) {

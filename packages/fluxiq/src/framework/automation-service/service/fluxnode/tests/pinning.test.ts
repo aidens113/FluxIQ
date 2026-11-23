@@ -55,7 +55,7 @@ function expectShapes(run: { events: FluxNodeRunEvent[]; result: unknown }): voi
 describe("a pinned FluxNode replays exactly its pinned Flow, and its changes wait as proposals", () => {
   it("holds a repair as a proposal, replays the pin though it waits, adopts it on the next pin, and keeps the pin across a restart", async () => {
     const lane = await fluxNodeLane(cleanups);
-    const learned = await lane.run({ spec: findLoansSpec(), inputs: { title: "Atlas" } }, { script: [findLoans("Atlas"), complete("Found the loans.")], answers: passing });
+    const learned = await lane.run({ spec: findLoansSpec(), inputs: { title: "Atlas" } }, { taskProcessing: { process: { where: [{ field: "title", contains: { $input: "title", test: "Atlas" } }], columns: ["title", "due"] } }, script: [findLoans("Atlas"), complete("Found the loans.")], answers: passing });
     expect(learned.result).toMatchObject({ status: "achieved", path: "explored" });
     expect(learned.result.pinned).toBeUndefined();
     const { flowId } = learned.result;
@@ -120,7 +120,7 @@ describe("a pinned FluxNode replays exactly its pinned Flow, and its changes wai
 
   it("holds the change of a run that was going when the pin landed, and sets the learned Flow back to the pin", async () => {
     const lane = await fluxNodeLane(cleanups);
-    const learned = await lane.run({ spec: findLoansSpec(), inputs: { title: "Atlas" } }, { script: [findLoans("Atlas"), complete("Found the loans.")], answers: passing });
+    const learned = await lane.run({ spec: findLoansSpec(), inputs: { title: "Atlas" } }, { taskProcessing: { process: { where: [{ field: "title", contains: { $input: "title", test: "Atlas" } }], columns: ["title", "due"] } }, script: [findLoans("Atlas"), complete("Found the loans.")], answers: passing });
     let pressed: () => void = () => undefined;
     const enginePressed = new Promise<void>((resolve) => { pressed = resolve; });
     let release: () => void = () => undefined;

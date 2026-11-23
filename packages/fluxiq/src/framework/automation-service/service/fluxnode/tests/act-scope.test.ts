@@ -18,7 +18,7 @@ afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(
 
 const NAME = "library.renew-card";
 const pressCard = (callId = "card") => runNode(callId, RENEW_CARD, {}, ["modify_existing"], { add: true });
-const explore = { script: [pressCard(), complete("Renewed the card.")] };
+const explore = { taskProcessing: null, script: [pressCard(), complete("Renewed the card.")] };
 const nothingAsked = (_event: FluxNodeRunEvent): FluxNodeEventAnswer | undefined => undefined;
 
 /** A FluxNode whose one act lasts: it renews the card, and takes the note its goal names. No check and no judge, so a run is its own act. */
@@ -35,7 +35,7 @@ describe("a FluxNode run's lasting act", () => {
   it("lands on four runs with other inputs, each replay using the predecessor's saved Flow at no model call", async () => {
     const lane = await fluxNodeLane(cleanups);
     let before: { projects: number; tasks: number; scopes: number; state: string | undefined; done: true | undefined } | undefined;
-    const first = await lane.run({ spec: renewCardSpec(), inputs: { note: "moving house" } }, { script: [pressCard(), async () => {
+    const first = await lane.run({ spec: renewCardSpec(), inputs: { note: "moving house" } }, { taskProcessing: null, script: [pressCard(), async () => {
       const { projects } = await lane.service.listProjects("library");
       const memory = automationStudioAnswerFirstTaskMemoryOf(lane.service, { paths: lane.service.projectPaths, projects: lane.service.projects });
       const tasks = await memory.list(projects[0]!.id);
@@ -156,9 +156,11 @@ describe("a FluxNode run's lasting act", () => {
         { id: "later", kind: "map", target: { fluxNode: later }, inputs: { note: { field: "note" } }, as: "later", concurrency: 1 }
       ] },
       inputs: { jobs: [{ note: "same note" }, { note: "same note" }] },
-      options: { budgetUsd: 0.001 }, idempotencyKey: "two-rounds"
+      options: { budgetUsd: 0.002 }, idempotencyKey: "two-rounds"
     };
-    const first = await lane.run(request, { script: [pressCard()] });
+    // The new child's real classification call precedes its press; both calls
+    // exhaust this purse while preserving the same partial-act resume boundary.
+    const first = await lane.run(request, { taskProcessing: null, script: [pressCard()] });
     expect(first.result.status).toBe("budget_out");
     expect(lane.library.renewals.card).toBe(4); // One learned separately, two complete children, one partial child.
     const resumed = await lane.run({ resumeHandle: first.result.resumeHandle });

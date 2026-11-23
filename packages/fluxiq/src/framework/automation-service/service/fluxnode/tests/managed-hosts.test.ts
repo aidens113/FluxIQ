@@ -5,7 +5,7 @@ import { setImmediate } from "node:timers/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ClientGatewayService } from "../../../../../client-gateway/index.ts";
 import { AutomationStudioHostLeaseScope } from "../../../../../runtime/project-agents/host-resources/index.ts";
-import { complete } from "../../answer-first/tests/fake-library.ts";
+import { complete, toolCall } from "../../answer-first/tests/fake-library.ts";
 import { createFluxNodeService } from "../create-fluxnode-service.ts";
 import * as acts from "../act-scope/index.ts";
 import { FluxNodeHostPool } from "../hosts/index.ts";
@@ -48,6 +48,9 @@ function deferred() {
   const promise = new Promise<void>((resolve) => { settle = resolve; });
   return { promise, resolve: () => settle() };
 }
+
+/** Either mapped input may explore first; declare that actual call's public title binding. */
+const declareTitle = (request: Parameters<typeof titleAsked>[0]) => toolCall("declare.result-processing", "core.set_result_processing", { process: { where: [{ field: "title", contains: { $input: "title", test: titleAsked(request) } }], columns: ["title", "due"] }, why: "Return the loans matching this mapped call's title input." });
 
 function owners(onRelease: (ordinal: number) => Promise<void> = async () => undefined) {
   const original = acts.fluxNodeExecutionOwner;
@@ -105,7 +108,7 @@ describe("leased FluxNode leaf execution", () => {
       steps: [{ id: "find", kind: "map", target: { fluxNode: "library.find-loans" }, inputs: { title: { field: "title" } }, concurrency: 2, as: "found" }] });
     if (!pipeline.ok) throw new Error("The fixture pipeline is invalid.");
     // Either call may explore (`explores`), so the scripted model finds what the call it answers was asked for.
-    const result = await lane.run({ pipeline: pipeline.value, inputs: { titles: [{ title: "Atlas" }, { title: "Clock" }] } }, { script: [(request) => {
+    const result = await lane.run({ pipeline: pipeline.value, inputs: { titles: [{ title: "Atlas" }, { title: "Clock" }] } }, { script: [declareTitle, (request) => {
       expect(AutomationStudioHostLeaseScope.current()?.sessionId).toBe("isolated-one");
       return findLoansAsked(request);
     }, complete("Found the loans.")] });
@@ -130,7 +133,7 @@ describe("leased FluxNode leaf execution", () => {
       steps: [{ id: "find", kind: "map", target: { fluxNode: "library.find-loans" }, inputs: { title: { field: "title" } }, concurrency: 2, as: "found" }] });
     if (!pipeline.ok) throw new Error("The fixture pipeline is invalid.");
     const explored: string[] = [];
-    const result = await lane.run({ pipeline: pipeline.value, inputs: { titles: [{ title: "Atlas" }, { title: "Clock" }] } }, { script: [(request) => {
+    const result = await lane.run({ pipeline: pipeline.value, inputs: { titles: [{ title: "Atlas" }, { title: "Clock" }] } }, { script: [declareTitle, (request) => {
       explored.push(titleAsked(request));
       return findLoansAsked(request);
     }, complete("Found the loans.")] });
@@ -283,7 +286,7 @@ describe("leased FluxNode leaf execution", () => {
     const pipeline = parseDataPipeline({ name: "library.shutdown-report", source: { kind: "input", field: "titles" },
       steps: [{ id: "find", kind: "map", target: { fluxNode: "library.find-loans" }, inputs: { title: { field: "title" } }, as: "found" }] });
     if (!pipeline.ok) throw new Error("The fixture pipeline is invalid.");
-    const running = lane.run({ pipeline: pipeline.value, inputs: { titles: [{ title: "Atlas" }] } }, { script: [findLoans("Atlas"), complete("Found.")] });
+    const running = lane.run({ pipeline: pipeline.value, inputs: { titles: [{ title: "Atlas" }] } }, { taskProcessing: { process: { where: [{ field: "title", contains: { $input: "title", test: "Atlas" } }], columns: ["title", "due"] } }, script: [findLoans("Atlas"), complete("Found.")] });
     const service = lane.fluxNodes as typeof lane.fluxNodes & { close?: () => Promise<void> };
     let closing: Promise<void> | undefined;
     try {
@@ -341,7 +344,7 @@ describe("leased FluxNode leaf execution", () => {
     ]));
     expect(released()).toBe(1);
     expect(f.releases()).toBe(1);
-    const unrelated = lane.run({ spec: findLoansSpec({ name: "library.unrelated-cleanup", hasCheck: false, options: { judge: "off" } }), inputs: { title: "Atlas" } }, { script: [findLoans("Atlas"), complete("Found.")] });
+    const unrelated = lane.run({ spec: findLoansSpec({ name: "library.unrelated-cleanup", hasCheck: false, options: { judge: "off" } }), inputs: { title: "Atlas" } }, { taskProcessing: { process: { where: [{ field: "title", contains: { $input: "title", test: "Atlas" } }], columns: ["title", "due"] } }, script: [findLoans("Atlas"), complete("Found.")] });
     let closing: Promise<void> | undefined;
     try {
       await Promise.race([ownerEntered.promise, unrelated.then(() => { throw new Error("The unrelated run ended before its owner cleanup was observed."); })]);

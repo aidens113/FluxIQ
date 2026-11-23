@@ -37,7 +37,7 @@ describe("the FluxNode service's bookkeeping", () => {
   it("an idempotency key answers the run it started, and refuses another request", async () => {
     const lane = await fluxNodeLane(cleanups);
     const request = { spec: unchecked(), inputs: { title: "Atlas" }, idempotencyKey: "order-17" };
-    const run = await lane.run(request, { script: [findLoans("Atlas"), complete("Found the loans.")] });
+    const run = await lane.run(request, { taskProcessing: { process: { where: [{ field: "title", contains: { $input: "title", test: "Atlas" } }], columns: ["title", "due"] } }, script: [findLoans("Atlas"), complete("Found the loans.")] });
     const repeated = await lane.fluxNodes.start(OWNER, { ...request, spec: fluxNodeSpecSchema.parse(request.spec) });
     expect(repeated).toMatchObject({ ok: true, value: { runId: run.result.runId, state: "achieved" } });
     expect(await lane.fluxNodes.start(OWNER, { ...request, spec: fluxNodeSpecSchema.parse(request.spec), inputs: { title: "Birds" } })).toMatchObject({ ok: false, refusal: { code: "idempotency_conflict" } });
@@ -63,7 +63,7 @@ describe("the FluxNode service's bookkeeping", () => {
 
   it("an export carries the Flow in the contract's format, and a pin is recorded", async () => {
     const lane = await fluxNodeLane(cleanups);
-    const run = await lane.run({ spec: unchecked(), inputs: { title: "Atlas" } }, { script: [findLoans("Atlas"), complete("Found the loans.")] });
+    const run = await lane.run({ spec: unchecked(), inputs: { title: "Atlas" } }, { taskProcessing: { process: { where: [{ field: "title", contains: { $input: "title", test: "Atlas" } }], columns: ["title", "due"] } }, script: [findLoans("Atlas"), complete("Found the loans.")] });
     const exported = await lane.fluxNodes.exportFlow(OWNER, "library.find-loans", { pin: true });
     expect(exported.ok).toBe(true);
     if (!exported.ok) return;
@@ -75,7 +75,7 @@ describe("the FluxNode service's bookkeeping", () => {
 
   it("explore starts fresh with the model, and the learned Flow it did not use is still the one auto replays", async () => {
     const lane = await fluxNodeLane(cleanups);
-    const learn = await lane.run({ spec: unchecked(), inputs: { title: "Atlas" } }, { script: [findLoans("Atlas"), complete("Found the loans.")] });
+    const learn = await lane.run({ spec: unchecked(), inputs: { title: "Atlas" } }, { taskProcessing: { process: { where: [{ field: "title", contains: { $input: "title", test: "Atlas" } }], columns: ["title", "due"] } }, script: [findLoans("Atlas"), complete("Found the loans.")] });
     expect(learn.result).toMatchObject({ status: "achieved", path: "explored" });
     const fresh = await lane.run({ name: "library.find-loans", inputs: { title: "Birds" }, options: { mode: "explore" } }, { script: [findLoans("Birds"), complete("Found the loans.")] });
     expect(fresh.result).toMatchObject({ status: "achieved", path: "explored", flowId: learn.result.flowId });

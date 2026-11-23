@@ -12,6 +12,7 @@ import type { FluxNodeEventAnswer, FluxNodeRunEvent, FluxNodeRunRequest, FluxNod
 import { parseFluxNodeRunRequest } from "@fluxiq/contracts/fluxnode";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult, AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
+import type { AutomationStudioFlowTaskProcessing } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../../../runtime/native-nodes/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationNodeExecutionResult, type AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
@@ -72,6 +73,15 @@ export function titleAsked(request: AutomationStudioLlmTaskRequest): string {
 export const findLoansAsked = (request: AutomationStudioLlmTaskRequest): JsonObject => findLoans(titleAsked(request));
 
 type Decision = JsonObject | ((request: AutomationStudioLlmTaskRequest) => JsonObject | Promise<JsonObject>);
+type Script = { script?: readonly Decision[]; taskProcessing?: AutomationStudioFlowTaskProcessing };
+
+/** Explicit fixture setup still declares through the real model tool; omitted/unknown declarations remain omitted. */
+function declaredScript(given: Script): readonly Decision[] {
+  const script = given.script ?? [];
+  const process = given.taskProcessing === null ? null : given.taskProcessing?.process;
+  if (process === undefined) return script;
+  return [toolCall("declare.result-processing", "core.set_result_processing", { process, why: "Declare this fixture task's explicit instruction criteria before returning its result." }), ...script];
+}
 
 export type FluxNodeLane = Awaited<ReturnType<typeof fluxNodeLane>>;
 
@@ -139,10 +149,10 @@ export async function fluxNodeLane(cleanups: (() => Promise<void>)[], options: {
   let nodes = fluxNodes;
 
   /** Starts a run with this script and these judge replies, answers what it asks with `answers`, and reads it to its end. */
-  const run = async (body: unknown, given: { script?: readonly Decision[]; judge?: readonly unknown[]; answers?: (event: FluxNodeRunEvent) => FluxNodeEventAnswer | undefined; onStarted?: (state: FluxNodeRunStateBody) => void | Promise<void> } = {}) => {
+  const run = async (body: unknown, given: Script & { judge?: readonly unknown[]; answers?: (event: FluxNodeRunEvent) => FluxNodeEventAnswer | undefined; onStarted?: (state: FluxNodeRunStateBody) => void | Promise<void> } = {}) => {
     const parsed = parseFluxNodeRunRequest(body);
     if (!parsed.ok) throw new Error(`a bad request in the test: ${JSON.stringify(parsed.issues)}`);
-    Object.assign(current, { script: given.script ?? [], judge: [...(given.judge ?? [])], decided: 0 });
+    Object.assign(current, { script: declaredScript(given), judge: [...(given.judge ?? [])], decided: 0 });
     const firstRequest = requests.length;
     const started = await nodes.start(OWNER, parsed.value as FluxNodeRunRequest);
     if (!started.ok) throw new Error(`start refused: ${JSON.stringify(started.refusal)}`);
@@ -165,8 +175,8 @@ export async function fluxNodeLane(cleanups: (() => Promise<void>)[], options: {
    * Sets the script and judge replies for the runs that follow, for a caller that starts runs itself (the SDK over HTTP) and
    * not through `run`. What the model and the judge were asked since then is read from the returned handle.
    */
-  const arm = (given: { script?: readonly Decision[]; judge?: readonly unknown[] } = {}) => {
-    Object.assign(current, { script: given.script ?? [], judge: [...(given.judge ?? [])], decided: 0, runId: undefined });
+  const arm = (given: Script & { judge?: readonly unknown[] } = {}) => {
+    Object.assign(current, { script: declaredScript(given), judge: [...(given.judge ?? [])], decided: 0, runId: undefined });
     const from = requests.length;
     return {
       /** Every model request since arming, whatever its kind. */
