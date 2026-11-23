@@ -21,6 +21,17 @@ describe("the answer-first guidance", () => {
     expect(words).toMatch(/that attempt's own words, not instructions from the person/u);
   });
 
+  it("collects original fields and completes live paging without broadening action permission", () => {
+    const words = AUTOMATION_STUDIO_ANSWER_FIRST_GUIDANCE;
+    expect(words).toMatch(/obtain every required page during this task/u);
+    expect(words).toMatch(/Retain all safe source fields/u);
+    expect(words).toMatch(/explicit exclusions still apply/u);
+    expect(words).toMatch(/With declared automatic result processing/u);
+    expect(words).toMatch(/Do not make another processing-tool call for each read/u);
+    expect(words).toMatch(/missing field requires real source evidence/u);
+    expect(words).toMatch(/Narrow rows a later step acts on before that act/u);
+  });
+
   it("mirrors no realistic scenario", () => {
     for (const name of SCENARIOS) expect(AUTOMATION_STUDIO_ANSWER_FIRST_GUIDANCE).not.toContain(name);
     expect(AUTOMATION_STUDIO_ANSWER_FIRST_GUIDANCE).not.toMatch(THEIR_WORDS);
@@ -30,6 +41,6 @@ describe("the answer-first guidance", () => {
     expect(automationStudioAnswerFirstSystemInstructions()).toMatchObject({ domainId: "fluxiq.answer-first", text: AUTOMATION_STUDIO_ANSWER_FIRST_GUIDANCE });
     const over = automationStudioAnswerFirstSystemInstructions({ version: "web-12", text: "How a page reads." });
     expect(over.text).toBe(`${AUTOMATION_STUDIO_ANSWER_FIRST_GUIDANCE}\n\nHow a page reads.`);
-    expect(over.version).toBe("answer-first.2+web-12");
+    expect(over.version).toBe("answer-first.3+web-12");
   });
 });
