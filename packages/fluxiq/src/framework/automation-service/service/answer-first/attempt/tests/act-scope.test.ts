@@ -13,19 +13,31 @@ const held = { attemptId: "attempt.first", flowId: "flow.first", data: record.da
 const caller = { taskKey: "task.from.code" };
 const provenance = { attemptId: held.attemptId, flowId: held.flowId, ordinal: 1, route: "build" as const, caller: { ...caller, actScope: "first" }, steps: [] };
 
-async function opening(scope: string | undefined, change: (memory: AutomationStudioAnswerFirstTaskMemory) => AutomationStudioAnswerFirstTaskMemory) {
+async function opening(scope: string | undefined, change: (memory: AutomationStudioAnswerFirstTaskMemory) => AutomationStudioAnswerFirstTaskMemory, failProcessingWrite = false) {
   const input = {
-    owner: {}, projectId: "project.1", flowId: "flow.now", instructionText: "Save it.",
+    owner: {}, projectId: "project.1", flowId: "flow.now", instructionText: failProcessingWrite ? "List every record." : "Save it.",
+    ...(failProcessingWrite ? { taskProcessing: { process: {} } } : {}),
     caller: { ...caller, ...(scope === undefined ? {} : { actScope: scope }) },
     stores: { paths: new AutomationStudioProjectPaths(undefined), projects: { ensureProjectStructure: async () => undefined } }
   } as unknown as AutomationStudioAnswerFirstAttemptInput;
   const memory = automationStudioAnswerFirstTaskMemoryOf(input.owner, input.stores);
   const taskId = automationStudioAnswerFirstTaskKey({ instructionText: input.instructionText, callerKey: caller.taskKey });
   await memory.update(input.projectId, taskId, change);
+  if (failProcessingWrite) memory.update = async () => { throw new Error("processing write unavailable"); };
   return await automationStudioAnswerFirstOpening(input, { store: { list: async () => [] }, acts: { get: async () => undefined } } as unknown as Parameters<typeof automationStudioAnswerFirstOpening>[1]);
 }
 
 describe("the act record of one execution", () => {
+  it("keeps the actual declaration when unscoped processing metadata cannot be written", async () => {
+    const result = await opening(undefined, (memory) => memory, true);
+    expect(result.processing).toMatchObject({ version: 1, revision: 1, task: { process: {} } });
+    expect(result.route.kind).toBe("build");
+  });
+
+  it("still refuses a scoped processing write failure before execution", async () => {
+    await expect(opening("first", (memory) => memory, true)).rejects.toThrow("processing write unavailable");
+  });
+
   it("propagates unreadable scoped state rather than starting empty, while unscoped chat retains recovery", async () => {
     const broken = (memory: AutomationStudioAnswerFirstTaskMemory) => ({ ...memory, actsByScope: { first: { ...held, data: { ...held.data, schemaVersion: 2 } as unknown as typeof held.data } } });
     await expect(opening("first", broken)).rejects.toThrow("stored execution state");

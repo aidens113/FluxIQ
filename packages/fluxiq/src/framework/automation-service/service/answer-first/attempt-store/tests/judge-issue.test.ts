@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { automationStudioTaskAttemptNoLoopsCaught } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../../../../core/index.ts";
-import { automationStudioFlowLessJudgedSummary, automationStudioResultVerdict } from "../../../../../../runtime/result-verification/index.ts";
+import { automationStudioFlowLessJudgedSummary, automationStudioResultVerdict, type AutomationStudioFlowLessSummary } from "../../../../../../runtime/result-verification/index.ts";
 import { AutomationStudioAnswerFirstAttemptStore, type AutomationStudioAnswerFirstAttemptRecord } from "../index.ts";
 import { automationStudioAnswerFirstCarriedOpening } from "../../carry-on/index.ts";
 import { automationStudioAnswerFirstTrailsOf } from "../../trail/index.ts";
@@ -15,7 +15,8 @@ const PROJECTS = { ensureProjectStructure: async () => undefined } as unknown as
 const record = (): AutomationStudioAnswerFirstAttemptRecord => ({ attempt: { taskId: "task", attemptId: "attempt", ordinal: 1, projectId: "project", flowId: "flow", runId: "run", path: "explore", status: "working", spend: { calls: 0, inputTokens: 0, outputTokens: 0, usd: 0, ms: 0 }, budget: { usd: 5 }, liveSteps: 1, loopsCaught: automationStudioTaskAttemptNoLoopsCaught(), startedAtMs: 1 }, tried: { version: 1, tried: [], approaches: 0 } });
 const OPTIONS = { judgeEvidenceVersion: 1 as const, deniedEvidenceKeys: [] as readonly string[], projectJudgeEvidence: (input: { evidence: unknown }) => ({ role: "observation" as const, evidence: { checked: ((input.evidence as JsonObject).evidence as JsonObject).checked ?? false } }) };
 async function setup() {
-  const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-judge-issue-")); roots.push(root);
+  const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-judge-issue-"));
+  roots.push(root);
   const open = () => new AutomationStudioAnswerFirstAttemptStore({ root }, { flowDirectory: () => root }, PROJECTS);
   const store = open();
   const journal = automationStudioAnswerFirstTrailsOf({});
@@ -93,7 +94,7 @@ it("retains historical uncertainty while independently complete current action p
   const held = (await p.open().get("project", "flow", "attempt"))!;
   const journal = automationStudioAnswerFirstTrailsOf({});
   const trail = journal.of("attempt", { carriedOn: true, askedAgain: false, judgeEvidence: held.judgeEvidence ?? null, judgeEvidenceIssue: held.judgeEvidenceIssue ?? null });
-  const current = { instructions: "Set the preference to checked", acts: [{ id: "actual.act", what: "Changed the preference", where: "Settings", classes: ["modify_existing"], state: "landed" as const }], trail, witnesses: journal.witnesses(trail, { after: { checked: true } }) };
+  const current: AutomationStudioFlowLessSummary = { instructions: "Set the preference to checked", acts: [{ id: "actual.act", what: "Changed the preference", where: "Settings", classes: ["modify_existing"], state: "landed" }], trail, witnesses: journal.witnesses(trail, { after: { checked: true } }) };
   const proof = automationStudioFlowLessJudgedSummary(current, [], OPTIONS);
   expect(proof.sent.evidenceProjection?.missing).toEqual([]);
   expect(JSON.stringify(proof.sent)).toContain("historical_incomplete");
@@ -108,7 +109,9 @@ it("preserves malformed issue metadata as explicit unknown without losing the st
   const p = await setup();
   const file = path.join(p.root, "answer-attempts.json");
   const raw = JSON.parse(await readFile(file, "utf8"));
-  raw.attempts[0].judgeEvidenceIssue = { version: 2, receipt: "invalid" };
+  expect(raw.version).toBe(1);
+  expect(raw.data.attempts).toHaveLength(1);
+  raw.data.attempts[0].judgeEvidenceIssue = { version: 2, receipt: "invalid" };
   await writeFile(file, JSON.stringify(raw));
   const held = (await p.open().get("project", "flow", "attempt"))!;
   expect(held.judgeEvidenceIssue).toBeNull();

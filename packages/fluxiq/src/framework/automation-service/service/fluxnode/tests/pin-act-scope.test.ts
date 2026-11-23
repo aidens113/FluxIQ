@@ -12,7 +12,7 @@ it("retains a keyed execution's act ownership when pin state changes before full
   const lane = await fluxNodeLane(cleanups);
   const spec = { name: "library.pin-scope", runtime: "library", start: "library://account", goal: "Renew the card.", scope: { acts: ["change"] }, options: { judge: "off" } };
   const request = { spec, inputs: {}, idempotencyKey: "before-pin" };
-  await lane.run(request, { script: [runNode("save", RENEW_CARD, {}, ["modify_existing"], { add: true }), complete("Saved.")] });
+  await lane.run(request, { taskProcessing: null, script: [runNode("save", RENEW_CARD, {}, ["modify_existing"], { add: true }), complete("Saved.")] });
   await lane.run({ name: spec.name, inputs: {} });
   expect(lane.library.renewals.card).toBe(2);
   expect(await lane.fluxNodes.exportFlow(OWNER, spec.name, { pin: true })).toMatchObject({ ok: true });
@@ -27,13 +27,13 @@ it("refuses to bind an old key to a newly registered resolved spec after restart
   const lane = await fluxNodeLane(cleanups);
   const spec = { name: "library.changed-target", runtime: "library", start: "library://account", goal: "Renew the card.", scope: { acts: ["change"] }, options: { judge: "off" } };
   const script = [runNode("save", RENEW_CARD, {}, ["modify_existing"], { add: true }), complete("Saved.")];
-  await lane.run({ spec, inputs: {} }, { script });
+  await lane.run({ spec, inputs: {} }, { taskProcessing: null, script });
   const request = { name: spec.name, inputs: {}, idempotencyKey: "before-target-change" };
   await lane.run(request);
   expect(lane.library.renewals.card).toBe(2);
   expect(await lane.fluxNodes.register(OWNER, { spec: fluxNodeSpecSchema.parse({ ...spec, goal: "Renew the card and record it." }) })).toMatchObject({ ok: true });
   await lane.restartCore();
-  lane.arm({ script });
+  lane.arm({ taskProcessing: null, script });
   const parsed = parseFluxNodeRunRequest(request);
   if (!parsed.ok) throw new Error("Invalid fixture request.");
   const started = await lane.fluxNodes.start(OWNER, parsed.value);
@@ -50,7 +50,7 @@ it("refuses a changed named child target when the same parent execution restarts
   const lane = await fluxNodeLane(cleanups);
   const spec = { name: "library.changed-child", runtime: "library", start: "library://account", goal: "Renew the card.", scope: { acts: ["change"] }, options: { judge: "off" } };
   const script = [runNode("save", RENEW_CARD, {}, ["modify_existing"], { add: true }), complete("Saved.")];
-  await lane.run({ spec, inputs: {} }, { script });
+  await lane.run({ spec, inputs: {} }, { taskProcessing: null, script });
   const request = {
     pipeline: { name: "library.fixed-child-invocation", source: { kind: "input", field: "rows" }, steps: [{ id: "save", kind: "map", target: { fluxNode: spec.name }, inputs: {}, concurrency: 1 }] },
     inputs: { rows: [{ job: "first" }] }, idempotencyKey: "parent-before-child-change"
@@ -59,7 +59,7 @@ it("refuses a changed named child target when the same parent execution restarts
   expect(lane.library.renewals.card).toBe(2);
   expect(await lane.fluxNodes.register(OWNER, { spec: fluxNodeSpecSchema.parse({ ...spec, goal: "Renew the card and record it." }) })).toMatchObject({ ok: true });
   await lane.restartCore();
-  lane.arm({ script });
+  lane.arm({ taskProcessing: null, script });
   const parsed = parseFluxNodeRunRequest(request);
   if (!parsed.ok) throw new Error("Invalid fixture request.");
   const started = await lane.fluxNodes.start(OWNER, parsed.value);
@@ -77,8 +77,8 @@ it("retains an admitted child version during a run and resolves a fresh version 
   const source = "library.paused-source";
   const spec = { name: "library.admitted-child", runtime: "library", start: "library://account", goal: "Renew the card.", scope: { acts: ["change"] }, options: { judge: "off" } };
   const script = [runNode("save", RENEW_CARD, {}, ["modify_existing"], { add: true }), complete("Saved.")];
-  const learned = await lane.run({ spec, inputs: {} }, { script });
-  await lane.run({ spec: findLoansSpec({ name: source, hasCheck: false, options: { judge: "off" }, outputs: { type: "array", items: { type: "object", properties: { title: { type: "string" }, due: { type: "string" } }, required: ["title", "due"] } } }), inputs: { title: "" } }, { script: [findLoans(""), complete("Read the source.")] });
+  const learned = await lane.run({ spec, inputs: {} }, { taskProcessing: null, script });
+  await lane.run({ spec: findLoansSpec({ name: source, hasCheck: false, options: { judge: "off" }, outputs: { type: "array", items: { type: "object", properties: { title: { type: "string" }, due: { type: "string" } }, required: ["title", "due"] } } }), inputs: { title: "" } }, { taskProcessing: { process: { columns: ["title", "due"] } }, script: [findLoans(""), complete("Read the source.")] });
   let reached = (): void => undefined;
   let release = (): void => undefined;
   const reading = new Promise<void>((resolve) => { reached = resolve; });
@@ -101,7 +101,7 @@ it("retains an admitted child version during a run and resolves a fresh version 
   const children = await lane.fluxNodes.list(OWNER, { limit: 20, correlationId: first.result.runId });
   if (!children.ok) throw new Error(children.refusal.code);
   expect(children.value.runs.filter((run) => run.name === spec.name).map((run) => run.specHash)).toEqual([learned.result.specHash, learned.result.specHash, learned.result.specHash]);
-  const fresh = await lane.run({ name: "library.admitted-versions", inputs: {} }, { script });
+  const fresh = await lane.run({ name: "library.admitted-versions", inputs: {} }, { taskProcessing: null, script });
   expect(fresh.result.status).toBe("achieved");
   expect(lane.library.renewals.card).toBe(7);
   const newer = await lane.fluxNodes.list(OWNER, { limit: 20, correlationId: fresh.result.runId });

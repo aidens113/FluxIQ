@@ -102,6 +102,25 @@ describe("a task's persisted starting model", () => {
     expect(await readdir(folder)).not.toContain(`${taskId}.json.unreadable`);
   });
 
+  it("costs no result when unscoped memory cannot be read or written, and stays strict for scoped execution", async () => {
+    const owner = {};
+    const stores = ports();
+    const memory = automationStudioAnswerFirstTaskMemoryOf(owner, stores);
+    await automationStudioAnswerFirstModelResolution({ owner, stores, request, resolver: resolver([]), ...task });
+    const { get, update } = memory;
+    memory.get = async () => { throw new Error("disk"); };
+    memory.update = async () => { throw new Error("disk"); };
+    const asked: string[] = [];
+    const resolved = await automationStudioAnswerFirstModelResolution({ owner, stores, request, resolver: resolver(asked), ...task });
+    // The store is unreadable, so the task's own model is unknown: the request's routed choice resolves and nothing is written.
+    expect(asked).toEqual(["claude-sonnet-5-5"]);
+    expect(resolved?.provider.metadata.model).toBe("claude-sonnet-5-5");
+    await expect(automationStudioAnswerFirstModelResolution({ owner, stores, request, resolver: resolver([]), ...task, scoped: true })).rejects.toThrow("disk");
+    memory.get = get;
+    memory.update = update;
+    expect((await memory.get("p", taskId))?.startingModel).toBe("claude-sonnet-5-5");
+  });
+
   it("delegates other authoring modes without creating task memory", async () => {
     const owner = {};
     const stores = ports();

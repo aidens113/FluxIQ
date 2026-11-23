@@ -98,7 +98,8 @@ describe("explicit compatibility and semantic reopen", () => {
     const stored: AutomationStudioRunResultSummary = JSON.parse(JSON.stringify(first));
     const original = structuredClone(stored);
     let calls = 0;
-    const reopened = automationStudioResultJudgeSummary(stored, { deniedEvidenceKeys: ["newlyPrivate"], projectJudgeEvidence: () => { calls += 1; throw new Error("a shown finding must not be projected again"); } });
+    const reopened = automationStudioResultJudgeSummary(stored, { deniedEvidenceKeys: ["newlyPrivate"], projectJudgeEvidence: () => { calls += 1;
+      throw new Error("a shown finding must not be projected again"); } });
     expect(calls).toBe(0);
     expect(reopened.trail).toEqual(first.trail);
     expect(reopened.startView).toEqual(first.startView);
@@ -120,7 +121,8 @@ describe("explicit compatibility and semantic reopen", () => {
     let calls = 0;
     for (const evidenceProjection of [null, { version: 2, missing: [] }, { version: 1, missing: "bad" }]) {
       const stored = { ...base(), evidenceProjection } as unknown as AutomationStudioRunResultSummary;
-      const shown = automationStudioResultJudgeSummary(stored, { deniedEvidenceKeys: [], projectJudgeEvidence: () => { calls += 1; return { role: "observation", evidence: {} }; } });
+      const shown = automationStudioResultJudgeSummary(stored, { deniedEvidenceKeys: [], projectJudgeEvidence: () => { calls += 1;
+        return { role: "observation", evidence: {} }; } });
       expect(shown.evidenceProjection?.missing).toContainEqual({ source: "binding", codes: ["judge_evidence.version_invalid"] });
       expect(JSON.stringify(shown)).not.toContain("OMITTED_RAW_CAPTURE");
     }

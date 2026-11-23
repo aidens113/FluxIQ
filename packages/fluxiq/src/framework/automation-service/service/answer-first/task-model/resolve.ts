@@ -7,7 +7,7 @@ import { automationStudioAnswerFirstTaskWords } from "../attempt/index.ts";
 import { automationStudioAnswerFirstCarryOnScope } from "../carry-on/index.ts";
 import { automationStudioAnswerFirstRunAgainScope } from "../run-again/index.ts";
 import { automationStudioAnswerFirstTaskKey } from "../task-key/index.ts";
-import { automationStudioAnswerFirstTaskMemoryOf, type AutomationStudioAnswerFirstTaskMemoryPorts } from "../task-memory/index.ts";
+import { AutomationStudioAnswerFirstTaskMemoryIntegrityError, automationStudioAnswerFirstTaskMemoryOf, type AutomationStudioAnswerFirstTaskMemoryPorts } from "../task-memory/index.ts";
 
 type Resolved = AutomationStudioLlmProviderResolution | AutomationStudioLlmProvider | undefined;
 const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/u;
@@ -33,7 +33,19 @@ export async function automationStudioAnswerFirstModelResolution<Result extends 
   const taskId = held?.taskId ?? automationStudioAnswerFirstTaskKey({ instructionText: automationStudioAnswerFirstTaskWords(input), startLocation: input.startLocation, callerKey: input.callerKey });
   const memory = automationStudioAnswerFirstTaskMemoryOf(input.owner, input.stores);
   const options = { scoped: input.scoped === true };
-  const kept = await memory.get(projectId, taskId, options);
+  // Unscoped task memory is best effort, as the attempt's opening reads it: a store that cannot be read or
+  // written costs no result. A stored value Core refuses is not a failed store and still stops the task.
+  // Scoped execution state stays strict, since forgetting it could repeat a lasting act.
+  const tolerated = async <T>(work: () => Promise<T>): Promise<{ ok: true; value: T } | { ok: false }> => {
+    try {
+      return { ok: true, value: await work() };
+    } catch (error) {
+      if (options.scoped || error instanceof AutomationStudioAnswerFirstTaskMemoryIntegrityError) throw error;
+      return { ok: false };
+    }
+  };
+  const read = await tolerated(() => memory.get(projectId, taskId, options));
+  const kept = read.ok ? read.value : undefined;
   // Only an original explicit caller choice is safe historical evidence. Later calls may have escalated.
   const original = kept?.attempts.find((attempt) => attempt.ordinal === 1)?.caller?.model;
   const defaultModel = AUTOMATION_STUDIO_LLM_DEFAULT_MODEL_NAMED ? AUTOMATION_STUDIO_LLM_DEFAULT_MODEL
@@ -50,7 +62,9 @@ export async function automationStudioAnswerFirstModelResolution<Result extends 
   const model = modelOf(resolved);
   if (!validModel(model)) throw new Error("The provider returned an invalid starting model id.");
   // Existing store transaction/lock chooses one winner. Never overwrite another continuation's selection.
-  const winner = await memory.update(projectId, taskId, (current) => ({ ...current, startingModel: current.startingModel ?? model }), options);
+  const written = await tolerated(() => memory.update(projectId, taskId, (current) => ({ ...current, startingModel: current.startingModel ?? model }), options));
+  if (!written.ok) return resolved;
+  const winner = written.value;
   return winner.startingModel === model ? resolved : await resolve(winner.startingModel!);
 }
 

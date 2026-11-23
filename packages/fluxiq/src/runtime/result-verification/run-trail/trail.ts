@@ -13,8 +13,9 @@ import type { AutomationStudioResultTrail, AutomationStudioResultTrailShownStep,
 import { AUTOMATION_STUDIO_RESULT_TRAIL_NOTE } from "./note.ts";
 import { automationStudioResultTrailRepeatsOnce } from "./repeats.ts";
 import { automationStudioResultTrailScreened } from "./screen.ts";
-import { automationStudioJudgeEvidenceFinding } from "../judge-evidence/finding.ts";
+import { automationStudioJudgeEvidenceFinding } from "../judge-evidence/index.ts";
 import { automationStudioResultEvidenceScreen } from "../result-evidence/index.ts";
+import { AutomationStudioJudgeEvidenceRetry } from "../judge-evidence/index.ts";
 
 /** The trail a judge is shown, or none for no steps; `withheld` where anything in it was screened. Absent `deniedEvidenceKeys`, nobody declared them, and nothing is carried. */
 export function automationStudioResultRunTrail(steps: readonly AutomationStudioResultTrailStep[] | undefined, deniedEvidenceKeys: readonly string[] | undefined): { trail?: AutomationStudioResultTrail; withheld: boolean } {
@@ -41,7 +42,7 @@ export function automationStudioResultRunTrail(steps: readonly AutomationStudioR
     const framework = step.framework === undefined ? undefined : automationStudioResultEvidenceScreen(step.framework, deniedEvidenceKeys);
     const semantic = hasSemantic ? automationStudioJudgeEvidenceFinding(step.judgeEvidence, deniedEvidenceKeys) : undefined;
     withheld ||= framework?.withheld === true || semantic?.ok === false || (semantic?.ok === true && semantic.finding.withheld);
-    return {
+    const result: AutomationStudioResultTrailShownStep = {
       n: at + 1,
       ...(typeof callId === "string" ? { callId } : {}),
       did: words(step.did) ?? "(withheld)",
@@ -51,8 +52,13 @@ export function automationStudioResultRunTrail(steps: readonly AutomationStudioR
       ...(where !== undefined ? { where } : {}),
       ...(found !== undefined ? { found } : {}),
       ...(framework === undefined ? {} : { framework: framework.value }),
+      ...(step.judgeSource === undefined ? {} : { judgeSource: structuredClone(step.judgeSource) }),
+      ...(step.judgeSources === undefined ? {} : { judgeSources: structuredClone(step.judgeSources) }),
+      ...(step.judgeAct === undefined ? {} : { judgeAct: structuredClone(step.judgeAct) }),
       ...(semantic === undefined ? {} : { judgeEvidence: semantic.ok ? semantic.finding : { version: 1 as const, missing: [semantic.code], withheld: true } })
     };
+    AutomationStudioJudgeEvidenceRetry.carry(step, result);
+    return result;
   });
   return { trail: { note: AUTOMATION_STUDIO_RESULT_TRAIL_NOTE, entries: automationStudioResultTrailRepeatsOnce(shown) }, withheld };
 }

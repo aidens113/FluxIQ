@@ -2,9 +2,14 @@
 // run's model per role is tested on (`./model-routing.test.ts`). It resolves the model a request names, its default
 // where none is named, and throws for an id it does not know, as the host's own resolver does for an unknown model.
 import type { AutomationStudioLlmProvider, AutomationStudioLlmProviderResolution, AutomationStudioLlmProviderResolverInput, AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_DEFAULT_MODEL, AUTOMATION_STUDIO_LLM_DEFAULT_MODEL_NAMED } from "../../../../../runtime/models/catalog/index.ts";
 
-/** The model a lane resolves where neither the caller nor the Flow names one. */
-export const LANE_DEFAULT_MODEL = "lane-default";
+/**
+ * The model a lane resolves where neither the caller nor the Flow names one. Since a task keeps one starting model
+ * (t983), the role router names it on every request (`runtime/llm/role-routing/resolution.ts`): the named default, or
+ * the cheapest Claude model. Before that a request could name none, and the lane's own placeholder answered it.
+ */
+export const LANE_DEFAULT_MODEL: string = AUTOMATION_STUDIO_LLM_DEFAULT_MODEL_NAMED ? AUTOMATION_STUDIO_LLM_DEFAULT_MODEL : "claude-haiku-5-5";
 /** What each scripted call reports using, priced at the model that served it. */
 const TOKENS = { inputTokens: 10, outputTokens: 5, totalTokens: 15 };
 

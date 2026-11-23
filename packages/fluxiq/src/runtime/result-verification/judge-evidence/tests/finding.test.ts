@@ -46,4 +46,13 @@ describe("a durable semantic finding", () => {
       expect(automationStudioJudgeEvidenceFinding(value, [])).toEqual({ ok: false, code: "judge_evidence.finding_invalid" });
     }
   });
+
+  it("rejects persisted functions, non-JSON values and cycles without leaking an exception", () => {
+    const cycle: { child?: unknown } = {};
+    cycle.child = cycle;
+    for (const evidence of [() => null, 1n, Number.NaN, new Map(), new Date(), cycle]) {
+      const value = { version: 1, role: "observation", evidence, missing: [], withheld: false };
+      expect(automationStudioJudgeEvidenceFinding(value, [])).toEqual({ ok: false, code: "judge_evidence.finding_invalid" });
+    }
+  });
 });

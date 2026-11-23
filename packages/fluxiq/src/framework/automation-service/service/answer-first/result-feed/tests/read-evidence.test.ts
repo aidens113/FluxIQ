@@ -16,6 +16,15 @@ it("accepts and freshly copies a complete real source bundle", () => {
   expect(parsed?.pages[0]?.rows[0]?.title).toBe("Actual");
 });
 
+it.each([null, { version: 99, receipts: [] }, { version: 1, receipts: [null] }, { broken: () => "not cloneable" }])("keeps all valid page/account facts when optional replacement authority is unreadable %#", (sourceReplacements) => {
+  const original = bundle();
+  const parsed = readAutomationStudioAnswerFirstResultEvidence({ ...original, sourceReplacements });
+  expect(parsed).toEqual({ ...original, sourceReplacements: null });
+  expect(parsed?.pages[0]?.rows[0]?.title).toBe("Actual");
+  expect(parsed?.pages[0]?.invalidCount).toBe(0);
+  expect(parsed?.processing).toEqual(original.processing);
+});
+
 it.each([
   ["coverage null", (raw: ReturnType<typeof bundle>) => { raw.coverage = [null]; }],
   ["coverage places", (raw: ReturnType<typeof bundle>) => { raw.coverage[0].places = [42]; }],

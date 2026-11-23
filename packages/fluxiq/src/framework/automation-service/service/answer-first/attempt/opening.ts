@@ -79,7 +79,13 @@ export async function automationStudioAnswerFirstOpening(input: AutomationStudio
   const here = await automationStudioAnswerFirstBestEffort(() => stores.acts.get(projectId, flowId));
   const carried = await seedOf(projectId, kept, stores, input.caller?.actScope);
   const processing = automationStudioAnswerFirstTaskProcessing({ instructionText: input.instructionText, declared: input.taskProcessing, kept: kept?.processing, legacy: kept !== undefined && (kept.best !== undefined || kept.latest !== undefined || kept.attempts.length > 0) });
-  if (processing !== undefined && kept?.processing === undefined) await memory.update(projectId, taskId, (current) => ({ ...current, processing }), { scoped: input.caller?.actScope !== undefined });
+  if (processing !== undefined && kept?.processing === undefined) {
+    const saveProcessing = () => memory.update(projectId, taskId, (current) => ({ ...current, processing }), { scoped: input.caller?.actScope !== undefined });
+    // Unscoped memory is best effort; the live declaration survives a failed write.
+    // Scoped execution remains strict because forgotten state can repeat an act.
+    if (input.caller?.actScope === undefined) await automationStudioAnswerFirstBestEffort(saveProcessing);
+    else await saveProcessing();
+  }
   return {
     taskId, memory, route,
     processing,

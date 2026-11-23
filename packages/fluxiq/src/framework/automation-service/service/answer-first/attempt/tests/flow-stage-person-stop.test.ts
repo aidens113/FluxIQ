@@ -30,7 +30,7 @@ const robotCheck = { status: "failed" as const, route: "failed", message: "A rob
 /** A task explored once, whose kept steps are then these, and whose prompt is behind a check until `cleared`. */
 async function laneWithCheck(cleared: () => boolean) {
   const lane = await laterAttempts(cleanups);
-  await lane.attempt({ script: [readLoans(), complete("Listed.")] });
+  await lane.attempt({ taskProcessing: { process: {} }, script: [readLoans(), complete("Listed.")] });
   await lane.changeKept((current) => ({ ...current, flowId: "flow.loans", best: { attemptId: "attempt.kept", flowId: "flow.loans", steps, stepsDigest: automationStudioAnswerFirstStepsDigest(steps), label: "unverified", provenWhole: false, savedAtMs: 1, spend: { calls: 1, usd: 0.01 } } }));
   lane.target.over = ({ nodeId }) => nodeId === CLOSE_PROMPT && !cleared() ? robotCheck : undefined;
   return lane;

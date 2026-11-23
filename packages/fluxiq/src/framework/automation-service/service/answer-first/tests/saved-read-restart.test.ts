@@ -54,7 +54,7 @@ const namingItsList = () => runNode("read", READ_LOANS, { recordOutput: LOANS_OU
 describe("attempt 2 after Core restarted", () => {
   it("runs what was saved: it assembles from what the step holds, needs no model decision beyond the judge's, and reads as a run of the Flow", async () => {
     const before = await laterAttempts(cleanups, { domain: aDomain(true) });
-    const first = await before.attempt({ script: [namingItsList(), complete("Listed.")] });
+    const first = await before.attempt({ taskProcessing: { process: {} }, script: [namingItsList(), complete("Listed.")] });
     expect(first.answer.attempt).toMatchObject({ status: "achieved", path: "explore", ordinal: 1 });
     const saved = (await before.kept())?.best;
     expect(saved?.steps.length).toBeGreaterThan(0);
@@ -76,7 +76,7 @@ describe("attempt 2 after Core restarted", () => {
   it("runs under another Flow in the same process too, as the chat makes a new Flow each time", async () => {
     const domain = aDomain(true);
     const lane = await laterAttempts(cleanups, { domain });
-    await lane.attempt({ script: [namingItsList(), complete("Listed.")] });
+    await lane.attempt({ taskProcessing: { process: {} }, script: [namingItsList(), complete("Listed.")] });
     const second = await lane.attempt({ flowId: "flow.another" });
     expect(second.decisions).toHaveLength(0);
     expect(second.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow", ordinal: 2 });
@@ -84,7 +84,7 @@ describe("attempt 2 after Core restarted", () => {
 
   it("a draft from before this, holding only its handle, is repaired and not run, and the task still gets its result", async () => {
     const before = await laterAttempts(cleanups, { domain: aDomain(false) });
-    await before.attempt({ script: [namingItsList(), complete("Listed.")] });
+    await before.attempt({ taskProcessing: { process: {} }, script: [namingItsList(), complete("Listed.")] });
     await before.service.close();
     const after = await laterAttempts(cleanups, { restart: before.restart(), domain: aDomain(false) });
     const second = await after.attempt({ script: [readLoans("again"), complete("Listed.")] });

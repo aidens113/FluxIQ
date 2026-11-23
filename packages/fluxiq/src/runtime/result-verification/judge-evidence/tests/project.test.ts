@@ -46,7 +46,8 @@ describe("domain-owned semantic judge evidence", () => {
   });
 
   it("keeps safe sibling facts while screening excluded and credential-shaped cells", () => {
-    const credentialShape = "sk-" + "a".repeat(48);
+    // The existing screen intentionally requires a digit in open-ended credentials.
+    const credentialShape = "sk-" + "a".repeat(47) + "1";
     const projector: AutomationStudioJudgeEvidenceProjector = () => ({ role: "action", evidence: { amount: 3, originalId: id, privateField: "excluded", secret: credentialShape, values: [1, 2, 3] } });
     const projected = automationStudioProjectJudgeEvidence({ source: "call", evidence: {} }, projector, ["privateField"]);
     expect(projected.evidence).toEqual({ amount: 3, originalId: id, withheld: "(withheld)", secret: "(withheld)", values: [1, 2, 3] });
@@ -70,7 +71,7 @@ describe("domain-owned semantic judge evidence", () => {
       null, { role: "invented", evidence: {} }, { role: "data", evidence: {}, extra: "not a declared member" },
       { role: "data", evidence: { value: Number.NaN } }, { role: "data", evidence: { value: undefined } },
       { role: "data", evidence: new Date(0) }, { role: "data", evidence: cyclic }, { role: "action", missing: [""] },
-      { role: "action", missing: ["<private capture>"] }, { role: "action", missing: ["sk-" + "a".repeat(48)] }
+      { role: "action", missing: ["<private capture>"] }, { role: "action", missing: ["sk-" + "a".repeat(47) + "1"] }
     ];
     for (const response of invalid) {
       const projector: AutomationStudioJudgeEvidenceProjector = () => response as ReturnType<AutomationStudioJudgeEvidenceProjector>;

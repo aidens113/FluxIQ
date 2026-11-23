@@ -2,13 +2,13 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { automationStudioTaskAttemptNoLoopsCaught } from "@fluxiq/contracts/automation";
+import { automationStudioTaskAttemptNoLoopsCaught, type AutomationStudioAttemptAct } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { AutomationStudioAttemptActRecord } from "../../../../../../runtime/answer-first/act-record/index.ts";
 import { automationStudioAnswerFirstResult } from "../../../../../../runtime/answer-first/result/index.ts";
 import { automationStudioResultRunTrail, automationStudioResultSemanticTrail, type AutomationStudioJudgeEvidenceCheckpoint } from "../../../../../../runtime/result-verification/index.ts";
 import { AutomationStudioAnswerFirstAttemptStore, type AutomationStudioAnswerFirstAttemptRecord } from "../index.ts";
-import { automationStudioAnswerFirstCallChain } from "../../attempt/call-chain.ts";
+import { automationStudioAnswerFirstCallChain } from "../../attempt/index.ts";
 import { automationStudioAnswerFirstCarriedOpening } from "../../carry-on/index.ts";
 import { automationStudioAnswerFirstTrailsOf } from "../../trail/index.ts";
 import { automationStudioAnswerFirstWitnesses } from "../../witnesses/index.ts";
@@ -18,11 +18,12 @@ const roots: string[] = [];
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 }); });
 const PROJECTS = { ensureProjectStructure: async () => undefined } as unknown as ConstructorParameters<typeof AutomationStudioAnswerFirstAttemptStore>[2];
 const RAW = "RAW_CAPTURE_MUST_NOT_PERSIST";
-const ACT = { id: "act.1", what: "Updated a preference", where: "Settings", classes: ["create_new"], state: "landed" as const };
+const ACT: AutomationStudioAttemptAct = { id: "act.1", what: "Updated a preference", where: "Settings", classes: ["create_new"], state: "landed" };
 const record = (): AutomationStudioAnswerFirstAttemptRecord => ({ attempt: { taskId: "task", attemptId: "attempt", ordinal: 1, projectId: "project", flowId: "flow", runId: "run.first", path: "explore", status: "working", spend: { calls: 0, inputTokens: 0, outputTokens: 0, usd: 0, ms: 0 }, budget: { usd: 5 }, liveSteps: 1, loopsCaught: automationStudioTaskAttemptNoLoopsCaught(), startedAtMs: REFERENCE }, tried: { version: 1, tried: [], approaches: 0 }, result: { ...automationStudioAnswerFirstResult({ attemptId: "attempt", label: "unverified", timesChecked: 0, acts: [ACT], skippedAsDone: 0 }), source: "exploration" } });
 const options = { judgeEvidenceVersion: 1 as const, deniedEvidenceKeys: [] as readonly string[], projectJudgeEvidence: (input: { evidence: unknown }) => ({ role: "action" as const, evidence: { preference: ((input.evidence as JsonObject).evidence as JsonObject).preference ?? false, newlyPrivate: "old allowed semantic value" } }) };
 async function disk() {
-  const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-judge-checkpoint-")); roots.push(root);
+  const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-judge-checkpoint-"));
+  roots.push(root);
   const open = () => new AutomationStudioAnswerFirstAttemptStore({ root }, { flowDirectory: () => root }, PROJECTS);
   return { root, open, store: open() };
 }
@@ -36,7 +37,7 @@ it("saves actual call findings before cloning, reopens and carries them with exa
   const journal = automationStudioAnswerFirstTrailsOf({});
   const trail = journal.of("attempt", { carriedOn: false, askedAgain: false });
   const witnesses = automationStudioAnswerFirstWitnesses({ read: async (side) => ({ preference: side === "after", page: RAW }) });
-  const chain = automationStudioAnswerFirstCallChain({ domain: async () => ({ kind: "llm_evidence_tool_execution", evidence: { page: RAW, preference: true }, effectApplied: true, resultCode: "example.applied", draft: { effect: "mutate" } }), record: new AutomationStudioAttemptActRecord(), sink: { fromCall: async () => undefined }, witnesses, stepped: () => undefined, answered: () => undefined, judgeEvidence: options, trailed: async (step) => {
+  const chain = automationStudioAnswerFirstCallChain({ domain: async () => ({ kind: "llm_evidence_tool_execution", evidence: { page: RAW, preference: true }, effectApplied: true, resultCode: "example.applied", draft: { effect: "mutate" } }), record: new AutomationStudioAttemptActRecord(), sink: { fromCall: async () => undefined }, witnesses, readRowsKey: undefined, describe: undefined, stepped: () => undefined, answered: () => undefined, judgeEvidence: options, trailed: async (step) => {
     trail.push(step);
     await io.store.saveJudgeEvidence("project", "flow", "attempt", journal.checkpoint(trail, witnesses.readings(), options)!);
   } });
@@ -74,15 +75,18 @@ it("normalizes rejected new metadata to null without erasing actual results/effe
   await io.store.save("project", "flow", record());
   const file = path.join(io.root, "answer-attempts.json");
   const original = JSON.parse(await readFile(file, "utf8"));
+  expect(original.version).toBe(1);
+  expect(original.data.attempts).toHaveLength(1);
   expect(Object.hasOwn((await io.open().get("project", "flow", "attempt"))!, "judgeEvidence")).toBe(false);
   for (const invalid of [null, { version: 2, trail: [] }, { version: 1, trail: [{ did: "bad", found: { page: RAW } }] }]) {
-    const held = structuredClone(original); held.attempts[0].judgeEvidence = invalid;
+    const held = structuredClone(original);
+    held.data.attempts[0].judgeEvidence = invalid;
     await writeFile(file, JSON.stringify(held));
     const reopened = (await io.open().get("project", "flow", "attempt"))!;
     expect(reopened.result).toEqual(record().result);
     expect(reopened.judgeEvidence).toBeNull();
     const journal = automationStudioAnswerFirstTrailsOf({});
-    const trail = journal.of("attempt", { carriedOn: true, askedAgain: false, judgeEvidence: reopened.judgeEvidence });
+    const trail = journal.of("attempt", { carriedOn: true, askedAgain: false, judgeEvidence: reopened.judgeEvidence ?? null });
     expect(trail).toMatchObject([{ judgeEvidence: { missing: ["judge_evidence.checkpoint_invalid"] } }]);
     expect(journal.capability(trail, {})).toEqual({ judgeEvidenceVersion: 1 });
   }

@@ -31,7 +31,7 @@ import { readAutomationStudioAnswerFirstProcessingDeclaration } from "../result-
 import { readAutomationStudioAnswerFirstResultEvidence } from "../result-feed/index.ts";
 import { automationStudioReadJudgeCheckpoint, type AutomationStudioJudgeEvidenceCheckpoint } from "../../../../../runtime/result-verification/index.ts";
 import { readAutomationStudioAnswerFirstJudgeEvidenceIssue, type AutomationStudioAnswerFirstJudgeEvidenceIssue } from "./judge-evidence-issue.ts";
-import { automationStudioAnswerFirstJournalOwners } from "../trail/source-owner.ts";
+import { automationStudioAnswerFirstJournalOwners } from "../trail/index.ts";
 
 const STORE_FILE = "answer-attempts.json";
 const KIND = "answer_first_attempts";

@@ -7,7 +7,8 @@ it("preserves an explicitly rejected finding through the real Flow-less builder 
     const step = { did: "example.observe", found: { page: "PRIVATE_CAPTURE_SENTINEL" }, judgeEvidence } as unknown as AutomationStudioResultTrailStep;
     const summary = { instructions: "Read the original record", acts: [], rows: { totalRows: 1, truncated: false, columns: [{ id: "name", label: "Name" }], rows: [{ name: "Original" }] }, trail: [step] };
     let calls = 0;
-    for (const semantic of [undefined, { projectJudgeEvidence: () => { calls += 1; return { role: "observation" as const, evidence: {} }; } }]) {
+    for (const semantic of [undefined, { projectJudgeEvidence: () => { calls += 1;
+      return { role: "observation" as const, evidence: {} }; } }]) {
       const shown = automationStudioFlowLessJudgedSummary(summary, [], semantic).sent;
       expect(shown.evidenceProjection?.missing.flatMap((gap) => gap.codes)).toContain("judge_evidence.finding_invalid");
       expect(shown.recordSets[0]?.sampleRows).toEqual(summary.rows.rows);

@@ -8,6 +8,19 @@ const call = { callId: "save", toolId: "core.run_node", value: { node: "domain.s
 const answer: AutomationStudioLlmEvidenceToolExecutionResult = { kind: "llm_evidence_tool_execution", evidence: { ok: true, pageChanged: true }, effectApplied: true, draft: { actionId: "domain.save", effect: "mutate", proposes: true } };
 
 describe("settlement durability before tool evidence returns", () => {
+  it("emits the actual call/act pair only when a dispatch settled, and an observer cannot change the answer", async () => {
+    const record = new AutomationStudioAttemptActRecord();
+    const observed: Array<{ callId: string; actId: string }> = [];
+    const execute = automationStudioAttemptActGate({ record, executeTool: async () => answer, settled: (ref) => {
+      observed.push(ref);
+      throw new Error("observer unavailable");
+    } });
+    await expect(execute(call)).resolves.toEqual(answer);
+    expect(observed).toEqual([{ callId: call.callId, actId: record.acts()[0]!.id }]);
+    await execute({ ...call, callId: "held.already.done" });
+    expect(observed).toHaveLength(1);
+  });
+
   it("holds a known-landed answer until its scoped persistence has committed", async () => {
     let landed = (): void => undefined;
     let commit = (): void => undefined;

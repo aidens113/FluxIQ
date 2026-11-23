@@ -92,6 +92,12 @@ async function stage(run: AutomationStudioAnswerFirstAttemptRun, saved: Pick<Aut
   const { input } = run;
   const sentBefore = run.liveSteps;
   let personStopped = false;
+  // Pages the run told the result since the row was last written (`../flow-run/live-pages.ts`).
+  let pagedSinceKept = false;
+  const result: Pick<typeof run.result, "batches"> = { batches: (entries) => {
+    run.result.batches(entries);
+    pagedSinceKept = true;
+  } };
   run.path = "run_flow";
   // The task's own level as it stands now, a person's change since the attempt opened included; unread, it reads as none and the next source decides (`../flow-run/flow-run.ts`).
   const kept = await automationStudioAnswerFirstBestEffort(() => run.memory.get(input.projectId, run.taskId));
@@ -101,22 +107,26 @@ async function stage(run: AutomationStudioAnswerFirstAttemptRun, saved: Pick<Aut
   const journal = automationStudioAnswerFirstTrailsOf(input.owner);
   const semantic = { ...journal.capability(run.trail, input.binding), projectJudgeEvidence: input.binding?.projectJudgeEvidence, deniedEvidenceKeys: input.binding?.deniedEvidenceKeys };
   const outcome = await automationStudioAnswerFirstFlowRun({
-    input, runId: run.runId, record: run.record, sink: run.sink, result: run.result, permissions: run.permissions,
+    input, runId: run.runId, record: run.record, sink: run.sink, result, permissions: run.permissions,
     starting: async (classes) => {
       await start?.(classes);
       if (saved.steps.some(declaresLasting)) await run.witnesses.beforeFirstLastingAct();
     },
     ...(taskHumanness !== undefined ? { storedHumanness: { task: taskHumanness } } : {}),
     inputUse,
-    stepped: () => {
+    // The row is written as the first step goes out, and again before any later step once the run has read a page
+    // since: a Core that dies mid-press then still holds what the run read, and carrying on needs no read again.
+    stepped: async () => {
       run.liveSteps += 1;
-      if (run.liveSteps === sentBefore + 1) void automationStudioAnswerFirstKeep(run);
+      if (run.liveSteps !== sentBefore + 1 && !pagedSinceKept) return;
+      pagedSinceKept = false;
+      await automationStudioAnswerFirstKeep(run);
     },
     arrived: () => { run.arrived = true; },
     // What the run did, to the attempt's trail for its judge (`../flow-run/flow-run.ts`, t963).
     trail: { viewKeys: input.harnessOptions.observedStateKeys, semantic, add: async (steps) => {
       run.trail.push(...steps);
-      const checkpoint = journal.checkpoint(run.trail, run.witnesses.readings(), semantic);
+      const checkpoint = journal.checkpoint(run.trail, run.witnesses.readings(), { ...semantic, resultEvidence: run.result.sourceProof() });
       if (checkpoint !== undefined) {
         try { journal.recovered(run.trail, await run.store.saveJudgeEvidence(input.projectId, input.flowId, run.attemptId, checkpoint, { sourceOwner: journal.sourceOwner(run.trail) })); }
         catch { automationStudioAnswerFirstSay("Part of the record was not written", "The Flow's semantic evidence could not be saved for a restart. Its actual outcome remains in this attempt; I will try saving its record again."); }

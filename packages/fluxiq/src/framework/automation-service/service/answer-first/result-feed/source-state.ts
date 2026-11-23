@@ -9,7 +9,7 @@ type Collection = { listKey?: string; where?: string };
 type Held = { reason: string; original: AutomationStudioResultEvidenceBundle | undefined; replacements: Map<number, AutomationStudioResultEvidencePage>; remaining: Set<number>; missing: Missing[]; unidentified: boolean; datasets: ReadonlyMap<string, string>; associations: ReadonlyMap<string, readonly Collection[]> };
 
 /** Missing originals are resolved by their exact read association, never by any later read or a guessed page position. */
-export function automationStudioAnswerFirstResultSourceState() {
+export function automationStudioAnswerFirstResultSourceState(replaced?: (from: AutomationStudioResultEvidencePage, to: AutomationStudioResultEvidencePage) => void) {
   let held: Held | undefined;
   const unavailable = () => held !== undefined && (held.unidentified || held.missing.length > 0 || held.remaining.size > 0);
   const settle = (page: AutomationStudioResultEvidencePage) => {
@@ -50,7 +50,9 @@ export function automationStudioAnswerFirstResultSourceState() {
       const index = matches[0]!;
       const original = held.original.pages[index]!;
       const { leftOut: _oldRead, invalidCount: _oldValidation, datasetId: _oldDataset, ...prior } = structuredClone(original);
-      held.replacements.set(index, { ...prior, source: read.source, ...(datasetId === undefined ? {} : { datasetId }), conditions: structuredClone(read.version.conditions), fields: structuredClone(read.version.fields), kept: read.kept.length, rows: read.kept.map((row) => ({ ...row })), invalidCount: read.invalidCount, ...(read.leftOut === undefined ? {} : { leftOut: structuredClone(read.leftOut) }), carried: false });
+      const replacement = { ...prior, source: read.source, ...(datasetId === undefined ? {} : { datasetId }), conditions: structuredClone(read.version.conditions), fields: structuredClone(read.version.fields), kept: read.kept.length, rows: read.kept.map((row) => ({ ...row })), invalidCount: read.invalidCount, ...(read.leftOut === undefined ? {} : { leftOut: structuredClone(read.leftOut) }), carried: false };
+      held.replacements.set(index, replacement);
+      replaced?.(original, replacement);
       held.remaining.delete(index);
       settle(original);
       return original.version;

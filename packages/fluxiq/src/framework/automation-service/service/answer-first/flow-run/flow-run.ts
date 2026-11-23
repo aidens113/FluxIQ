@@ -33,8 +33,9 @@
 // attempt carries on and looks for another way, as after a person's no.
 //
 // **Its rows are its read steps' pages** (lane t905): each record batch goes to the row sink as it is captured, and
-// once the run has ended, to the attempt's one result as a page of the draft step its node stands for
-// (`./batch-steps.ts`), however the run ended.
+// to the attempt's one result as a page of the draft step its node stands for (`./batch-steps.ts`), however the run
+// ends: as soon as the run has selected its graph, so a later step's press finds the read already on the attempt's
+// row (`./live-pages.ts`, t984).
 //
 // **A step on a control an earlier attempt saw flip checks before it presses** (`./stated-toggles.ts`),
 // a person's Run again included: that press empties the act record, not the states. What this run
@@ -59,7 +60,6 @@
 import { createHash } from "node:crypto";
 import { resolveHumanness } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioRecordBatch } from "../../../../../engine/automation/contracts.ts";
 import type { AutomationStudioGraphInputUsePort, AutomationStudioGraphInputUseSession, AutomationStudioInputUseObservation } from "../../../../../engine/automation/input-use/index.ts";
 import type { AutomationStudioParkingPort } from "../../../../../runtime/automation-parking/index.ts";
 import { runWithAutomationStudioDomainReadings } from "../../../../../runtime/domain-readings/index.ts";
@@ -74,7 +74,7 @@ import { automationStudioAnswerFirstRunActGate } from "../run-acts/index.ts";
 import type { AutomationStudioAnswerFirstStatedToggle } from "../task-memory/index.ts";
 import { automationStudioAnswerFirstFlowRunActClaims } from "./act-claims.ts";
 import { automationStudioAnswerFirstFlowRunAssemble, type AutomationStudioAnswerFirstFlowRunAssembly } from "./assemble.ts";
-import { automationStudioAnswerFirstFlowRunBatchSteps } from "./batch-steps.ts";
+import { automationStudioAnswerFirstFlowRunLivePages, type AutomationStudioAnswerFirstFlowRunLivePages } from "./live-pages.ts";
 import { automationStudioAnswerFirstFlowRunWatch, type AutomationStudioAnswerFirstFlowRunWatch } from "./dispatch-watch.ts";
 import { automationStudioAnswerFirstExecutionIdentity, type AutomationStudioAnswerFirstExecutableSource } from "./execution-identity.ts";
 import type { AutomationStudioAnswerFirstFlowRunOutcome } from "./outcome.ts";
@@ -113,17 +113,17 @@ export async function automationStudioAnswerFirstFlowRun(ports: AutomationStudio
   const outside = scope?.refusal(scopeStepsOf(assembly));
   if (outside !== undefined) return { kind: "outside_scope", said: outside };
   const watch = automationStudioAnswerFirstFlowRunWatch(ports.stepped);
-  const batches: AutomationStudioRecordBatch[] = [];
+  const pages = automationStudioAnswerFirstFlowRunLivePages(ports.result, { buildPlan: assembly.buildPlan, locator: assembly.locator, saved: saved.steps });
   try {
     const declined = await automationStudioAnswerFirstFlowRunPermission(ports, assembly, saved.steps);
     if (stopped()) return { kind: "stopped" };
     if (declined) return { kind: "permission_declined", consequences: declined };
-    const ended = await run(ports, assembly, saved, basis, watch, signal, () => halt.abort(), scope, batches);
-    paged(ports, assembly, saved, ended, batches.splice(0));
+    const ended = await run(ports, assembly, saved, basis, watch, signal, () => halt.abort(), scope, pages);
+    pages.ended(ended.graph);
     if (ended.code === CANCELLED || stopped()) return { kind: "stopped" };
     return outcome(ports, assembly, saved, ended, watch);
   } catch (error) {
-    paged(ports, assembly, saved, { reachedEnd: false }, batches.splice(0));
+    pages.ended(undefined);
     if (stopped() || isCancellation(error)) return { kind: "stopped" };
     return outcome(ports, assembly, saved, { reachedEnd: false, code: THREW }, watch);
   }
@@ -137,14 +137,8 @@ function outcome(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assem
   return executableSource ? { ...ran, executableSource } : ran;
 }
 
-/** The run's batches, as pages of their draft steps (header). A run that threw has no graph, and its batches stay with the row sink alone. */
-function paged(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assembled, saved: Saved, ended: AutomationStudioAnswerFirstFlowRunEnded, batches: readonly AutomationStudioRecordBatch[]): void {
-  if (!ports.result || !batches.length) return;
-  ports.result.batches(automationStudioAnswerFirstFlowRunBatchSteps({ buildPlan: assembly.buildPlan, locator: assembly.locator, saved: saved.steps, graph: ended.graph }, batches));
-}
-
 /** The assembled Flow, run as a trial runs it (`../../candidate-trial/run.ts`, `runIn`) under what is this attempt's. */
-async function run(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assembled, saved: Saved, basis: AutomationStudioAnswerFirstSourceRead, watch: AutomationStudioAnswerFirstFlowRunWatch, signal: AbortSignal, halt: () => void, scope: AutomationStudioAnswerFirstReplayScope | undefined, batches: AutomationStudioRecordBatch[]): Promise<Ended> {
+async function run(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assembled, saved: Saved, basis: AutomationStudioAnswerFirstSourceRead, watch: AutomationStudioAnswerFirstFlowRunWatch, signal: AbortSignal, halt: () => void, scope: AutomationStudioAnswerFirstReplayScope | undefined, pages: AutomationStudioAnswerFirstFlowRunLivePages): Promise<Ended> {
   const { input, runId } = ports;
   const digest = saved.stepsDigest;
   const engine = ports.engine();
@@ -159,7 +153,7 @@ async function run(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Ass
   const parking = automationStudioAnswerFirstFlowRunPersonCheckPort(ports.personCheck, () => { askedNobody = true; }, halt);
   const use = ports.inputUse;
   const opened: { session?: AutomationStudioGraphInputUseSession } = {};
-  const own = gatedOptions(ports, assembly, engine, watch, signal, startedAt, claimedActs, parking, batches, automationStudioFlowHumanness(parentFlow.metadata), use ? (entry) => (opened.session = use.open(entry)).port : undefined);
+  const own = gatedOptions(ports, assembly, engine, watch, signal, startedAt, claimedActs, parking, pages, automationStudioFlowHumanness(parentFlow.metadata), use ? (entry) => (opened.session = use.open(entry)).port : undefined);
   // Outside the act gate, so a step the scope refuses is no act of the attempt's.
   const options = scope ? scope.gated(own) : own;
   let executed: Awaited<ReturnType<typeof runAutomationStudioDetachedCandidate>> | undefined;
@@ -170,7 +164,7 @@ async function run(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Ass
       parentFlow,
       currentIdentity: async () => ({ ...identity, baseDependencyDigest: await engine.currentBaseDigest() }),
       registry: input.registry, resolution: input.resolution, snapshots, deprecatedPublicationIds,
-      sourceInstructionIds: [...input.instructionIds], runId, start, options,
+      sourceInstructionIds: [...input.instructionIds], runId, start, options, selected: pages.selected,
       ...(input.size ? { size: input.size } : {})
     }));
   } finally {
@@ -203,7 +197,7 @@ async function run(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Ass
  * step bound to one runs with this attempt's value (`./input-bound-steps.ts`). `flowHumanness` is the run Flow's
  * own stored level (header). `inputUse`, where the run opted in, opens its session over exactly the layers assembled here.
  */
-function gatedOptions(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assembled, engine: AutomationStudioAnswerFirstFlowRunEngine, watch: AutomationStudioAnswerFirstFlowRunWatch, signal: AbortSignal, referenceNow: number, claimedActs: ReadonlySet<string>, parking: AutomationStudioParkingPort | undefined, batches: AutomationStudioRecordBatch[], flowHumanness: number | undefined, inputUse: ((entry: AutomationStudioInputUseEntry) => AutomationStudioGraphInputUsePort) | undefined): AutomationStudioGraphExecutionOptions {
+function gatedOptions(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assembled, engine: AutomationStudioAnswerFirstFlowRunEngine, watch: AutomationStudioAnswerFirstFlowRunWatch, signal: AbortSignal, referenceNow: number, claimedActs: ReadonlySet<string>, parking: AutomationStudioParkingPort | undefined, pages: AutomationStudioAnswerFirstFlowRunLivePages, flowHumanness: number | undefined, inputUse: ((entry: AutomationStudioInputUseEntry) => AutomationStudioGraphInputUsePort) | undefined): AutomationStudioGraphExecutionOptions {
   const { parking: _theEnginesThread, ...given } = engine.graphOptions({ runId: ports.runId, signal });
   const inputs = ports.input.caller?.inputs;
   const caller = inputs ? structuredClone(inputs) : undefined;
@@ -211,7 +205,7 @@ function gatedOptions(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: 
   const humanness = resolveHumanness({ runOption: ports.input.caller?.humanness, task: ports.storedHumanness?.task, flow: flowHumanness, startingValue: ports.input.humanness });
   const own: AutomationStudioGraphExecutionOptions = { ...given, ...(given.maxSteps === undefined ? { maxSteps: automationStudioAnswerFirstFlowRunStepBound(assembly.buildPlan) } : {}), referenceNow, onRecordBatch: async (batch) => {
     const stored = await ports.sink.recordBatch(batch);
-    batches.push(batch);
+    pages.captured(batch);
     return stored;
   }, ...(parking ? { parking } : {}), ...(caller ? { inputs: { ...given.inputs, ...caller } } : {}), ...(humanness !== undefined ? { humanness } : {}), ...(port ? { inputUse: port } : {}) };
   return watch.asked(automationStudioAnswerFirstRunActGate(watch.sent(own), { record: ports.record, settle: true, claimedActs, ...(engine.definitions ? { definitions: engine.definitions } : {}) }));
