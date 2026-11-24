@@ -94,8 +94,16 @@ export type AutomationStudioFlowDraftStepChange = { words: string; how: "appeare
  * control for the whole build, and `words` are its words, screened as a
  * control's are (`./control-words.ts`). Core reads the words only to find the
  * option the person asked for (`../bootstrap/instructed-acts/standing-option.ts`).
+ *
+ * `at`, where the host can say it, is what finds that control again on a later
+ * visit, in the host's own medium (an address and an identity, in the web's
+ * case), as `ranWith` carries a step's resolved target (t1030). Opaque: Core
+ * never reads it. The act step that did the person's option this way carries
+ * that option, with `at`, as a precondition on the act's Flow node, which the
+ * host checks before the act runs at playback
+ * (`../bootstrap/instructed-acts/chosen-precondition.ts`).
  */
-export type AutomationStudioFlowDraftStepChosen = { key: string; words: string };
+export type AutomationStudioFlowDraftStepChosen = { key: string; words: string; at?: JsonObject };
 
 /**
  * One condition of a step that keeps some of the items it reads, in the host's

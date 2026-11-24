@@ -22,11 +22,19 @@ describe("a call's statement of the options that stood chosen as it found the pa
     expect(automationStudioLlmEvidenceParseToolExecutionResult(pressing(STOOD), "mutate")?.draft?.chosen).toEqual(STOOD);
   });
 
+  it("carries what finds an option again, unread, where the host says it (t1030)", () => {
+    const at = { selector: "#size-l", element: { tagName: "button", text: "Large" } };
+    expect(automationStudioLlmEvidenceParseToolExecutionResult(pressing([{ ...STOOD[0], at }, STOOD[1]]), "mutate")?.draft?.chosen).toEqual([{ ...STOOD[0], at }, STOOD[1]]);
+  });
+
   it("withholds a bad entry, never refusing the result, and keeps the rest", () => {
     const bad: unknown[] = [
       { key: "t41", words: "Delivery" }, // never shown in this call's evidence
       { key: "t9 t10", words: "Large" }, // a key that is no code
-      { key: "t9", words: "Large", at: 1 }, // a key too many
+      { key: "t9", words: "Large", at: 1 }, // an `at` that is no object
+      { key: "t9", words: "Large", at: [] }, { key: "t9", words: "Large", at: {} }, // nor a list, nor empty
+      { key: "t9", words: "Large", at: { selector: "x".repeat(8_001) } }, // past its bound
+      { key: "t9", words: "Large", where: "#size" }, // a key too many
       { key: "t9" }, // a key too few
       "Large", null, { key: "t9", words: "<b>Large</b>" }
     ];
@@ -56,8 +64,9 @@ describe("a call's statement of the options that stood chosen as it found the pa
     const decide = vi.fn()
       .mockResolvedValueOnce({ kind: "tool_call", callId: "call.1", toolId: "go", input: { target: "#t6" }, add: true })
       .mockResolvedValueOnce({ kind: "complete", result: { flow: "ready" } });
-    const executeTool = vi.fn().mockResolvedValueOnce(pressing(STOOD));
+    const withAt = [{ ...STOOD[0]!, at: { selector: "#size-l" } }, STOOD[1]!];
+    const executeTool = vi.fn().mockResolvedValueOnce(pressing(withAt));
     const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, maxIterations: 4, maxToolCalls: 2, dryRun: false, unusableDecisions: { stalled: () => new Error("stalled") } });
-    expect(result.steps[0]).toMatchObject({ disposition: "kept", chosen: STOOD });
+    expect(result.steps[0]).toMatchObject({ disposition: "kept", chosen: withAt });
   });
 });
