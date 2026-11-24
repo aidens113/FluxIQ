@@ -149,8 +149,8 @@ export function automationStudioLlmEvidenceStallRedirect(input: AutomationStudio
     ok: false,
     code: "llm_evidence_loop.no_progress",
     stepsWithoutProgress: input.stepsWithoutProgress,
-    maxStepsWithoutProgress: input.maxStepsWithoutProgress,
-    stepsLeftBeforeStopping: stepsLeft,
+    // A loop no count ends (`../loop-configuration.ts`, `uncounted`, t1008) has no stop to count down to.
+    ...(Number.isFinite(input.maxStepsWithoutProgress) ? { maxStepsWithoutProgress: input.maxStepsWithoutProgress, stepsLeftBeforeStopping: stepsLeft } : {}),
     repeatingToolIds: [...new Set(input.repeatingToolIds.filter((toolId) => ISSUE_CODE.test(toolId)))],
     ...(input.discoveryOnly ? { authoringMode: "candidate", ...(input.candidate ? { candidate: { ...input.candidate } } : {}) } : input.forward ? (input.forward.toolId ? { next: input.forward.toolId } : {}) : { draftStepsSoFar: input.proposableSteps }),
     completionAttempts: input.completionAttempts,
@@ -312,6 +312,11 @@ function instruction(input: AutomationStudioLlmEvidenceStallRedirectInput, steps
   }
   const way = stillMissing || owed.length ? "Do the missing step." : "Do something you have not done, or complete.";
   // A task that keeps going ends no exploration here: the round does, and the next starts from the page as it stands (`freshRoundFollows`).
+  if (!Number.isFinite(stepsLeft)) {
+    // No count ends this loop (t1008): repeating is caught by loop detection, never by a countdown.
+    said.push(way);
+    return said.join(" ");
+  }
   if (input.freshRoundFollows) {
     said.push(stepsLeft > 0
       ? `${way} ${stepsLeft} more step(s) without progress and this round ends; the next starts from the page as it stands, with what you hold kept.`

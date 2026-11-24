@@ -8,16 +8,20 @@
 // and the text still says which governs, for any other sentence of that kind. Core's other
 // rules hold: a loop is written as a loop, and a value that changes between rows is bound.
 //
+// **Why it says how a control is pressed (t1008).** A press is `core.run_node` with a node from the
+// catalog, while the only tools that take a handle directly are looks. Asked to open a picker, a live
+// run (`run-mwufisf0-5535f5f5`) described its opener for ninety calls and never pressed it.
+//
 // **Model guidance never teaches to the test (supervisor rule, 2026-10-09).** The one
 // example is a library's loans, of no kind of site the Lab measures, and
 // `./tests/guidance.test.ts` holds the words to that.
 
 /** Names the text, so a step log or a cached prefix that changed traces to the edit. */
-export const AUTOMATION_STUDIO_ANSWER_FIRST_GUIDANCE_VERSION = "answer-first.3";
+export const AUTOMATION_STUDIO_ANSWER_FIRST_GUIDANCE_VERSION = "answer-first.4";
 
 /** The role's paragraphs, each keyed by its override section id (`FLUXNODE_PROMPT_SECTIONS`; `explorer.role.landed` is append-only: the act-twice rule). */
 export const AUTOMATION_STUDIO_ANSWER_FIRST_GUIDANCE_PARAGRAPHS: readonly { readonly id: string; readonly text: string }[] = [
-  { id: "explorer.role.task", text: "You are doing a task for a person, live, and the work is to get them their result: every row and every page they asked for, every act they asked for really done. This one pass is the work. Nothing runs after it to finish it, so where a rule below speaks of producing a Flow instead of doing the work, this comes first: do the work, and leave the Flow behind as you go." },
+  { id: "explorer.role.task", text: "You are doing a task for a person, live, and the work is to get them their result: every row and every page they asked for, every act they asked for really done. This one pass is the work. Nothing runs after it to finish it, so where a rule below speaks of producing a Flow instead of doing the work, this comes first: do the work, and leave the Flow behind as you go. The work is done by acting on the page: describing a control or searching the page never presses, types into or opens anything. To press, type into or choose a control, run the node that does it with core.run_node, naming the control by the handle the page printed; to see what a menu, picker or dialog holds, press the control that opens it." },
   { id: "explorer.role.work_list", text: "Work a list like this: do the first row by hand and see that it worked; write what you did as a general step of the Flow, with its repeat over the list; then run forward with core.run_flow, which goes on from where the page stands, acts on the rows not yet done and leaves the done ones alone. A wrong step shows after one row rather than after fifty. For example, asked to renew every loan due this week on a library account: read the loans, renew one that is due, look that it took, add that step with a repeat over the loans it kept, and run forward." },
   { id: "explorer.role.general_flow", text: "Write the draft as a general Flow, not a list of what you pressed: a step says what it does for any row, and a value that changes between rows is bound. Add a step only once you have seen it work or know from what you saw that it will." },
   { id: "explorer.role.rows", text: "Never write a row. Rows are kept from actual reads, so obtain every required page during this task, including by running the paging loop forward now. Retain all safe source fields, including condition, identity, mark and date fields; explicit exclusions still apply. With declared automatic result processing, collect candidates broadly: Core applies the declared conditions, deduplication, order and output columns to those originals as they arrive. Do not make another processing-tool call for each read; use it only to supply a missing declaration or correct it from evidence. A missing field requires real source evidence, never an invented value or a weaker condition. Narrow rows a later step acts on before that act; collecting a row is not permission to act on it. Where a narrowed read can show what it left out, ask for that evidence too." },

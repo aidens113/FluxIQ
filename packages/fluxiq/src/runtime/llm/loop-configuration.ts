@@ -612,7 +612,22 @@ export function resolveLimits(input: AutomationStudioLlmEvidenceLoopInput): Evid
     maxDraftAmendments: Math.min(draft?.maxAmendments ?? 16, maxIterations)
   };
   const issue = limitsIssue(input, limits);
-  return issue ? { issue } : limits;
+  return issue ? { issue } : uncounted(input, limits);
+}
+
+/**
+ * A loop whose caller takes loop detection's signal (`loopSignal`, the answer-first attempt's rounds) is ended by no
+ * count of its own: not its turns, its calls, its edits, its steps without progress or its unusable replies in a row
+ * (user, 2026-11-24: "THERE SHOULDNT BE ANY ARBITRARY FUCKING CALL LIMIT THAT RANDOMLY JUST RESETS EVERYTHING"). Each
+ * such ending started a fresh round with an empty evidence window, so the model lost everything it had seen and did it
+ * again (t1008, run-mwufisf0-5535f5f5: four rounds of looks in a row). A task ends with its result or its purse
+ * (user, 2026-11-03), and a repeat is caught by loop detection and decided by the model (2026-11-19). The figures are
+ * checked as given first, so a configuration is refused for the same reasons whoever runs it.
+ */
+function uncounted(input: AutomationStudioLlmEvidenceLoopInput, limits: EvidenceLoopLimits): EvidenceLoopLimits {
+  if (input.loopSignal === undefined) return limits;
+  const none = Number.POSITIVE_INFINITY;
+  return { ...limits, maxIterations: none, maxToolCalls: none, maxStepsWithoutProgress: none, maxUnusableDecisionsInARow: none, maxDraftAmendments: none };
 }
 
 /** The first check `limits` fail, in the order the loop has always asked them, or none. */
