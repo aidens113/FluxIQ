@@ -20,6 +20,7 @@ import type { AutomationStudioProjectStore } from "../../projects/index.ts";
 import type { AutomationStudioAnswerFirstAttemptProvenance } from "./provenance.ts";
 import type { AutomationStudioAnswerFirstTaskMemory } from "./memory.ts";
 import { AutomationStudioAnswerFirstTaskMemoryIntegrityError } from "./integrity-error.ts";
+import { automationStudioAnswerFirstTaskMemoryIo } from "./store-io.ts";
 import { automationStudioAnswerFirstScreenedNote } from "./screened-note.ts";
 import type { AutomationStudioAnswerFirstTaskNote } from "./task-note.ts";
 import type { AutomationStudioAnswerFirstTaskActs } from "./task-acts.ts";
@@ -45,11 +46,17 @@ export class AutomationStudioAnswerFirstTaskMemoryStore {
 
   /** What the task kept. Scoped reads distinguish missing from unreadable; legacy reads retain recovery. */
   async get(projectId: string, taskId: string, options?: { scoped: boolean }): Promise<AutomationStudioAnswerFirstTaskMemory | undefined> {
-    return structuredClone((await (options?.scoped ? this.readTaskStrict(projectId, taskId) : this.readTask(projectId, taskId)))?.memory);
+    const held = options?.scoped ? await this.readTaskStrict(projectId, taskId) : await automationStudioAnswerFirstTaskMemoryIo(() => this.readTask(projectId, taskId));
+    return structuredClone(held?.memory);
   }
 
   /** Changes the task's memory one write at a time. `change` gets the memory (an empty one for a new task) and answers the whole new memory. */
   async update(projectId: string, taskId: string, change: (current: AutomationStudioAnswerFirstTaskMemory) => AutomationStudioAnswerFirstTaskMemory, options?: { scoped: boolean }): Promise<AutomationStudioAnswerFirstTaskMemory> {
+    // Unscoped, a store that could not be read or written is the typed store error; scoped state keeps the driver's own error.
+    return options?.scoped ? await this.write(projectId, taskId, change, options) : await automationStudioAnswerFirstTaskMemoryIo(() => this.write(projectId, taskId, change, options));
+  }
+
+  private async write(projectId: string, taskId: string, change: (current: AutomationStudioAnswerFirstTaskMemory) => AutomationStudioAnswerFirstTaskMemory, options?: { scoped: boolean }): Promise<AutomationStudioAnswerFirstTaskMemory> {
     const kept = await this.queued(JSON.stringify([projectId, taskId]), async () => {
       const replace = async (document?: ProgramJsonLockedDocument) => {
         const held = options?.scoped ? await this.readTaskStrict(projectId, taskId, document?.read)

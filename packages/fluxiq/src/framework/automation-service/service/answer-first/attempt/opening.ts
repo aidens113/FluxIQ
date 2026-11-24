@@ -39,7 +39,7 @@ import { automationStudioAnswerFirstRoute, type AutomationStudioAnswerFirstRoute
 import type { AutomationStudioAnswerFirstRunAgainHold } from "../run-again/index.ts";
 import type { AutomationStudioAnswerFirstRunActStore } from "../run-acts/index.ts";
 import { automationStudioAnswerFirstTaskKey } from "../task-key/index.ts";
-import { automationStudioAnswerFirstTaskMemoryOf, type AutomationStudioAnswerFirstAttemptProvenance, type AutomationStudioAnswerFirstTaskMemory, type AutomationStudioAnswerFirstTaskMemoryStore } from "../task-memory/index.ts";
+import { AutomationStudioAnswerFirstTaskMemoryStoreError, automationStudioAnswerFirstTaskMemoryOf, type AutomationStudioAnswerFirstAttemptProvenance, type AutomationStudioAnswerFirstTaskMemory, type AutomationStudioAnswerFirstTaskMemoryStore } from "../task-memory/index.ts";
 import { automationStudioAnswerFirstBestEffort } from "./best-effort.ts";
 import { automationStudioAnswerFirstTaskWords } from "./task-words.ts";
 import type { AutomationStudioAnswerFirstAttemptInput } from "./contracts.ts";
@@ -73,7 +73,7 @@ export async function automationStudioAnswerFirstOpening(input: AutomationStudio
   // A caller that names its task (a FluxNode's name and spec hash) is known by that, whatever its words (`../task-key/task-key.ts`).
   const taskId = again?.taskId ?? automationStudioAnswerFirstTaskKey({ instructionText: automationStudioAnswerFirstTaskWords(input), startLocation: input.startLocation, callerKey: input.caller?.taskKey });
   const memory = automationStudioAnswerFirstTaskMemoryOf(input.owner, input.stores);
-  const kept = input.caller?.actScope === undefined ? await readOrNothing(() => memory.get(projectId, taskId)) : await memory.get(projectId, taskId, { scoped: true });
+  const kept = input.caller?.actScope === undefined ? await keptOrNothing(() => memory.get(projectId, taskId)) : await memory.get(projectId, taskId, { scoped: true });
   const rows = (await readOrNothing(() => stores.store.list(projectId, flowId))) ?? [];
   const route = await routeOf(input, taskId, kept, rows);
   const here = await automationStudioAnswerFirstBestEffort(() => stores.acts.get(projectId, flowId));
@@ -145,6 +145,20 @@ async function seedOf(projectId: string, kept: AutomationStudioAnswerFirstTaskMe
 
 function seeded(data: AutomationStudioAttemptActRecordData | undefined, from: string | undefined): { data: AutomationStudioAttemptActRecordData; from?: string } | undefined {
   return data ? { data, ...(from === undefined ? {} : { from }) } : undefined;
+}
+
+/**
+ * Unscoped task memory as the opening reads it: nothing only where its store could not be read (t1016), as the task's
+ * model resolution reads it (`../task-model/resolve.ts`). Any other error, an integrity error or a programming error
+ * included, stops the task rather than being taken for "nothing kept".
+ */
+async function keptOrNothing<T>(read: () => Promise<T | undefined>): Promise<T | undefined> {
+  try {
+    return await read();
+  } catch (error) {
+    if (error instanceof AutomationStudioAnswerFirstTaskMemoryStoreError) return undefined;
+    throw error;
+  }
 }
 
 async function readOrNothing<T>(read: () => Promise<T | undefined>): Promise<T | undefined> {
