@@ -17,6 +17,12 @@ const LIST_KEY = "list.loans-shelf";
 const OVERDUE = { field: "due", before: "2031-01-01" };
 const RENEWABLE = { field: "renewable", equals: "yes" };
 const ADD = { add: true };
+/**
+ * "List every loan on my library account." asks for no condition, order or column beyond the rows read. A new data task
+ * needs this declaration (t984, e2b1f2635: omission is neither legacy nor N/A); these tests are about which reads are the
+ * result, so they state it up front rather than spend a scripted decision on it (t993).
+ */
+const LIST_EVERY_LOAN = { process: {} };
 
 /** `count` loans named from `from`, as one page of the list. */
 const loans = (from: number, count: number): JsonObject[] => Array.from({ length: count }, (_, index) => ({ title: `Loan ${from + index}`, due: "2030-01-01" }));
@@ -65,7 +71,7 @@ const resultTitles = (attempt: Awaited<ReturnType<typeof scriptedAttempt>>) => a
 describe("the draft's read steps are the result, and a read outside the draft is a look", () => {
   it("a page-2 read by hand without add says it is a look, and the result stays the draft step's page", async () => {
     const attempt = await scriptedAttempt({
-      library: fakeLibrary(),
+      library: fakeLibrary(), taskProcessing: LIST_EVERY_LOAN,
       fault: pagedReads({ 1: { 1: loans(1, 3), 2: loans(4, 2) } }),
       script: [read("page-one", { where: [OVERDUE], page: 1 }, ADD), read("page-two", { where: [OVERDUE], page: 2 }), complete("Listed.")],
     }, cleanups);
@@ -78,7 +84,7 @@ describe("the draft's read steps are the result, and a read outside the draft is
 
   it("a step's second version run from its step gives a header of 16 rows over 2 pages", async () => {
     const attempt = await scriptedAttempt({
-      library: fakeLibrary(),
+      library: fakeLibrary(), taskProcessing: LIST_EVERY_LOAN,
       fault: pagedReads({ 1: { 1: loans(1, 12), 2: loans(13, 5) }, 2: { 1: loans(1, 11), 2: loans(13, 5) } }),
       script: [
         read("page-one", { where: [OVERDUE], page: 1 }, ADD),
@@ -97,7 +103,7 @@ describe("the draft's read steps are the result, and a read outside the draft is
 
   it("three reads of one list under three handles give one step with 3 pages", async () => {
     const attempt = await scriptedAttempt({
-      library: fakeLibrary(),
+      library: fakeLibrary(), taskProcessing: LIST_EVERY_LOAN,
       fault: pagedReads({ 0: { 1: loans(1, 2), 2: loans(3, 2), 3: loans(5, 1) } }),
       script: [
         read("week-one", { handle: "extraction.1", page: 1 }, ADD),
@@ -112,7 +118,7 @@ describe("the draft's read steps are the result, and a read outside the draft is
 
   it("a completion on looks alone is refused naming take, and taking the look makes its rows the result", async () => {
     const attempt = await scriptedAttempt({
-      library: fakeLibrary(),
+      library: fakeLibrary(), taskProcessing: LIST_EVERY_LOAN,
       fault: pagedReads({ 0: { 1: loans(1, 3) } }),
       script: [read("by-hand", { page: 1 }), complete("Listed."), { kind: "amend_draft", amendments: [{ change: "take", call: "by-hand" }] }, complete("Listed.")],
     }, cleanups);
@@ -129,7 +135,7 @@ describe("the draft's read steps are the result, and a read outside the draft is
     const unknown = "domain.library.read_holds";
     const fault = pagedReads({ 0: { 1: loans(1, 2) } });
     const attempt = await scriptedAttempt({
-      library: fakeLibrary(),
+      library: fakeLibrary(), taskProcessing: LIST_EVERY_LOAN,
       // A read of a node the project's library does not hold: the domain answers it, and no Flow can be assembled from it.
       fault: (call, library) => {
         if (call.value.node !== unknown) return undefined;

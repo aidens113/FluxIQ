@@ -7,6 +7,7 @@
 export * from "./account-without-evidence.ts";
 export * from "./any-of.ts";
 export * from "./binding/index.ts";
+export * from "./captured-fields.ts";
 export * from "./compares-dates.ts";
 export * from "./count-unsortable-rows.ts";
 export * from "./condition/index.ts";

@@ -12,7 +12,10 @@
 // carries nothing the answer would show that an earlier row did not. A key over
 // a link column would merge distinct rows that share one link.
 // Explicit automatic mode uses a complete declared identity, with whole-original
-// fallback, and withholds an answer while required evidence is unavailable.
+// fallback, and withholds an answer while required evidence is unavailable. A
+// field the row's own read captured and the item does not show is not missing
+// evidence: it reads as saved processing reads an absent value (t993,
+// `not-shown.ts`).
 //
 // **Processing the answer again gives the same rows**: every step keeps what it
 // kept, the sort is stable, and `parseAutomationStudioRecordProcessing` refuses a
@@ -60,6 +63,7 @@ import { automationStudioRecordConditionComparesDates } from "./compares-dates.t
 import { automationStudioRecordConditionHolds, automationStudioRecordConditionText } from "./condition/index.ts";
 import { automationStudioRecordDerivedValues } from "./derive.ts";
 import { automationStudioRecordFieldComparisonFields, automationStudioRecordFieldComparisonText } from "./field-comparison.ts";
+import { automationStudioRecordNotShown } from "./not-shown.ts";
 import { AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS } from "./processing-vocabulary.ts";
 import { parseAutomationStudioRecordCondition } from "./parse-condition.ts";
 import { automationStudioRecordProcessingFilterChecks, automationStudioRecordRequiredValueIssue, type AutomationStudioRecordProcessingMissingEvidence, type AutomationStudioAutomaticRecordProcessRowsResult } from "./readiness/index.ts";
@@ -90,6 +94,12 @@ export type AutomationStudioRecordCollectedRow = {
   values: Readonly<Record<string, unknown>>;
   nodeId: string;
   batchKey: string;
+  /**
+   * The stored field ids the row's own read captured: its batch's own schema (`automationStudioRecordCapturedFields`).
+   * In automatic processing a captured field's absent or blank cell is a value the item did not show (`not-shown.ts`,
+   * t993); a field outside it, or every field when this is absent, stays missing evidence. Saved processing ignores it.
+   */
+  captured?: readonly string[];
 };
 
 export type AutomationStudioRecordProcessRowsInput = {
@@ -141,7 +151,9 @@ export function processAutomationStudioRecordRows(input: AutomationStudioRecordP
   const comparisons = process.compare ?? [];
   // Every filter in order: the `where` conditions, then the groups, then the comparisons (header).
   const filters = automationStudioRecordProcessingFilterChecks(process, input.now, automatic);
-  const readings = working.map((row) => filters.map((check) => check(row.values)));
+  // A captured field the item does not show is a definite value, never missing evidence (t993, `not-shown.ts`).
+  const notShown = (row: AutomationStudioRecordCollectedRow, field: string): boolean => automatic && automationStudioRecordNotShown(row.values, row.captured, field, derive);
+  const readings = working.map((row) => filters.map((check) => check(row.values, (field) => notShown(row, field))));
   // Which filters each row fails, by position: a row failing none is in the answer's running.
   const failed = readings.map((row) => row.flatMap((reading, index) => reading.holds ? [] : [index]));
   if (automatic) {
@@ -173,6 +185,8 @@ export function processAutomationStudioRecordRows(input: AutomationStudioRecordP
     const missingEvidence = (process.sort ?? []).flatMap((key, index): AutomationStudioRecordProcessingMissingEvidence[] => {
       const kind = key.as === undefined || key.as === "auto" ? automationStudioRecordAutoSortKind(distinct.map((row) => cellOf(row.values, key.field)), input.now) : key.as;
       return distinct.flatMap((row) => {
+        // A value the item does not show sorts after every value read, as the sort places it.
+        if (notShown(row, key.field)) return [];
         const reason = automationStudioRecordRequiredValueIssue(cellOf(row.values, key.field), kind, input.now);
         const derived = derive.find((field) => field.id === key.field);
         return reason ? [{ operator: "sort" as const, index, field: key.field, ...(derived ? { from: derived.from } : {}), reason, source: sources.get(row)! }] : [];
@@ -184,6 +198,8 @@ export function processAutomationStudioRecordRows(input: AutomationStudioRecordP
   const limited = process.limit === undefined ? sorted : sorted.slice(0, process.limit);
   if (automatic) {
     const missingEvidence = (process.columns ?? []).flatMap((field, index): AutomationStudioRecordProcessingMissingEvidence[] => limited.flatMap((row) => {
+      // A column the item does not show is an empty cell of the answer.
+      if (notShown(stored.get(row)!, field)) return [];
       const reason = automationStudioRecordRequiredValueIssue(cellOf(stored.get(row)!.values, field), "value", input.now);
       return reason ? [{ operator: "columns" as const, index, field, reason, source: sources.get(row)! }] : [];
     }));
