@@ -127,7 +127,7 @@ export async function automationStudioFlowLessJudge(input: AutomationStudioFlowL
   let form = automationStudioResultSummaryFormForWindow(forms, input.tokenLimits, Buffer.byteLength(input.summary.instructions, "utf8"));
   // This check's unreadable replies: the note and the request its next ask carries (header, t979).
   const unreadable = automationStudioResultUnreadableAsks({ continuesDecider: input.continuesDecider === true });
-  const noted = (shown: AutomationStudioRunResultSummary): AutomationStudioRunResultSummary => (unreadable.said === undefined ? shown : automationStudioResultSummaryWithUnreadableNote(shown, unreadable.said));
+  const noted = (shown: AutomationStudioRunResultSummary): AutomationStudioRunResultSummary => (unreadable.said === undefined ? shown : automationStudioResultSummaryWithUnreadableNote(shown, unreadable.said, unreadable.steer));
   try {
     for (;;) {
       const bounded = await automationStudioResultVerificationWithinDeadline({
@@ -199,7 +199,9 @@ type Reading = { judgement: AutomationStudioFlowLessJudgement; refuted?: readonl
 function automationStudioFlowLessUnreadableNoted(step: AutomationStudioResultUnreadableStep, said: string): void {
   const how = step === "standalone"
     ? "so it is asked again on its own request, in its own answer format, on the same model"
-    : "so it is asked again on the same model with a note saying what could not be read";
+    : step === "steered"
+      ? "the same way as the reply before it, so it is caught as repeating itself and asked again on the same model, told what it repeated and to decide how to go on"
+      : "so it is asked again on the same model with a note saying what could not be read";
   automationStudioLlmStepLogNote(`The judge's reply could not be read (${said}), ${how}.`);
 }
 

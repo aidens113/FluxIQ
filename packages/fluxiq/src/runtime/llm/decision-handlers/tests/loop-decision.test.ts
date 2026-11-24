@@ -100,47 +100,69 @@ describe("each decision is carried out and recorded", () => {
     expect(String(noteAt(decide, 3, "core.loop_decision")?.instruction)).toContain("keeps its starting model");
   });
 
-  /** An attempt that already changed approach and climbed a rung: the last resort is open. */
-  const triedEverything = () => {
+  /** An attempt that already changed approach: a repeat caught again from here on is a loop that persists, and the last resort opens. */
+  const changedApproach = () => {
     const tried = automationStudioLlmLoopAttemptRecord();
-    tried.ladder.serve(LADDER);
-    tried.ladder.escalate({ reason: "model_decided" });
     tried.decided({ decision: "change_approach", pattern: "near_repeat", repeats: 2 });
     return tried;
   };
+  const ASK = { decision: "ask_person", question: "Which store should I use?", why: "the instructions name a store that does not exist, and only the person can say which they meant" };
 
-  it("ask_person: the person is asked the model's own question through the loop's caller, which ends the round there, once its own approaches and a stronger model have not worked", async () => {
-    const decide = script([decided(3, { decision: "ask_person", question: "Which store should I use?", why: "the instructions name a store that does not exist, and only the person can say which they meant" })]);
-    const record = triedEverything();
-    const { ran, signals } = run(decide, { attemptRecord: record });
-    await expect(ran).rejects.toBe(stalledError);
-    expect(signals).toHaveLength(1);
-    expect(signals[0]).toMatchObject({ kind: "ask_person", question: "Which store should I use?", pattern: "near_repeat", toolIds: ["press"] });
-    expect(record.data().decisions?.at(-1)).toEqual({ decision: "ask_person", pattern: "near_repeat", repeats: 2 });
-    expect(noteAt(decide, 2, "core.loop_check")?.decide).toMatchObject({ offered: ["continue", "change_approach", "ask_person", "finish_with_best"] });
+  // The user, 2026-11-19: "it seems to be asking the user too quickly for input", and "ONLY stop and ask user for feedback if its legit
+  // impossible to complete a task under the guidelines given by user". t983 (002650596) dropped this gate with the model ladder; t1000 restored it.
+  it("ask_person is last: absent from the first catch's ask, and refused if called there", async () => {
+    const decide = script([decided(3, ASK)]);
+    const { ran, signals, record } = run(decide);
+    await ran.catch(() => undefined);
+    const ask = noteAt(decide, 2, "core.loop_check")?.decide as JsonObject;
+    expect(ask.offered).toEqual(["continue", "change_approach", "finish_with_best"]);
+    expect(String(ask.instruction)).toContain("Asking the person is a last resort, offered only once you have changed approach and the repeat still comes back");
+    expect(noteAt(decide, 3, "core.loop_decision")).toMatchObject({ ok: false, code: "core.loop_decision.ask_person_not_offered", offered: ["continue", "change_approach", "finish_with_best"] });
+    expect(signals).toHaveLength(0);
+    expect(record.data().decisions).toBeUndefined();
   });
 
-  it("ask_person needs a stated reason naming what is impossible and why, and the prompt says it is only for the genuinely impossible", async () => {
+  it("ask_person stays refused straight after a change_approach, before the repeat has come back", async () => {
+    const decide = script([decided(3, { decision: "change_approach", approach: "open the menu first" }), decided(4, ASK)]);
+    const { ran, signals, record } = run(decide);
+    await ran.catch(() => undefined);
+    expect(noteAt(decide, 4, "core.loop_decision")).toMatchObject({ ok: false, code: "core.loop_decision.ask_person_not_offered" });
+    expect(String(noteAt(decide, 4, "core.loop_decision")?.instruction)).toContain("nothing has been repeated since you changed approach");
+    expect(signals).toHaveLength(0);
+    expect(record.data().decisions?.map((each) => each.decision)).toEqual(["change_approach"]);
+  });
+
+  it("ask_person joins once the model changed approach and the repeat came back, and the person is asked its own question through the loop's caller", async () => {
+    const decide = script([decided(3, { decision: "change_approach", approach: "open the menu first" }), press(4), decided(5, ASK)]);
+    const { ran, signals, record } = run(decide);
+    await expect(ran).rejects.toBe(stalledError);
+    // The repeat came back after the change, refused: its note asks for a decision again, now with the person on offer.
+    expect((noteAt(decide, 4, "core.repeat_check")?.decide as JsonObject | undefined)?.offered).toEqual(["continue", "change_approach", "ask_person", "finish_with_best"]);
+    expect(signals).toHaveLength(1);
+    expect(signals[0]).toMatchObject({ kind: "ask_person", question: "Which store should I use?", toolIds: ["press"] });
+    expect(record.data().decisions?.map((each) => each.decision)).toEqual(["change_approach", "ask_person"]);
+  });
+
+  it("ask_person on an attempt that changed approach before is offered once a repeat is caught again", async () => {
+    const decide = script([decided(3, ASK)]);
+    const record = changedApproach();
+    const { ran, signals } = run(decide, { attemptRecord: record });
+    await expect(ran).rejects.toBe(stalledError);
+    expect(noteAt(decide, 2, "core.loop_check")?.decide).toMatchObject({ offered: ["continue", "change_approach", "ask_person", "finish_with_best"] });
+    expect(signals).toHaveLength(1);
+    expect(record.data().decisions?.at(-1)).toEqual({ decision: "ask_person", pattern: "near_repeat", repeats: 2 });
+  });
+
+  it("ask_person needs a stated reason naming what is impossible and why, even where it is offered, and the prompt says it is only for the genuinely impossible", async () => {
     const decide = script([decided(3, { decision: "ask_person", question: "Which store should I use?" })]);
-    const record = triedEverything();
+    const record = changedApproach();
     const { ran, signals } = run(decide, { attemptRecord: record });
     await ran.catch(() => undefined);
     expect(noteAt(decide, 3, "core.loop_decision")).toMatchObject({ ok: false, code: "core.loop_decision.invalid" });
     expect(String(noteAt(decide, 3, "core.loop_decision")?.instruction)).toContain("ask_person needs why");
     expect(signals).toHaveLength(0);
+    expect(record.data().decisions?.map((each) => each.decision)).toEqual(["change_approach"]);
     expect(String((noteAt(decide, 2, "core.loop_check")?.decide as JsonObject).instruction)).toContain("genuinely impossible under their instructions");
-  });
-
-  it("offers a person question on first detection without any approach count or model climb", async () => {
-    const decide = script([decided(3, { decision: "ask_person", question: "Which store should I use?", why: "the named store does not exist, and only the person can correct it" })]);
-    const { ran, signals, record } = run(decide);
-    await expect(ran).rejects.toBe(stalledError);
-    const ask = noteAt(decide, 2, "core.loop_check")?.decide as JsonObject;
-    expect(ask.offered).toEqual(["continue", "change_approach", "ask_person", "finish_with_best"]);
-    expect(String(ask.instruction)).toContain("genuinely impossible");
-    expect(signals).toHaveLength(1);
-    expect(record.ladder.level).toBe(0);
-    expect(record.data().decisions?.at(-1)?.decision).toBe("ask_person");
   });
 
   it("finish_with_best: the result goes to the completion check as the attempt's result", async () => {
@@ -180,6 +202,6 @@ describe("what the Lab sees of a decision", () => {
     expect(folders).toHaveLength(1);
     const meta = JSON.parse(readFileSync(join(directory.path, folders[0]!, "meta.json"), "utf8")) as JsonObject;
     expect(meta).toMatchObject({ kind: "loop_decision", decision: "change_approach", pattern: "near_repeat", repeats: 2, toolIds: ["press"] });
-    expect(meta).toMatchObject({ offered: ["continue", "change_approach", "ask_person", "finish_with_best"], askPerson: "offered", approachesChanged: 0 });
+    expect(meta).toMatchObject({ offered: ["continue", "change_approach", "finish_with_best"], askPerson: "after_change_approach", approachesChanged: 0 });
   });
 });

@@ -140,7 +140,15 @@ asks again with the count; `change_approach` (with `approach`) keeps the repeat
 refused; `ask_person` (with one plain `question` and `why` explaining genuine
 impossibility) raises the `ask_person` signal with the model's question, which the
 attempt posts and does not wait for; `finish_with_best` (with `result`) goes to the completion
-check as any completion does. The loop carries it out
+check as any completion does. Asking the person is the last resort (user, 2026-11-19:
+"ONLY stop and ask user for feedback if its legit impossible"): the first catches offer
+`continue`, `change_approach` and `finish_with_best`, and `ask_person` joins only once
+the model has changed approach and the repeat is caught again; an earlier or reasonless
+`ask_person` is refused (`core.loop_decision.ask_person_not_offered`, t1000; t983 had
+dropped this gate with the ladder). A judge whose unreadable replies fail the same way
+twice in a row is caught as a loop too: each re-ask names the schema part that was
+missing, and the steer may choose `change_approach` or `finish_with_best`, never
+`continue` or `ask_person` (`runtime/result-verification/unreadable-asks/`). The loop carries it out
 (`decision-handlers/model-decision.ts`); each goes on the attempt's record
 (`decisions`), into a `NNNN-loop_decision` step folder and into the chat. Detection
 alone never stops anything; the purse still ends the task.

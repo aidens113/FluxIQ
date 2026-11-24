@@ -6,7 +6,8 @@ import {
   automationStudioResultSummaryWithUnreadableNote,
   automationStudioResultUnreadableAsks,
   automationStudioResultUnreadableReplySaid,
-  automationStudioResultUnreadableRouting
+  automationStudioResultUnreadableRouting,
+  automationStudioResultUnreadableSteer
 } from "../index.ts";
 
 const error = (code: string, metadata?: Record<string, unknown>) => ({ severity: "error", code, ...(metadata ? { metadata } : {}) });
@@ -20,6 +21,13 @@ describe("which failed calls had a reply that could not be read", () => {
     expect(automationStudioResultUnreadableReplySaid([error("llm_output.invalid_diagnosis_text")])).toBe("it was JSON, but it did not fit the answer asked for");
     // A warning beside it changes nothing.
     expect(automationStudioResultUnreadableReplySaid([{ severity: "warning", code: "llm.provider_retry_attempted" }, error("llm.provider_output_truncated")])).toBe("it reached the reply length limit and was cut off");
+  });
+
+  it("names where a reply off the schema parted from it, by path and rule alone (t1000)", () => {
+    const misses = [{ path: "response.diagnosis.defects", rule: "is missing, and it must be there" }, { path: "response.kind", rule: "must be exactly \"diagnosis\"" }];
+    expect(automationStudioResultUnreadableReplySaid([error("llm.provider_output_invalid", { providerReply: { case: "content_off_shape", misses } })])).toBe("it was JSON, but it did not fit the answer asked for: response.diagnosis.defects is missing, and it must be there; response.kind must be exactly \"diagnosis\"");
+    // Anything that is not a schema path and a schema rule is never carried into the note.
+    expect(automationStudioResultUnreadableReplySaid([error("llm.provider_output_invalid", { providerReply: { case: "content_off_shape", misses: [{ path: "a value with spaces", rule: "anything at all" }] } })])).toBe("it was JSON, but it did not fit the answer asked for");
   });
 
   it("is nothing for a fault where nothing arrived, a refused key, a purse's refusal or no error at all", () => {
@@ -58,6 +66,35 @@ describe("one check's unreadable replies", () => {
     expect(automationStudioResultUnreadableRouting(asks, true)).toEqual({ judgeStandaloneAfterUnreadable: true });
   });
 
+  it("catches the same unreadable reply again as a loop and steers it, with the count, until a different or readable reply (t1000)", () => {
+    const asks = automationStudioResultUnreadableAsks({ continuesDecider: false });
+    expect(asks.unread("a")).toBe("asked_again");
+    expect(asks.repeat).toBeUndefined();
+    expect(asks.steer).toBeUndefined();
+    expect(asks.unread("a")).toBe("steered");
+    expect(asks.repeat).toEqual({ pattern: "exact_repeat", repeats: 2, toolIds: ["loop_verification"], unchanged: [] });
+    expect(asks.steer).toBe(automationStudioResultUnreadableSteer({ repeats: 2 }));
+    expect(asks.unread("a")).toBe("steered");
+    expect(asks.repeat?.repeats).toBe(3);
+    // A different unreadable reply starts again.
+    expect(asks.unread("b")).toBe("asked_again");
+    expect(asks.repeat).toBeUndefined();
+    expect(asks.unread("b")).toBe("steered");
+    // A readable reply ends the loop.
+    asks.readable();
+    expect(asks.repeat).toBeUndefined();
+    expect(asks.unread("b")).toBe("asked_again");
+  });
+
+  it("offers the judge only change_approach and finish_with_best, never the person, in generic words", () => {
+    const steer = automationStudioResultUnreadableSteer({ repeats: 4 });
+    expect(steer).toContain("the same unreadable reply 4 times in a row");
+    expect(steer).toContain("change_approach");
+    expect(steer).toContain("finish_with_best");
+    expect(steer).toContain("answersRequest unknown");
+    expect(steer).not.toMatch(/ask_person|continue/u);
+  });
+
   it("tells routing nothing new before any unreadable reply", () => {
     expect(automationStudioResultUnreadableRouting(automationStudioResultUnreadableAsks({ continuesDecider: true }), true)).toEqual({ continuesDecider: true });
     expect(automationStudioResultUnreadableRouting(automationStudioResultUnreadableAsks({ continuesDecider: false }), false)).toEqual({});
@@ -75,5 +112,8 @@ describe("the note an ask after an unreadable reply carries", () => {
     expect(Object.keys(twice)).toEqual(Object.keys(once));
     expect(twice.unreadableReply).toContain("it held no text");
     expect(twice.unreadableReply).not.toContain("it was empty");
+    // A repeat's steer follows what could not be read (t1000).
+    const steered = automationStudioResultSummaryWithUnreadableNote(once, "it was empty", "STEER");
+    expect(steered.unreadableReply?.endsWith(" STEER")).toBe(true);
   });
 });

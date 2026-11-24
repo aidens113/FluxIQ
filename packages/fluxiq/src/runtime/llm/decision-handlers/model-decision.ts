@@ -48,6 +48,13 @@ const CODES = Object.freeze({
   carried: "core.loop_decision.carried_out",
   invalid: "core.loop_decision.invalid",
   noPerson: "core.loop_decision.no_person",
+  notYet: "core.loop_decision.ask_person_not_offered"
+});
+
+/** Why `ask_person` is not on offer yet (`../loop-decision/options.ts`), in the model's terms. */
+const NOT_YET: Readonly<Record<Exclude<AutomationStudioLlmLoopDecisionOptions["askPerson"], "offered">, string>> = Object.freeze({
+  after_change_approach: "Asking the person is a last resort, for after you have changed approach and the repeat still comes back, and you have not changed approach yet.",
+  after_repeat_persists: "Asking the person is a last resort, for after you have changed approach and the repeat still comes back, and nothing has been repeated since you changed approach."
 });
 
 /** What the model is told once each decision is carried out. */
@@ -71,6 +78,8 @@ export async function automationStudioLlmEvidenceHandleLoopDecision(context: Aut
   // What was on offer when the model was asked, before this decision changes it.
   const options = automationStudioLlmEvidenceLoopDecisionOptions(context);
   if (read.decision === "ask_person") {
+    // A last resort (t969, restored by t1000): refused, with what is on offer, until the attempt changed approach and the repeat came back.
+    if (options.askPerson !== "offered") return answered(context, iteration, call, { ok: false, code: CODES.notYet, offered: [...options.offered], instruction: `${NOT_YET[options.askPerson]} Give it a solid effort first: call ${AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID} again with one of: ${options.offered.join(", ")}.` });
     return asked(context, iteration, call, read.question, read.why, about, steps, options);
   }
   recorded(context, iteration, read, about, options);
