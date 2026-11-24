@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { ClientGatewayService, CLIENT_GATEWAY_PROTOCOL_VERSION, type ClientGatewayActionResult, type ClientGatewayClientMessage } from "../../../index.ts";
 import { ClientGatewayCommandContext as Context, ClientGatewayCommandLedgerController as Rules, ClientGatewayCommandOutcome as Outcome, ClientGatewayDurableDispatch as Dispatch, clientGatewayCommandResultDigest, type ClientGatewayCommandLedgerLease, type ClientGatewayCommandLedgerPort, type ClientGatewayCommandRecord } from "../index.ts";
 import { ClientGatewayCommandUnsentRefusal as Unsent } from "../unsent-refusal.ts";
+import { CLIENT_GATEWAY_RECONCILE_ANSWER_METADATA_KEY } from "@fluxiq/contracts/client-gateway";
+import type { ClientGatewayTimerSource } from "../../types.ts";
 
 const owner = { projectId: "project.1", runId: "run.1", flowId: "flow.1", invocationId: "invoke.1", attemptId: "node.attempt.1", effectOrdinal: 0 };
 function deferred<T>() { let resolve!: (value: T) => void;
@@ -29,9 +31,10 @@ function memory(): ClientGatewayCommandLedgerPort {
     })
   };
 }
-async function paired(gateway: ClientGatewayService, send?: (message: string) => void | Promise<void>, clientId = "client.1") {
+async function paired(gateway: ClientGatewayService, send?: (message: string) => void | Promise<void>, clientId = "client.1", answersReconcile = false) {
   const session = gateway.connect(send ? { socket: { send } } : {});
-  await gateway.receive(session.sessionId, { id: "hello.1", protocolVersion: CLIENT_GATEWAY_PROTOCOL_VERSION, timestamp: Date.now(), type: "client.hello", payload: { clientId, clientType: "extension", capabilities: [] } });
+  const capabilities = answersReconcile ? [{ id: "synthetic.actions", kind: "action" as const, actionTypes: ["synthetic.action"], metadata: { [CLIENT_GATEWAY_RECONCILE_ANSWER_METADATA_KEY]: true } }] : [];
+  await gateway.receive(session.sessionId, { id: "hello.1", protocolVersion: CLIENT_GATEWAY_PROTOCOL_VERSION, timestamp: Date.now(), type: "client.hello", payload: { clientId, clientType: "extension", capabilities } });
   const pairing = gateway.snapshot().pairings.find(item => item.requestedBySessionId === session.sessionId)!;
   await gateway.approvePairing(pairing.pairingCode, { approvedByUserId: "synthetic.user" });
   gateway.clearOutbound(session.sessionId);
@@ -41,6 +44,23 @@ function ack(commandId: string, fields: Partial<ClientGatewayActionResult> = {})
   return { id: "ack.1", protocolVersion: CLIENT_GATEWAY_PROTOCOL_VERSION, timestamp: Date.now(), type: "client.action_result", payload: { commandId, status: "succeeded", payload: { records: ["synthetic"] }, ...fields } };
 }
 const tick = () => new Promise<void>(resolve => setTimeout(resolve, 0));
+/**
+ * The gateway's answer waits, run by the test: `fireDue` ends every wait still
+ * armed at once, as an event loop that stalled past them does, and a wait
+ * cancelled first never fires, as with `clearTimeout`.
+ */
+function scriptedTimers() {
+  const waits: Array<{ fire: () => void; cancelled: boolean; fired: boolean }> = [];
+  const source: ClientGatewayTimerSource = (_wait, _delayMs, fire) => { const wait = { fire, cancelled: false, fired: false };
+    waits.push(wait);
+    return { cancel: () => { wait.cancelled = true; } }; };
+  const armed = () => waits.filter(wait => !wait.cancelled && !wait.fired).length;
+  const fireDue = () => { const due = waits.filter(wait => !wait.cancelled && !wait.fired);
+    for (const wait of due) { wait.fired = true;
+      wait.fire(); }
+    return due.length; };
+  return { source, armed, fireDue };
+}
 describe("actual gateway explicit durable dispatch boundary", () => {
   it.each(["succeeded", "failed"] as const)("commits and delivers one full large %s result through its required observer", async status => {
     const ledger = memory(), context = Context.issue(owner), events: ClientGatewayActionResult[] = [];
@@ -97,7 +117,7 @@ describe("actual gateway explicit durable dispatch boundary", () => {
     expect(() => Dispatch.readCompletionProof(saved, context, observer)).toThrow("foreign_completion_proof");
     await gateway.close();
   });
-  it.each(["abort", "timeout", "close"])("required %s revokes proof before unknown resolution and drains the late observer", async cause => {
+  it.each(["abort", "close"])("required %s revokes proof before unknown resolution and drains the late observer", async cause => {
     const ledger = memory(), context = Context.issue(owner), entered = deferred<void>(), gate = deferred<void>(), abort = new AbortController();
     let proof!: object;
     const observer = { completed: vi.fn(async (received: object) => { proof = received;
@@ -123,6 +143,58 @@ describe("actual gateway explicit durable dispatch boundary", () => {
     await receive;
     await (closing ?? gateway.close());
     expect(close).toHaveBeenCalledTimes(1);
+  });
+  // t1028: the 11-24 sweep stopped a required run as Outcome uncertain on a
+  // press that had answered: its event loop stalled, so the answer and the end
+  // of its window came due together, and the window, still armed after the
+  // answer was taken, revoked the proof while the observer ran. The window's
+  // end is fired here by hand at that moment, as the stall made it happen.
+  it("a required answer taken within its window completes even when the window ends while its observer runs", async () => {
+    const ledger = memory(), context = Context.issue(owner), entered = deferred<void>(), gate = deferred<void>(), timers = scriptedTimers(), sends: number[] = [];
+    const observer = { completed: vi.fn(async (proof: object) => { Dispatch.readCompletionProof(proof, context, observer);
+      entered.resolve();
+      await gate.promise;
+      Dispatch.readCompletionProof(proof, context, observer); }), uncertain: vi.fn(async () => undefined) };
+    Outcome.require(context, observer);
+    const gateway = new ClientGatewayService({ startTimer: timers.source, resolveCommandLedger: async () => ({ ledger, outcomeObserver: observer, close: async () => undefined }) });
+    const sessionId = await paired(gateway, raw => { if (JSON.parse(raw).type === "server.execute_action") sends.push(1); });
+    const response = gateway.executeAction(sessionId, { actionType: "synthetic.action", timeoutMs: 200 }, { context });
+    await tick();
+    expect(timers.armed()).toBe(1);
+    const receive = gateway.receive(sessionId, ack(response.commandId));
+    await entered.promise;
+    expect(timers.fireDue()).toBe(0);
+    gate.resolve();
+    await receive;
+    expect(await response.result).toMatchObject({ status: "completed", result: { status: "succeeded" } });
+    expect(observer.uncertain).not.toHaveBeenCalled();
+    expect(ledger.markUnknown).not.toHaveBeenCalled();
+    expect(sends).toHaveLength(1);
+    await gateway.close();
+  });
+  it.each(["nobody to ask", "asked: unknown", "asked: unknown, then a late answer"] as const)("a required answer that never came within its window ends unknown (%s) and is never sent again", async variant => {
+    const ledger = memory(), context = Context.issue(owner), timers = scriptedTimers(), sends: number[] = [];
+    let asked = 0, sessionId = "";
+    const observer = { completed: vi.fn(async () => undefined), uncertain: vi.fn(async () => undefined) };
+    Outcome.require(context, observer);
+    const gateway = new ClientGatewayService({ startTimer: timers.source, resolveCommandLedger: async () => ({ ledger, outcomeObserver: observer, close: async () => undefined }) });
+    sessionId = await paired(gateway, raw => { const message = JSON.parse(raw);
+      if (message.type === "server.execute_action") sends.push(1);
+      if (message.type === "server.reconcile_command") { asked += 1;
+        setTimeout(() => void gateway.receive(sessionId, { id: `reconcile.${asked}`, protocolVersion: CLIENT_GATEWAY_PROTOCOL_VERSION, timestamp: Date.now(), type: "client.reconcile_result", payload: { commandId: message.payload.commandId, state: "unknown" } }), 0); } }, "client.1", variant !== "nobody to ask");
+    const response = gateway.executeAction(sessionId, { actionType: "synthetic.action", timeoutMs: 200 }, { context });
+    await tick();
+    expect(timers.fireDue()).toBe(1);
+    expect(await response.result).toEqual({ status: "outcome_unknown" });
+    expect(asked).toBe(variant === "nobody to ask" ? 0 : 1);
+    if (variant === "asked: unknown, then a late answer") await gateway.receive(sessionId, ack(response.commandId));
+    expect(observer.completed).not.toHaveBeenCalled();
+    expect(observer.uncertain).toHaveBeenCalledTimes(1);
+    expect(ledger.commitReceipt).not.toHaveBeenCalled();
+    expect((await ledger.read(expect.anything()))?.state).toBe("unknown");
+    expect(await gateway.executeAction(sessionId, { actionType: "synthetic.action", timeoutMs: 200 }, { context }).result).toEqual({ status: "outcome_unknown" });
+    expect(sends).toHaveLength(1);
+    await gateway.close();
   });
   it("failed observer or uncertainty notification cannot publish successful completion", async () => {
     const context = Context.issue(owner), observer = { completed: vi.fn(async () => { throw new Error("capture failed"); }), uncertain: vi.fn(async () => { throw new Error("stop notification failed"); }) };
