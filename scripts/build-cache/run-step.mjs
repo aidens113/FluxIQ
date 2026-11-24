@@ -108,7 +108,8 @@ async function runLocked(resolved, first, lock, options) {
   let decision = first;
   let waited = "";
   if (lock.waitedMs > 0) {
-    waited = `waited ${(lock.waitedMs / 1000).toFixed(1)}s for pid ${lock.heldBy}'s run of this step, then `;
+    const whose = lock.heldAs === "read" ? "read lock on" : "run of";
+    waited = `waited ${(lock.waitedMs / 1000).toFixed(1)}s for pid ${lock.heldBy}'s ${whose} this step, then `;
     decision = await decideStep(resolved, { ...options, statCache });
     if (decision.decision === "reuse") {
       const touched = await touchStaleOutputs(resolved, decision.newestInput, decision.newestOutput);
