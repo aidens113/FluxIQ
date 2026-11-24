@@ -32,7 +32,7 @@ import { AUTOMATION_STUDIO_DEEPSEEK_MAX_CONTEXT_TOKENS, AUTOMATION_STUDIO_DEEPSE
 import { AUTOMATION_STUDIO_LLM_DEFAULT_REPLY_TOKENS, type AutomationStudioLlmProvider, type AutomationStudioLlmTokenLimits } from "./harness/index.ts";
 import { createAutomationStudioDeepSeekProvider, createAutomationStudioAnthropicProvider } from "./provider-factories.ts";
 import { AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS } from "./provider-contract.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, automationStudioLlmRunCostCeilingUsd } from "./flow-execution-limits/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, automationStudioLlmRunCostCeilingUsdIn } from "./flow-execution-limits/index.ts";
 import type { AutomationStudioLlmProviderResolution, AutomationStudioLlmProviderResolverInput } from "./resolver-contract.ts";
 
 /** What one call reserves for the model's reply: the harness's own reply reserve, so the two cannot drift. */
@@ -78,6 +78,8 @@ export function createAutomationStudioSessionKeyProviderResolver(options: {
   /** Secret Keys' own service in the host. Its `createUseAuthorization` is required: ports without it are refused when the resolver is built. */
   ports: AutomationStudioSessionKeyPorts;
   fetchImpl?: typeof fetch;
+  /** The environment the isolated-test cost ceiling is read from; the process's own when omitted. A test names one here instead of reloading every module. */
+  env?: Readonly<Record<string, string | undefined>>;
   flowSecretKeyId?: (scope: { projectId: string; flowId: string }) => Promise<string | undefined> | string | undefined;
 }): (input: AutomationStudioLlmProviderResolverInput) => AutomationStudioLlmProviderResolution | undefined {
   if (typeof options.ports.createUseAuthorization !== "function") throw new Error("Model key ports must provide createUseAuthorization: a connected client uses the configured key through its authenticated principal, with no unlock step.");
@@ -136,7 +138,7 @@ export function createAutomationStudioSessionKeyProviderResolver(options: {
     const defaults = AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS;
     const policy = input.metadata?.adaptationPolicySettings;
     const policyCost = policy && typeof policy === "object" && !Array.isArray(policy) ? policy.maxEstimatedCostUsdPerRun : undefined;
-    const totalCostUsd = automationStudioLlmRunCostCeilingUsd(policyCost);
+    const totalCostUsd = automationStudioLlmRunCostCeilingUsdIn(options.env, policyCost);
     const buildCalls = resolveAutomationStudioLlmBuildCallLimit();
     return {
       provider,

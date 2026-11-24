@@ -1,6 +1,5 @@
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, isAutomationStudioActionConsequence } from "../../action-permission-requests/index.ts";
 import { parseAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapSizeLimits } from "../../flow-authoring/bootstrap/index.ts";
-import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioLlmDiagnostic } from "../../models/limits/index.ts";
 import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_RESPONSE_BYTES } from "../provider-transport/index.ts";
 import { AUTOMATION_STUDIO_JSON_MAX_DEPTH, isBoundedString, isFiniteNumber, isJsonObject, isJsonValue, isRecord, validRequestIdentity } from "./json-bounds.ts";
@@ -19,7 +18,7 @@ import {
 } from "./structured-response.ts";
 import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmTaskRequest } from "./task-request.ts";
 import { AUTOMATION_STUDIO_RUNTIME_PATCH_HANDLER_EVENTS } from "./runtime-patch-schema.ts";
-import { automationStudioLlmToolCallKeysFolded } from "../tool-call-keys/index.ts";
+import { automationStudioLlmDecisionRead, type AutomationStudioLlmDecisionReading } from "../decision-reading/index.ts";
 import { automationStudioLlmWellFormedVerificationDefects } from "../verification-defects/index.ts";
 import { automationStudioLlmWellFormedAnswerRecords, automationStudioLlmWellFormedVerificationChecked } from "../verification-checked/index.ts";
 
@@ -88,9 +87,8 @@ function parseAutomationStudioLlmStructuredResponse(
     return undefined;
   }
   const commonFields = ["kind", "summary", "metadata"];
-  // An evidence decision as read: the one sent, or the tool call it can only be
-  // (`inferredEvidenceToolCall`), with any key of its tool's input written
-  // beside `input` moved into it (`foldedEvidenceToolCall`).
+  // An evidence decision as read: the one sent, as Core reads every decision
+  // (`readEvidenceDecision`, `../decision-reading/`).
   let decision: unknown = value.decision;
   rejectUnexpectedFields(value, kind === "flow_bootstrap"
     ? [...commonFields, "plan"]
@@ -110,10 +108,10 @@ function parseAutomationStudioLlmStructuredResponse(
     const parsed = parseAutomationStudioFlowBootstrapPlan(value.plan, size);
     diagnostics.push(...parsed.issues.map((issue) => ({ ...issue, severity: issue.severity, path: issue.path ? `response.${issue.path}` : "response.plan" })));
   } else if (kind === "evidence_tool_decision") {
-    // Folded before the check, so the unexpected-field refusal below and every
+    // Read before the check, so the unexpected-field refusal below and every
     // later reader -- the tool's input checks, permissions, the repeat guard --
     // see the input the call meant.
-    decision = foldedEvidenceToolCall(inferredEvidenceToolCall(value.decision, diagnostics), evidenceTools, diagnostics);
+    decision = readEvidenceDecision(value.decision, evidenceTools, diagnostics);
     validateUnknownEvidenceToolDecision(decision, diagnostics);
   } else if (kind === "diagnosis") {
     if (value.confidence !== undefined && (!isFiniteNumber(value.confidence) || value.confidence < 0 || value.confidence > 1)) diagnostics.push({ severity: "error", code: "llm_output.invalid_confidence", message: "Diagnosis confidence must be between 0 and 1.", path: "response.confidence" });
@@ -270,75 +268,44 @@ function validateUnknownDiagnosisFields(value: unknown, diagnostics: AutomationS
 const EVIDENCE_DECISION_KINDS: readonly string[] = ["tool_call", "complete", "amend_draft"];
 
 /**
- * A decision that can only be a tool call, read as one when its `kind` says
- * nothing Core knows.
+ * An evidence decision as Core reads it (`../decision-reading/`, t1025), each
+ * reading said as a diagnostic in Core's words, never the reply's: the same
+ * reading the Anthropic adapter checks a reply as
+ * (`../anthropic/decision-check.ts`), so the two never hold one reply to two
+ * grammars.
  *
- * **Every refused decision of 81 logged runs was this shape** (R4,
- * 2,728 decisions, 9 refused in 7 runs): `kind` held `"callId"` -- the key's
- * name written as the value -- and 6 of the 9 left the id out, while each named
- * an offered tool with a valid input object. Each refusal cost a paid call and
- * the next decision re-sent the same call, which ran.
- *
- * A `toolId` string and an `input` object, with no `result` and no
- * `amendments`, can be nothing but a tool call: `complete` needs `result` and
- * `amend_draft` needs `amendments`. So the kind is filled in, and where the
- * `callId` is missing or not a valid id one is derived from the tool and its
- * input -- an identical call gets the same id, which the loop already makes
- * unique (`../evidence-loop/call-id.ts`). Nothing else is relaxed: the tool
- * call's keys, the tool being offered and its input schema are checked exactly
- * as for a decision that named its kind. A known kind is never relabelled, so a
- * `complete` carrying a `toolId` is still refused.
- *
- * The repair is a warning, `llm_output.decision_kind_inferred`, so the step
- * log shows that a reply was read rather than taken as written.
+ * A decision whose kind said nothing Core knows and that can only be a tool
+ * call is a warning, `llm_output.decision_kind_inferred` (R4: every refused
+ * decision of 81 logged runs wrote `kind: "callId"`); a tool's input key moved
+ * into `input` is `info`, `llm_output.key_moved_into_input`
+ * (run-mvcwp3wh-bcea2115). A tool call's own key written `null`, a tool call
+ * written flat under its tool's name, and a `toolId` that is a value the input
+ * names for an offered tool are said the same way, so the step log shows a
+ * reply was read rather than taken as written.
  */
-function inferredEvidenceToolCall(value: unknown, diagnostics: AutomationStudioLlmDiagnostic[]): unknown {
-  if (!isRecord(value)) return value;
-  if (typeof value.kind === "string" && EVIDENCE_DECISION_KINDS.includes(value.kind)) return value;
-  if (typeof value.toolId !== "string" || !isJsonObject(value.input) || value.result !== undefined || value.amendments !== undefined) return value;
-  const callIdFilled = !validRequestIdentity(value.callId as string);
-  const callId = callIdFilled ? derivedCallId(value.toolId, value.input) : value.callId;
-  diagnostics.push({
-    severity: "warning",
-    code: "llm_output.decision_kind_inferred",
-    message: `The decision named no known kind but carried a toolId and an input object, so it was read as tool_call${callIdFilled ? ", with a callId derived from the tool and its input" : ""}.`,
-    path: "response.decision.kind",
-    metadata: { kindWritten: value.kind === undefined ? "absent" : typeof value.kind === "string" ? "unknown" : "not_a_string", callIdFilled }
-  });
-  return { ...value, kind: "tool_call", callId };
-}
-
-/**
- * A tool call with every key of its tool's input written beside `input` moved
- * into it (`../tool-call-keys/folded.ts`, run-mvcwp3wh-bcea2115), said as an
- * `info` diagnostic that names the keys from the tool's schema, never the
- * reply's words; the decision as it came when nothing moved.
- */
-function foldedEvidenceToolCall(
+function readEvidenceDecision(
   value: unknown,
   tools: NonNullable<AutomationStudioLlmHarnessInput["evidenceLoop"]>["tools"] | undefined,
   diagnostics: AutomationStudioLlmDiagnostic[]
 ): unknown {
-  const folded = automationStudioLlmToolCallKeysFolded(value, tools);
-  if (!folded) return value;
-  diagnostics.push({
-    severity: "info",
-    code: "llm_output.key_moved_into_input",
-    message: "A key the tool's input schema declares was written beside the tool call's input and was moved into it.",
-    path: "response.decision",
-    metadata: { toolId: folded.toolId, movedKeys: folded.movedKeys }
-  });
-  return folded.decision;
+  const read = automationStudioLlmDecisionRead(value, tools);
+  for (const reading of read.readings) diagnostics.push(readingDiagnostic(reading));
+  return read.decision;
 }
 
-/** `call.` and the FNV-1a hash of the tool and its input: the same call, the same id. */
-function derivedCallId(toolId: string, input: JsonObject): string {
-  let hash = 0x811c9dc5;
-  for (const char of `${toolId}\u0000${JSON.stringify(input)}`) {
-    hash ^= char.codePointAt(0) ?? 0;
-    hash = Math.imul(hash, 0x01000193) >>> 0;
+function readingDiagnostic(reading: AutomationStudioLlmDecisionReading): AutomationStudioLlmDiagnostic {
+  switch (reading.code) {
+    case "own_key_nulls":
+      return { severity: "info", code: "llm_output.null_key_read_as_absent", message: "A tool call's own optional key was written as null and read as not written.", path: "response.decision", metadata: { keys: reading.keys } };
+    case "flat_tool_call":
+      return { severity: "warning", code: "llm_output.flat_tool_call_read", message: `The decision named an offered tool as its kind with that tool's input keys beside it, so it was read as a call of that tool${reading.callIdFilled ? ", with a callId derived from the tool and its input" : ""}.`, path: "response.decision.kind", metadata: { toolId: reading.toolId, callIdFilled: reading.callIdFilled } };
+    case "kind_inferred":
+      return { severity: "warning", code: "llm_output.decision_kind_inferred", message: `The decision named no known kind but carried a toolId and an input object, so it was read as tool_call${reading.callIdFilled ? ", with a callId derived from the tool and its input" : ""}.`, path: "response.decision.kind", metadata: { kindWritten: reading.kindWritten, callIdFilled: reading.callIdFilled } };
+    case "value_tool_id":
+      return { severity: "warning", code: "llm_output.tool_id_read_from_input", message: "The decision's toolId was a value an offered tool's input takes, and its input named that value there, so it was read as a call of that tool.", path: "response.decision.toolId", metadata: { toolId: reading.toolId, key: reading.key } };
+    case "keys_folded":
+      return { severity: "info", code: "llm_output.key_moved_into_input", message: "A key the tool's input schema declares was written beside the tool call's input and was moved into it.", path: "response.decision", metadata: { toolId: reading.toolId, movedKeys: reading.movedKeys } };
   }
-  return `call.${hash.toString(16).padStart(8, "0")}`;
 }
 
 function validateUnknownEvidenceToolDecision(value: unknown, diagnostics: AutomationStudioLlmDiagnostic[]): void {

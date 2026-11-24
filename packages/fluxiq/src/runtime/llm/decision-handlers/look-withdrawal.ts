@@ -59,6 +59,25 @@ import type { AutomationStudioLlmDecisionContextRecorder } from "../decision-con
 import type { AutomationStudioLlmEvidenceTool } from "../evidence-loop/index.ts";
 import type { AutomationStudioLlmEvidencePlanningTools } from "../evidence-progress/index.ts";
 import { automationStudioLlmEvidenceFinishingToolIds, type AutomationStudioLlmEvidenceFinishingTools } from "../loop-budget.ts";
+import { AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID } from "../loop-decision/index.ts";
+
+/**
+ * The model's decision about a caught repeat (`../loop-decision/`) is never a
+ * look: it observes nothing and changes nothing, and it is how a loop asks the
+ * model to go on. It was withdrawn with the looks, being declared `observe`,
+ * so the steer that withdrew them (run-mwuuo3zk-75b482b3 steps 121-122, t1025)
+ * told the model "your next decision is a call to core.loop_decision" in the
+ * same request whose decision schema no longer offered it.
+ */
+const NEVER_A_LOOK: readonly string[] = [AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID];
+
+/**
+ * Said beside a narrowed action list (t1025): the schema alone showed only a
+ * shorter list, so a model naming a withdrawn action was told no more than
+ * that its value was not one of the first few offered (run-mwuuo3zk-75b482b3
+ * step 308, run-mwuxd2v9-33928ea3 step 202).
+ */
+const NARROWED_NOTE = "Not offered now, because each only looked and looks are withdrawn until an action runs:";
 
 /** The issue code a withdrawn look asked for anyway is refused under. */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOK_WITHDRAWN_CODE = "llm_evidence_loop.look_withdrawn";
@@ -156,7 +175,7 @@ export function automationStudioLlmEvidenceLookWithdrawal(input: {
   planning?: Pick<AutomationStudioLlmEvidencePlanningTools, "toolIds" | "lookBudget"> | undefined;
 }): AutomationStudioLlmEvidenceLookWithdrawal {
   // A loop's own finishing and planning tools are never a look, whatever their effect (t537, t569).
-  const finishing = new Set([...automationStudioLlmEvidenceFinishingToolIds(input.finishing), ...(input.planning?.toolIds ?? [])]);
+  const finishing = new Set([...automationStudioLlmEvidenceFinishingToolIds(input.finishing), ...(input.planning?.toolIds ?? []), ...NEVER_A_LOOK]);
   const budget = input.planning?.lookBudget;
   let redirectAt: number | undefined;
   let withdrawnEpoch: number | undefined;
@@ -225,5 +244,7 @@ function narrow(schema: JsonObject, key: string, withdrawn: ReadonlySet<string>)
   const names = property.enum.filter((name) => typeof name !== "string" || !withdrawn.has(name));
   if (!names.length) return "empty";
   if (names.length === property.enum.length) return undefined;
-  return { ...schema, properties: { ...(properties as JsonObject), [key]: { ...property, enum: names } } };
+  const gone = property.enum.filter((name): name is string => typeof name === "string" && withdrawn.has(name));
+  const description = [typeof property.description === "string" ? property.description : "", `${NARROWED_NOTE} ${gone.join(", ")}.`].filter(Boolean).join(" ");
+  return { ...schema, properties: { ...(properties as JsonObject), [key]: { ...property, enum: names, description } } };
 }

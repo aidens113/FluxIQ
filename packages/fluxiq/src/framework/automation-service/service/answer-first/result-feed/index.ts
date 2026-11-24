@@ -8,3 +8,4 @@ export * from "./read-evidence.ts";
 export * from "./restore.ts";
 export * from "./read-of.ts";
 export * from "./writes-of.ts";
+export * from "./place-of.ts";
