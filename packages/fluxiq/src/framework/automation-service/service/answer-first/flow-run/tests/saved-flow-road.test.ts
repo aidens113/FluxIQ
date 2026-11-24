@@ -3,14 +3,22 @@
 // lasting act against a plain press, a control already in its state, and a prompt the page remembers
 // declining or raises again. No model, Lab or browser; a lending library stands in, unrelated to any
 // realistic scenario. The floor is what a domain really says of every press: it commits.
+//
+// And a saved act whose option the page already had chosen when the act's step ran (t1030): t1023
+// counts the person's option done by that act's own step, and no step of the saved Flow chooses it,
+// so a run on a page that arrived with another option chosen did the lasting act with that option.
+// The act's node now carries the option as `requiresChosen`, and the host checks it before the act:
+// it stands, and the act runs; it does not, and the act is refused unrun, told as such, as a step
+// that cannot run (so the run routes by page state).
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../../../../../runtime/automation-activity/index.ts";
+import { automationStudioCouldNotRun } from "../../../../../../engine/automation/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../../../../runtime/flow-authoring/draft/index.ts";
 import type { AutomationStudioAnswerFirstFlowRunEngine } from "../index.ts";
 import { automationStudioAnswerFirstFlowRun, automationStudioAnswerFirstFlowRunActClaims, automationStudioAnswerFirstFlowRunAssemble } from "../index.ts";
-import { CLOSE_PROMPT, flowRunFixture, LOANS_OUTPUT, OPEN_ACCOUNT, RENEW_BY_OUTPUT, savedStep } from "../../tests/fake-library-engine.ts";
+import { CLOSE_PROMPT, flowRunFixture, libraryTarget, LOANS_OUTPUT, OPEN_ACCOUNT, RENEW_BY_OUTPUT, savedStep, type FlowRunFixture } from "../../tests/fake-library-engine.ts";
 import { READ_LOANS, RENEW_CARD } from "../../tests/fake-library.ts";
 
 vi.setConfig({ testTimeout: 60_000 });
@@ -129,5 +137,70 @@ describe("a prompt the page sometimes raises, and the step that answers it", () 
     fixture.target.over = ({ nodeId }) => nodeId === CLOSE_PROMPT ? absentOnce() : undefined;
     const outcome = await ran(fixture, [start(), closePrompt(2), savedStep(3, READ_LOANS, { recordOutput: LOANS_OUTPUT }, { label: "the list" })]);
     expect(outcome).toMatchObject({ kind: "ran", reachedEnd: false, failing: expect.objectContaining({ position: 2 }) });
+  });
+});
+
+const INSTRUCTION = "Add my card renewal to my basket for collection.";
+const COLLECTION = { key: "t40", words: "Collection", at: { option: "collection" } };
+
+/** The saved act: the desk's press, named for the act, which ran with Collection standing chosen. */
+function savedAct(chosen: NonNullable<AutomationStudioFlowDraftStep["chosen"]> = [COLLECTION]): AutomationStudioFlowDraftStep[] {
+  return [{ ...savedStep(1, RENEW_CARD, { control: "Add to basket" }, { consequences: ["create_new"], label: "Add to basket" }), acts: ["a1"], chosen }];
+}
+
+async function fixtureOn(chosen: string | undefined): Promise<{ fixture: FlowRunFixture; seen: unknown[] }> {
+  const target = libraryTarget();
+  if (chosen !== undefined) target.chosen = chosen;
+  const seen: unknown[] = [];
+  target.over = ({ nodeId, parameters }) => {
+    if (nodeId === RENEW_CARD) seen.push(parameters?.requiresChosen);
+    return undefined;
+  };
+  const fixture = await flowRunFixture({ target, instruction: INSTRUCTION, permittedConsequences: ["create_new"] }, cleanups);
+  return { fixture, seen };
+}
+
+const ranOn = (fixture: FlowRunFixture, steps: AutomationStudioFlowDraftStep[]) => automationStudioAnswerFirstFlowRun(fixture.ports, { steps, stepsDigest: "digest.saved" });
+
+describe("a saved act whose option stood chosen when it was built", () => {
+  it("runs where the option stands chosen, its node carrying the option as what it requires", async () => {
+    const { fixture, seen } = await fixtureOn("collection");
+    const outcome = await ranOn(fixture, savedAct());
+    expect(outcome).toMatchObject({ kind: "ran", reachedEnd: true, steps: [{ position: 1, ran: "passed" }] });
+    expect(seen).toEqual([[{ at: { option: "collection" }, words: "Collection" }]]);
+    expect(fixture.target.presses.map((press) => press.node)).toEqual([RENEW_CARD]);
+  });
+
+  it("does not run where another option stands chosen: the step is told failed with why, and its failure is one a run routes by page state", async () => {
+    const { fixture, seen } = await fixtureOn("delivery");
+    const outcome = await ranOn(fixture, savedAct());
+    expect(fixture.target.presses).toEqual([]);
+    expect(seen.length).toBeGreaterThan(0);
+    expect(outcome).toMatchObject({
+      kind: "ran", reachedEnd: false,
+      steps: [{ position: 1, ran: "failed", happened: expect.stringContaining("does not stand chosen") }],
+      failing: { position: 1, code: "library.option_not_chosen", happened: expect.stringContaining("A step before it has to choose that option") }
+    });
+    // The record a host refuses it with: a step that cannot run, so the engine routes it as it routes any unavailable step.
+    expect(automationStudioCouldNotRun({ status: "failed", failure: { category: "target_not_found", code: "library.option_not_chosen", retryable: false, stage: "target_resolution", effect: "unacted" } })).toBe(true);
+  });
+
+  it("requires nothing where no option of the person's stood chosen, or the host could not say where to find it again", async () => {
+    for (const chosen of [[{ key: "t41", words: "Delivery", at: { option: "delivery" } }], [{ key: "t40", words: "Collection" }]]) {
+      const { fixture, seen } = await fixtureOn(undefined);
+      const outcome = await ranOn(fixture, savedAct(chosen));
+      expect(outcome, JSON.stringify(chosen)).toMatchObject({ kind: "ran", reachedEnd: true });
+      expect(seen, JSON.stringify(chosen)).toEqual([undefined]);
+    }
+  });
+
+  it("requires nothing once a step of the Flow chooses the option: that step makes it, however the page arrives", async () => {
+    const { fixture, seen } = await fixtureOn(undefined);
+    const steps: AutomationStudioFlowDraftStep[] = [
+      { ...savedStep(1, RENEW_CARD, { control: "Collection" }, { label: "Collection" }), acts: ["a1.fulfilment"], effect: "mutate" },
+      { ...savedAct()[0]!, position: 2, id: "saved.2", callId: "call.2", iteration: 2 }
+    ];
+    await ranOn(fixture, steps);
+    expect(seen).toEqual([undefined, undefined]);
   });
 });

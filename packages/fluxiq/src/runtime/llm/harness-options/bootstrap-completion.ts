@@ -132,6 +132,7 @@ import {
   type AutomationStudioFlowBootstrapAcceptance,
   automationStudioEvidenceFlowBootstrapLimitsExceeded,
   automationStudioFlowBootstrapDraftWithStartStep,
+  automationStudioFlowDraftWriteWithStandingOptions,
   automationStudioFlowBootstrapIssueFeedback,
   automationStudioFlowBootstrapIssuePlace,
   type AutomationStudioFlowBootstrapIssueLocator,
@@ -651,9 +652,11 @@ function fromDraft(
   // (`bootstrap.completion_profile_limit_exceeded`, `maxSummaryLength`).
   const written = typeof result.summary === "string" ? result.summary.replace(/\s+/gu, " ").trim() : "";
   const summary = (written || "Flow built from the steps that ran.").slice(0, AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxSummaryLength);
+  const inFlow = steps.filter(automationStudioFlowDraftStepIsProposed);
   const assembled = assembleAutomationStudioFlowDraftPlan({
-    steps: steps.filter(automationStudioFlowDraftStepIsProposed),
-    write: automationStudioFlowBootstrapDraftNodeStep,
+    steps: inFlow,
+    // An option the act's step did because the page had it chosen goes on that act's node as a precondition (t1030).
+    write: automationStudioFlowDraftWriteWithStandingOptions(automationStudioFlowBootstrapDraftNodeStep, { steps: inFlow, instructionText, registry, resolution }),
     registry,
     resolution,
     summary,

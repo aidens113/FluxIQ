@@ -12,6 +12,10 @@
 // `standing-option.ts` (t1023): a choice its act's step ran with standing
 // chosen is how the loop reaches `done`, and the checklist says it.
 //
+// `chosen-precondition.ts` is published (t1030): the Flow's assembly writes
+// such an option onto the act's node as a precondition the host checks before
+// the act runs, and Core's trial sentence names the code a host refuses it by.
+//
 // `span.ts` is published because the amendment that answers `span_stops_short`
 // (`../../llm/harness-options/repeat-suggestion.ts`) finds the span the same way.
 //
@@ -49,6 +53,7 @@ export * from "./optional-only.ts";
 export * from "./optional-act-steps.ts";
 export * from "./permission.ts";
 export * from "./span.ts";
+export * from "./chosen-precondition.ts";
 export * from "./standing.ts";
 export * from "./step-fault.ts";
 export * from "./claim-doubt.ts";

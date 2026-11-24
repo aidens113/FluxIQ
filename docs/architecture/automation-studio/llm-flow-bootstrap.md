@@ -2852,9 +2852,30 @@ does the act without it, and a step that sets it chosen (which changes nothing
 where it already is), named for the choice, makes the Flow right however the
 page arrives. Information, never a todo
 (`runtime/flow-authoring/bootstrap/instructed-acts/standing-option.ts`). Core
-reads `chosen` only on a mutating statement, at most sixteen `{ key, words }`,
+reads `chosen` only on a mutating statement, at most sixteen `{ key, words, at? }`,
 each kept only when its key is a code and its words were shown in the call's own
-evidence.
+evidence; `at`, where the host says it, is a plain object of at most 8,000
+characters of JSON that Core carries unread (what finds the control again).
+
+**A saved act requires the option it was built with** (t1030). Because no step
+of such a Flow chooses the option, the Flow's assembly writes it onto the act's
+node as a precondition: every choice the standing loop answers by that credit,
+on the Flow's own steps, puts `{ at, words }` into the act node's
+`requiresChosen` parameter, where the node's definition declares it and the
+host said `at` (`runtime/flow-authoring/bootstrap/instructed-acts/chosen-precondition.ts`,
+wired into the draft's `write` in `runtime/llm/harness-options/bootstrap-completion.ts`).
+Core owns the parameter: it is derived from the steps on every assembly (the
+build's completion, a candidate trial, an answer-first later attempt, a Run
+again), so a step carrying one from an earlier Flow has it replaced, and once a
+step named for the choice makes it, no precondition is written. At playback the
+host finds each option again and reads its chosen state from the page's typed
+state before the act; one that does not stand refuses the act unrun with a code
+ending `option_not_chosen`, category `target_not_found` and `effect:
+"unacted"`, so the engine routes the step by page state as it routes any step
+that cannot run, and a repair may add the step that chooses the option. Core's
+trial sentence for that code says the step did not run because an option it was
+saved with does not stand chosen
+(`framework/automation-service/service/candidate-trial/happened.ts`).
 
 **Progress means the Flow advanced** (audit A1, cause 2). A call that applied
 an effect is no longer progress by itself: one that leaves a state the build

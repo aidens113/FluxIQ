@@ -249,7 +249,8 @@ export type AutomationStudioLlmEvidenceToolExecutionResult = {
      * pressed, current or drawn apart), including one an earlier look at the
      * same page showed chosen and none has shown otherwise since: at most
      * sixteen, each exactly `key` (an opaque code naming the control for the
-     * whole build) and `words`. Carried only on a statement whose `effect` is
+     * whole build) and `words`, and `at` where the caller says what finds the
+     * control again (a plain object, carried unread, t1030). Carried only on a statement whose `effect` is
      * `mutate`; each entry only when its key is a code and its words were shown
      * in the call's own evidence and are plain
      * (`../../flow-draft/control-words.ts`). A bad entry is withheld, never

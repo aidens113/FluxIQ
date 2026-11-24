@@ -49,7 +49,8 @@ const NODES: AutomationStudioNodeDefinition[] = [
   // `shape` is how a by-hand read writes its rows (`./fake-library.ts`); the engine's read takes it and writes its own.
   node(READ_LOANS, "Read loans", { outputs: [{ id: "success", label: "Success", valueType: "any" }, { id: "records", label: "Records", valueType: "array" }], parameters: [{ id: "recordOutput", label: "Record output", valueType: "object", required: false }, { id: "retry", label: "Retry", valueType: "object", required: false }, { id: "list", label: "The list", valueType: "object", required: false }, { id: "shape", label: "Shape", valueType: "string", required: false }] }),
   node(RENEW_LOAN, "Renew loan", { inputs: [{ id: "in", label: "In", valueType: "any", required: false }, { id: "item", label: "Item", valueType: "any", required: false }], parameters: [{ id: "control", label: "Control", valueType: "string", required: false }, { id: "title", label: "Title", valueType: "string", required: false }] }),
-  node(RENEW_CARD, "Renew card", { parameters: [{ id: "control", label: "Control", valueType: "string", required: false }, { id: "expectedState", label: "Expected state", valueType: "object", required: false }] }),
+  // `requiresChosen` is the options its act must find chosen first (t1030), as a web press takes them.
+  node(RENEW_CARD, "Renew card", { parameters: [{ id: "control", label: "Control", valueType: "string", required: false }, { id: "expectedState", label: "Expected state", valueType: "object", required: false }, { id: "requiresChosen", label: "Options chosen first", valueType: "array", required: false }] }),
   node(HOLD_SHELF, "Keep on the hold shelf", { outputs: [{ id: "success", label: "Success", valueType: "any" }, { id: "toggle", label: "What it flipped", valueType: "object" }, { id: "result", label: "Its answer", valueType: "object" }], parameters: [{ id: "control", label: "Control", valueType: "string", required: false }, { id: "ensureState", label: "State to keep", valueType: "object", required: false }] }),
   node(CLOSE_PROMPT, "Close the prompt", { outputs: [{ id: "success", label: "Success", valueType: "any" }, { id: "failed", label: "Failed", valueType: "any" }], parameters: [{ id: "control", label: "Control", valueType: "string", required: false }] }),
   node(READ_BY_OUTPUT, "Read loans", { outputAction: { fixedOutputId: READ_OUTPUT }, outputs: [{ id: "success", label: "Success", valueType: "any" }, { id: "records", label: "Records", valueType: "array" }], parameters: [{ id: "recordOutput", label: "Record output", valueType: "object", required: false }] }),
@@ -69,6 +70,8 @@ export type LibraryTarget = {
   page: "elsewhere" | "account";
   /** The next rows a read finds beyond the library's: a list that grew. */
   over?: LibraryNodeOver;
+  /** The option the card desk shows chosen, by its own state: how a renewal is collected. Absent, none is. */
+  chosen?: string;
 };
 
 export function libraryTarget(titles?: readonly string[]): LibraryTarget {
@@ -101,7 +104,7 @@ export function libraryTargetNodes(target: LibraryTarget): AutomationStudioNativ
         return { ...success(), effects: [{ type: "records.write", payload: { recordOutput: parameters.recordOutput as JsonValue, records: shownRows(target) } }] };
       }, { parameters })(),
       [RENEW_LOAN]: ({ signal, inputs, parameters }) => overOr(RENEW_LOAN, signal, () => pressLoan(target, inputs, parameters), { parameters, inputs })(),
-      [RENEW_CARD]: ({ signal, parameters }) => overOr(RENEW_CARD, signal, () => pressCard(target), { parameters })(),
+      [RENEW_CARD]: ({ signal, parameters }) => overOr(RENEW_CARD, signal, () => unchosenOption(target, parameters) ?? pressCard(target), { parameters })(),
       [HOLD_SHELF]: ({ signal, parameters }) => overOr(HOLD_SHELF, signal, () => pressHold(target, parameters), { parameters })(),
       [CLOSE_PROMPT]: ({ signal, parameters }) => overOr(CLOSE_PROMPT, signal, () => {
         target.presses.push({ node: CLOSE_PROMPT, subject: "prompt" });
@@ -120,6 +123,18 @@ export function pressLoan(target: LibraryTarget, inputs: Record<string, JsonValu
   target.library.renewals[subject] = (target.library.renewals[subject] ?? 0) + 1;
   target.presses.push({ node: RENEW_LOAN, subject, ...(item === undefined ? {} : { item }), ...(parameters.title === undefined ? {} : { title: parameters.title }) });
   return { status: "success", route: "success", outputs: { success: true } };
+}
+
+/**
+ * The host's check before an act whose node requires options chosen (t1030): each found again by its `at` and read by
+ * the desk's own state, never its words. One that does not stand refuses the act unrun, as a step that cannot run.
+ */
+function unchosenOption(target: LibraryTarget, parameters: Record<string, JsonValue>): AutomationNodeExecutionResult | undefined {
+  const required = Array.isArray(parameters.requiresChosen) ? parameters.requiresChosen : [];
+  const unmet = required.some((option) => ((option as JsonObject).at as JsonObject | undefined)?.option !== target.chosen);
+  return unmet
+    ? { status: "failed", route: "failed", message: "An option the step requires is not chosen.", failure: { category: "target_not_found", code: "library.option_not_chosen", retryable: false, stage: "target_resolution", effect: "unacted" } }
+    : undefined;
 }
 
 /** The hold shelf's switch: already in the state asked, nothing is pressed; else it flips and says from what to what. */
