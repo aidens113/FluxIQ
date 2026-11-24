@@ -16,6 +16,7 @@ export function automationStudioAnswerFirstResultPageSet(ledger: AutomationStudi
   const page: AutomationStudioAnswerFirstResultPage = {
     source: read.source,
     place: read.place,
+    spot: read.spot,
     kept: read.kept,
     ...(read.invalidCount === undefined ? {} : { invalidCount: read.invalidCount }),
     leftOut: read.leftOut,
