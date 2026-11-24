@@ -1,4 +1,5 @@
-// One process at a time runs a given step in a given tree.
+// One process at a time runs a given step in a given tree: the writer side of
+// the step lock.
 //
 // Two processes that decide to build the same step at once -- two `pnpm build`
 // runs, a `pnpm check` beside a downstream Core build -- would both delete the stamp, both
@@ -8,20 +9,29 @@
 // holds the lock the first has normally stamped the step, and the second
 // reuses what it built.
 //
-// The lock is a file created only if absent: its content is written to a
-// private temporary file and hard-linked into place, and `link` fails when the
-// name exists, so no reader ever sees a lock without its owner. A lock is stale
-// when its owner's pid is no longer running on this machine, or when the file
-// is older than `staleMs` (30 minutes: longer than any build here, and the
-// bound on how long a hung or recycled-pid owner can hold a step). A stale lock
-// is broken by renaming it aside and checking the renamed file is the one that
-// was judged stale; one that was replaced in between is put back.
+// The lock is an owner file (`lock-file.mjs`): created only if absent, stale
+// when its owner's pid is no longer running on this machine or when it is older
+// than `staleMs` (30 minutes: longer than any build here, and the bound on how
+// long a hung or recycled-pid owner can hold a step), and broken by renaming it
+// aside.
+//
+// Readers (`acquire-step-read-lock.mjs`) may share a step: a process that only
+// reads the step's outputs for a long time, as a downstream Lab run reads
+// Core's libraries. A writer that has created the lock file then waits until
+// no live reader entry remains, removing stale ones as it breaks a stale lock.
+// It keeps its own file young while it waits, so a long run of readers never
+// lets another writer judge it stale, and new readers queue behind it because
+// they never enter while the lock file exists: a waiting build is never
+// starved. A process that holds a read lock on a step and then builds that
+// same step waits on itself, as a second exclusive hold always has.
 
 import { randomUUID } from "node:crypto";
-import { link, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { isProcessAlive } from "./is-process-alive.mjs";
+import { breakLockFile, createLockFile, isStaleHolder, readLockHolder, releaseLockFile, touchLockFileSync } from "./lock-file.mjs";
+import { listReaderEntries } from "./reader-entries.mjs";
 
 const STALE_MS = 30 * 60 * 1000;
 const POLL_MS = 250;
@@ -29,109 +39,68 @@ const POLL_MS = 250;
 /**
  * @param {string} lockPath
  * @param {{ staleMs?: number, pollMs?: number, now?: () => number, isAlive?: (pid: number) => boolean }} [options]
- * @returns {Promise<{ waitedMs: number, heldBy: number | null, release(): Promise<void> }>}
+ * @returns {Promise<{ waitedMs: number, heldBy: number | null, heldAs: "write" | "read" | null, release(): Promise<void> }>}
+ *   `heldBy` is the pid last waited on and `heldAs` how it held the step: building it, or reading it
  */
 export async function acquireStepLock(lockPath, options = {}) {
-  const staleMs = options.staleMs ?? STALE_MS;
   const pollMs = options.pollMs ?? POLL_MS;
   const now = options.now ?? Date.now;
-  const isAlive = options.isAlive ?? isProcessAlive;
+  const judge = { staleMs: options.staleMs ?? STALE_MS, now, isAlive: options.isAlive ?? isProcessAlive };
   const token = randomUUID();
   const started = now();
   let heldBy = null;
+  let heldAs = null;
   let waited = false;
   await mkdir(path.dirname(lockPath), { recursive: true });
 
   for (;;) {
-    if (await tryCreate(lockPath, { pid: process.pid, token, startedAt: new Date(now()).toISOString() })) {
-      return { waitedMs: waited ? now() - started : 0, heldBy, release: () => release(lockPath, token) };
+    if (await createLockFile(lockPath, { pid: process.pid, token, startedAt: new Date(now()).toISOString() })) {
+      const readers = await waitForReaders(lockPath, token, judge, pollMs);
+      if (readers.waitedOn !== null) {
+        heldBy = readers.waitedOn;
+        heldAs = "read";
+        waited = true;
+      }
+      // Broken while it waited (it can only have been judged stale): queue again.
+      if (readers.lost) continue;
+      return { waitedMs: waited ? now() - started : 0, heldBy, heldAs, release: () => releaseLockFile(lockPath, token) };
     }
-    const holder = await readHolder(lockPath);
+    const holder = await readLockHolder(lockPath);
     if (holder === null) continue;
-    if (holder.pid !== process.pid && !isAlive(holder.pid)) {
-      await breakLock(lockPath, holder);
-      continue;
-    }
-    if (now() - holder.mtimeMs > staleMs) {
-      await breakLock(lockPath, holder);
+    if (isStaleHolder(holder, judge)) {
+      await breakLockFile(lockPath, holder);
       continue;
     }
     heldBy = holder.pid;
+    heldAs = "write";
     waited = true;
     await delay(pollMs);
   }
 }
 
-async function tryCreate(lockPath, owner) {
-  const temporary = `${lockPath}.${process.pid}.${owner.token}.tmp`;
-  await writeFile(temporary, JSON.stringify(owner));
-  try {
-    await link(temporary, lockPath);
-    return true;
-  } catch (error) {
-    if (error?.code === "EEXIST") return false;
-    throw error;
-  } finally {
-    await rm(temporary, { force: true });
-  }
-}
-
-// Windows refuses to open a file another process is deleting (`rm` leaves it
-// delete-pending until the last handle closes) or renaming, with EPERM, EACCES
-// or EBUSY. That is a lock in transition, not an error: wait for it to settle.
-const TRANSIENT_CODES = new Set(["EPERM", "EACCES", "EBUSY"]);
-const TRANSIENT_RETRIES = 50;
-const TRANSIENT_DELAY_MS = 20;
-
-/** The lock's owner and age, or `null` when it vanished before it could be read (the caller retries). */
-async function readHolder(lockPath) {
-  for (let attempt = 0; ; attempt += 1) {
-    try {
-      return await readHolderOnce(lockPath);
-    } catch (error) {
-      if (!TRANSIENT_CODES.has(error?.code) || attempt >= TRANSIENT_RETRIES) throw error;
-      await delay(TRANSIENT_DELAY_MS);
+/** Waits, holding the lock file, until no live reader entry remains. */
+async function waitForReaders(lockPath, token, judge, pollMs) {
+  let waitedOn = null;
+  for (;;) {
+    let live = null;
+    for (const entry of await listReaderEntries(lockPath)) {
+      const reader = await readLockHolder(entry);
+      if (reader === null) continue;
+      // A reader entry is unique to its token, so nobody can have replaced it:
+      // a stale one is simply removed, and one that cannot be removed yet (a
+      // file in transition on Windows) is still stale, so it never holds a build.
+      if (isStaleHolder(reader, judge)) await rm(entry, { force: true }).catch(/* best-effort: a stale entry never holds a build */ () => undefined);
+      else live ??= reader;
     }
-  }
-}
-
-async function readHolderOnce(lockPath) {
-  try {
-    const [text, stats] = await Promise.all([readFile(lockPath, "utf8"), stat(lockPath)]);
-    const owner = JSON.parse(text);
-    return { pid: Number(owner.pid), token: String(owner.token), mtimeMs: stats.mtimeMs };
-  } catch (error) {
-    if (error?.code === "ENOENT") return null;
-    // Written whole before it was linked, so unparsable content is a foreign
-    // or damaged file: treat it as an owner that is not running.
-    if (error instanceof SyntaxError) return { pid: 0, token: "", mtimeMs: 0 };
-    throw error;
-  }
-}
-
-async function breakLock(lockPath, holder) {
-  const aside = `${lockPath}.stale-${randomUUID()}`;
-  try {
-    await rename(lockPath, aside);
-  } catch (error) {
-    if (error?.code === "ENOENT") return;
-    throw error;
-  }
-  const moved = await readHolder(aside);
-  if (moved !== null && moved.token !== holder.token) {
-    // Somebody took the lock between the read and the rename: give it back.
-    // `link` refuses if a third process has taken the name meanwhile, which
-    // leaves that process holding it and this one waiting on it.
+    if (live === null) return { lost: false, waitedOn };
+    waitedOn = live.pid;
+    const mine = await readLockHolder(lockPath);
+    if (mine === null || mine.token !== token) return { lost: true, waitedOn };
     try {
-      await link(aside, lockPath);
-    } catch (error) {
-      if (error?.code !== "EEXIST") throw error;
+      touchLockFileSync(lockPath, token);
+    } catch {
+      /* best-effort: a lock in transition on Windows, or replaced since the read; the next poll decides */
     }
+    await delay(pollMs);
   }
-  await rm(aside, { force: true });
-}
-
-async function release(lockPath, token) {
-  const holder = await readHolder(lockPath);
-  if (holder !== null && holder.token === token) await rm(lockPath, { force: true });
 }
