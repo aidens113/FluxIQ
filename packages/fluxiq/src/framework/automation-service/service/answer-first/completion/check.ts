@@ -71,6 +71,15 @@
 // (`../trail/`). It is not in the digest itself: what in it bears on the result reaches the digest
 // through the rows, the reads' accounts, the acts and the looks after an act, so a throwaway look
 // between two identical completions is not new evidence (`summary-digest.ts` there).
+//
+// **A no says what it found wrong (t1011).** Run `run-mwug2xjw-41f62603` (0116-0131): a best result
+// was judged no with a list of defects -- kept rows over the request's own limit, a column it asks
+// about that no row held -- and the model was shown only the check's prose, whose last clause was
+// about paging; it went back to looking for a next page it had already looked for. So a judge's no
+// carries its screened defects and Core's check of the rows they name (`defects`, `checkedRows`,
+// `runtime/result-verification/flow-less/judged-no-found.ts`) beside its words, and the words say
+// what each kind of defect is fixed by (`./refused-words.ts`). The same evidence again is shown
+// them again. A caller's own check and an unsure name no defects, so they read as before.
 
 import type { AutomationStudioAttemptAct } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../../../core/index.ts";
@@ -78,7 +87,7 @@ import { automationStudioAnswerFirstKeepBackJudge } from "../../../../../runtime
 import { automationStudioFlowBootstrapInstructionAsk } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { automationStudioLlmStepLogNote, type AutomationStudioLlmEvidenceCompletionCheck } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioLlmProviderError } from "../../../../../runtime/models/failures/index.ts";
-import { automationStudioFlowLessScreenedWords, automationStudioFlowLessSummaryDigest, type AutomationStudioFlowLessJudgement, type AutomationStudioFlowLessSummary, type AutomationStudioResultEndView, type AutomationStudioResultTrailStep } from "../../../../../runtime/result-verification/index.ts";
+import { automationStudioFlowLessScreenedWords, automationStudioFlowLessSummaryDigest, type AutomationStudioFlowLessFound, type AutomationStudioFlowLessJudgement, type AutomationStudioFlowLessSummary, type AutomationStudioResultEndView, type AutomationStudioResultTrailStep } from "../../../../../runtime/result-verification/index.ts";
 import type { AutomationStudioAnswerFirstCallerCheck } from "../../flow-bootstrap-commands/index.ts";
 import type { AutomationStudioAnswerFirstRowsSummary } from "../rows/index.ts";
 import { automationStudioAnswerFirstScreenedNote } from "../task-memory/index.ts";
@@ -135,8 +144,8 @@ export type AutomationStudioAnswerFirstCompletionState = {
   answerText?: string | undefined;
   /** The model's notes for the next attempt at this task, screened; never given to the judge. */
   notes?: { worked?: string; failed?: string; quirks?: string } | undefined;
-  /** The no or unsure that stands: the last one, or the earlier one whose evidence came back (header); its digest and its words. */
-  refused?: { verdict: "no" | "unsure"; digest: string; reason: string } | undefined;
+  /** The no or unsure that stands: the last one, or the earlier one whose evidence came back (header); its digest, its words and, on a judge's no, what it found wrong (header). */
+  refused?: { verdict: "no" | "unsure"; digest: string; reason: string; found?: AutomationStudioFlowLessFound | undefined } | undefined;
   /** Completions refused in a row over exactly what `refused` refused, each a whole paid decision. New evidence puts it back to nothing. */
   refusedAgain: number;
   /** What the result held at the latest check, for the model's refusal and the person's question. */
@@ -227,7 +236,7 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
       if (earlier) {
         state.refused = earlier;
         state.refusedAgain += 1;
-        return refused(SAME, WORDS.sameEvidence(earlier.verdict, earlier.reason));
+        return refused(SAME, WORDS.sameEvidence(earlier.verdict, earlier.reason, earlier.found !== undefined), earlier.found);
       }
       state.refusedAgain = 0;
       const confirm = input.confirm;
@@ -295,9 +304,11 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
         input.say("Checked", `It is what you asked for, checked ${state.timesChecked === 1 ? "once" : `${state.timesChecked} times`}.`);
         return { ok: true };
       }
-      refuse({ verdict: judged.verdict, digest, reason: judged.reason });
+      // What a no found wrong goes back with its words, and with them again if the same evidence comes back (header, t1011).
+      const found = judged.verdict === "no" ? judged.found : undefined;
+      refuse({ verdict: judged.verdict, digest, reason: judged.reason, ...(found ? { found } : {}) });
       input.say(judged.verdict === "no" ? "Not there yet" : "Could not confirm it yet", "The check did not confirm this yet, so I am carrying on.");
-      return refused(judged.verdict === "no" ? JUDGED_NO : JUDGED_UNSURE, WORDS.judged(judged.reason));
+      return refused(judged.verdict === "no" ? JUDGED_NO : JUDGED_UNSURE, WORDS.judged(judged.reason, found !== undefined), found);
     }
   };
 }
@@ -340,6 +351,15 @@ function screened(line: string): string {
   return automationStudioFlowLessScreenedWords(line).text ?? WITHHELD;
 }
 
-function refused(code: string, instruction: string): AutomationStudioLlmEvidenceCompletionCheck {
-  return { ok: false, issueCodes: [code], feedback: { code, instruction } };
+/** A refusal as the model is shown it; a judge's no carries what it found wrong beside its words (`defects`, `checkedRows`, header). */
+function refused(code: string, instruction: string, found?: AutomationStudioFlowLessFound): AutomationStudioLlmEvidenceCompletionCheck {
+  return { ok: false, issueCodes: [code], feedback: { code, instruction, ...(found ? foundShown(found) : {}) } };
+}
+
+/** What a no found wrong, as JSON the model reads: the defects are the check's own words, Core's lines its own. */
+function foundShown(found: AutomationStudioFlowLessFound): JsonObject {
+  return {
+    ...(found.defects?.length ? { defects: found.defects.map((defect) => ({ ...defect })) } : {}),
+    ...(found.checkedRows?.length ? { checkedRows: [...found.checkedRows] } : {})
+  };
 }
