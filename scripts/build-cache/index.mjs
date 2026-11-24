@@ -1,10 +1,12 @@
 // The build cache: content-fingerprinted stamp-and-skip for Core's package
 // builds, the web build, every type check and the structure audit. A per-step
-// lock keeps two processes from building one step in one tree at once, and a
-// shared store (`store/`) keyed by the path-independent fingerprint lets a new
-// worktree restore what another tree built. A step's inputs are the
-// git-visible files it can read plus the ignored inputs it names, so runtime
-// data in ignored directories never invalidates a build.
+// lock keeps two processes from building one step in one tree at once, while
+// any number that only read its outputs hold it together and a build waits
+// for them (`lock/`), and a shared store (`store/`) keyed by the
+// path-independent fingerprint lets a new worktree restore what another tree
+// built. A step's inputs are the git-visible files it can read plus the
+// ignored inputs it names, so runtime data in ignored directories never
+// invalidates a build.
 //
 // `runStep` is what package scripts (through `cli.mjs`) call; `scheduleSteps`
 // runs several, as the root `build` and `check` do; `decideStep` answers
@@ -22,7 +24,7 @@ export { proveInputs, runCli } from "./entry/index.mjs";
 export { fingerprintStep } from "./fingerprint-step.mjs";
 export { forEachLimited } from "./for-each-limited.mjs";
 export { coversPath, digestFiles, gitVisibleFiles, listRootFiles, listStepInputs, openStatCache, outputState } from "./fingerprint/index.mjs";
-export { acquireStepLock, isProcessAlive } from "./lock/index.mjs";
+export { acquireStepLock, acquireStepReadLock, isProcessAlive } from "./lock/index.mjs";
 export { CORE_REPOSITORY, resolveFor } from "./repository/index.mjs";
 export { REPOSITORY_ROOT } from "./repository-root.mjs";
 export { runCommand } from "./run-command.mjs";

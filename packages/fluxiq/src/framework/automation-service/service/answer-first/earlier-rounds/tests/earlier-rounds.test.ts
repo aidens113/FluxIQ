@@ -3,7 +3,7 @@
 // realistic scenario.
 import { describe, expect, it } from "vitest";
 // The LLM runtime first, as the service loads it: the trail's screen reads its evidence keys through that barrel.
-import "../../../../../../runtime/llm/index.ts";
+import { screenAutomationStudioLlmEvidence } from "../../../../../../runtime/llm/index.ts";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioResultTrailStep } from "../../../../../../runtime/result-verification/index.ts";
 import { AUTOMATION_STUDIO_ANSWER_FIRST_EARLIER_ROUNDS_TOOL_ID, AUTOMATION_STUDIO_ANSWER_FIRST_VIEW_NOT_CARRIED, automationStudioAnswerFirstEarlierRounds } from "../index.ts";
@@ -37,13 +37,34 @@ describe("the earlier rounds a fresh round starts with", () => {
     expect(entry?.value.summarised).toBeUndefined();
   });
 
-  it("never carries a page view, and withholds what the domain denies", () => {
+  it("never carries a page view, and leaves out what the domain denies", () => {
     const entry = automationStudioAnswerFirstEarlierRounds({ trail, ...keys });
     const shown = JSON.stringify(entry);
     expect(shown).not.toContain(PAGE_TEXT);
     expect(callsOf(entry?.value).every((call) => (call.found as JsonObject | undefined)?.page === undefined || (call.found as JsonObject).page === AUTOMATION_STUDIO_ANSWER_FIRST_VIEW_NOT_CARRIED)).toBe(true);
     expect(shown).not.toContain("\"abc\"");
-    expect(callsOf(entry?.value)[3]).toMatchObject({ found: { secretToken: "[withheld]" } });
+    // The denied key goes with its value: a marker under it would have the whole request refused unsent (t1018).
+    expect(shown).not.toContain("secretToken");
+    expect(callsOf(entry?.value)[3]).toMatchObject({ found: { ok: false, code: "target_not_found" }, withheld: expect.stringContaining("left out") });
+    expect(screenAutomationStudioLlmEvidence(entry?.value, keys.deniedEvidenceKeys).deniedKey).toBe(false);
+  });
+
+  // run-mwus396e-5447c6f6: a Flow replay's list read carries the domain's saved binding, selectors and all, under keys
+  // the domain denies; carried with a marker under them, every fresh round's first request was refused unsent.
+  it("carries a replayed call whose input holds denied keys at any depth without any of them, so the round's request is sent", () => {
+    const denied = ["selector", "extractionBinding"];
+    const replayed: AutomationStudioResultTrailStep[] = [
+      { callId: "bed.list.loop.forward.1.pass.1", did: "domain.garden.read_beds", asked: { node: "domain.garden.read_beds", parameters: { list: { handle: "list.2", fields: { bed: "bed_name" }, extractionBinding: { item: "ul > li", fields: { bed_name: { kind: "text", selector: ":scope span" } } } } } }, outcome: "core.replay.replayed", where: "garden://beds?page=2", found: { read: { extracted: [{ bed: "East" }] } } },
+      { callId: "find.2", did: "garden.find", asked: { query: "tray", Selector: "#t" }, outcome: "web.inspect.succeeded", where: "garden://beds?page=2", found: { matches: [{ handle: "h9", text: "Tray" }] } }
+    ];
+    const entry = automationStudioAnswerFirstEarlierRounds({ trail: replayed, observedStateKeys: keys.observedStateKeys, deniedEvidenceKeys: denied });
+    expect(screenAutomationStudioLlmEvidence(entry?.value, denied).deniedKey).toBe(false);
+    const calls = callsOf(entry?.value);
+    expect(calls[0]).toMatchObject({ asked: { node: "domain.garden.read_beds", parameters: { list: { handle: "list.2", fields: { bed: "bed_name" } } } }, found: { read: { extracted: [{ bed: "East" }] } }, withheld: expect.any(String) });
+    expect(JSON.stringify(calls[0])).not.toMatch(/extractionBinding|selector/iu);
+    // Core compares keys with `_` and `-` removed and lowercased, so another spelling goes too.
+    expect(calls[1]).toMatchObject({ asked: { query: "tray" }, withheld: expect.any(String) });
+    expect((calls[1]!.asked as JsonObject).Selector).toBeUndefined();
   });
 
   it("summarises the oldest calls' findings to fit a short window, and drops none", () => {

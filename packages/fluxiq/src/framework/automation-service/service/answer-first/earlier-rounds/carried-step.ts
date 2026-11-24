@@ -8,12 +8,21 @@
 // be a second, stale page beside it. Everything else is kept whole: what a search or a description found, a read's rows
 // (a held view such as `read.extracted` is what the read found, not the page), an act's outcome, the place.
 //
-// **Screened as a judge's trail is** (`../../../../../runtime/result-verification/run-trail/screen.ts`): a member
-// under a denied key or a credential-shaped string is withheld, locator text rewritten, and the times and minted ids
-// that differ on every call left out.
+// **No denied key, not even as a marker** (t1018). The carried steps travel in the loop's evidence, which the request
+// refuses whole, unsent, if any key the domain denies appears anywhere in it, whatever its value
+// (`../../../../../runtime/llm/harness/context-packet.ts`). The judge's trail screen keeps such a key with a
+// `[withheld]` value, so a carried Flow replay, whose node input holds the domain's saved list binding under its denied
+// key, had every fresh round's first request refused before the model was called, round after round
+// (run-mwus396e-5447c6f6, 2026-11-24). So every member under a denied key is removed, key and all, at any depth, as the
+// draft's are (`../../../../../runtime/llm/harness/draft-screen.ts`), and the step says something was left out.
+//
+// **Then screened as a judge's trail is** (`../../../../../runtime/result-verification/run-trail/screen.ts`): a
+// credential-shaped string is withheld, locator text rewritten, and the times and minted ids that differ on every call
+// left out.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioLlmEvidenceViewGroups } from "../../../../../runtime/llm/decision-context/index.ts";
+import { automationStudioLlmValueWithoutDeniedKeys } from "../../../../../runtime/llm/harness/index.ts";
 import { automationStudioResultTrailScreened, type AutomationStudioResultTrailStep } from "../../../../../runtime/result-verification/index.ts";
 import { AUTOMATION_STUDIO_ANSWER_FIRST_VIEW_NOT_CARRIED } from "./view-not-carried.ts";
 
@@ -30,9 +39,13 @@ export function automationStudioAnswerFirstCarriedStep(step: AutomationStudioRes
     ...(step.where === undefined ? {} : { where: step.where }),
     ...(found === undefined ? {} : { found })
   };
-  const screened = automationStudioResultTrailScreened(carried, options.deniedEvidenceKeys).value;
+  const { value: allowed, withheld } = automationStudioLlmValueWithoutDeniedKeys(carried, options.deniedEvidenceKeys);
+  const screened = automationStudioResultTrailScreened(withheld > 0 ? { ...allowed, withheld: WITHHELD_WORDS } : allowed, options.deniedEvidenceKeys).value;
   return isObject(screened) ? screened : undefined;
 }
+
+/** What a carried step says where members under keys the domain denies were removed from it. */
+const WITHHELD_WORDS = "Values under keys the domain does not show to a model are left out of this call.";
 
 function withoutPage(found: JsonValue, pageKeys: ReadonlySet<string>): JsonValue {
   if (!isObject(found) || pageKeys.size === 0) return found;
