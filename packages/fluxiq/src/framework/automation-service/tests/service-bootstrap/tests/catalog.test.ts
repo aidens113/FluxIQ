@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
 import type { AutomationStudioLlmProviderResolverInput, AutomationStudioServiceOptions } from "../../../service.ts";
 import { AutomationStudioService } from "../../../service.ts";
+import { automationStudioAnsweringInstructionReading } from "./instruction-reading.ts";
 import { plan, mockProvider, permissionScopedNativeRuntime, blankFixture, caller, copyDataDirSeed, rejectedGenerationDiagnostic, seedDataDir, blankFixturesPerService, type DataDirSeed } from "./fixtures.ts";
 
 // Heavy service test: under full-suite load it ran past the 15 s default (t289).
@@ -110,7 +111,8 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       };
     });
     const [grantedFixture, deniedFixture] = await seeded(examplePair);
-    const granted = createService({ provider: mockProvider(providerRun) })
+    // The build reads its instruction when it starts (t976, b2ee9ed45), apart from the plan `providerRun` answers.
+    const granted = createService({ provider: mockProvider(automationStudioAnsweringInstructionReading(providerRun, { inputTokens: 120, outputTokens: 80, totalTokens: 200, estimatedCostUsd: 0.002 })) })
       .bindNativeNodeRuntime(permissionScopedNativeRuntime(["example.action"]));
     const grantedInstruction = await granted.getFlowInstruction(grantedFixture.project.id, "instruction.build");
     await granted.saveFlowInstruction(grantedFixture.project.id, {

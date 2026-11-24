@@ -28,6 +28,8 @@ describe("processing binds only explicit current caller values", () => {
     const first = automaticFeed(process, REFERENCE, undefined, { latest: "2030-01-02" });
     first.read("source", originals);
     expect(first.feed.rows().rows.map((row) => row.title)).toEqual(["First"]);
+    // The declaration is written only into a record output a step already has (e2b1f2635): the read's step is given one.
+    for (const step of first.steps) (step.input.parameters as JsonObject).recordOutput = {};
     const saved = automationStudioAnswerFirstStepsWithResultProcessing({ result: first.feed, steps: first.steps });
     const written = (saved[0]!.input.parameters as JsonObject).recordOutput as JsonObject;
     expect(written.process).toMatchObject({ where: [{ field: "date", atLeast: "2030-01-02", atMost: { $state: { path: "latest", fallback: "2030-01-02" } } }], declaration: { source: first.processing.source, revision: 1, bindings: { Date: "date", title: "title" } } });

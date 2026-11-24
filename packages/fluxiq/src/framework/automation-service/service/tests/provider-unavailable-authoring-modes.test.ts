@@ -22,6 +22,7 @@ import { automationStudioActivityHub } from "../../../../runtime/automation-acti
 import { automationStudioConversationCallCause } from "../../../../runtime/conversations/commands/index.ts";
 import { AutomationStudioLlmProviderError, type AutomationStudioLlmTaskRequest } from "../../../../runtime/llm/index.ts";
 import { AutomationStudioService } from "../../service.ts";
+import { automationStudioAnsweringInstructionReading } from "../../tests/service-bootstrap/tests/instruction-reading.ts";
 import { blankFixture, caller, mockProvider, rejectedGenerationDiagnostic } from "../../tests/service-bootstrap/tests/fixtures.ts";
 
 vi.setConfig({ testTimeout: 60_000 });
@@ -47,11 +48,24 @@ const unreachable = () => new AutomationStudioLlmProviderError("llm.provider_net
 
 type Mode = "candidate" | "project";
 
+/** What the build's reading of its instruction is billed when it is answered (`answeringReading`). */
+const READING_USAGE = { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.0001 };
+
+/** `answer` with the build's start reading answered as "nothing lasting is asked for", for a case whose provider does answer it. */
+const answeringReading = (answer: (request: AutomationStudioLlmTaskRequest) => Promise<unknown>) => automationStudioAnsweringInstructionReading(answer, READING_USAGE);
+
+/**
+ * `answer` is every request the provider is sent. The build reads its instruction when it starts (t976, b2ee9ed45),
+ * before its first decision: that reading reaches `answer` too, so a provider that answers nothing answers it nothing,
+ * and it is counted apart (`readings`) from the decisions (`requests`).
+ */
 async function build(mode: Mode, answer: (request: AutomationStudioLlmTaskRequest) => Promise<unknown>) {
   const requests: AutomationStudioLlmTaskRequest[] = [];
+  const read = { count: 0 };
   const dataDir = await mkdtemp(path.join(os.tmpdir(), `fluxiq-provider-silent-${mode}-`));
   const provider = mockProvider(async (request) => {
-    requests.push(request);
+    if (request.metadata?.source === "instructionAuthority") read.count += 1;
+    else requests.push(request);
     return await answer(request);
   });
   const service = new AutomationStudioService({
@@ -67,7 +81,7 @@ async function build(mode: Mode, answer: (request: AutomationStudioLlmTaskReques
   });
   const { project, flow } = await blankFixture(service);
   const generation = service.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true, authoringMode: mode });
-  return { requests, generation };
+  return { requests, readings: () => read.count, generation };
 }
 
 /** What the chat answers for the failed build, as `conversations/commands/build.ts` reads it. */
@@ -85,11 +99,12 @@ const SILENT_ENDING: Readonly<Record<Mode, string>> = {
 
 describe.each<Mode>(["candidate", "project"])("a %s build whose model provider answers nothing", (mode) => {
   it("ends as the provider not answering, never as something the model wrote or the supervisor ended", async () => {
-    const { requests, generation } = await build(mode, async () => { throw timedOut(); });
+    const { requests, readings, generation } = await build(mode, async () => { throw timedOut(); });
 
     const diagnostic = await rejectedGenerationDiagnostic(generation);
 
-    // Three unanswered decisions end the build at once.
+    // The start's reading got no answer either (t976), and three unanswered decisions end the build at once.
+    expect(readings()).toBe(1);
     expect(requests).toHaveLength(3);
     expect(diagnostic.code).toBe("flow_bootstrap.provider_unavailable");
     expect(diagnostic.retryable).toBe(true);
@@ -116,11 +131,11 @@ describe.each<Mode>(["candidate", "project"])("a %s build whose model provider a
 
   it("says a reply was received when one arrived before the provider stopped answering", async () => {
     let calls = 0;
-    const { requests, generation } = await build(mode, async () => {
+    const { requests, generation } = await build(mode, answeringReading(async () => {
       calls += 1;
       if (calls > 1) throw timedOut();
       return { response: { kind: "evidence_tool_decision", summary: "Look.", decision: { kind: "tool_call", callId: "look", toolId: "inspect", input: { at: 1 } } }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.0001 } };
-    });
+    }));
 
     const diagnostic = await rejectedGenerationDiagnostic(generation);
 
@@ -169,7 +184,7 @@ describe("a project build whose supervisor's replies arrive and end it without a
   // The brief's other half: `post_provider_validation_failed` still means a reply that did arrive.
   it("keeps post_provider_validation_failed and the supervisor's ending, with no provider ending", async () => {
     const supervisor = { decisions: 0 };
-    const { requests, generation } = await build("project", async (request) => await answeredThenEnded(request, supervisor));
+    const { requests, generation } = await build("project", answeringReading(async (request) => await answeredThenEnded(request, supervisor)));
 
     const diagnostic = await rejectedGenerationDiagnostic(generation);
 

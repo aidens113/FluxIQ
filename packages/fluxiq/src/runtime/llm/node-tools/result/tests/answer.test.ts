@@ -26,7 +26,8 @@ describe("core.set_result_processing", () => {
     expect(tool.toolId).toBe(AUTOMATION_STUDIO_LLM_SET_RESULT_PROCESSING_TOOL_ID);
     expect(tool.effect).toBe("observe");
     expect(tool.description.length).toBeLessThanOrEqual(2_000);
-    expect(tool.description).toMatch(/touches no page, needs no step and no re-read/u);
+    // The automatic data stage (t984) words it as applying with no model call, page change or step.
+    expect(tool.description).toMatch(/without a processing model call, page change or step/u);
     expect(tool.description).toMatch(/Rows a later step acts on are still narrowed by that read's where\./u);
   });
 

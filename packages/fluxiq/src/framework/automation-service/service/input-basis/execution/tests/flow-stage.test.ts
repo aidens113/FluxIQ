@@ -32,7 +32,7 @@ async function replayed(secret: boolean) {
   const lane = await laterAttempts(cleanups);
   const options: { now: AutomationStudioAnswerFirstCallerOptions } = { now: { taskKey: KEY } };
   drivenBy(lane.service, () => options.now);
-  const first = await lane.attempt({ instruction: LIST, script: [readLoans(), complete("Listed.")] });
+  const first = await lane.attempt({ instruction: LIST, taskProcessing: { process: {} }, script: [readLoans(), complete("Listed.")] });
   expect(first.answer.attempt.status).toBe("achieved");
   options.now = { taskKey: KEY, inputs: INPUTS };
   const second = secret ? await runWithAutomationStudioRunSecrets({ card: "card-secret-for-the-test" }, () => lane.attempt({ instruction: LIST })) : await lane.attempt({ instruction: LIST });

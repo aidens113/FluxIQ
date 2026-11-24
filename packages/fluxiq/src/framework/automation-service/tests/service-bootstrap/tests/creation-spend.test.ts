@@ -27,6 +27,7 @@ import {
   type AutomationStudioLlmTaskRequest
 } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
+import { automationStudioAnsweringInstructionReading } from "./instruction-reading.ts";
 import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
 import { blankFixture, caller, copyDataDirSeed, isJudgeRequest, judgeReply, mockProvider, plan, rejectedGenerationDiagnostic, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
@@ -142,14 +143,15 @@ describe("a Flow creation's one purse", () => {
     // the second continues its draft, takes one step and finishes once its test of the whole Flow is judged a success.
     let continuedAt: number | undefined;
     let call = 0;
-    const provider = mockProvider(async (request) => {
+    // Each build reads its instruction when it starts (t976, b2ee9ed45), apart from the decisions counted here.
+    const provider = mockProvider(automationStudioAnsweringInstructionReading(async (request) => {
       if (isJudgeRequest(request)) return judgeReply("yes");
       call += 1;
       const decision: JsonObject = continuedAt !== undefined && call > continuedAt + 1
         ? { kind: "complete", result: { summary: "Built.", plan: plan() } }
         : { kind: "tool_call", callId: `call.${call}`, toolId: "example.act", input: { press: call }, add: true };
       return { response: { kind: "evidence_tool_decision", summary: "Step.", decision }, usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 } };
-    });
+    }, { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 }));
     // A stand-in that says how to run its steps again, so the finishing build's test can run the whole Flow from its start.
     const acting: AutomationStudioLlmEvidenceRuntimeBinding = automationStudioReplayingBinding({
       domainId: "example",
@@ -233,6 +235,12 @@ describe("a Flow creation's one purse", () => {
       { kind: "complete", result: { summary: "Built.", plan: plan() } }
     ];
     const provider = mockProvider(async (request) => {
+      // The build's reading of its instruction, made when it starts (t976, b2ee9ed45): paid for from
+      // the same purse, but not one of the decisions or judgements this case counts.
+      if (request.metadata?.source === "instructionAuthority") {
+        paid += decisionCost;
+        return { response: { kind: "evidence_tool_decision", summary: "Read.", decision: { kind: "complete", result: { instructed: [] } } }, usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: decisionCost } };
+      }
       requests.push(request);
       if (isJudgeRequest(request)) {
         paid += judgeCost;
@@ -264,11 +272,15 @@ describe("a Flow creation's one purse", () => {
     expect(record?.spentUsd).toBeCloseTo(paid, 10);
   }, 30_000);
 
-  it("(f) ends on cost, asking nobody, when the purse refuses the instruction reading a lasting step needs", async () => {
-    // The press costs the whole ceiling, so the reading of what the
-    // instruction permits -- one more call, made when the domain asks before
-    // the refund -- cannot be paid for. Read as "the instruction permits
-    // nothing", it raised a permission question and ended the build on it.
+  it("(f) ends on cost, asking nobody, when a lasting step's press leaves nothing after the instruction was read at the start", async () => {
+    // The press costs the whole ceiling. The reading of what the instruction
+    // permits used to be made when the domain asked before the refund, and
+    // could not be paid for then; read as "the instruction permits nothing",
+    // it raised a permission question and ended the build on it. Since t976
+    // (b2ee9ed45; user, 2026-11-03 and 2026-11-10: a dangerous act asks only
+    // when a Flow or chat starts, never mid-Flow) the build reads it when it
+    // starts, before the press, so it is paid for; what the press then meets
+    // mid-Flow is no question but the empty purse.
     const decisions: AutomationStudioLlmTaskRequest[] = [];
     const readings: AutomationStudioLlmTaskRequest[] = [];
     const provider = mockProvider(async (request) => {
@@ -301,8 +313,8 @@ describe("a Flow creation's one purse", () => {
 
     const ending = await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller(), permissionAskTimeoutMs: 60_000 }));
 
-    // The reading was never sent, and nothing after it was.
-    expect(readings).toHaveLength(0);
+    // The reading was sent once, when the build started, and one press after it; nothing after that.
+    expect(readings).toHaveLength(1);
     expect(decisions).toHaveLength(1);
     // The money ran out, and the build says so: never a permission question.
     expect(ending.code).toBe("flow_bootstrap.evidence_budget_exhausted");

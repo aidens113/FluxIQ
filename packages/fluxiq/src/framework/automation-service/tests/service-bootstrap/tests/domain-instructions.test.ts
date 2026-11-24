@@ -66,6 +66,9 @@ function scriptedProvider(): { provider: AutomationStudioLlmProvider; ran: Autom
   ];
   const provider = mockProvider(async (request) => {
     ran.push(request);
+    // The build's reading of its instruction, made when it starts (t976, b2ee9ed45): a provider request of
+    // the build like any other, so it is listed, but not one of the decisions scripted here.
+    if (request.metadata?.source === "instructionAuthority") return { response: { kind: "evidence_tool_decision", summary: "Read.", decision: { kind: "complete", result: { instructed: [] } } }, usage: USAGE };
     if (isJudgeRequest(request)) return judgeReply("yes");
     const decision = decisions.shift();
     if (!decision) throw new Error("The script has no further decision.");
@@ -90,8 +93,10 @@ describe("a runtime bound with its own system instructions", () => {
     const result = await instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller() });
 
     expect(result.status).toBe("proposed");
-    // Two decisions and the judge, its yes confirmed by a second call (murwcmx2, C-H): two different call sites, one provider.
-    expect(ran.map(isJudgeRequest)).toEqual([false, false, true, true]);
+    // The reading of the instruction at the start (t976), two decisions and the judge, its yes confirmed by a
+    // second call (murwcmx2, C-H): three different call sites, one provider.
+    expect(ran.map(isJudgeRequest)).toEqual([false, false, false, true, true]);
+    expect(ran[0]?.metadata?.source).toBe("instructionAuthority");
     const expected = { domainId: "example", ...INSTRUCTIONS };
     for (const request of ran) expect(request.domainInstructions).toEqual(expected);
     expect(measured.length).toBeGreaterThan(0);

@@ -39,6 +39,7 @@ function expectNoTrialOrReset(library: FakeLibrary, requests: readonly { taskKin
 describe("one answer-first attempt", () => {
   it("(a) reaches its result: rows from a read, read back, confirmed once, one act on the record, a draft saved, and no trial or reset", async () => {
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       instruction: "Renew the card on my library account and list every loan.",
       permittedConsequences: ["modify_existing"],
       script: [
@@ -89,6 +90,7 @@ describe("one answer-first attempt", () => {
   it("(b) a forward run acts on the rows not yet done, and an already-done row is not acted on again", async () => {
     const library = fakeLibrary();
     const attempt = await scriptedAttempt({
+      taskProcessing: null,
       library,
       instruction: "Renew every loan on my library account.",
       permittedConsequences: ["modify_existing"],
@@ -116,6 +118,7 @@ describe("one answer-first attempt", () => {
 
   it("(c) a task with a lasting act and no rows ends done on site with its act", async () => {
     const attempt = await scriptedAttempt({
+      taskProcessing: null,
       instruction: "Renew the card on my library account.",
       permittedConsequences: ["modify_existing"],
       script: [runNode("card", RENEW_CARD, {}, ["modify_existing"], { add: true }), complete("Renewed the card.")]
@@ -131,6 +134,7 @@ describe("one answer-first attempt", () => {
 
   it("(d) a budget exhausted mid-way ends budget_out with the best result and the draft", async () => {
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       instruction: "List every loan on my library account.",
       usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.04 },
       resolver: { maxTotalEstimatedCostUsd: 0.1 },
@@ -156,6 +160,7 @@ describe("one answer-first attempt", () => {
     const library = fakeLibrary(["Atlas of Rivers"]);
     const said: string[] = [];
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       library,
       instruction: "List every loan on my library account.",
       judge: [judgeReply("no", { expected: "Every loan", observed: "One loan is missing", defects: [{ kind: "other", row: "Atlas of Rivers", requestWords: "every loan" }] }), judgedYes],
@@ -176,7 +181,9 @@ describe("one answer-first attempt", () => {
       ]
     }, cleanups);
     const answer = answerOf(attempt);
-    expect(said[0]).toContain("answer_first.nothing_to_judge");
+    // Changed by t984 (05d61fea4, `../completion/check.ts`): the data stage refuses a data task's completion with no captured
+    // source schema before the nothing-to-judge check; still with no model call.
+    expect(said[0]).toContain("answer_first.processing_schema_missing");
     expect(said[1]).toContain("answer_first.same_evidence");
     expect(answer.attempt.status).toBe("achieved");
     // A no, then a yes on new evidence: two judge calls for four completions.

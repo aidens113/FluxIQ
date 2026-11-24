@@ -8,10 +8,11 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FluxIQHostPaths } from "../../../../framework/index.ts";
-import { IAM_USER_ACCESS } from "../../../../platform/iam/predefined/index.ts";
+import type { IamPolicySource } from "../../../../platform/iam/authorize/index.ts";
+import { IAM_READ_ONLY_ACCESS, IAM_USER_ACCESS } from "../../../../platform/iam/predefined/index.ts";
 import { createGlobalProgramRuntime, type GlobalProgramRuntime } from "../../../index.ts";
 import type { ProgramApiActor } from "../../../_shared/api.ts";
-import { fixedPolicySource } from "../../../_shared/tests/iam-registry-fixtures.ts";
+import { programIamIdSegment } from "../../../_shared/iam/index.ts";
 import { automationStudioPersonProject } from "../person-project.ts";
 import { automationStudioProjectName } from "../project-name.ts";
 
@@ -24,6 +25,19 @@ function person(userId: string): ProgramApiActor {
 
 const ALICE = person("user.alice");
 const BOB = person("user.bob");
+/**
+ * Someone who may not make a project: on `local` by the permissions their browser carries, and on
+ * `service` by the policies attached to them, read-only. Since t950 (d73bca654) a paired browser on
+ * `service` is decided by its person's own policies narrowed by FluxIQBrowserSession, never by the
+ * permissions or role it carries, so a read-only person there is one whose policies are read-only.
+ */
+const READER: ProgramApiActor = { ...person("user.reader"), permissions: ["programs.read"] as ProgramApiActor["permissions"] };
+
+/** Everyone's policies are a user's, except the reader's, which are read-only. */
+const policiesByPerson: IamPolicySource = {
+  resolvePolicySet: async (principal) => ({ identity: [principal.id === programIamIdSegment(READER.userId).segment ? IAM_READ_ONLY_ACCESS : IAM_USER_ACCESS], guardrails: [], sessions: [], boundary: null }),
+  getRole: async () => null
+};
 
 function pathsAt(root: string): FluxIQHostPaths {
   const fluxiq = path.join(root, ".fluxiq");
@@ -36,7 +50,7 @@ function pathsAt(root: string): FluxIQHostPaths {
 
 describe.each([
   ["local", { profile: "local" as const }],
-  ["service", { profile: "service" as const, source: fixedPolicySource([IAM_USER_ACCESS]) }]
+  ["service", { profile: "service" as const, source: policiesByPerson }]
 ])("a person's browser with no project chosen, on the %s profile", (_profile, iam) => {
   let root = "";
   let runtime: GlobalProgramRuntime;
@@ -46,6 +60,7 @@ describe.each([
     runtime = createGlobalProgramRuntime(pathsAt(root), { modelProvidersEnabled: false, iam });
     await runtime.identityAccess.upsertUser({ id: ALICE.userId, username: "alice", displayName: "Alice", roleId: "viewer" });
     await runtime.identityAccess.upsertUser({ id: BOB.userId, username: "bob", displayName: "Bob", roleId: "viewer" });
+    await runtime.identityAccess.upsertUser({ id: READER.userId, username: "reader", displayName: "Reader", roleId: "viewer" });
   });
   afterEach(async () => {
     runtime.secretKeys.close();
@@ -106,8 +121,7 @@ describe.each([
   });
 
   it("is refused by the registry for someone who may not make one", async () => {
-    const reader: ProgramApiActor = { ...ALICE, permissions: ["programs.read"] as ProgramApiActor["permissions"] };
-    await expect(project(reader, true)).resolves.toBeNull();
+    await expect(project(READER, true)).resolves.toBeNull();
     await expect(allProjects()).resolves.toEqual([]);
   });
 

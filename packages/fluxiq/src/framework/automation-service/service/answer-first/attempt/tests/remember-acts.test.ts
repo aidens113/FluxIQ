@@ -7,6 +7,8 @@ import { automationStudioAnswerFirstRemember } from "../remember.ts";
 import type { AutomationStudioAnswerFirstRoundsEnding } from "../rounds.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "../state.ts";
 
+// The ending writes the result's held processing into the steps first (t970, t984): this ending holds none, so the steps stand as they are.
+const NO_PROCESSING = { processingDeclaration: () => undefined };
 const landed = { effectApplied: true, words: { what: "Added", where: "On the page" } };
 
 async function acts(ending: AutomationStudioAnswerFirstRoundsEnding, attemptId: string, scope?: string) {
@@ -20,7 +22,7 @@ async function acts(ending: AutomationStudioAnswerFirstRoundsEnding, attemptId: 
   };
   const run = {
     input: { projectId: "p1", flowId: "f1", ...(scope ? { caller: { actScope: scope } } : {}) }, taskId: "t1", attemptId, ordinal: 1, steps: [], startedWith: [], askedAgain: false,
-    route: { kind: "build" }, completion: { state: {} }, record,
+    route: { kind: "build" }, completion: { state: {} }, record, result: NO_PROCESSING,
     memory: { update: updateMemory }
   } as unknown as AutomationStudioAnswerFirstAttemptRun;
   const done = await automationStudioAnswerFirstRemember(run, ending, { label: "unverified", candidateId: undefined, stated: [], spend: { calls: 0, usd: 0 }, atMs: 1 });
@@ -38,7 +40,7 @@ describe("the ending's write of the act record", () => {
     const cause = new Error("completion storage failed");
     const run = {
       input: { projectId: "p1", flowId: "f1", caller: { actScope: "execution" } }, taskId: "t1", attemptId: "a1", ordinal: 1,
-      steps: [], startedWith: [], route: { kind: "build" }, completion: { state: {} }, memory: { update: async () => { throw cause; } }
+      steps: [], startedWith: [], route: { kind: "build" }, completion: { state: {} }, result: NO_PROCESSING, memory: { update: async () => { throw cause; } }
     } as unknown as AutomationStudioAnswerFirstAttemptRun;
     const ended = { label: "unverified" as const, candidateId: undefined, stated: [], spend: { calls: 0, usd: 0 }, atMs: 1 };
     await expect(automationStudioAnswerFirstRemember(run, "achieved", ended)).rejects.toBe(cause);

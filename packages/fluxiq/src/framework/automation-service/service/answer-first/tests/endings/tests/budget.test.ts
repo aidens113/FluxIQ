@@ -14,6 +14,7 @@ afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(
 describe("a budget gone ends it, with the best result", () => {
   it("budget exhaustion by the purse ends budget_out with the best result and the draft", async () => {
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       instruction: "Renew the card and list every loan on my library account.",
       permittedConsequences: ["modify_existing"],
       usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.04 },
@@ -38,6 +39,7 @@ describe("a budget gone ends it, with the best result", () => {
     let asked = 0;
     let afterEmpty = 0;
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       wrapProvider: (provider) => ({
         ...provider,
         runTask: async (request, execution) => {
@@ -60,6 +62,7 @@ describe("a budget gone ends it, with the best result", () => {
 
   it("a judge's no before the budget went is said on the result it kept", async () => {
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       judge: [judgedNo("Not confirmed.")],
       usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.04 },
       resolver: { maxTotalEstimatedCostUsd: 0.3 },
@@ -76,6 +79,7 @@ describe("a draft that could not be assembled", () => {
   it("costs the draft and not the result: the result is returned, and it is said honestly", async () => {
     const holds = "domain.library.read_holds";
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       // A read the draft holds of a node the project's library does not: the domain answers it as a read of the loans,
       // and no Flow can be assembled from it. (A read kept out of the draft is a look, never the result: lane t905, D1.)
       fault: (call, library) => call.value.node !== holds ? undefined : {

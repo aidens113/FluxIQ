@@ -25,6 +25,7 @@ describe("an attempt and the clock", () => {
     vi.spyOn(Date, "now").mockImplementation(() => wallClock() + skewMs);
     const notes: Array<JsonObject | undefined> = [];
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       before: noWaiting(),
       script: [
         (request: AutomationStudioLlmTaskRequest) => {

@@ -29,6 +29,7 @@ describe("a permission", () => {
     const hold = held();
     const seen: string[] = [];
     const generating = scriptedAttempt({
+      taskProcessing: null,
       instruction: "Renew the card on my library account.",
       taskActs: ["send_or_publish"],
       before: hold.before,
@@ -58,6 +59,7 @@ describe("a permission", () => {
     const hold = held();
     const declined: string[] = [];
     const generating = scriptedAttempt({
+      taskProcessing: { process: {} },
       instruction: "List every loan on my library account, renewing the card if you can.",
       taskActs: ["send_or_publish"],
       before: hold.before,
@@ -99,6 +101,7 @@ describe("a check only a person can clear", () => {
     const hold = held();
     let checks = 1;
     const generating = scriptedAttempt({
+      taskProcessing: { process: {} },
       before: hold.before,
       fault: (call) => call.value.node === READ_LOANS && checks-- > 0 ? check(call) : undefined,
       script: [runNode("read.checked", READ_LOANS, {}, [], { add: true }), runNode("read", READ_LOANS, { again: true }, [], { add: true }), complete("Listed.")]
@@ -126,6 +129,7 @@ describe("a check only a person can clear", () => {
     const checked = new Set<number>();
     const reads = [1, 2, 3, 4, 5];
     const generating = scriptedAttempt({
+      taskProcessing: { process: {} },
       before: hold.before,
       fault: (call) => {
         const page = (call.value.parameters as JsonObject | undefined)?.page;
@@ -166,6 +170,7 @@ describe("a check only a person can clear", () => {
     let checks = 1;
     let asked: AutomationStudioLlmTaskRequest[] = [];
     const generating = scriptedAttempt({
+      taskProcessing: { process: {} },
       before: hold.before,
       wrapProvider: (provider, requests) => {
         asked = requests;
@@ -197,6 +202,7 @@ describe("a check only a person can clear", () => {
     const hold = held();
     let checks = 1;
     const generating = scriptedAttempt({
+      taskProcessing: { process: {} },
       before: hold.before,
       fault: (call) => call.toolId === LOOK_TOOL && call.value.again === true && checks-- > 0 ? lookCheck(call) : undefined,
       script: [toolCall("look.checked", LOOK_TOOL, { again: true }), runNode("read", READ_LOANS, {}, [], { add: true }), complete("Listed.")]
@@ -221,6 +227,7 @@ describe("a check only a person can clear", () => {
     const hold = held();
     let checks = 1;
     const generating = scriptedAttempt({
+      taskProcessing: { process: {} },
       before: hold.before,
       fault: (call) => (call.value.parameters as JsonObject | undefined)?.second === true && checks-- > 0 ? check(call) : undefined,
       script: [runNode("read", READ_LOANS, {}, [], { add: true }), runNode("read.checked", READ_LOANS, { second: true }, [], {}), complete("Listed.")]
@@ -239,6 +246,7 @@ describe("a check with nobody to ask", () => {
   it("stays waiting for a person, honestly, with what it has, and spends no more", async () => {
     let checks = 1;
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       before: (service) => { Object.defineProperty(service.conversations, "available", { value: false }); },
       fault: (call) => (call.value.parameters as JsonObject | undefined)?.second === true && checks-- > 0 ? check(call) : undefined,
       script: [runNode("read", READ_LOANS, {}, [], { add: true }), runNode("read.checked", READ_LOANS, { second: true }, [], {}), complete("Never asked.")]
@@ -262,7 +270,9 @@ describe("an attempt stuck in a loop", () => {
     let changed = false;
     const decide = (request: AutomationStudioLlmTaskRequest) => {
       if (decision && !decided && asksDecision(request)) {
-        // Asking the person is a last resort (t969): offered only after a changed approach and a climb, so the model changes approach first.
+        // Where asking the person is not offered the model changes approach first. Since t983 (U1, 002650596,
+        // `runtime/llm/loop-decision/options.ts`) it is offered from the first catch, gated by its stated why, not by a
+        // changed approach or a climb.
         if (!/"offered":\[[^\]]*"ask_person"/u.test(JSON.stringify(request.context.evidenceLoop?.evidence))) {
           if (changed) return runNode("read.stuck", READ_LOANS, { from: "the wrong list" }, [], {});
           changed = true;
@@ -288,6 +298,7 @@ describe("an attempt stuck in a loop", () => {
     const hold = held();
     const steer = heldAtSteer();
     const generating = scriptedAttempt({
+      taskProcessing: { process: {} },
       before: (service, project) => {
         noWaiting()(service);
         hold.before(service, project);
@@ -308,7 +319,8 @@ describe("an attempt stuck in a loop", () => {
     const kept = await keptAttempt(service, projectId, flowId);
     expect(kept?.attempt.status).toBe("working");
     expect(kept?.attempt).not.toHaveProperty("waitingFor");
-    expect(kept?.tried.decisions?.map((each) => each.decision)).toEqual(["change_approach", "ask_person"]);
+    // Changed by t983 (U1, 002650596): ask_person is offered at the first catch, so the model's own decision is the only one.
+    expect(kept?.tried.decisions?.map((each) => each.decision)).toEqual(["ask_person"]);
     await service.conversations.answerAsk({ projectId, askId: ask.askId, kind: "text", value: ANSWER });
     steer.release();
     const attempt = await generating;
@@ -324,6 +336,7 @@ describe("an attempt stuck in a loop", () => {
 
   it("with a model that never decides, nobody is asked: each stopped round is steered off what it repeated, and it goes on until its budget is gone", async () => {
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       before: (service) => {
         noWaiting()(service);
         Object.defineProperty(service.conversations, "available", { value: false });
@@ -351,6 +364,7 @@ describe("an attempt stuck in a loop", () => {
     const hold = held();
     const steer = heldAtSteer();
     const generating = scriptedAttempt({
+      taskProcessing: { process: {} },
       before: (service, project) => {
         noWaiting()(service);
         hold.before(service, project);
@@ -376,6 +390,7 @@ describe("a person's Stop", () => {
   it("mid-round is a normal return with what it had, and asks nothing more", async () => {
     const hold = held();
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       before: hold.before,
       script: [
         runNode("read", READ_LOANS, {}, [], { add: true }),
@@ -396,6 +411,7 @@ describe("a person's Stop", () => {
   it("during a permission wait wins over the question", async () => {
     const hold = held();
     const generating = scriptedAttempt({
+      taskProcessing: null,
       instruction: "Renew the card on my library account.",
       taskActs: ["send_or_publish"],
       before: hold.before,
@@ -412,6 +428,7 @@ describe("a person's Stop", () => {
   it("during a check's wait wins over the check", async () => {
     const hold = held();
     const generating = scriptedAttempt({
+      taskProcessing: { process: {} },
       before: hold.before,
       fault: (call) => call.value.node === READ_LOANS ? check(call) : undefined,
       script: [runNode("read.checked", READ_LOANS, {}, [], { add: true }), complete("Never asked.")]
@@ -426,6 +443,7 @@ describe("a person's Stop", () => {
     const hold = held();
     let waiting = false;
     const generating = scriptedAttempt({
+      taskProcessing: { process: {} },
       before: (service: AutomationStudioService, project) => {
         hold.before(service, project);
         automationStudioAnswerFirstAttemptPorts(service).sleep = async (_ms, signal) => {

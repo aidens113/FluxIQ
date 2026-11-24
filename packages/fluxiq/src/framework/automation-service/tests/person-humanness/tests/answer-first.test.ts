@@ -16,7 +16,7 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup();
 });
 
-const firstAttempt = { script: [readLoans(), { kind: "complete", result: { summary: "Listed." } }] };
+const firstAttempt = { taskProcessing: { process: {} }, script: [readLoans(), { kind: "complete", result: { summary: "Listed." } }] };
 
 /** A first attempt by a caller whose stored starting value is `stored`, with the request carrying `requested`: what the task kept, and whom the reader was asked about. */
 async function firstAttemptWith(requested: number | undefined, stored: number | null | "unbound") {

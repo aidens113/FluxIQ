@@ -196,6 +196,7 @@ async function run(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Ass
  * (`./person-check-port.ts`, `./permission.ts`). A caller's input values are the run's inputs, so a
  * step bound to one runs with this attempt's value (`./input-bound-steps.ts`). `flowHumanness` is the run Flow's
  * own stored level (header). `inputUse`, where the run opted in, opens its session over exactly the layers assembled here.
+ * The gate gets the run's host scope, so a press an earlier attempt held only to a look gets that look (`../run-acts/run-gate.ts`).
  */
 function gatedOptions(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assembled, engine: AutomationStudioAnswerFirstFlowRunEngine, watch: AutomationStudioAnswerFirstFlowRunWatch, signal: AbortSignal, referenceNow: number, claimedActs: ReadonlySet<string>, parking: AutomationStudioParkingPort | undefined, pages: AutomationStudioAnswerFirstFlowRunLivePages, flowHumanness: number | undefined, inputUse: ((entry: AutomationStudioInputUseEntry) => AutomationStudioGraphInputUsePort) | undefined): AutomationStudioGraphExecutionOptions {
   const { parking: _theEnginesThread, ...given } = engine.graphOptions({ runId: ports.runId, signal });
@@ -208,7 +209,7 @@ function gatedOptions(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: 
     pages.captured(batch);
     return stored;
   }, ...(parking ? { parking } : {}), ...(caller ? { inputs: { ...given.inputs, ...caller } } : {}), ...(humanness !== undefined ? { humanness } : {}), ...(port ? { inputUse: port } : {}) };
-  return watch.asked(automationStudioAnswerFirstRunActGate(watch.sent(own), { record: ports.record, settle: true, claimedActs, ...(engine.definitions ? { definitions: engine.definitions } : {}) }));
+  return watch.asked(automationStudioAnswerFirstRunActGate(watch.sent(own), { record: ports.record, settle: true, claimedActs, scope: { projectId: ports.input.projectId, flowId: ports.input.flowId }, ...(engine.definitions ? { definitions: engine.definitions } : {}) }));
 }
 
 /**

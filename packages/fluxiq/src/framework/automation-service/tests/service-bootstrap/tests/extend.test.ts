@@ -19,6 +19,7 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmTask
 import { AutomationStudioNativeNodeRuntime } from "../../../../../runtime/native-nodes/index.ts";
 import type { AutomationStudioLlmProviderResolverInput } from "../../../service.ts";
 import { AutomationStudioService } from "../../../service.ts";
+import { automationStudioAnsweringInstructionReading } from "./instruction-reading.ts";
 import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
 import { caller, isJudgeRequest, judgeReply, mockProvider } from "./fixtures.ts";
 
@@ -167,11 +168,12 @@ async function serviceWithAppliedFlow(input: { decide(request: AutomationStudioL
   const requests: AutomationStudioLlmTaskRequest[] = [];
   const resolutions: AutomationStudioLlmProviderResolverInput[] = [];
   const evidenceRuntime = automationStudioReplayingBinding(binding());
-  const provider = mockProvider(async (request) => {
+  // The build reads its instruction when it starts (t976, b2ee9ed45), apart from the decisions `decide` makes.
+  const provider = mockProvider(automationStudioAnsweringInstructionReading(async (request) => {
     requests.push(request);
     if (isJudgeRequest(request)) return judgeReply();
     return await input.decide(request);
-  });
+  }, { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 }));
   const instance = new AutomationStudioService({
     dataDir: tempRoot,
     llmProviderResolver: ((resolverInput: AutomationStudioLlmProviderResolverInput) => {
@@ -304,7 +306,8 @@ describe("extending a Flow that already exists", () => {
       caller: caller()
     });
 
-    expect(resolutions).toEqual([{ projectId: project.id, flowId: flow.flowId, caller: caller(), providerId: "host", metadata: canonicalMetadata }]);
+    // With the task's one starting model, Haiku where nothing names one (user, 2026-11-20, U1; t983, 002650596).
+    expect(resolutions).toEqual([{ projectId: project.id, flowId: flow.flowId, caller: caller(), providerId: "host", modelId: "claude-haiku-5-5", metadata: canonicalMetadata }]);
   }, 60_000);
 
   it("refuses to build a second Flow beside the first, which is what create would have done", async () => {

@@ -11,6 +11,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AutomationStudioLlmProviderError, type AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
+import { automationStudioAnsweringInstructionReading } from "./instruction-reading.ts";
 import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
 import { blankFixture, copyDataDirSeed, caller, isJudgeRequest, judgeReply, mockProvider, plan, rejectedGenerationDiagnostic, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
@@ -53,7 +54,8 @@ async function build(unreadable: (call: number) => boolean) {
   const requests: AutomationStudioLlmTaskRequest[] = [];
   let acted = false;
   const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
-  const provider = mockProvider(async (request) => {
+  // The build reads its instruction when it starts (t976, b2ee9ed45): answered apart, not one of the decisions scripted here.
+  const provider = mockProvider(automationStudioAnsweringInstructionReading(async (request) => {
     requests.push(request);
     if (isJudgeRequest(request)) return judgeReply();
     if (unreadable(requests.length)) throw malformed();
@@ -62,7 +64,7 @@ async function build(unreadable: (call: number) => boolean) {
       : { kind: "tool_call", callId: `call.${requests.length}`, toolId: "example.act", input: { press: 1 }, add: true };
     acted = true;
     return { response: { kind: "evidence_tool_decision", summary: "Step.", decision }, usage: USAGE };
-  });
+  }, USAGE));
   const instance = new AutomationStudioService({
     dataDir: tempRoot,
     llmProviderResolver: (() => ({ provider, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 })) as never,
@@ -103,7 +105,8 @@ describe("a Flow build whose model reply arrives unreadable", () => {
     expect(diagnostic.ending).toMatchObject({ kind: "replies_unreadable", tried: { rounds: 1, decisions: 6, stepsInFlow: 0 } });
     expect(diagnostic.ending?.message).toMatch(/^The build stopped because the replies it got back could not be read: 6 in a row came back unreadable -- because its brackets did not match/u);
     expect(diagnostic.ending?.message).toContain("In all, 6 of 6 replies could not be read; each was paid for and counted in the build's budget.");
-    // Every unreadable reply was paid for, and the build's accounting says so.
-    expect(diagnostic.accounting?.estimatedCostUsd).toBeCloseTo(0.012, 6);
+    // Every unreadable reply was paid for, and the build's accounting says so, beside the start's reading of the
+    // instruction (t976, b2ee9ed45), which was readable and paid for at `USAGE`.
+    expect(diagnostic.accounting?.estimatedCostUsd).toBeCloseTo(0.012 + USAGE.estimatedCostUsd, 6);
   });
 });

@@ -11,7 +11,7 @@ import type { AutomationStudioLlmEvidenceToolExecutionResult, AutomationStudioLl
 import { automationStudioAnswerFirstSavedStateOf } from "../index.ts";
 import { judgedNo } from "./endings/support.ts";
 import { complete, RENEW_LOAN, runNode, scriptedAttempt, type FakeLibraryFault } from "./fake-library.ts";
-import { LOAN_STEP, LOAN_TASK, onceEach, PERMITTED, READ_STEP } from "./honest-attempts.ts";
+import { ACTION_ONLY, LISTED, LOAN_STEP, LOAN_TASK, onceEach, PERMITTED, READ_STEP } from "./honest-attempts.ts";
 import { readLoans } from "./later-attempts.ts";
 import { ATLAS, BIRDS, CLOCKS, DUNES, pressLoanByHand, siteLane, TITLES } from "./library-site.ts";
 
@@ -80,7 +80,7 @@ describe("the paid reply's edit, through the whole evidence loop", () => {
     const repaired: JsonObject[] = [];
     const STEPS = { openFirst: 2, renewFirst: 3, openSecond: 4, renewSecond: 5, openThird: 6, list: 7, openThirdAgain: 8, renewThird: 9, openDone: 10 };
     const attempted = await scriptedAttempt({
-      instruction: PAID_SHAPE_TASK, ...PERMITTED, fault: site.fault,
+      instruction: PAID_SHAPE_TASK, taskProcessing: ACTION_ONLY, ...PERMITTED, fault: site.fault,
       script: [
         open("o1", ATLAS), renew("r1", ATLAS),
         open("o2", BIRDS), renew("r2", BIRDS),
@@ -122,7 +122,7 @@ describe("the paid reply's edit, through the whole evidence loop", () => {
   it("holds the whole decision schema fixed across a round, on the real path", async () => {
     const site = sitePages();
     const attempted = await scriptedAttempt({
-      instruction: PAID_SHAPE_TASK, ...PERMITTED, fault: site.fault,
+      instruction: PAID_SHAPE_TASK, taskProcessing: ACTION_ONLY, ...PERMITTED, fault: site.fault,
       script: [open("o1", ATLAS), renew("r1", ATLAS), drop(3), keep(3), complete("Renewed it.")]
     }, cleanups);
     const decisions = attempted.requests.filter((request) => request.taskKind === "evidence_tool_decision" && request.metadata?.source !== "instructionAuthority");
@@ -136,7 +136,7 @@ describe("the paid reply's edit, through the whole evidence loop", () => {
 });
 
 describe("a model that drops a step that made a landed act", () => {
-  const FLOW_OF_TWO = { instruction: LOAN_TASK, ...PERMITTED };
+  const FLOW_OF_TWO = { instruction: LOAN_TASK, taskProcessing: LISTED, ...PERMITTED };
   const PRESS_ATLAS = LOAN_STEP;
   const PRESS_BIRDS = LOAN_STEP + 1;
   const asked = () => [readLoans(), pressLoanByHand("first", ATLAS), pressLoanByHand("second", BIRDS)];

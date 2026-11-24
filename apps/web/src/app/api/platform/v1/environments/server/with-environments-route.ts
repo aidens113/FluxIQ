@@ -1,7 +1,7 @@
 import type { AppRouteIamContract } from "../../../../../../lib/app-route-iam";
 import { workspaceRouteContext } from "../../../../../../lib/workspaces";
 import type { WorkspaceRouteRefusal } from "../../../../../../lib/workspaces";
-import { getEnvironmentStore } from "../../../../../../server/environments";
+import { getPlatformEnvironmentStore } from "../../../../../../server/environments";
 import { getHostedEnvironmentController } from "../../../../../../server/environments/hosted";
 import type { EnvironmentRouteAnswer, EnvironmentRouteDeps } from "./types";
 
@@ -29,8 +29,7 @@ export async function withEnvironmentsRoute(request: Request, contract: AppRoute
   try {
     const before = await context.revalidate();
     if (!before.ok) return refusal(before);
-    const { getFluxIQAfterReload } = await import("../../../../../../lib/fluxiq");
-    const environments = getEnvironmentStore((await getFluxIQAfterReload()).paths.fluxiq);
+    const environments = await getPlatformEnvironmentStore();
     const answer = await work({ workspaceId: context.workspaceId, actor: context, controller, environments });
     const after = await context.revalidate();
     if (!after.ok) return refusal(after);

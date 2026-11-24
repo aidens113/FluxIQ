@@ -66,6 +66,7 @@ async function renewEveryCard(input: { missing?: readonly string[]; renewOnly?: 
   const library = fakeLibrary(input.titles);
   const cards: Cards = { at: "list", missing: input.missing ?? [], renewOnly: input.renewOnly ?? [], opened: [], backs: 0 };
   const attempt = await scriptedAttempt({
+    taskProcessing: null,
     library,
     instruction: "Renew every loan on my library account.",
     permittedConsequences: ["modify_existing"],
@@ -122,6 +123,7 @@ describe("a repeat that opens each row by its whole link and renews it there", (
     const cards: Cards = { at: "list", missing: [], renewOnly: [], opened: [], backs: 0 };
     const pageLevel = cardsFault(cards);
     const attempt = await scriptedAttempt({
+      taskProcessing: null,
       library, instruction: "Renew every loan on my library account.", permittedConsequences: ["modify_existing"],
       fault: (call, held) => {
         const answer = pageLevel(call, held);
@@ -157,6 +159,7 @@ describe("a repeat that opens each row by its whole link and renews it there", (
     const library = fakeLibrary();
     const cards: Cards = { at: "list", missing: ["Birds of the Coast"], renewOnly: [], opened: [], backs: 0 };
     const attempt = await scriptedAttempt({
+      taskProcessing: null,
       library,
       instruction: "Renew every loan on my library account.",
       permittedConsequences: ["modify_existing"],

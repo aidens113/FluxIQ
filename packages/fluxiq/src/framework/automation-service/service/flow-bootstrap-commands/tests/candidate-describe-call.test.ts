@@ -11,19 +11,21 @@ import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { activityActionOf } from "../../../../../ui/index.ts";
 import { automationStudioActivityHub } from "../../../../../runtime/automation-activity/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
+import { automationStudioAnsweringInstructionReading } from "../../../tests/service-bootstrap/tests/instruction-reading.ts";
 import { blankFixture, caller, judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 
 describe("a candidate build's exploration in the chat", () => {
   it("asks the bound domain to describe each call, so its card names the control", async () => {
     const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-candidate-describe-call-"));
     let decisions = 0;
-    const provider = mockProvider(async (request) => {
+    // The build reads its instruction when it starts (t976, b2ee9ed45): answered apart from the decisions scripted here.
+    const provider = mockProvider(automationStudioAnsweringInstructionReading(async (request) => {
       if (request.taskKind === "loop_verification") return judgeReply("no");
       decisions++;
       const decision = decisions === 1 ? { kind: "tool_call", callId: "look", toolId: "web.output.dom-click", input: { target: { handle: "t12" } } }
         : { kind: "tool_call", callId: `submit-${decisions}`, toolId: "core.submit_candidate", input: { summary: "nothing yet", plan: { schemaVersion: "0.1" } } };
       return { response: { kind: "evidence_tool_decision", summary: "Scripted", decision }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 } };
-    });
+    }, { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }));
     const described: Array<{ projectId: string; flowId: string; toolId: string }> = [];
     const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 12, maxEstimatedCostUsd: 0.1 }),
       llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: [{ toolId: "web.output.dom-click", description: "Click", inputSchema: { type: "object" }, effect: "observe" }],

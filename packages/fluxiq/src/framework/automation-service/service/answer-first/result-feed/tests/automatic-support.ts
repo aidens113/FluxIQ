@@ -19,10 +19,11 @@ export function automaticFeed(process: JsonValue | undefined = {}, reference: nu
   const feed = automationStudioAnswerFirstResultFeed({ instructionText, readRowsKey: "read.extracted", processing, processingReferenceTimeMs: reference, inputs });
   const steps: AutomationStudioFlowDraftStep[] = [];
   const sources = new Map<string, { schema: AutomationStudioRecordSchema; rows: JsonObject[] }>();
-  const read = (source: string, rows: JsonObject[], schema = SCHEMA, place = "page=1") => {
+  /** `own`: the read's own `recordOutput.process`, as a model writes it on the call. */
+  const read = (source: string, rows: JsonObject[], schema = SCHEMA, place = "page=1", own?: JsonValue) => {
     const checked = validateAutomationStudioRecords(rows, schema, { maxRecords: AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS.maxRecordsCeiling });
     const fields = Object.fromEntries(schema.fields.filter((field) => field.handling !== "exclude").map((field) => [field.id, `.${field.id}`]));
-    const value: JsonObject = { node: "fixture.read", parameters: { read: { fields } } };
+    const value: JsonObject = { node: "fixture.read", parameters: { read: { fields }, ...(own === undefined ? {} : { recordOutput: { datasetId: "records", process: own } }) } };
     const step: AutomationStudioFlowDraftStep = { id: source, callId: source, position: steps.length + 1, iteration: steps.length + 1, disposition: "kept", proposes: true, effect: "observe", input: value, toolId: "core.run_node", actionId: "fixture.read" };
     steps.push(step);
     const storedSchema = { ...schema, fields: schema.fields.filter((field) => field.handling !== "exclude") };

@@ -44,7 +44,11 @@ const UNVERIFIED = [
   "core.result.exclusion_evidence_missing",
   "core.result.change_not_proven",
   "core.result.build_yes_disagrees",
-  "core.result.yes_citation_refuted"
+  "core.result.yes_citation_refuted",
+  // A yes whose judge evidence projection names a gap (t987/P6, c0244a44d,
+  // `verdict/result-verdict.ts`): held unconfirmed for another meaningful read,
+  // never a claim the Flow is wrong, so it routes to no repair.
+  "core.result.semantic_evidence_missing"
 ];
 /** A yes, of some kind. `answers_with_change_advised` is also what an unconfirmed yes that advised a change carries. */
 const ANSWERS = [

@@ -20,6 +20,7 @@ describe("one call that goes wrong never ends a task", () => {
   it("a failing step is told to the model, and the task reaches its result", async () => {
     let failures = 1;
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       fault: (call) => call.value.node === READ_LOANS && failures-- > 0 ? refused("target_not_found") : undefined,
       script: [
         runNode("read.bad", READ_LOANS, { from: "the wrong list" }, [], { add: true }),
@@ -39,6 +40,7 @@ describe("one call that goes wrong never ends a task", () => {
     let throws = 1;
     let told = "";
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       before: noWaiting(),
       fault: (call) => {
         if (call.value.node === READ_LOANS && throws-- > 0) throw new Error("The socket went away.");
@@ -65,6 +67,7 @@ describe("one call that goes wrong never ends a task", () => {
     const library = fakeLibrary();
     let told = "";
     const attempt = await scriptedAttempt({
+      taskProcessing: null,
       library,
       instruction: "Renew the card on my library account.",
       permittedConsequences: ["modify_existing"],
@@ -92,6 +95,7 @@ describe("one call that goes wrong never ends a task", () => {
     const seen: string[] = [];
     let throws = 1;
     const attempt = await scriptedAttempt({
+      taskProcessing: null,
       instruction: "Renew the card on my library account.",
       permittedConsequences: ["modify_existing"],
       before: noWaiting(),
@@ -131,6 +135,7 @@ describe("one call that goes wrong never ends a task", () => {
       return toolCall("look", LOOK_TOOL, { again: true });
     };
     const attempt = await scriptedAttempt({
+      taskProcessing: null,
       library,
       instruction: "Renew the card on my library account.",
       permittedConsequences: ["modify_existing"],

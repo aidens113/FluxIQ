@@ -14,6 +14,7 @@ import {
 import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan, type AutomationStudioFlowBootstrapPlan } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../../runtime/native-nodes/index.ts";
 import { AutomationStudioService } from "../../../../framework/automation-service/service.ts";
+import { automationStudioAnsweringInstructionReading } from "../../../../framework/automation-service/tests/service-bootstrap/tests/instruction-reading.ts";
 
 // Heavy service test: under full-suite load it ran past the 15 s default (t289).
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
@@ -298,12 +299,14 @@ describe("AutomationStudioService Flow Bootstrap adaptations", () => {
   });
 
   it("bridges a generated proposal ID through the standard Adaptation Audit get, approve, and apply endpoints", async () => {
+    // The build reads its instruction when it starts (t976, b2ee9ed45), apart from the plan, and pays for it
+    // (90 input and 10 output tokens here), so the build's accounting is the plan's and the reading's.
     const provider = {
       metadata: { provider: "deepseek", model: "deepseek-flash" },
-      runTask: vi.fn(async () => ({
+      runTask: vi.fn(automationStudioAnsweringInstructionReading(async () => ({
         response: { kind: "flow_bootstrap", summary: "Build the requested deterministic Flow.", plan: validPlan() },
         usage: { inputTokens: 900, outputTokens: 100, totalTokens: 1000, estimatedCostUsd: 0.001 }
-      }))
+      }), { inputTokens: 90, outputTokens: 10, totalTokens: 100, estimatedCostUsd: 0.0001 }))
     };
     await cp(bridgeSeed.dir, dataDir, { recursive: true });
     const instance = new AutomationStudioService({
@@ -335,7 +338,7 @@ describe("AutomationStudioService Flow Bootstrap adaptations", () => {
       authSessionId: actor.sessionId
     }) as any;
     expect(generated.ok, generated.error).toBe(true);
-    expect(generated).toMatchObject({ payload: { adaptation: { status: "proposed", accounting: { inputTokens: 900, totalTokens: 1000 } } } });
+    expect(generated).toMatchObject({ payload: { adaptation: { status: "proposed", accounting: { inputTokens: 900 + 90, totalTokens: 1000 + 100 } } } });
     const adaptationId = generated.payload.adaptation.adaptationId as string;
     const inbox = await call(AUTOMATION_STUDIO_ENDPOINTS.listFlowAdaptations, { projectId: project.id, flowId: flow.flowId, limit: 10, offset: 0 }) as any;
     expect(inbox).toMatchObject({ ok: true, payload: { page: { total: 1 }, adaptations: [{ adaptationId, status: "proposed" }] } });
@@ -352,7 +355,8 @@ describe("AutomationStudioService Flow Bootstrap adaptations", () => {
         baseExecutionDigest: binding.executionDigest,
         baseSettingsRevision: binding.settingsRevision,
         currentExecutionDigest: binding.executionDigest,
-        accounting: { provider: "deepseek", model: "deepseek-flash", inputTokens: 900, totalTokens: 1000 }
+        // The proposal keeps the build's accounting as generated: the plan's and the start reading's (t976).
+        accounting: { provider: "deepseek", model: "deepseek-flash", inputTokens: 900 + 90, totalTokens: 1000 + 100 }
       } }
     } } });
     expect(opened.payload.adaptation.metadata.phase9.auditEvents.map((event: any) => event.eventType)).toEqual(["created"]);

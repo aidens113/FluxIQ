@@ -34,6 +34,7 @@ describe("what an attempt's wiring reaches", () => {
     let service: AutomationStudioService | undefined;
     let ids: { projectId: string; flowId: string } | undefined;
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       before: (held, project) => {
         service = held;
         ids = project;
@@ -56,6 +57,7 @@ describe("what an attempt's wiring reaches", () => {
     const waits: number[] = [];
     let silences = 2;
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       before: (service) => { automationStudioAnswerFirstAttemptPorts(service).sleep = async (ms) => { waits.push(ms); }; },
       wrapProvider: (provider) => ({
         ...provider,
@@ -77,6 +79,7 @@ describe("what an attempt's wiring reaches", () => {
   it("an empty balance ends as a budget-out, with what it had", async () => {
     let answered = 0;
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       wrapProvider: (provider) => ({
         ...provider,
         runTask: async (request, execution) => {
@@ -107,6 +110,7 @@ describe("what an attempt's wiring reaches", () => {
       return complete("I have it now.");
     };
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       library,
       instruction: "Renew the card and list every loan.",
       permittedConsequences: ["modify_existing"],
@@ -129,6 +133,7 @@ describe("what an attempt's wiring reaches", () => {
     const seen: string[] = [];
     // The chat's reading declares the act, so the question is put when the attempt starts, never at the press (t976).
     const generation = scriptedAttempt({
+      taskProcessing: null,
       instruction: "Renew the card on my library account.",
       taskActs: ["send_or_publish"],
       before: (held, project) => {
@@ -157,6 +162,7 @@ describe("what an attempt's wiring reaches", () => {
     let declinedIds: { projectId: string; flowId: string } | undefined;
     const declined: string[] = [];
     const generating = scriptedAttempt({
+      taskProcessing: null,
       instruction: "Renew the card on my library account.",
       taskActs: ["send_or_publish"],
       before: (held, project) => {

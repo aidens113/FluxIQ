@@ -113,6 +113,14 @@
 // before it reads no count, as it never did: what was done is not done again. Room is given only
 // to a carried act from an attempt that did not end achieved (`doneInAchieved`, `./done-in-achieved.ts`):
 // one that did is done whatever its count, since one press can land several.
+//
+// **A held press on a replay (t994, F23 `run-mwov0vf8-41ab862a`).** A press held only to a look (`heldOnRepeat`) is
+// refused until a look, and a model gives it one. A later attempt's run of its saved Flow has no model, so `carried`
+// refused it on every replay: a stepper's Next whose answer said its heading now read otherwise was never pressed
+// again, its next step's control never arose, and that step ended gone, attempt after attempt. The run gives it its
+// look mechanically instead (`SVC/answer-first/run-acts/run-gate.ts`): `carriedHold` says a call's match stands only by
+// such holds, and where the host says nothing the step brought about is on the page, its `letGo` lets the hold go
+// for this attempt and the press runs. An act declared or claimed, landed or may have, is never let go so.
 
 import { type AutomationStudioAttemptAct, type AutomationStudioAttemptActClass, readAttemptActClasses } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../core/index.ts";
@@ -325,7 +333,7 @@ export class AutomationStudioAttemptActRecord {
   /** Whether a step's non-row lasting act already landed. A may-have-landed one counts: a step so held is checked, never sent again. */
   stepDone(call: Pick<AutomationStudioAttemptActCall, "actionId" | "parameters" | "row">): boolean {
     const identity = this.identityOf(call.actionId, call.parameters, call.row);
-    const found = this.matching(identity).find((entry) => stands(entry) && !(entry.state === "landed" && hasRoom(entry, identity)));
+    const found = this.entries.find((entry) => matches(entry, identity) && stands(entry) && !(entry.state === "landed" && hasRoom(entry, identity)));
     if (found) this.leftOut.refused(found.rows);
     return found !== undefined;
   }
@@ -333,12 +341,30 @@ export class AutomationStudioAttemptActRecord {
   /** The act a real run must not do again (`SVC/answer-first/run-acts/`), read by the Flow node's own action, parameters, row and step names. `counted`: one whose count has room may run (header). */
   carried(call: ForRun): AutomationStudioAttemptAct | undefined {
     const identity = this.identityOf(call.actionId, call.parameters, call.row);
-    const steps = new Set(call.steps ?? []);
-    const room = (entry: AutomationStudioAttemptActEntry) => call.counted === true && entry.state === "landed" && hasRoom(entry, identity);
-    const found = this.entries.find((entry) => stands(entry) && !room(entry) && (matches(entry, identity) || (entry.steps ?? []).some((step) => steps.has(step))));
+    const found = carriedMatches(this.entries, call, identity)[0];
     if (found) for (const row of identity.rows.slice(0, 1)) this.leftOut.passedOver(row);
     if (found && identity.rows.length === 0) this.leftOut.refused(found.rows);
     return found ? this.shown(found) : undefined;
+  }
+
+  /**
+   * What `carried` would refuse this call for, read without refusing it: the act, and whether every act it matches is
+   * held only to a look (`toALook`: a press that declared nothing, held because its answer said it changed something
+   * that stays, header "A held press on a replay"). Nothing is counted as left out by this read.
+   *
+   * `letGo`: a look at the page showed none of what this call's step brought about on it (the host's `not_seen`), so
+   * the acts held only to a look that it matches do not stand here. Their hold goes for this attempt, and the press
+   * goes on as this attempt's own plain press, settled by its answer as any is. A later attempt holds it again.
+   */
+  carriedHold(call: ForRun): { act: AutomationStudioAttemptAct; toALook: boolean; letGo(): void } | undefined {
+    const found = carriedMatches(this.entries, call, this.identityOf(call.actionId, call.parameters, call.row));
+    if (!found[0]) return undefined;
+    const letGo = () => {
+      const held = found.filter(heldToALook);
+      for (const entry of held) delete entry.heldOnRepeat;
+      if (held.length > 0) void this.changed();
+    };
+    return { act: this.shown(found[0]), toALook: found.every(heldToALook), letGo };
   }
 
   /** Remembers the rows of one read, so a by-hand press by a handle one printed counts for that row, and two rows alike in this one list are known from one row said in two lists. */
@@ -448,15 +474,10 @@ export class AutomationStudioAttemptActRecord {
     if (step !== undefined && entry.state === "landed") this.landedBySteps.set(step, entry);
   }
 
-  /** Every act this identity is the same act as (header). */
-  private matching(identity: Identity): AutomationStudioAttemptActEntry[] {
-    return this.entries.filter((entry) => matches(entry, identity));
-  }
-
   /** Every act this call is the same act as, by its own identity and by what the domain says it would be (header). */
   private sameActs(call: AutomationStudioAttemptActCall, identity: Identity): AutomationStudioAttemptActEntry[] {
     const foreseen = this.foreseenOf(call);
-    const own = this.matching(identity);
+    const own = this.entries.filter((entry) => matches(entry, identity));
     const found = foreseen ? [...new Set([...own, ...this.entries.filter((entry) => matchesForeseen(entry, foreseen, this.place?.path))])] : own;
     const pressed = this.pressedRows(call, identity);
     const itsKeys = identity.rows.length > 0 || call.row !== undefined ? [] : [...identity.keys, ...(foreseen?.frozen?.keys ?? []), ...(foreseen?.frozen?.placeKeys ?? [])];
@@ -518,7 +539,7 @@ export class AutomationStudioAttemptActRecord {
 
   /** A declared call that answered it did nothing: what it may have done stands, and only a new look lets it try again. */
   private touchUnsettled(identity: Identity): void {
-    const open = this.matching(identity).filter((entry) => entry.state === "may_have_landed" && entry.lookedSince);
+    const open = this.entries.filter((entry) => matches(entry, identity) && entry.state === "may_have_landed" && entry.lookedSince);
     for (const entry of open) entry.lookedSince = false;
     if (open.length > 0) void this.changed();
   }
@@ -663,6 +684,18 @@ function whatOf(entry: AutomationStudioAttemptActEntry): string {
 /** Whether a refusal may rest on an entry: one that declared, or one an earlier attempt's answer says changed something that stays. */
 function refusable(entry: AutomationStudioAttemptActEntry): boolean {
   return !entry.undeclared || entry.heldOnRepeat === true;
+}
+
+/** Every standing act a real run's call is the same act as, by its identity or a step name, in the record's order; one whose count has room is left out where the run counts (header). */
+function carriedMatches(entries: readonly AutomationStudioAttemptActEntry[], call: ForRun, identity: Identity): AutomationStudioAttemptActEntry[] {
+  const steps = new Set(call.steps ?? []);
+  const room = (entry: AutomationStudioAttemptActEntry) => call.counted === true && entry.state === "landed" && hasRoom(entry, identity);
+  return entries.filter((entry) => stands(entry) && !room(entry) && (matches(entry, identity) || (entry.steps ?? []).some((step) => steps.has(step))));
+}
+
+/** Whether a refusal rests on this entry only because an earlier attempt's answer said its undeclared press changed something that stays (header, "A held press on a replay"). */
+function heldToALook(entry: AutomationStudioAttemptActEntry): boolean {
+  return entry.undeclared === true && entry.heldOnRepeat === true;
 }
 
 /** Whether an entry holds an act that happened or may have, and that a refusal may rest on. */

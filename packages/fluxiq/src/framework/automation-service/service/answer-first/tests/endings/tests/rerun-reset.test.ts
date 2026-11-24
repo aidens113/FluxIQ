@@ -21,6 +21,7 @@ describe("a rerun of a step that started on another page", () => {
     const library = fakeLibrary();
     let told = "";
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       library,
       instruction: "Renew the card and list every loan on my library account.",
       permittedConsequences: ["modify_existing"],

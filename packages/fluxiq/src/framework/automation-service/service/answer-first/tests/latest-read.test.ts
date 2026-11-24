@@ -58,7 +58,7 @@ const worded = (id: string): JsonObject => ({ ...output("pages"), shape: id });
 
 async function attemptOf(library: FakeLibrary, script: (Step | Step[])[], over: Partial<Parameters<typeof scriptedAttempt>[0]> = {}) {
   const steps = script.flat();
-  const attempt = await scriptedAttempt({ library, script: [...steps, complete("Listed.")], ...over }, cleanups);
+  const attempt = await scriptedAttempt({ library, taskProcessing: { process: {} }, script: [...steps, complete("Listed.")], ...over }, cleanups);
   if (attempt.answered.status !== "answered") throw new Error(`expected an answer, got ${attempt.answered.status}`);
   // A read the loop refused never reached the target, and a test on it would pass for nothing.
   const scripted = steps.filter((step) => typeof step === "object" && (step.input as JsonObject | undefined)?.node === READ_LOANS);
@@ -302,6 +302,7 @@ describe("a read that changes which rows the result holds says so in the model's
     library.pager = true;
     const seen: AutomationStudioLlmTaskRequest[] = [];
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       library,
       script: [
         read("page-one", { shape: "listed" }),
@@ -331,6 +332,7 @@ describe("a read that changes which rows the result holds says so in the model's
     const library = fakeLibrary(["Atlas of Rivers", "Birds of the Coast"]);
     const seen: AutomationStudioLlmTaskRequest[] = [];
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       library,
       script: [
         read("first", output("loans")),
@@ -352,6 +354,7 @@ describe("a read that changes which rows the result holds says so in the model's
     library.pager = true;
     const seen: AutomationStudioLlmTaskRequest[] = [];
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       library,
       script: [
         read("listed", { shape: "listed" }),

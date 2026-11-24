@@ -213,16 +213,18 @@ describe("Flow provider settings across recovery and caller-paid judging", () =>
     });
   });
 
-  it("leaves the provider unspecified when the Flow uses the host default", async () => {
+  it("leaves the provider unspecified when the Flow uses the host default, and asks for the one starting model", async () => {
     const found = await harness();
     const run = await found.service.runRuntimeSession({ projectId: found.projectId, flowId: found.flowId, llmExecution });
 
     expect(run.status).toBe("succeeded");
     expect(found.callerCalls.map((call) => call.taskKind)).toEqual(["runtime_diagnosis", "runtime_patch", "loop_verification"]);
     expect(found.resolverInputs).toHaveLength(2);
+    // No provider is named for the host's, but the model is: a task keeps the model it starts with,
+    // Haiku where nothing names one, on every path (user, 2026-11-20, U1; t983, 002650596).
     for (const input of found.resolverInputs) {
       expect(input).not.toHaveProperty("providerId");
-      expect(input).not.toHaveProperty("modelId");
+      expect(input).toHaveProperty("modelId", "claude-haiku-5-5");
     }
   });
 });

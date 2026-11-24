@@ -218,7 +218,8 @@ describe("a Flow the model says is ready", () => {
     expect(run.replays.map((call) => `${String(call.toolId)}:${String(call.replay)}`)).toEqual(["shop.read:reset", "shop.read:step"]);
     // The judge is asked about the Flow's instruction, and the build pays for it.
     expect(JSON.stringify(judge.context.instructions)).toContain("paper towels listed on the shelf");
-    expect(result.accounting).toMatchObject({ inputTokens: 2 * USAGE.inputTokens + 2 * JUDGE_USAGE.inputTokens, totalTokens: 2 * USAGE.totalTokens + 2 * JUDGE_USAGE.totalTokens });
+    // So does its reading of the instruction, made when it starts since t976 (b2ee9ed45) and answered at USAGE.
+    expect(result.accounting).toMatchObject({ inputTokens: 3 * USAGE.inputTokens + 2 * JUDGE_USAGE.inputTokens, totalTokens: 3 * USAGE.totalTokens + 2 * JUDGE_USAGE.totalTokens });
     // Judged yes: said as judged, never as unverified.
     expect(activity.some((event) => event.label === "Judging the Flow")).toBe(true);
     expect(activity.some((event) => event.label === "Flow not verified")).toBe(false);
@@ -269,8 +270,8 @@ describe("a Flow the model says is ready", () => {
       const packet = buildTestOf(run.requests.at(-1));
       expect(packet?.steps.filter((item) => item.action === "shop.read")).toHaveLength(2);
       expect(JSON.stringify(packet?.steps)).toContain("ValueRidge Paper Towels, 12 Rolls");
-      // The build paid for every judge call.
-      expect(result.accounting?.totalTokens).toBe(5 * USAGE.totalTokens + 4 * JUDGE_USAGE.totalTokens);
+      // The build paid for every judge call, and for its reading of the instruction when it started (t976).
+      expect(result.accounting?.totalTokens).toBe(6 * USAGE.totalTokens + 4 * JUDGE_USAGE.totalTokens);
       expect(activity.some((event) => event.label === "Flow not verified")).toBe(false);
     }, 30_000);
   });
@@ -495,9 +496,11 @@ describe("completion readiness through the public service", () => {
   const NODE = "domain.example.click";
   const REFUSAL = "example.handle.ambiguous:parameters";
 
+  // Four calls for the build's decisions and its judging, and one for its reading of the instruction,
+  // which a build makes when it starts since t976 (b2ee9ed45) and which counts against its allowance.
   beforeEach(() => {
     vi.stubEnv("FLUXIQ_LLM_BUILD_CALL_LIMIT_SCOPE", "test");
-    vi.stubEnv("FLUXIQ_LLM_BUILD_CALL_LIMIT", "4");
+    vi.stubEnv("FLUXIQ_LLM_BUILD_CALL_LIMIT", "5");
   });
   afterEach(() => { vi.unstubAllEnvs(); });
 
@@ -506,10 +509,12 @@ describe("completion readiness through the public service", () => {
     const events: string[] = [];
     let decisions = 0;
     let resolutions = 0;
+    let readings = 0;
     const scripted = mockProvider(async (request) => {
-      if (request.metadata?.source === "instructionAuthority") return {
-        response: { kind: "evidence_tool_decision", summary: "Inspect.", decision: { kind: "complete", result: { instructed: [] } } }
-      };
+      if (request.metadata?.source === "instructionAuthority") {
+        readings += 1;
+        return { response: { kind: "evidence_tool_decision", summary: "Inspect.", decision: { kind: "complete", result: { instructed: [] } } } };
+      }
       requests.push(request);
       if (isJudgeRequest(request)) {
         events.push("judge");
@@ -548,17 +553,20 @@ describe("completion readiness through the public service", () => {
     };
     const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
     const instance = new AutomationStudioService({ dataDir: tempRoot,
-      llmProviderResolver: () => ({ provider, maxCallsPerRun: 4, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 1 }),
+      llmProviderResolver: () => ({ provider, maxCallsPerRun: 5, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 1 }),
       llmEvidenceRuntime: replaying
     }).bindNativeNodeRuntime(permissionScopedNativeRuntime(["example.action"]));
     services.add(instance);
     const generation = instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller() });
-    return { instance, project, flow, requests, replays: replaying.replays, events, resolutions: () => resolutions, generation };
+    return { instance, project, flow, requests, replays: replaying.replays, events, resolutions: () => resolutions, readings: () => readings, generation };
   }
 
   it("preserves a refused draft at its call allowance without any fallback replay or judging", async () => {
     const run = await buildReadyDraft(false);
     const diagnostic = await rejectedGenerationDiagnostic(run.generation);
+    // The allowance of five is reached where four was before t976: the reading at the start, the same two
+    // decisions, and the two judge calls kept back; then the build ends on calls, not on anything else.
+    expect(run.readings()).toBe(1);
     expect(run.requests.map(isJudgeRequest)).toEqual([false, false]);
     expect(run.resolutions()).toBe(2);
     expect(run.events).toEqual(["resolve", "resolve"]);

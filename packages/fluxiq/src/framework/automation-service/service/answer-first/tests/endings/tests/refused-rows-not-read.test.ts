@@ -15,11 +15,16 @@ afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(
 
 const TABLE = "Renew the card on my library account, then give me my loans as a table with columns title and due.";
 const WORDS = "| title | due |\n|---|---|\n| Atlas of Rivers | 2030-01-01 |";
+// Changed by t984 (05d61fea4, `../../../completion/check.ts`): a declared data task's completion is refused by its data stage
+// before any other check, so rows asked for and never read come back as the stage's missing source schema, not as
+// `answer_first.rows_not_read`, which now speaks only for a legacy task with no declaration. Still refused without a judge.
+const NOT_READ = "answer_first.processing_schema_missing";
 
 describe("rows asked for, completed with no read", () => {
   it("is refused without a judge, and the attempt goes on to read and reach its result", async () => {
     const told: string[] = [];
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       instruction: TABLE,
       permittedConsequences: ["modify_existing"],
       script: [
@@ -39,8 +44,8 @@ describe("rows asked for, completed with no read", () => {
     expect(attempt.scriptRanOut).toBe(false);
     if (attempt.answered.status !== "answered") throw new Error(`expected an answer, got ${attempt.answered.status}`);
     const { attempt: ended, result } = attempt.answered;
-    expect(told[0]).toContain("answer_first.rows_not_read");
-    expect(told[1]).toContain("answer_first.rows_not_read");
+    expect(told[0]).toContain(NOT_READ);
+    expect(told[1]).toContain(NOT_READ);
     expect(ended.status).toBe("achieved");
     expect(result).toMatchObject({ kind: "rows", label: "confirmed", timesChecked: 1 });
     expect(result?.rows?.totalRows).toBe(3);
@@ -59,6 +64,7 @@ describe("rows asked for, completed with no read", () => {
       return then;
     };
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       instruction: TABLE,
       permittedConsequences: ["modify_existing"],
       script: [
@@ -72,10 +78,10 @@ describe("rows asked for, completed with no read", () => {
     expect(attempt.scriptRanOut).toBe(false);
     if (attempt.answered.status !== "answered") throw new Error(`expected an answer, got ${attempt.answered.status}`);
     // Refused each time, without a judge, until the guard stepped in.
-    expect(told.slice(0, 3).every((evidence) => evidence.includes("answer_first.rows_not_read"))).toBe(true);
+    expect(told.slice(0, 3).every((evidence) => evidence.includes(NOT_READ))).toBe(true);
     expect(told[2]).toContain("llm_evidence_loop.no_progress");
     // The read was the first decision of a fresh round: nothing refused is in front of it.
-    expect(told[3]).not.toContain("answer_first.rows_not_read");
+    expect(told[3]).not.toContain(NOT_READ);
     const lines = attempt.said.map((line) => line.split(" | ")[0]);
     expect(lines.filter((line) => line === "Carrying on")).toHaveLength(1);
     expect(lines.indexOf("Carrying on")).toBeLessThan(lines.indexOf("Reading from the page"));
@@ -89,6 +95,7 @@ describe("rows asked for, completed with no read", () => {
 describe("nothing asked back", () => {
   it("completes on its act with no read, as before", async () => {
     const attempt = await scriptedAttempt({
+      taskProcessing: null,
       instruction: "Renew the card on my library account.",
       permittedConsequences: ["modify_existing"],
       script: [runNode("card", RENEW_CARD, {}, ["modify_existing"], { add: true }), complete("Renewed the card.")]

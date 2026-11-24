@@ -40,6 +40,7 @@ describe("three refused completions in a row", () => {
   it("are steered and the model asked to decide; asking the person is not offered yet, its change of approach is carried out, nobody is asked, and it goes on until its budget is gone", async () => {
     let offeredAtTheDecision: boolean | undefined;
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       before: noWaiting(),
       usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.02 },
       resolver: { maxTotalEstimatedCostUsd: 0.5 },
@@ -73,6 +74,7 @@ describe("three refused completions in a row", () => {
 
   it("with nobody to ask, and a model that never decides, it is stopped and steered each time, posts nothing, and goes on until its budget is gone", async () => {
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       before: (service) => {
         noWaiting()(service);
         Object.defineProperty(service.conversations, "available", { value: false });
@@ -107,6 +109,7 @@ describe("new evidence between completions", () => {
       return read(callId);
     };
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       ...largeContext,
       library,
       before: noWaiting(),
@@ -135,6 +138,7 @@ describe("what the model reads", () => {
   it("a judged no's reason reaches its next request, whole, with what the result holds in its order", async () => {
     const seen: string[] = [];
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       judge: [judgedNo(REASON)],
       script: [
         read(),
@@ -197,6 +201,7 @@ describe("the old ending", () => {
       return complete(`Listed from shelf ${moved}.`);
     };
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       library,
       before: noWaiting(),
       usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.04 },

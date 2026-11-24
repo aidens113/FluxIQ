@@ -99,6 +99,23 @@ describe("a rerun taking the replaced step's place", () => {
     expect(steps[3]!.coveredBy).toBe("fresh");
   });
 
+  // t994 (answerability): since t981 the attempt is withdrawn after the rerun took its place, and the draft's reach
+  // cannot yet say where the rerun leaves the target (no step was appended after it). The attempt then looked like
+  // the only way to the next step's page, its withdrawal was refused `strands_a_step`, and it stayed in the Flow at its
+  // end, where it ran again after every other step.
+  it("withdraws the replaced attempt even when the draft cannot yet tell where its rerun leaves the target", () => {
+    const at = (location: string) => ({ replay: { from: { location } } });
+    const steps = [
+      step("d1", 1, at("home")),
+      step("d2", 2, { effect: "observe", ...at("list") }),
+      step("d3", 3, { disposition: "taken", ...at("home") })
+    ];
+    automationStudioLlmEvidenceRerunReplaced(steps, steps[0], { takesItsPlace: true });
+    expect(steps.map((entry) => [entry.id, entry.position, entry.disposition, entry.replacedBy])).toEqual([
+      ["d3", 1, "kept", undefined], ["d2", 2, "kept", undefined], ["d1", 3, "dropped", "d3"]
+    ]);
+  });
+
   it("carries the routing, and every statement naming the old step names the rerun", () => {
     // d15 lists the rows, d16 acts on each (repeat over d15), and d15 is rerun as d17.
     const steps = [

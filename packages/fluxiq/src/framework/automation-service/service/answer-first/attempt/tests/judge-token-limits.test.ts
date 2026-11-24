@@ -16,6 +16,7 @@ const LONG_ANSWER = Array.from({ length: 7_000 }, (_, index) => `Loan ${index + 
 describe("an attempt's judge on a model with a small window", () => {
   it("is built and checked to the resolution's limits, and a summary that does not fit is sent shorter and says so", async () => {
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       instruction: "List every loan on my library account.",
       resolver: { tokenLimits: LIMITS },
       script: [runNode("read", READ_LOANS, {}, [], { add: true }), complete("Listed.", LONG_ANSWER)]

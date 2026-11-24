@@ -24,10 +24,14 @@
 //
 // **A read's declared processing shapes the answer** as a saved run's record output would (t869, run-mw37vz9n): the
 // output step's own `recordOutput.process` (a sort, a where, a limit), read against the answer's columns, orders and
-// bounds its rows. One the contract does not accept, or one over a column the answer does not hold, shapes nothing.
+// bounds its rows. This holds under a declared task too (t994): the data stage (`./stage.ts`) evaluates the read's
+// process with the task's declaration over it, never the declaration alone, and there a read's process the contract
+// does not accept, or one over a column the answer does not hold, shapes nothing. On the legacy path (no declared
+// task) a merged processing that cannot be applied withholds the answer instead (`processed`, since t984).
 //
 // **And the result's own processing over it (t970).** What `core.set_result_processing` set
-// (`../attempt/result-processing.ts`) is merged over the output step's declaration, key by key, and shapes
+// (`../attempt/result-processing.ts`), or on the automatic path the task's declaration, is merged over the output
+// step's declaration, key by key, by the one rule both paths share (`./merged-processing.ts`), and shapes
 // the answer the same way, with the pages' whole rows as it reads them: a mark read only to filter by is
 // tested there and is no column of the answer. What it did -- the counts, and per filter the rows it alone
 // left out -- goes to the judge in `evidence().processing`, so the judge checks the filtering rather than
@@ -50,6 +54,7 @@ import { automationStudioAnswerFirstStoredDatasetId } from "../rows/index.ts";
 import { automationStudioAnswerFirstResultWritesOf } from "./writes-of.ts";
 import type { AutomationStudioAnswerFirstProcessingDeclaration } from "../result-processing/index.ts";
 import { automationStudioAnswerFirstDataStage } from "./stage.ts";
+import { automationStudioAnswerFirstMergedProcessing } from "./merged-processing.ts";
 import { automationStudioAnswerFirstResultSchema } from "./schema.ts";
 import type { AutomationStudioAnswerFirstResultReadiness } from "./readiness.ts";
 import { automationStudioAnswerFirstResultSourceState } from "./source-state.ts";
@@ -212,11 +217,11 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
           const own = schemas.get(page.source);
           const captured = own === undefined ? undefined : automationStudioRecordCapturedFields(own);
           return page.kept.map((values) => ({ values, nodeId: step.id, batchKey: page.source, ...(captured === undefined ? {} : { captured }) }));
-        })), columns, askedColumns: port.ledger().contract.sure ? port.ledger().contract.columns : undefined });
+        })), columns, askedColumns: port.ledger().contract.sure ? port.ledger().contract.columns : undefined, own: processes.get(output.id) });
         if (evaluated.processing && evaluated.account) account = { declared: evaluated.processing, account: evaluated.account };
         return evaluated.summary ? { datasetId, totalRows: evaluated.summary.rows.length, truncated: sources.some((source) => truncated.has(source)), ...evaluated.summary } : EMPTY;
       }
-      const shaped = processed(pages.flatMap((page) => page.kept), columns, merged(processes.get(output.id), held), schema.ok ? schema.schema : undefined, reference);
+      const shaped = processed(pages.flatMap((page) => page.kept), columns, automationStudioAnswerFirstMergedProcessing(processes.get(output.id), held), schema.ok ? schema.schema : undefined, reference);
       account = shaped.account;
       legacyRefusal = shaped.refusal;
       return { datasetId, totalRows: shaped.rows.length, truncated: sources.some((source) => truncated.has(source)), columns: shaped.columns, rows: shaped.rows };
@@ -458,12 +463,6 @@ function declaredProcess(input: JsonObject): unknown {
   const parameters = isObject(input.parameters) ? input.parameters : undefined;
   const output = isObject(parameters?.recordOutput) ? parameters.recordOutput : isObject(input.recordOutput) ? input.recordOutput : undefined;
   return output?.process;
-}
-
-/** The output step's declaration with the result processing's keys over it (header); `undefined` where neither says anything. */
-function merged(own: unknown, held: AutomationStudioRecordProcessing | undefined): unknown {
-  if (held === undefined) return own;
-  return isObject(own) ? { ...own, ...(held as unknown as JsonObject) } : held;
 }
 
 /**

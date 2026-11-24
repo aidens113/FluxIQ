@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../../../runtime/llm/index.ts";
 import { createAutomationStudioAnthropicProvider } from "../../../../../../runtime/llm/anthropic/index.ts";
-import { complete, READ_LOANS, runNode, scriptedAttempt } from "../../tests/fake-library.ts";
+import { complete, judgedYes, READ_LOANS, runNode, scriptedAttempt } from "../../tests/fake-library.ts";
 
 vi.setConfig({ testTimeout: 180_000 });
 
@@ -58,11 +58,16 @@ describe("an attempt started the way a chat starts it", () => {
     const bodies: Wire[] = [];
     try {
       const attempt = await scriptedAttempt({
+        taskProcessing: { process: {} },
         instruction: "List every loan on my library account.",
         script: [runNode("read", READ_LOANS, {}, [], { add: true }), complete("Listed.")],
+        // Through the adapter the judge's reply meets the wire's own schema, which requires every field a real model's
+        // constrained output carries, defects included (empty on a yes). Without it each yes is unreadable and asked again.
+        judge: [(request: AutomationStudioLlmTaskRequest) => judgedYes(request, { defects: [] })],
         wrapProvider: (scripted) => throughTheAdapter(scripted, bodies)
       }, cleanups);
-      expect(attempt.answered).toMatchObject({ status: "answered" });
+      expect(attempt.answered).toMatchObject({ status: "answered", attempt: { status: "achieved" } });
+      expect(attempt.hung).toBe(false);
       const judges = readdirSync(directory).filter((folder) => folder.endsWith("-judge")).sort().map((folder) => JSON.parse(readFileSync(join(directory, folder, "meta.json"), "utf8")) as { continuation?: unknown });
       expect(judges.length).toBeGreaterThan(0);
       expect(judges[0]!.continuation).toEqual({ used: true, reason: "continues_the_decider" });

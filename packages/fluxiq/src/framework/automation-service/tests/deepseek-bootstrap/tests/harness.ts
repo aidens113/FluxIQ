@@ -42,6 +42,14 @@ export type JudgeRequest = {
 /** What a judge call bills, distinct from a decision's, so the build's accounting tells the two apart. */
 const JUDGE_BILLED = { promptTokens: 400, completionTokens: 40 } as const;
 
+/**
+ * What the build's one reading of its instruction bills, distinct from a decision's and a judge's.
+ * A build that does not start from a chat reads its instruction when it starts, for the one
+ * permission question a task asks then (t976, b2ee9ed45; user, 2026-11-03 and 2026-11-10). It is
+ * not a decision: it is answered apart from the case's script and counted apart, and it is paid for.
+ */
+export const READING_BILLED = { promptTokens: 300, completionTokens: 30 } as const;
+
 export type Creation = {
   /** The decision calls that reached the endpoint, by loop iteration. */
   sentIterations: number[];
@@ -49,6 +57,8 @@ export type Creation = {
   revealed: string[];
   /** The judge calls that reached the endpoint, in order, apart from the decisions. */
   judgeRequests: JudgeRequest[];
+  /** How many readings of the instruction reached the endpoint, apart from the decisions (`READING_BILLED`). */
+  readings: number;
   result?: Awaited<ReturnType<AutomationStudioService["generateFlowBootstrapAdaptation"]>>;
   failure?: AutomationStudioFlowBootstrapFailureDiagnostic;
   stored?: Awaited<ReturnType<AutomationStudioService["getFlowBootstrapAdaptation"]>>;
@@ -93,6 +103,7 @@ export async function create(options: {
   const observations: DecisionObservation[] = [];
   const revealed: string[] = [];
   const judgeRequests: JudgeRequest[] = [];
+  const read = { count: 0 };
   const service = new AutomationStudioService({ dataDir: tempRoot });
   if (options.webRegistry) service.bindNativeNodeRuntime(webRuntime());
   const registeredRecordProducerIds = new Set(
@@ -110,6 +121,7 @@ export async function create(options: {
       sentIterations,
       observations,
       judgeRequests,
+      read,
       registeredRecordProducerIds,
       ...(options.billed ? { billed: options.billed } : {})
     })
@@ -140,7 +152,11 @@ export async function create(options: {
   service.bindLlmEvidenceRuntime(automationStudioReplayingBinding(lookBinding(options.webRegistry ? "web-automation" : "demo", options.webRegistry === true || options.looksAreSteps === true)));
   try {
     const project = await service.createProject({ name: "Bootstrap exploration", ...(options.webRegistry ? { domainId: "web-automation" } : {}) });
-    const flow = await service.createFlow({ projectId: project.id, flowId: "flow.created", name: "Blank Flow" });
+    const created = await service.createFlow({ projectId: project.id, flowId: "flow.created", name: "Blank Flow" });
+    // The Flow names DeepSeek, whose real adapter and wire this harness drives. A task that names no
+    // model starts on Claude Haiku since t983 (002650596; user, 2026-11-20: "its just the model we
+    // start with"), which this DeepSeek key cannot pay for.
+    const flow = await service.saveFlow({ projectId: project.id, flow: { ...created, metadata: { ...created.metadata, llmProvider: "deepseek", llmModel: "deepseek-flash" } } });
     const now = Date.now();
     await service.saveFlowInstruction(project.id, {
       schemaVersion: "0.1",
@@ -154,7 +170,7 @@ export async function create(options: {
       createdAt: now,
       updatedAt: now
     });
-    const creation: Creation = { sentIterations, observations, revealed, judgeRequests, adaptationCount: 0 };
+    const creation: Creation = { sentIterations, observations, revealed, judgeRequests, readings: 0, adaptationCount: 0 };
     try {
       creation.result = await service.generateFlowBootstrapAdaptation({
         projectId: project.id,
@@ -168,6 +184,7 @@ export async function create(options: {
       if (!failure) throw error;
       creation.failure = failure;
     }
+    creation.readings = read.count;
     creation.adaptationCount = (await service.listFlowAdaptationSummaries({ projectId: project.id, limit: 10, offset: 0 })).total;
     return creation;
   } finally {
@@ -246,6 +263,7 @@ function endpoint(options: {
   sentIterations: number[];
   observations: DecisionObservation[];
   judgeRequests: JudgeRequest[];
+  read: { count: number };
   registeredRecordProducerIds: ReadonlySet<string>;
   billed?: { promptTokens: number; completionTokens: number };
 }): typeof fetch {
@@ -261,8 +279,17 @@ function endpoint(options: {
         // Names only since 2026-10-01: `{ category: ["<id>: <description>"] }`, not the full entries it was.
         flowBootstrap?: { nodeCatalog?: Record<string, unknown> };
         resultSummary?: { buildTest?: { notes?: JudgeRequest["notes"]; steps?: unknown[] } };
+        metadata?: { source?: unknown };
       };
     };
+    if (user.context.metadata?.source === "instructionAuthority") {
+      // The build's reading of its instruction (`READING_BILLED`): nothing lasting is asked for.
+      options.read.count += 1;
+      return new Response(JSON.stringify({
+        choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ kind: "evidence_tool_decision", summary: "Read the instruction.", decision: { kind: "complete", result: { instructed: [] } } }) } }],
+        usage: { prompt_tokens: READING_BILLED.promptTokens, completion_tokens: READING_BILLED.completionTokens, total_tokens: READING_BILLED.promptTokens + READING_BILLED.completionTokens }
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
     if (user.taskKind === "loop_verification") {
       const buildTest = user.context.resultSummary?.buildTest;
       const call = options.judgeRequests.length + 1;

@@ -4,11 +4,12 @@ import { automationStudioAnswerFirstBoundProcessing, automationStudioAnswerFirst
 import { stableJson } from "../../stable-json.ts";
 import type { AutomationStudioAnswerFirstRowsSummary } from "../rows/index.ts";
 import type { AutomationStudioAnswerFirstResultReadiness } from "./readiness.ts";
+import { automationStudioAnswerFirstMergedProcessing } from "./merged-processing.ts";
 
 /** One instruction declaration, bound from actual capture schema and applied through the shared evaluator. */
 export function automationStudioAnswerFirstDataStage(initial: AutomationStudioAnswerFirstProcessingDeclaration | undefined, referenceTimeMs: number | null | undefined, requiresData = false, inputs?: Readonly<Record<string, JsonValue>>) {
   let declaration = initial === undefined ? undefined : structuredClone(initial);
-  let cached: { key: string; result: ReturnType<typeof automationStudioAnswerFirstBoundProcessing> } | undefined;
+  let cached: { key: string; resolved: ReturnType<typeof automationStudioAnswerFirstProcessingInputs>; result: ReturnType<typeof automationStudioAnswerFirstBoundProcessing> } | undefined;
   let bound: AutomationStudioRecordProcessing | undefined;
   let stored: JsonObject | undefined;
   let readiness: AutomationStudioAnswerFirstResultReadiness = declaration === undefined ? { state: "legacy" } : declaration.task === null ? { state: "not-applicable" } : { state: "missing-evidence", code: "answer_first.processing_not_ready", reason: "The data declaration has not yet been applied to captured evidence." };
@@ -16,17 +17,29 @@ export function automationStudioAnswerFirstDataStage(initial: AutomationStudioAn
     readiness = { state: "missing-evidence", code, reason };
     return { readiness };
   };
-  const bind = (schema: AutomationStudioRecordSchema, askedColumns: readonly string[] | undefined) => {
+  /** A process as written, its explicit inputs resolved, bound to `schema` and stamped with this declaration. */
+  const attempt = (raw: JsonValue, schema: AutomationStudioRecordSchema) => {
+    const resolved = automationStudioAnswerFirstProcessingInputs(raw, inputs);
+    return { resolved, result: resolved.ok ? automationStudioAnswerFirstBoundProcessing(resolved.resolved, schema, declaration!) : { ok: false as const, issues: resolved.issues, unresolved: [] } };
+  };
+  // The read's own process with the task's declaration over it, by the rule the legacy path uses (`./merged-processing.ts`).
+  // A read's process the contract does not accept shapes nothing (`./feed.ts` header): the declaration alone then binds,
+  // and its own failure is the one reported, so a requested condition is never dropped. The person's sure columns are
+  // the task's where it names none, so a read's own `columns` never hides what the person asked for.
+  const bind = (schema: AutomationStudioRecordSchema, askedColumns: readonly string[] | undefined, read: unknown) => {
     const process = declaration?.task?.process;
-    const resolved = process === undefined ? undefined : automationStudioAnswerFirstProcessingInputs(process, inputs);
-    if (!resolved?.ok) return { ok: false as const, issues: resolved?.issues ?? ["Processing declaration is missing."], unresolved: [] };
-    const value = resolved.resolved;
-    const raw = value && typeof value === "object" && !Array.isArray(value) && value.columns === undefined && askedColumns?.length ? { ...value, columns: [...askedColumns] } : value;
-    const key = stableJson({ schema, declaration, askedColumns: askedColumns ?? null });
-    if (cached?.key !== key) cached = { key, result: automationStudioAnswerFirstBoundProcessing(raw, schema, declaration!) };
-    stored = cached.result.ok ? resolved.stored(JSON.parse(JSON.stringify(cached.result.processing)) as JsonObject) : undefined;
-    if (cached.result.ok && stored === undefined) return { ok: false as const, issues: ["The canonical process cannot retain an explicit input value position. Repair the declaration."], unresolved: [] };
-    return cached.result;
+    if (process === undefined) return { ok: false as const, issues: ["Processing declaration is missing."], unresolved: [] };
+    const task = isObject(process) && process.columns === undefined && askedColumns?.length ? { ...process, columns: [...askedColumns] } : process;
+    const own = readProcess(read, declaration!);
+    const key = stableJson({ schema, declaration, askedColumns: askedColumns ?? null, own: own ?? null });
+    if (cached?.key !== key) {
+      const both = own === undefined ? undefined : attempt(automationStudioAnswerFirstMergedProcessing(own, task) as JsonValue, schema);
+      cached = { key, ...(both?.result.ok ? both : attempt(task, schema)) };
+    }
+    const { resolved, result } = cached;
+    stored = result.ok && resolved.ok ? resolved.stored(JSON.parse(JSON.stringify(result.processing)) as JsonObject) : undefined;
+    if (result.ok && stored === undefined) return { ok: false as const, issues: ["The canonical process cannot retain an explicit input value position. Repair the declaration."], unresolved: [] };
+    return result;
   };
   return {
     declaration: () => declaration === undefined ? undefined : structuredClone(declaration),
@@ -34,7 +47,7 @@ export function automationStudioAnswerFirstDataStage(initial: AutomationStudioAn
     storedProcessing: () => bound === undefined || stored === undefined ? undefined : structuredClone(stored),
     readiness: () => readiness,
     active: () => declaration !== undefined && (declaration.task !== null || requiresData),
-    evaluate(input: { schema?: AutomationStudioRecordSchema; schemaIssues?: readonly string[]; rows: readonly AutomationStudioRecordCollectedRow[]; columns: readonly string[]; askedColumns?: readonly string[] | undefined }): { readiness: AutomationStudioAnswerFirstResultReadiness; summary?: Pick<AutomationStudioAnswerFirstRowsSummary, "rows" | "columns" | "schema">; processing?: AutomationStudioRecordProcessing; account?: AutomationStudioRecordProcessingAccount } {
+    evaluate(input: { schema?: AutomationStudioRecordSchema; schemaIssues?: readonly string[]; rows: readonly AutomationStudioRecordCollectedRow[]; columns: readonly string[]; askedColumns?: readonly string[] | undefined; own?: unknown }): { readiness: AutomationStudioAnswerFirstResultReadiness; summary?: Pick<AutomationStudioAnswerFirstRowsSummary, "rows" | "columns" | "schema">; processing?: AutomationStudioRecordProcessing; account?: AutomationStudioRecordProcessingAccount } {
       bound = undefined;
       stored = undefined;
       if (declaration === undefined) {
@@ -51,7 +64,7 @@ export function automationStudioAnswerFirstDataStage(initial: AutomationStudioAn
       if (!currentInputs.ok) return missing("answer_first.processing_inputs_unavailable", currentInputs.issues.join(" "));
       if (!Number.isSafeInteger(referenceTimeMs) || (referenceTimeMs as number) < 0) return missing("answer_first.processing_reference_missing", "The original processing reference time is unavailable. Recover the validated original attempt reference or collect fresh evidence in a new logical attempt; the current clock cannot reinterpret old relative dates.");
       if (!input.schema) return missing("answer_first.processing_schema_missing", input.schemaIssues?.join(" ") ?? "No full retained schema is available for the result's contributing pages. Capture the required source fields.");
-      const parsed = bind(input.schema, input.askedColumns);
+      const parsed = bind(input.schema, input.askedColumns, input.own);
       if (!parsed.ok) return missing("answer_first.processing_binding_missing", `${parsed.issues.join(", ")}${parsed.unresolved.length ? `. Required fields: ${parsed.unresolved.map((entry) => `${entry.field} (${entry.reason})`).join(", ")}` : ""}. Bind the written references to actual retained fields; do not drop a requested condition.`);
       const process = parsed.processing;
       bound = process;
@@ -105,4 +118,22 @@ export function automationStudioAnswerFirstDataStage(initial: AutomationStudioAn
       return { ok: true, changed: true };
     }
   };
+}
+
+/**
+ * The output read's own declared `recordOutput.process`, as the merge takes it. A process the framework wrote back into
+ * the saved step (`../result-processing/processing.ts`, `withResultProcessing`) carries its stamp: under this same
+ * declaration it is this merge as it was saved, read again without the stamp the binding renews; under another
+ * instruction, or a revision since amended, it is that declaration's product, and keeping it would bring back a
+ * condition the amendment removed, so it shapes nothing.
+ */
+function readProcess(read: unknown, declaration: AutomationStudioAnswerFirstProcessingDeclaration): JsonObject | undefined {
+  if (!isObject(read)) return undefined;
+  if (!Object.hasOwn(read, "declaration")) return read;
+  const { declaration: stamp, ...criteria } = read;
+  return isObject(stamp) && stamp.source === declaration.source && stamp.revision === declaration.revision ? criteria : undefined;
+}
+
+function isObject(value: unknown): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

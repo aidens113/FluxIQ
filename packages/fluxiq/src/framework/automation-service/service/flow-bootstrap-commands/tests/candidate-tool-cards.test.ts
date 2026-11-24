@@ -14,6 +14,7 @@ import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { activityActionOf } from "../../../../../ui/index.ts";
 import { automationStudioActivityHub } from "../../../../../runtime/automation-activity/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
+import { automationStudioAnsweringInstructionReading } from "../../../tests/service-bootstrap/tests/instruction-reading.ts";
 import { blankFixture, caller, judgeReply, mockProvider, plan } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 
 vi.setConfig({ testTimeout: 60_000 });
@@ -28,7 +29,8 @@ async function candidateBuild() {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-candidate-tool-cards-"));
   let decisions = 0;
   const digests: string[] = [];
-  const provider = mockProvider(async (request) => {
+  // The build reads its instruction when it starts (t976, b2ee9ed45): answered apart from the decisions scripted here.
+  const provider = mockProvider(automationStudioAnsweringInstructionReading(async (request) => {
     if (request.taskKind === "loop_verification") return judgeReply("yes");
     decisions++;
     const latest = [...(request.context.evidenceLoop?.evidence ?? [])].reverse().find((entry) => entry.toolId === "core.submit_candidate")?.value as { revision?: number; digest?: string } | undefined;
@@ -39,7 +41,7 @@ async function candidateBuild() {
       : decisions === 3 ? { kind: "tool_call", callId: "test-1", toolId: "core.test_candidate", input: { revision: latest?.revision, digest: latest?.digest } }
       : { kind: "complete", result: { revision: latest?.revision, digest: latest?.digest } };
     return { response: { kind: "evidence_tool_decision", summary: "Scripted", decision }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 } };
-  });
+  }, { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }));
   const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 12, maxEstimatedCostUsd: 0.1 }),
     llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect", inputSchema: { type: "object" }, effect: "observe" }],
       executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { seen: true }, effectApplied: false, targetsUnchanged: true }) } });

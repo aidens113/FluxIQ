@@ -34,6 +34,7 @@ import { parseAutomationStudioFlowBootstrapGenerationError } from "../../../../.
 import type { AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
 import type { AutomationStudioHostResourceAcquireResult, AutomationStudioHostResourceHolder, AutomationStudioHostResourcePort } from "../../../../../runtime/project-agents/index.ts";
 import { AutomationStudioService, type AutomationStudioServiceOptions } from "../../../service.ts";
+import { automationStudioAnsweringInstructionReading } from "../../../tests/service-bootstrap/tests/instruction-reading.ts";
 import { blankFixture, caller, judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 import { automationStudioTestSettledBuilds } from "./settled-builds.ts";
 import { observeBuilderCalls } from "./brief-ports/tests/observe-builder-calls.ts";
@@ -163,7 +164,8 @@ async function projectBuild(options: { shape?: Shape; whole?: "yes" | "no"; capa
   /** The system instructions each evidence decision carried, by whether the supervisor or a builder asked. */
   const instructed: Array<{ supervisor: boolean; instructions: AutomationStudioLlmTaskRequest["domainInstructions"] }> = [];
   let supervisorDecisions = 0;
-  const provider = mockProvider(async (request) => {
+  // The build reads its instruction when it starts (t976), apart from the supervisor's and builders' decisions scripted here.
+  const provider = mockProvider(automationStudioAnsweringInstructionReading(async (request) => {
     if (request.taskKind === "loop_verification") {
       const scoped = JSON.stringify(request.context).includes("This trial ran only the subflow");
       (scoped ? judged.subflow : judged.whole).push(request);
@@ -209,7 +211,7 @@ async function projectBuild(options: { shape?: Shape; whole?: "yes" | "no"; capa
     if (options.whole === "no" && tested?.verdict === "unsure") return decision({ kind: "complete", result: { ended: "partial", reason: "The whole Flow's trial could not be confirmed." } });
     if (tested?.verdict !== "yes") return decision({ kind: "tool_call", callId: `test-${subflowKey}`, toolId: "core.test_subflow", input: { revision: submitted.revision as number, digest: submitted.digest as string } });
     return decision({ kind: "complete", result: { subflowKey, revision: submitted.revision as number, digest: submitted.digest as string } });
-  });
+  }, decision({ kind: "complete", result: {} }).usage));
   const host = options.capacity === undefined ? undefined : new CountingHost(options.capacity);
   const serviceOptions: AutomationStudioServiceOptions = {
     dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 60, maxEstimatedCostUsd: 0.1 }),

@@ -35,6 +35,7 @@ import { validateAutomationStudioFlowBootstrapPlan } from "../../../../../runtim
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../../../runtime/native-nodes/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
+import { automationStudioAnsweringInstructionReading } from "./instruction-reading.ts";
 import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
 import { blankFixture, expectNoTopology, caller, isJudgeRequest, judgeReply, mockProvider, rejectedGenerationDiagnostic, copyDataDirSeed, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
@@ -188,7 +189,8 @@ function typingPlan(selector: JsonValue, text: JsonValue = "Ada"): JsonObject {
 async function create(plans: JsonObject[], options: { binding?: AutomationStudioLlmEvidenceRuntimeBinding; maxCallsPerRun?: number; types?: true } = {}) {
   const requests: AutomationStudioLlmTaskRequest[] = [];
   let decided = 0;
-  const provider = mockProvider(async (request) => {
+  // The build reads its instruction when it starts (t976, b2ee9ed45), apart from the plans scripted here.
+  const provider = mockProvider(automationStudioAnsweringInstructionReading(async (request) => {
     requests.push(request);
     if (isJudgeRequest(request)) return judgeReply();
     const at = decided++;
@@ -199,7 +201,7 @@ async function create(plans: JsonObject[], options: { binding?: AutomationStudio
       response: { kind: "evidence_tool_decision", summary: "Fill the form.", decision },
       usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 }
     };
-  });
+  }, { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 }));
   const { project, flow } = await seeded(example);
   const instance = new AutomationStudioService({
     dataDir: tempRoot,

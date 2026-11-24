@@ -11,6 +11,7 @@ import { AutomationStudioNativeNodeRuntime } from "../../../../../runtime/native
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { estimateAutomationStudioDeepSeekInputTokens } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioAesGcmProjectContentProtection } from "../../../../persistence/automation/index.ts";
+import { automationStudioAnsweringInstructionReading } from "./instruction-reading.ts";
 import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
 import { plan, mockProvider, blankFixture, caller, expectNoTopology, rejectedGenerationDiagnostic, copyDataDirSeed, seedDataDir, isJudgeRequest, judgeReply, JUDGE_USAGE, type DataDirSeed } from "./fixtures.ts";
 
@@ -129,13 +130,14 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
   // nothing is issued, checked or revoked around the call.
   it("builds with no grant: resolves the bounded provider for the caller and persists one sanitized pending proposal without topology mutation", async () => {
     const requests: AutomationStudioLlmTaskRequest[] = [];
-    const provider = mockProvider(async (request) => {
+    // The build reads its instruction when it starts (t976, b2ee9ed45): answered apart from the decisions scripted here.
+    const provider = mockProvider(automationStudioAnsweringInstructionReading(async (request) => {
       requests.push(request);
       return {
         response: { kind: "flow_bootstrap", summary: "Build the active instruction.", plan: plan() },
         usage: { inputTokens: 120, outputTokens: 80, totalTokens: 200, estimatedCostUsd: 0.002 }
       };
-    });
+    }, { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }));
     const resolver = vi.fn().mockReturnValue({
       provider,
       tokenLimits: { maxInputTokens: 992_000, maxOutputTokens: 8_000, maxTotalTokens: 1_000_000 },
@@ -154,9 +156,10 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       caller: caller()
     });
 
-    // The resolver receives the caller and saved settings, never a grant or secret value.
+    // The resolver receives the caller and saved settings, never a grant or secret value; and the task's one
+    // starting model, Haiku where nothing names one (user, 2026-11-20, U1; t983, 002650596).
     expect(resolver).toHaveBeenCalledTimes(1);
-    expect(resolver).toHaveBeenCalledWith({ projectId: project.id, flowId: flow.flowId, caller: caller(), providerId: "host", metadata: canonicalMetadata });
+    expect(resolver).toHaveBeenCalledWith({ projectId: project.id, flowId: flow.flowId, caller: caller(), providerId: "host", modelId: "claude-haiku-5-5", metadata: canonicalMetadata });
     expect(requests).toHaveLength(1);
     expect(requests[0]).toMatchObject({
       taskKind: "flow_bootstrap",
@@ -174,13 +177,14 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       sourceInstructionIds: ["instruction.build"],
       baseDependencyDigest: binding.executionDigest,
       baseSettingsRevision: binding.settingsRevision,
+      // The plan's call and the start's reading of the instruction (t976, b2ee9ed45), which the build pays for.
       accounting: {
         provider: "mock-production",
         model: "mock-bootstrap",
-        inputTokens: 120,
-        outputTokens: 80,
-        totalTokens: 200,
-        estimatedCostUsd: 0.002
+        inputTokens: 120 + 10,
+        outputTokens: 80 + 5,
+        totalTokens: 200 + 15,
+        estimatedCostUsd: 0.003 // 0.002 + 0.001
       }
     });
     expect(Object.keys(result).sort()).toEqual([
@@ -232,7 +236,8 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
 
   it("runs a bounded evidence loop and persists only content-free trace with the bootstrap adaptation", async () => {
     const requests: AutomationStudioLlmTaskRequest[] = [];
-    const provider = mockProvider(async (request) => {
+    // The build reads its instruction when it starts (t976, b2ee9ed45): answered apart from the decisions scripted here.
+    const provider = mockProvider(automationStudioAnsweringInstructionReading(async (request) => {
       requests.push(request);
       if (isJudgeRequest(request)) return judgeReply();
       // One read the Flow keeps, then the Flow is ready.
@@ -241,7 +246,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
         response: { kind: "evidence_tool_decision", summary: "Build candidate.", decision },
         usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }
       };
-    });
+    }, { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }));
     // The free look answers raw; the read the model adds answers as a step the Flow keeps. Both carry content the trace must not.
     const executeTool = vi.fn(async (input: { value: JsonObject }) => input.value.keep ? keptRead({ privatePageContent: "not persisted", factCount: 1 }) : { privatePageContent: "not persisted", factCount: 1 });
     const { project, flow } = await seeded(single);
@@ -262,9 +267,10 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     expect(executeTool).toHaveBeenCalledWith(expect.objectContaining({ projectId: project.id, flowId: flow.flowId, callId: "initial.inspect", toolId: "inspect", value: { scope: "current" } }));
     // The first observation is not sized: the model is shown the whole page.
     expect(executeTool.mock.calls[0]?.[0]).not.toHaveProperty("maxEvidenceBytes");
-    // The build pays for its judge: the decisions' spend and both judge calls', together.
-    expect(result.accounting).toMatchObject({ inputTokens: 2 * 10 + 2 * JUDGE_USAGE.inputTokens, outputTokens: 2 * 5 + 2 * JUDGE_USAGE.outputTokens, totalTokens: 2 * 15 + 2 * JUDGE_USAGE.totalTokens });
-    expect(result.accounting.estimatedCostUsd).toBeCloseTo(2 * 0.001 + 2 * JUDGE_USAGE.estimatedCostUsd, 9);
+    // The build pays for its judge and for its start's reading of the instruction (t976, b2ee9ed45): the reading's
+    // spend, the decisions' and both judge calls', together.
+    expect(result.accounting).toMatchObject({ inputTokens: 10 + 2 * 10 + 2 * JUDGE_USAGE.inputTokens, outputTokens: 5 + 2 * 5 + 2 * JUDGE_USAGE.outputTokens, totalTokens: 15 + 2 * 15 + 2 * JUDGE_USAGE.totalTokens });
+    expect(result.accounting.estimatedCostUsd).toBeCloseTo(0.001 + 2 * 0.001 + 2 * JUDGE_USAGE.estimatedCostUsd, 9);
     const stored = await instance.getFlowBootstrapAdaptation(project.id, flow.flowId, result.adaptationId);
     expect(stored?.evidenceTrace).toMatchObject([{ iteration: 0, decision: "tool_call", toolId: "inspect" }, { iteration: 1, decision: "tool_call", toolId: "inspect" }, { iteration: 2, decision: "complete" }]);
     expect(stored?.auditEvents[0]?.detail).toMatchObject({
@@ -275,9 +281,9 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       decisionCount: 2,
       // The judge's calls -- its yes and the call that confirms it (murwcmx2,
       // C-H) -- are calls outside the loop, counted where the accounting already
-      // has their spend (t195-w28b).
-      additionalProviderCallCount: 2,
-      totalProviderCallCount: 4,
+      // has their spend (t195-w28b); so is the start's reading of the instruction (t976, b2ee9ed45).
+      additionalProviderCallCount: 2 + 1,
+      totalProviderCallCount: 4 + 1,
       toolCallCount: 2,
       toolIds: ["inspect"]
     });
@@ -293,7 +299,8 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     { looks: 100, calls: 12, finishes: false }
   ])("lets an evidence-guided bootstrap keep gathering past eight decisions, up to its call count (%o)", async ({ looks, calls, finishes }) => {
     const requests: AutomationStudioLlmTaskRequest[] = [];
-    const provider = mockProvider(async (request) => {
+    // The build reads its instruction when it starts (t976, b2ee9ed45): answered apart from the decisions scripted here.
+    const provider = mockProvider(automationStudioAnsweringInstructionReading(async (request) => {
       requests.push(request);
       if (isJudgeRequest(request)) return judgeReply();
       const iteration = request.context.evidenceLoop?.iteration ?? 0;
@@ -305,7 +312,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
           ? addRead(`call.${iteration}`, `area.${iteration}`)
           : { kind: "tool_call", callId: `call.${iteration}`, toolId: "inspect", input: { area: `area.${iteration}` } };
       return { response: { kind: "evidence_tool_decision", summary: "Looking.", decision }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 } };
-    });
+    }, { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }));
     const { project, flow } = await seeded(single);
     const instance = createService({
       provider,
@@ -347,13 +354,14 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
   it("packs opted-in reusable context only after a fresh creation inspection and records safe provenance", async () => {
     const requests: AutomationStudioLlmTaskRequest[] = [];
     const selectedEvidence: unknown[] = [];
-    const provider = mockProvider(async (request) => {
+    // The build reads its instruction when it starts (t976, b2ee9ed45): answered apart from the decisions scripted here.
+    const provider = mockProvider(automationStudioAnsweringInstructionReading(async (request) => {
       if (isJudgeRequest(request)) return judgeReply();
       requests.push(request);
       // One read the Flow keeps, then the Flow is ready.
       const decision = requests.length === 1 ? addRead("call.read", "buttons") : { kind: "complete", result: { summary: "Evidence-guided Flow.", plan: plan() } };
       return { response: { kind: "evidence_tool_decision", summary: "Build candidate.", decision } };
-    });
+    }, { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }));
     const contentProtection = new AutomationStudioAesGcmProjectContentProtection(() => ({ keyId: "test.key", key: Buffer.alloc(32, 6) }));
     const { project, flow } = await seeded(domainTest);
     const instance = createService({
@@ -393,10 +401,11 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
   });
 
   it("asks again after an unknown tool and returns the closed budget reason with content-free counts", async () => {
-    const provider = mockProvider(async () => ({
+    // The build reads its instruction when it starts (t976, b2ee9ed45): answered apart from the decisions scripted here.
+    const provider = mockProvider(automationStudioAnsweringInstructionReading(async () => ({
       response: { kind: "evidence_tool_decision", summary: "Use a tool.", decision: { kind: "tool_call", callId: "call.unknown", toolId: "unregistered", input: {} } },
       usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }
-    }));
+    }), { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }));
     const { project, flow } = await seeded(single);
     const instance = createService({
       provider,
@@ -416,10 +425,11 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       retryable: true,
       providerInvocation: "attempted",
       providerResponse: "received",
-      // What the build spent before it ended, so a failed run can be costed.
-      accounting: { requestId: expect.stringMatching(/^evidence\./), estimatedInputTokens: expect.any(Number), provider: "mock-production", model: "mock-bootstrap", inputTokens: 30, outputTokens: 15, totalTokens: 45, estimatedCostUsd: 0.003 },
+      // What the build spent before it ended, so a failed run can be costed: the three decisions and the start's
+      // reading of the instruction (t976, b2ee9ed45), which is a call of the build's too.
+      accounting: { requestId: expect.stringMatching(/^evidence\./), estimatedInputTokens: expect.any(Number), provider: "mock-production", model: "mock-bootstrap", inputTokens: 30 + 10, outputTokens: 15 + 5, totalTokens: 45 + 15, estimatedCostUsd: 0.004 /* 0.003 + 0.001 */ },
       evidenceLoop: { iterationCount: 3, decisionCount: 3, toolCallCount: 0 },
-      totalProviderCallCount: 3
+      totalProviderCallCount: 3 + 1
     });
     expect((diagnostic as unknown as { evidenceLoop: { steps: { resultCode: string }[] } }).evidenceLoop.steps.map((step) => step.resultCode)).toEqual(Array(3).fill("llm_evidence_loop.unknown_tool_refused"));
   });

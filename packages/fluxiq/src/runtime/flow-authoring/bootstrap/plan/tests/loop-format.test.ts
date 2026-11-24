@@ -19,7 +19,8 @@ describe("the Flow script loop grammar", () => {
   it("says the rows a repeat acts on are narrowed on the listing, and where repeat most goes", () => {
     const text = AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT;
     expect(text).toContain("The rows a `repeat over` acts on are the rows its listing kept. To act on only some, put the condition on the listing step: `extractList.where:");
-    expect(text).toContain("It never changes which rows a repeat visits.");
+    // The data stage's two paths (t984, t989) are worded as one sentence: neither changes which rows a repeat visits.
+    expect(text).toContain("Neither result-processing path changes which rows a repeat visits; narrow action targets on the listing before acting.");
     expect(text).toContain("`repeat most:` is only for a count the person's own instruction gives, never the way a loop ends. Beside `repeat while:` it goes on the span's first step, never under its last, and stops after that many passes.");
   });
 

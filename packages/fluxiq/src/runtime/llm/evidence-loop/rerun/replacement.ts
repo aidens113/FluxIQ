@@ -105,8 +105,9 @@ export function automationStudioLlmEvidenceRerunReplaced(
   // Rebind and place the successful rerun first: withdrawing a source while
   // a repeat still names it must be refused (`draft/amendment/repeat-hold`).
   // Set replacedBy afterwards so the internal withdrawal is not treated as
-  // a model amendment of a superseded attempt.
-  applyAutomationStudioFlowDraftAmendments(steps, [{ step: replaced.position, change: "drop" }]);
+  // a model amendment of a superseded attempt. The rerun stands in its place, so
+  // the attempt's leaving strands no step (`withdrawsReplacedAttempt`).
+  applyAutomationStudioFlowDraftAmendments(steps, [{ step: replaced.position, change: "drop" }], { withdrawsReplacedAttempt: true });
   replaced.replacedBy = to;
 }
 

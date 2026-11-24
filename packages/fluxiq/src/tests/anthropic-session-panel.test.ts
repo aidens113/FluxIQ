@@ -58,14 +58,14 @@ describe("Claude keys, Flow resolution and panel requests", () => {
       expect(wire.messages).toEqual([...transcript.map((turn) => ({ role: turn.author === "person" ? "user" : "assistant", content: turn.author === "panel" ? `[The panel reported] ${turn.text}` : turn.text })), { role: "user", content: "Show my automations." }]);
       return streamReply(JSON.stringify({ result_json: '{"do":"flow.list"}' }));
     });
-    const model = createAutomationStudioAnthropicPanelCommandModel({ resolveKey: release, fetchImpl: fetchImpl as typeof fetch });
+    const model = createAutomationStudioAnthropicPanelCommandModel({ resolveKey: release, model: "claude-sonnet-5-5", fetchImpl: fetchImpl as typeof fetch });
     const execution = { signal: new AbortController().signal, caller: { userId: "person.one", sessionId: "session.one" }, paid };
     expect(await model.decide({ instructions: "Read the panel's request vocabulary.", transcript, message: "Show my automations.", correction: null }, execution)).toBe('{"do":"flow.list"}');
     expect(release).toHaveBeenCalledWith(execution.caller);
     expect(paid).toHaveBeenCalledTimes(1);
     expect(paid).toHaveBeenCalledWith(0.000555);
     paid.mockClear();
-    const refused = createAutomationStudioAnthropicPanelCommandModel({ resolveKey: release, fetchImpl: (async () => streamReply(textFor(DIAGNOSIS), "refusal")) as typeof fetch });
+    const refused = createAutomationStudioAnthropicPanelCommandModel({ resolveKey: release, model: "claude-sonnet-5-5", fetchImpl: (async () => streamReply(textFor(DIAGNOSIS), "refusal")) as typeof fetch });
     await expect(refused.decide({ instructions: "Read the request.", transcript: [], message: "Open it.", correction: null }, execution)).rejects.toMatchObject({ code: "llm.provider_output_invalid" });
     expect(paid).toHaveBeenCalledTimes(1);
     expect(paid).toHaveBeenCalledWith(0.000555);

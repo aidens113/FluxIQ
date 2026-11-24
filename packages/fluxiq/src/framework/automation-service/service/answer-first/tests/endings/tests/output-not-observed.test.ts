@@ -37,6 +37,7 @@ describe("a read refused as output_not_observed", () => {
     let told = "";
     const library = fakeLibrary();
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       library,
       fault: (call) => call.value.node === READ_LOANS && (call.value.parameters as JsonObject | undefined)?.page === 2 && refusals-- > 0 ? refusal : undefined,
       script: [
@@ -61,6 +62,7 @@ describe("a read refused as output_not_observed", () => {
     let refusals = 1;
     let told = "";
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       fault: (call) => call.value.node === READ_LOANS && refusals-- > 0 ? FORMS[0]![1] : undefined,
       script: [
         runNode("read.refused", READ_LOANS, { from: "the first way" }, [], { add: true }),
@@ -72,7 +74,9 @@ describe("a read refused as output_not_observed", () => {
         complete("Listed.")
       ]
     }, cleanups);
-    expect(told).toContain("answer_first.nothing_to_judge");
+    // Changed by t984 (05d61fea4, `../../../completion/check.ts`): the data stage refuses a data task's completion with no
+    // captured source schema before the nothing-to-judge check, so it is the stage's refusal, still before any judge.
+    expect(told).toContain("answer_first.processing_schema_missing");
     const answer = expectReached(attempt);
     expect(answer.result?.rows?.totalRows).toBe(3);
     expect(judgeCalls(attempt)).toHaveLength(1);

@@ -37,6 +37,19 @@
 // precisely a press is held is the act record's reading (`act-record/gate/read-answer.ts`) of what the
 // domain states; this gate trusts it.
 //
+// **A press held only to a look (t994, F23 `run-mwov0vf8-41ab862a`).** A press that declared nothing
+// is held in a later attempt only until a look (`heldOnRepeat`), and on a replay no model is there to
+// look, so until t994 it was refused on every replay: a stepper's Next whose heading read otherwise
+// after it never moved the stepper again, the next step's control never arose, and that step ended
+// gone every attempt. So where every act a call matches is such a hold, this gate looks first, as the
+// engine checks a lasting step's effect: the step's own recorded effect (`routeSignatures.effect`), the
+// page observed now under the run's `scope`, and the host's sighting. Only `not_seen`, the host's strong
+// evidence that nothing the step brought about is on the page, lets the hold go for this attempt
+// (`record.carriedHold(...).letGo()`), and the press is then this attempt's own plain press, settled by its answer.
+// `seen` (a risen count still showing, a toggle already flipped), `unknown`, no recorded effect, no host,
+// no scope or a failed observation refuse as before. A declared or claimed act is never looked past. At
+// the output door the look reads the node the engine last asked about (`settle` only).
+//
 // **What it does not do.** A matching step keeps nothing the first press produced, since
 // the record holds no page values: a later step bound to its output finds none, and says
 // so by failing before it acts. A match excuses every matching dispatch of this one run:
@@ -75,6 +88,8 @@ import type { AutomationStudioAttemptAct } from "@fluxiq/contracts/automation";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationNodeExecutionResult } from "../../../../../components/automation/index.ts";
 import type { AutomationStudioAttemptActRecord } from "../../../../../runtime/answer-first/act-record/index.ts";
+import { automationStudioNodeRouteSignatures, automationStudioRouteEffectSeen, observeAutomationStudioRouteState } from "../../../../../runtime/automation-host/route-state/index.ts";
+import type { AutomationStudioFlowNode } from "../../../../../flows/executable/graph/index.ts";
 import { emitAutomationStudioActivityStepSkipped } from "../../../../../runtime/automation-activity/index.ts";
 import { AUTOMATION_STUDIO_ALREADY_DONE_OUTPUT, type AutomationStudioGraphExecutionOptions } from "../../../executor/index.ts";
 import { automationStudioAnswerFirstRunActSettling } from "./settling.ts";
@@ -92,6 +107,7 @@ const NOT_RECORDED_SAID = "This step was not done, because the record of what th
 type Native = NonNullable<AutomationStudioGraphExecutionOptions["nativeNodeExecutor"]>;
 type Dispatcher = NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]>;
 type Host = NonNullable<AutomationStudioGraphExecutionOptions["hostRuntime"]>;
+type ForRun = Parameters<AutomationStudioAttemptActRecord["carried"]>[0];
 
 /**
  * `options` with every door the run has gated by `record` (header). A definition's
@@ -105,8 +121,10 @@ export function automationStudioAnswerFirstRunActGate(options: AutomationStudioG
   settle?: boolean;
   /** The plan keys whose draft step claims a lasting act the person asked for (`../flow-run/act-claims.ts`): such a press lasts, whatever it declared. */
   claimedActs?: ReadonlySet<string> | undefined;
+  /** The run's host scope, which a look at the page is asked under (header, "A press held only to a look"). Without it, such a press is refused as it was. */
+  scope?: { projectId: string; flowId: string } | undefined;
 }): AutomationStudioGraphExecutionOptions {
-  const { record, claimedActs } = input;
+  const { record, claimedActs, scope } = input;
   const claimsAct = (node: { metadata?: Record<string, unknown> | undefined }): boolean => {
     const key = node.metadata?.[SYMBOLIC_KEY_METADATA];
     return typeof key === "string" && claimedActs?.has(key) === true;
@@ -120,18 +138,40 @@ export function automationStudioAnswerFirstRunActGate(options: AutomationStudioG
   /** The pass whose row a page-level link left behind (header), and the pass a dispatch now answers for. */
   let leftBehind: string | undefined;
   let passing: string | undefined;
+  /** The node the engine last asked about under `settle`, the only node a Core node's output can be read by (`./settling.ts`, `sawNode`). */
+  let running: AutomationStudioFlowNode | undefined;
   const gated: AutomationStudioGraphExecutionOptions = { ...options };
   const native = options.nativeNodeExecutor;
   const dispatcher = options.effectDispatcher;
   if (settling) gated.resolveActionEffect = (node, parameterValues) => {
     settling.sawNode(node);
+    // The engine asks again about the node's output with a bare node of the same id: it says nothing new.
+    if (!(running?.id === node.id && node.metadata === undefined)) running = node;
     return options.resolveActionEffect?.(node, parameterValues);
+  };
+  /** Whether the host says none of what `node`'s step brought about is on the page now: its strong `not_seen`, and nothing short of it (header). */
+  const effectNotOnPage = async (node: AutomationStudioFlowNode | undefined, signal: AbortSignal | undefined): Promise<boolean> => {
+    const host = options.hostRuntime;
+    const effect = node ? automationStudioNodeRouteSignatures(node).effect : undefined;
+    if (!scope || !host || !effect) return false;
+    const observation = await observeAutomationStudioRouteState({ hostRuntime: host, projectId: scope.projectId, flowId: scope.flowId, ...(signal ? { signal } : {}) });
+    return observation.ok && automationStudioRouteEffectSeen(host, effect, observation.state) === "not_seen";
+  };
+  /** The act these forms of one call are refused for, the first that has one; where every match is held only to a look, the look comes first (header). */
+  const refusedFor = async (calls: readonly ForRun[], node: AutomationStudioFlowNode | undefined, signal: AbortSignal | undefined): Promise<AutomationStudioAttemptAct | undefined> => {
+    const holds = calls.map((call) => ({ call, hold: record.carriedHold(call) })).filter((held) => held.hold !== undefined);
+    if (holds.length === 0) return undefined;
+    if (holds.every((held) => held.hold!.toALook) && await effectNotOnPage(node, signal)) {
+      for (const held of holds) held.hold!.letGo();
+      return undefined;
+    }
+    return calls.map((call) => record.carried(call)).find((found) => found !== undefined);
   };
   if (native) gated.nativeNodeExecutor = (async (request) => {
     skipped = false;
     const row = settling ? passRowOf(request.inputs[ROW_PORT]) : rowOf(request.inputs[ROW_PORT]);
     const parameters = asParameters(request.node.parameterValues);
-    const act = record.carried({ actionId: request.node.definitionId, parameters, row, steps: stepNames(request.node), ...counted });
+    const act = await refusedFor([{ actionId: request.node.definitionId, parameters, row, steps: stepNames(request.node), ...counted }], request.node, request.signal ?? options.signal);
     if (!act) {
       if (settling) {
         const step = settling.stepOf({ node: request.node, actionId: request.node.definitionId, parameters, row, floor: options.resolveActionEffect?.(request.node, request.node.parameterValues) });
@@ -186,8 +226,8 @@ export function automationStudioAnswerFirstRunActGate(options: AutomationStudioG
     const outputId = payload && typeof payload.outputId === "string" ? payload.outputId : undefined;
     if (!payload || !outputId) return await dispatcher(effect, context);
     const parameters = asParameters(recordOf(payload.parameters) ?? {});
-    const act = [outputId, ...(input.definitions?.() ?? []).filter((definition) => definition.outputAction?.fixedOutputId === outputId || definition.outputAction?.allowedOutputIds?.includes(outputId)).map((definition) => definition.id)]
-      .map((actionId) => record.carried({ actionId, parameters, ...counted })).find((found) => found !== undefined);
+    const actionIds = [outputId, ...(input.definitions?.() ?? []).filter((definition) => definition.outputAction?.fixedOutputId === outputId || definition.outputAction?.allowedOutputIds?.includes(outputId)).map((definition) => definition.id)];
+    const act = await refusedFor(actionIds.map((actionId) => ({ actionId, parameters, ...counted })), running, context?.signal ?? options.signal);
     if (!act) {
       if (!settling) return await dispatcher(effect, context);
       const step = settling.stepOf({ actionId: outputId, parameters });

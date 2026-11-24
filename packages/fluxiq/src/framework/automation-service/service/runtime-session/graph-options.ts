@@ -87,7 +87,8 @@ async function carrying(options: AutomationStudioGraphExecutionOptions, carry: C
   if (!carry.projectId) return options;
   const seed = await automationStudioAnswerFirstRunActStoreOf(carry.owner, carry).forRun(carry.projectId, carry.flowId, carry.runId, carry.runStatus);
   if (!seed) return options;
-  return automationStudioAnswerFirstRunActGate(options, { record: new AutomationStudioAttemptActRecord({ seed }), ...(native ? { definitions: () => native.listDefinitions() } : {}) });
+  // The run's scope lets the gate look at the page for a press carried only to a look (`../answer-first/run-acts/run-gate.ts`, F23).
+  return automationStudioAnswerFirstRunActGate(options, { record: new AutomationStudioAttemptActRecord({ seed }), scope: { projectId: carry.projectId, flowId: carry.flowId }, ...(native ? { definitions: () => native.listDefinitions() } : {}) });
 }
 
 function runGraphOptions(input: RunGraphOptionsInput): AutomationStudioGraphExecutionOptions {

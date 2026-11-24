@@ -11,6 +11,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS, type AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
+import { automationStudioAnsweringInstructionReading } from "./instruction-reading.ts";
 import { blankFixture, caller, copyDataDirSeed, mockProvider, rejectedGenerationDiagnostic, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
 // The case needs a project holding a blank Flow and its active instruction. Writing it through the service costs about a second on an idle
@@ -46,13 +47,15 @@ describe("a Flow build under the Flow's configured call count", () => {
   it("makes exactly the configured number of decisions when the model never finishes", async () => {
     const configuredCalls = 5;
     const requests: AutomationStudioLlmTaskRequest[] = [];
-    const provider = mockProvider(async (request) => {
+    // The build reads its instruction when it starts (t976, b2ee9ed45). That reading is not a decision, and the
+    // Flow's call count bounds the decisions: it is answered apart, and only decisions are counted here.
+    const provider = mockProvider(automationStudioAnsweringInstructionReading(async (request) => {
       requests.push(request);
       const iteration = request.context.evidenceLoop?.iteration ?? 0;
       // Always a new area, so the loop's no-progress guard never ends it first.
       const decision: JsonObject = { kind: "tool_call", callId: `call.${iteration}`, toolId: "inspect", input: { area: `area.${iteration}` } };
       return { response: { kind: "evidence_tool_decision", summary: "Looking.", decision }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 } };
-    });
+    }, { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }));
     // What the host's session-key resolver returns since grants went: its defaults and no call count.
     const defaults = AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS;
     const { project, flow } = structuredClone(await copyDataDirSeed(single, tempRoot));

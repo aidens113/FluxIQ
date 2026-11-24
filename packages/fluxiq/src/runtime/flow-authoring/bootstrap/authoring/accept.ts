@@ -19,6 +19,7 @@ import { authoringKey } from "./keys.ts";
 import type { AuthoringPartOfStep } from "../record-defaults/index.ts";
 import { parseAutomationStudioFlowScript } from "./parse.ts";
 import { automationStudioFlowBootstrapPlanLocator } from "./plan-locator.ts";
+import { automationStudioFlowScriptLocator } from "./script-locator.ts";
 import { authoringNestedValue, authoringSetAtPath, isJsonObject } from "./values.ts";
 import { authoringNodeList, readAuthoringPlanSubflows } from "./plan-shapes.ts";
 import { automationStudioAuthoredProcessingIssue } from "../../draft/index.ts";
@@ -55,7 +56,8 @@ export function acceptAutomationStudioFlowBootstrapResult(input: {
         authoringSetAtPath(parameters, ["recordOutput", ...path.slice(1)], authoringNestedValue(entry.lines.join("\n")));
       }
       const issue = automationStudioAuthoredProcessingIssue(parameters);
-      if (issue) return { ok: false, script, issues: [processingRefusal(issue, `flow.line.${step.line}`)] };
+      // Refused before assembly, so nothing is built to place it by; the script's own lines name the step it is in (`./script-locator.ts`).
+      if (issue) return { ok: false, script, issues: [processingRefusal(issue, `flow.line.${step.line}`)], locator: automationStudioFlowScriptLocator({ script: read.script, subflows: [], unplaced: [], rules: [], fallback: undefined }) };
     }
     const summary = boundedSummary(stated ?? read.script.summary ?? read.script.blocks[0]?.steps[0]?.description);
     const assembled = assembleAutomationStudioFlowScriptPlan({ script: read.script, registry: input.registry, resolution: input.resolution, summary, namedColumns, partOf: input.partOf });

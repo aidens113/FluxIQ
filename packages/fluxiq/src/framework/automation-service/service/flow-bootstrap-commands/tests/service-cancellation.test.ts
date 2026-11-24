@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { expect, it, vi } from "vitest";
 import { AutomationStudioService } from "../../../service.ts";
+import { automationStudioAnsweringInstructionReading } from "../../../tests/service-bootstrap/tests/instruction-reading.ts";
 import { blankFixture, caller, mockProvider, plan } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 
 it("cancels before provider dispatch and does not persist a proposal", async () => {
@@ -30,10 +31,11 @@ it("refuses a late successful provider result and leaves the accepted Flow uncha
   let started!: () => void;
   let calls = 0;
   const inProvider = new Promise<void>((resolve) => { started = resolve; });
-  const provider = mockProvider(async () => {
+  // The build reads its instruction when it starts (t976, b2ee9ed45), before the plan call this case holds open.
+  const provider = mockProvider(automationStudioAnsweringInstructionReading(async () => {
     calls++; started(); await new Promise<void>((resolve) => { release = resolve; });
     return { response: { kind: "flow_bootstrap", summary: "Late success", plan: plan() }, usage: { inputTokens: 120, outputTokens: 80, totalTokens: 200, estimatedCostUsd: 0.002 } };
-  });
+  }, { inputTokens: 120, outputTokens: 80, totalTokens: 200, estimatedCostUsd: 0.002 }));
   const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 1, maxEstimatedCostUsd: 0.1 }) });
   try {
     const { project, flow } = await blankFixture(service);
@@ -57,10 +59,11 @@ it("cancels during an actual evidence tool and never dispatches another provider
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-cancel-tool-"));
   let release!: () => void, started!: () => void, calls = 0, tools = 0;
   const inTool = new Promise<void>(resolve => { started = resolve; });
-  const provider = mockProvider(async () => {
+  // The build reads its instruction when it starts (t976, b2ee9ed45), before the decision whose tool this case holds open.
+  const provider = mockProvider(automationStudioAnsweringInstructionReading(async () => {
     calls++;
     return { response: { kind: "evidence_tool_decision", summary: "Inspect", decision: { kind: "tool_call", callId: `inspect-${calls}`, toolId: "inspect", input: {} } }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 } };
-  });
+  }, { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }));
   const service = new AutomationStudioService({ dataDir,
     llmProviderResolver: () => ({ provider, maxCallsPerRun: 12, maxEstimatedCostUsd: 0.1 }),
     llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect", inputSchema: { type: "object" }, effect: "observe" }], executeTool: async () => {

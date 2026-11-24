@@ -18,6 +18,7 @@ import { automationStudioActivityHub } from "../../../../../runtime/automation-a
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../../runtime/llm/index.ts";
 import { AUTOMATION_STUDIO_PERSON_NEEDED_TEXT, type AutomationStudioParkingPort } from "../../../../../runtime/automation-parking/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
+import { automationStudioAnsweringInstructionReading } from "./instruction-reading.ts";
 import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
 import { blankFixture, caller, isJudgeRequest, judgeReply, mockProvider, plan, rejectedGenerationDiagnostic, copyDataDirSeed, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
@@ -168,14 +169,15 @@ async function build(options: { noThread?: boolean; port?: (real: AutomationStud
     { kind: "complete", result: { summary: "Built.", plan: plan() } }
   ];
   let decision = 0;
-  const provider = mockProvider(async (request) => {
+  // The build reads its instruction when it starts (t976, b2ee9ed45): answered apart, not one of the decisions scripted here.
+  const provider = mockProvider(automationStudioAnsweringInstructionReading(async (request) => {
     requests.push(JSON.stringify(request));
     if (isJudgeRequest(request)) return judgeReply();
     return {
       response: { kind: "evidence_tool_decision", summary: "Step.", decision: decisions[Math.min(decision++, decisions.length - 1)]! },
       usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 }
     };
-  });
+  }, { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 }));
   let acted = false;
   const binding: AutomationStudioLlmEvidenceRuntimeBinding = {
     domainId: "example",

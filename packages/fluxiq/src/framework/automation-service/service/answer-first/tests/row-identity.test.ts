@@ -23,6 +23,7 @@ async function renewAll(input: { library: FakeLibrary; shape?: (loan: { title: s
   if (input.shape) library.shapes = { [SHAPE]: input.shape };
   const flowRead: JsonObject = input.shape ? { shape: SHAPE } : {};
   return await scriptedAttempt({
+    taskProcessing: null,
     library,
     instruction: "Renew every loan on my library account.",
     permittedConsequences: ["modify_existing"],
@@ -82,6 +83,7 @@ describe("a row a Flow reshaped is still the row a read showed", () => {
     const library = fakeLibrary();
     library.shapes = { [SHAPE]: (loan) => ({ name: loan.title }) };
     const attempt = await scriptedAttempt({
+      taskProcessing: null,
       library,
       instruction: "Renew every loan on my library account.",
       permittedConsequences: ["modify_existing"],

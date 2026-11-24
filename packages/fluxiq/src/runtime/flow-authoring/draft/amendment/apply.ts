@@ -96,7 +96,12 @@ const NOT_A_FLOW_STEP: AutomationStudioFlowDraftAmendmentRefusal["reason"] = "no
 export function applyAutomationStudioFlowDraftAmendments(
   steps: AutomationStudioFlowDraftStep[],
   amendments: readonly AutomationStudioFlowDraftAmendment[],
-  options: { claimRefused?: AutomationStudioFlowDraftClaimRefused | undefined; loopNeverEnds?: AutomationStudioFlowDraftLoopNeverEnds | undefined } = {}
+  options: {
+    claimRefused?: AutomationStudioFlowDraftClaimRefused | undefined;
+    loopNeverEnds?: AutomationStudioFlowDraftLoopNeverEnds | undefined;
+    /** The loop's own withdrawal of the attempt a rerun replaced and now stands in place of (`../../../llm/evidence-loop/rerun/replacement.ts`). */
+    withdrawsReplacedAttempt?: boolean | undefined;
+  } = {}
 ): { applied: number; refused: AutomationStudioFlowDraftAmendmentRefusal[]; moved?: ActMove[]; unreached?: AutomationStudioFlowDraftUnreachedStep[] } {
   let applied = 0;
   const refused: AutomationStudioFlowDraftAmendmentRefusal[] = [];
@@ -348,7 +353,11 @@ export function applyAutomationStudioFlowDraftAmendments(
   if (movedStep) refused.push(...automationStudioFlowDraftTakeOffBrokenRepeats(steps, shown));
   // A drop that left a kept step no way to its page is put back and refused; a
   // step newly left after one that does not bring it there is said (D2-1).
-  const reach = automationStudioFlowDraftStrandCheck(steps, reachBefore, withdrawn, shown);
+  // The attempt a rerun replaced strands nothing: the rerun is the same step corrected, standing where it stood.
+  // Reach cannot see that (where a step left the target is read off the step appended after it, and the rerun was
+  // appended last), so the check would put the attempt back at the Flow's end, where it would run again after every
+  // other step (t994; since t981 258f83958 withdrew it after the rerun took its place). Every other check still holds.
+  const reach = automationStudioFlowDraftStrandCheck(steps, reachBefore, options.withdrawsReplacedAttempt ? [] : withdrawn, shown);
   applied -= reach.takenBack;
   refused.push(...reach.refused);
   // A drop of the listing a repeat in the Flow walks, or of its span's last step,

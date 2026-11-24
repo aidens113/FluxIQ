@@ -287,15 +287,17 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       retryable: false,
       providerInvocation: "attempted",
       providerResponse: "received",
+      // The stubbed harness answers every call the build makes: its reading of the instruction when it
+      // starts (t976, b2ee9ed45) as well as the plan, so the build's accounting is twice the stub's.
       accounting: {
         requestId: "request.phase",
-        estimatedInputTokens: 321,
+        estimatedInputTokens: 2 * 321,
         provider: "mock-production",
         model: "mock-bootstrap",
-        inputTokens: 120,
-        outputTokens: 80,
-        totalTokens: 200,
-        estimatedCostUsd: 0.002
+        inputTokens: 2 * 120,
+        outputTokens: 2 * 80,
+        totalTokens: 2 * 200,
+        estimatedCostUsd: 2 * 0.002
       },
       // Core's own refusal of the plan, thrown in the service and named by its line there.
       issueCodes: ["thrown.Error", expect.stringMatching(/^thrown\.at:framework\.automation-service\.service\.ts:\d+$/u)],
@@ -329,7 +331,8 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       stage: "post_provider_validation",
       providerInvocation: "attempted",
       providerResponse: "received",
-      accounting: { requestId: "request.phase", estimatedInputTokens: 321, totalTokens: 200 }
+      // The stub's reading of the instruction at the start (t976) and its plan: two of its calls.
+      accounting: { requestId: "request.phase", estimatedInputTokens: 2 * 321, totalTokens: 2 * 200 }
     });
     await expect((instance as any).bootstrapAdaptations.listFlowBootstrapAdaptations(project.id, flow.flowId)).resolves.toEqual([]);
   });
@@ -352,7 +355,8 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       retryable: false,
       providerInvocation: "attempted",
       providerResponse: "received",
-      accounting: { requestId: "request.phase", estimatedInputTokens: 321, totalTokens: 200 }
+      // The stub's reading of the instruction at the start (t976) and its plan: two of its calls.
+      accounting: { requestId: "request.phase", estimatedInputTokens: 2 * 321, totalTokens: 2 * 200 }
     });
     expect(JSON.stringify(diagnostic)).not.toContain("raw persistence");
     await expect((instance as any).bootstrapAdaptations.listFlowBootstrapAdaptations(project.id, flow.flowId)).resolves.toEqual([]);
