@@ -1,6 +1,6 @@
 {
   "name": "fluxiq",
-  "version": "0.53.1",
+  "version": "0.54.0",
   "description": "Domain-neutral FluxIQ framework runtime for Node.js.",
   "license": "SEE LICENSE IN LICENSE.md",
   "type": "module",
@@ -46,6 +46,10 @@
     "./automation/candidate-authoring": {
       "types": "./dist/runtime/flow-authoring/bootstrap/authoring-result/index.d.ts",
       "import": "./dist/runtime/flow-authoring/bootstrap/authoring-result/index.js"
+    },
+    "./automation/answer-first-data": {
+      "types": "./dist/framework/automation-service/service/answer-first/recorded-data/index.d.ts",
+      "import": "./dist/framework/automation-service/service/answer-first/recorded-data/index.js"
     },
     "./automation/llm-models": {
       "types": "./dist/runtime/llm/models/index.d.ts",
