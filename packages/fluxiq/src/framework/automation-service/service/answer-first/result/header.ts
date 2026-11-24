@@ -66,9 +66,11 @@ function coverageWords(output: AutomationStudioAnswerFirstResultStep): string | 
   if (!coverage.last) return undefined;
   const parts: string[] = [];
   if (coverage.first === "not read") parts.push("the first place is not among them");
+  // The list's paging, plainly: a page follows, the end was reached, or not yet checked (t1013). A run's pass or a move
+  // the model ran on the list's own page settles it (`../result-feed/list-move.ts`); an observed end is never unsettled.
   const paging = coverage.last.paging;
-  if (!paging) parts.push(`nothing has said whether a page follows ${coverage.last.place}`);
+  if (!paging) parts.push(`paging after ${coverage.last.place} not yet checked`);
   else if (paging.verdict === "ended") parts.push(`the list ended after ${coverage.last.place} (${paging.reason})`);
-  else parts.push(`the list moved on after ${coverage.last.place} and nothing after it was read`);
+  else parts.push(`a page follows ${coverage.last.place} (the list moved on), not read yet`);
   return parts.join("; ");
 }
