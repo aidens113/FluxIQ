@@ -140,7 +140,9 @@ asks again with the count; `change_approach` (with `approach`) keeps the repeat
 refused; `ask_person` (with one plain `question` and `why` explaining genuine
 impossibility) raises the `ask_person` signal with the model's question, which the
 attempt posts and does not wait for; `finish_with_best` (with `result`) goes to the completion
-check as any completion does. Asking the person is the last resort (user, 2026-11-19:
+check as any completion does: accepted, it is the attempt's result; refused, the repeat stays
+refused as after `change_approach`, the decision's answer says it was not accepted, and the no's
+defects and Core's check of their rows reach the model beside its words (t1011). Asking the person is the last resort (user, 2026-11-19:
 "ONLY stop and ask user for feedback if its legit impossible"): the first catches offer
 `continue`, `change_approach` and `finish_with_best`, and `ask_person` joins only once
 the model has changed approach and the repeat is caught again; an earlier or reasonless

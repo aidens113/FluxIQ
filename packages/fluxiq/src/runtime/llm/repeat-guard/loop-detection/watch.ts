@@ -85,7 +85,7 @@ export type AutomationStudioLlmLoopWatch = {
   standing(): AutomationStudioLlmLoopFinding | undefined;
   /** What each of the calls a finding is about came back with, oldest first. */
   cameBack(finding: AutomationStudioLlmLoopFinding): AutomationStudioLlmLoopCameBack[];
-  /** The model decided how to go on (`../../decision-handlers/loop-decision.ts`): `change_approach` keeps the repeat refused, anything else ends the incident. */
+  /** The model decided how to go on (`../../decision-handlers/loop-decision.ts`): `change_approach` keeps the repeat refused; `finish_with_best` keeps it refused until the completion check accepts the result (t1011); `continue` ends the incident. */
   decided(decision: "continue" | "change_approach" | "finish_with_best"): void;
   tally(): AutomationStudioLlmLoopTally;
   readonly record: AutomationStudioLlmLoopAttemptRecord;

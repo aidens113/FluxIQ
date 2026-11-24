@@ -11,7 +11,7 @@ const CHOICES = {
   continue: "continue only if repeating is right here, and say why (for example that you are waiting for something on the page to change)",
   change_approach: "change_approach and name the different way",
   ask_person: "ask_person with one plain question for the person and in why what is impossible and why",
-  finish_with_best: "finish_with_best with the result you have, which is checked as this attempt's result"
+  finish_with_best: "finish_with_best with the result you have, which is checked as this attempt's result, and if it is not accepted, the repeat stays refused and you work on what the check named"
 } as const;
 
 const IMPOSSIBLE = "Asking the person is only for when the task is genuinely impossible under their instructions, for example something only they can supply or decide; it is not for difficulty or a repeat, and it needs why to name what is impossible and why. Give a solid effort first.";
