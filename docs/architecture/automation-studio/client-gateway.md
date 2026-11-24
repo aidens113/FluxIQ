@@ -1375,8 +1375,20 @@ production IO paths require their separate integration.
 Required command outcomes use server-only authentic context registration and an
 exact leased observer reference. The gateway privately issues a completion proof
 only after receipt COMMIT and parsed live result validation; copied JSON and
-receipt-only replay cannot issue it. Deadline, cancellation and close revoke the
-proof before success resolution, while owned late storage/observer work drains.
+receipt-only replay cannot issue it. Cancellation (the caller's abort signal) and
+close revoke the proof before success resolution, while owned late
+storage/observer work drains. The command's answer deadline does not: it bounds
+only the wait for the answer, and once an answer is taken within it the window is
+met and its timer is cancelled, for a required command as for any other (t1028).
+Until then the window stayed armed through the receipt COMMIT and the observer,
+so an answered press could be revoked as `outcome_unknown` and its run stopped as
+Outcome uncertain without any doubt about the act: the 2026-11-24 downstream
+sweep failed so when its test process stalled, and stalling the event loop 2-4 s
+after a press's answer reproduced it every time. The work after a taken answer
+stays bounded by the abort signal, close, and the runtime's own command deadline,
+whose stop blocks the command run so its observer refuses the completion. An
+answer that never comes within the window still asks the client by command id,
+and otherwise ends `unknown`, never sent again.
 The command-run owner privately accounts for that proof and consumes it only
 through the actual executor's registered post-handling witness. Project SQL
 checks all prior consumed receipt/history joins inside the next claim transaction;
