@@ -52,11 +52,7 @@ describe("session-key provider resolver", () => {
   // The one per-request limit is the model's context window (2026-09-30): the
   // profile is the whole window, the reply reserved out of it.
   it("clamps a session-backed Flow to the isolated test budget while leaving settings untouched", async () => {
-    vi.stubEnv("FLUXIQ_LLM_RUN_COST_CEILING_SCOPE", "test");
-    vi.stubEnv("FLUXIQ_LLM_RUN_COST_CEILING_USD", "0.1");
-    vi.resetModules();
-    const scoped = await import("../runtime/llm/index.ts");
-    const resolve = scoped.createAutomationStudioSessionKeyProviderResolver({ ports: ports() });
+    const resolve = createAutomationStudioSessionKeyProviderResolver({ ports: ports(), env: { FLUXIQ_LLM_RUN_COST_CEILING_SCOPE: "test", FLUXIQ_LLM_RUN_COST_CEILING_USD: "0.1" } });
     const metadata = { adaptationPolicySettings: { maxEstimatedCostUsdPerRun: 1 } };
     const resolution = resolve({ projectId: "p", flowId: "f", caller: { actorUserId: "u", actorSessionId: "s" }, metadata });
     expect(resolution).toMatchObject({ maxEstimatedCostUsd: 0.1, maxTotalEstimatedCostUsd: 0.1 });
