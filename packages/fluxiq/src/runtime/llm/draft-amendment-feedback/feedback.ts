@@ -136,7 +136,7 @@ export function automationStudioLlmEvidenceDraftAmendmentFeedback(input: {
     ...(met.includes("no_such_step") ? { positions: existingPositions(input.steps) } : {}),
     reasons,
     stepsWithoutProgress: input.stepsWithoutProgress,
-    maxStepsWithoutProgress: input.maxStepsWithoutProgress,
+    ...(Number.isFinite(input.maxStepsWithoutProgress) ? { maxStepsWithoutProgress: input.maxStepsWithoutProgress } : {}), // None where no count ends the loop (t1008).
     ...(undone ? { sameDraftAsIteration: input.sameDraftAsIteration! } : {}),
     instruction: ((amendmentsRefused || (!undone && !onlyMoved && !repeatsTakenOff) ? AMENDMENT_FEEDBACK_INSTRUCTION : "")
       + (refused.length ? NUMBERING_INSTRUCTION : "")

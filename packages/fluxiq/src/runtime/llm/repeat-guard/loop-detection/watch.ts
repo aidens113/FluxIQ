@@ -24,6 +24,15 @@
 // repeat may run and a further catch asks again with the count; `change_approach`
 // keeps the repeat refused; `finish_with_best` end the incident.
 //
+// **A change of approach on looks is held to its kind (t1008).** The refusal that
+// stands covers only the repeated call, so a model that changed approach after
+// going round the same looks could carry on with other looks, and did for the
+// rest of its round (run-mwufisf0-5535f5f5, 0079 onwards). Where every counted
+// call since the last progress was a look, each further look that brings nothing,
+// run or answered from memory, counts as a refusal does, so the ladder's next
+// rung comes as it would for a refused repeat. Any act or edit is another kind of
+// step and ends that; progress ends the incident.
+//
 // **A lasting act done again is refused only on the new path.** A caller with no
 // `loopSignal` has no way to act on what a refusal leads to, and a task may really
 // ask for repeats, so there it is told and never refused (`refuseActs`). On the new
@@ -75,6 +84,8 @@ export type AutomationStudioLlmLoopWatch = {
   completionTried(): void;
   /** Refusing has not worked, whether or not they came in a row: the signal now due, or nothing. */
   due(): AutomationStudioLlmLoopSignal | undefined;
+  /** A finding made outside the detector, from what the loop already counts (a run of looks, t1008): put on the ladder as the detector's own are. Answers the finding to steer on, or nothing where it counts as a refusal. */
+  caught(finding: AutomationStudioLlmLoopFinding): AutomationStudioLlmLoopFinding | undefined;
   /** The round is about to stall on refusals in a row: the signal for it, always. */
   stalling(): AutomationStudioLlmLoopSignal;
   /** The caller went on after a signal: refusals count from nothing, the ladder stays where it is. */
@@ -111,6 +122,12 @@ export function automationStudioLlmLoopWatch(options: {
   // The guard has refused since the last progress: one incident of its own, which the guard's own run of refusals stalls as it always has.
   let guardStanding = false;
   const came: AutomationStudioLlmLoopCameBack[] = [];
+  // The kinds of the counted calls since the last progress, and whether the model changed approach on a stretch of looks
+  // alone: then a further look that brings nothing is the same way round, and counts as a refusal does (t1008, header).
+  const sinceProgress = new Set<AutomationStudioLlmLoopCall["effect"]>();
+  let looksOnly = false;
+  // This call was already counted as a run of looks (`caught`), so it is not counted twice.
+  let caughtOutside = false;
 
   const found = (finding: AutomationStudioLlmLoopFinding): AutomationStudioLlmLoopFinding | undefined => {
     standing = finding;
@@ -149,6 +166,8 @@ export function automationStudioLlmLoopWatch(options: {
     strikes = 0;
     standing = undefined;
     guardStanding = false;
+    sinceProgress.clear();
+    looksOnly = false;
   };
   const signal = (finding: AutomationStudioLlmLoopFinding): AutomationStudioLlmLoopSignal => {
     tally.changeApproach += 1;
@@ -173,11 +192,19 @@ export function automationStudioLlmLoopWatch(options: {
       if (came.length > CAME_BACK_KEPT) came.shift();
       const { finding, progressed } = detector.ran(call, guarded);
       if (progressed && !finding) cleared();
+      else if (call.exempt !== true) {
+        sinceProgress.add(call.effect);
+        // After a change of approach on looks alone, another look that brought nothing is no new way; any other kind of call is.
+        if (looksOnly && call.effect !== "observe") looksOnly = false;
+        else if (looksOnly && !finding && !caughtOutside) strikes += 1;
+      }
+      caughtOutside = false;
       return finding ? found(finding) : undefined;
     },
     amended(amendment) {
       const { finding, progressed } = detector.amended(amendment);
       if (progressed && !finding) cleared();
+      else looksOnly = false;
       return finding ? found(finding) : undefined;
     },
     guardRefused(toolId, input, context, state) {
@@ -190,6 +217,8 @@ export function automationStudioLlmLoopWatch(options: {
     },
     answered(toolId, input, context, state) {
       detector.unrun(toolId, input, context, state, true);
+      // A look asked again and answered from memory, after a change of approach on looks alone: the same way round.
+      if (looksOnly) strikes += 1;
     },
     moved() {
       detector.moved();
@@ -201,6 +230,10 @@ export function automationStudioLlmLoopWatch(options: {
     due() {
       if (strikes < AUTOMATION_STUDIO_LLM_LOOP_REFUSALS_BEFORE_CHANGE || !standing) return undefined;
       return signal(standing);
+    },
+    caught(finding) {
+      caughtOutside = true;
+      return found(finding);
     },
     stalling() {
       return signal(standing ?? { pattern: "exact_repeat", repeats: AUTOMATION_STUDIO_LLM_LOOP_REFUSALS_BEFORE_CHANGE, toolIds: [], unchanged: ["page"] });
@@ -215,6 +248,7 @@ export function automationStudioLlmLoopWatch(options: {
       if (decision !== "change_approach") return cleared();
       rung = "refusing";
       strikes = 0;
+      looksOnly = sinceProgress.size > 0 && !sinceProgress.has("mutate");
     },
     tally: () => ({ caught: { ...caught }, ...tally })
   };

@@ -315,7 +315,7 @@ export function automationStudioLlmUnusableDecisionFeedback(input: {
     code: "llm_evidence_loop.decision_unusable",
     issueCodes,
     stepsWithoutProgress: input.stepsWithoutProgress,
-    maxStepsWithoutProgress: input.maxStepsWithoutProgress,
+    ...(Number.isFinite(input.maxStepsWithoutProgress) ? { maxStepsWithoutProgress: input.maxStepsWithoutProgress } : {}), // None where no count ends the loop (t1008).
     ...(fieldIssues.length ? { fieldIssues } : {}),
     accepted: acceptedDecision(input.offers),
     instruction: [DECISION_FEEDBACK_INSTRUCTION,

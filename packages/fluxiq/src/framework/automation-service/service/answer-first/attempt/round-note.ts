@@ -43,7 +43,7 @@ export function automationStudioAnswerFirstRoundNote(run: AutomationStudioAnswer
       ...(rows.startedOver ? { startedOver: STARTED_OVER } : {}),
       ...(rows.fewerThanEarlier ? { fewerThanEarlier: { earlierRows: rows.fewerThanEarlier.earlierRows, words: FEWER } } : {})
     },
-    ...(refused ? { lastCheck: { verdict: refused.verdict, reason: refused.reason } } : {}),
+    ...(refused ? { lastCheck: { verdict: refused.verdict, reason: refused.reason, ...(refused.found?.defects?.length ? { defects: refused.found.defects } : {}) } } : {}),
     ...(run.personSaid?.length ? { personSaid: { whose: PERSON_SAID, words: [...run.personSaid] } } : {})
   };
 }

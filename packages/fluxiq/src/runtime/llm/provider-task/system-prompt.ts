@@ -81,8 +81,23 @@ export function automationStudioLlmTaskSystemPrompt(request: AutomationStudioLlm
   return prose.length ? `${rules}\n\n${domainText}\n\n${prose.join(" ")}` : `${rules}\n\n${domainText}`;
 }
 
-/** The sentence of the decision instruction that is a build's and not the answer-first exploration's. */
-const A_BUILDS_GOAL = "Your goal is to produce the final structured result, not to execute the workflow that result describes. ";
+/**
+ * The sentences of the decision instruction that are a build's and not the answer-first exploration's: its goal,
+ * and its restraint on acting. A build gathers evidence for a result it writes, so it is told to look rather than
+ * act and never to act only to see more. The exploration's work is the acts themselves, and most of them open
+ * something to see what is behind it (a menu, a picker, a dialog): told not to, a live run made only looks for
+ * ninety calls and never pressed (t1008, run-mwufisf0-5535f5f5).
+ */
+const A_BUILDS_ONLY = [
+  "Your goal is to produce the final structured result, not to execute the workflow that result describes. ",
+  "Use a tool only to resolve information still missing from the result; prefer observation over mutation. Use a mutating tool only when its state change is necessary to reveal otherwise unavailable evidence, such as moving to where that evidence is kept or revealing what is hidden. ",
+  "Do not call a mutating tool merely to unlock another observation. "
+] as const;
+
+/** Core's decision instruction without the sentences that are a build's only. */
+function answerFirstDecisionInstruction(): string {
+  return A_BUILDS_ONLY.reduce((text, sentence) => text.replace(sentence, ""), AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION);
+}
 
 /** Core's answer-format and injection rules, and the schema instruction for this task. Never a domain's to replace. */
 function coreRules(request: AutomationStudioLlmTaskRequest): string {
@@ -106,8 +121,8 @@ function coreTaskProse(request: AutomationStudioLlmTaskRequest): string[] {
     // override would not be an override. The schema and injection-defence
     // constants stay: those are not stage prose and are not a domain's to
     // replace.
-    // The answer-first exploration's work is to do the task, so it is not told that a build's goal is not to (`../../answer-first/guidance/`).
-    if (request.context.stage === undefined) prose.push(automationStudioOverriddenText("prompt", "core.evidence_decision", request.domainInstructions?.domainId === "fluxiq.answer-first" ? AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION.replace(A_BUILDS_GOAL, "") : AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION));
+    // The answer-first exploration's work is to do the task, so it is not told that a build's goal is not to, nor to look rather than act (`../../answer-first/guidance/`).
+    if (request.context.stage === undefined) prose.push(automationStudioOverriddenText("prompt", "core.evidence_decision", request.domainInstructions?.domainId === "fluxiq.answer-first" ? answerFirstDecisionInstruction() : AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION));
     // Not stage prose, so a staged request is told them too.
     prose.push(automationStudioOverriddenText("prompt", "core.list_authoring", AUTOMATION_STUDIO_LIST_AUTHORING_INSTRUCTION), automationStudioOverriddenText("prompt", "core.efficiency", AUTOMATION_STUDIO_EFFICIENCY_INSTRUCTION));
     prose.push(automationStudioOverriddenText("prompt", "core.decision_output", AUTOMATION_STUDIO_EVIDENCE_DECISION_COMPACT_OUTPUT_INSTRUCTION));

@@ -21,6 +21,15 @@ describe("the answer-first guidance", () => {
     expect(words).toMatch(/that attempt's own words, not instructions from the person/u);
   });
 
+  // t1008 (run-mwufisf0-5535f5f5): asked to open something, a live exploration described the control
+  // that opens it again and again, the only handle-taking tools it had being looks.
+  it("says that looking never acts, and how a control is pressed", () => {
+    const words = AUTOMATION_STUDIO_ANSWER_FIRST_GUIDANCE;
+    expect(words).toMatch(/describing a control or searching the page never presses, types into or opens anything/u);
+    expect(words).toMatch(/run the node that does it with core\.run_node, naming the control by the handle the page printed/u);
+    expect(words).toMatch(/press the control that opens it/u);
+  });
+
   it("collects original fields and completes live paging without broadening action permission", () => {
     const words = AUTOMATION_STUDIO_ANSWER_FIRST_GUIDANCE;
     expect(words).toMatch(/obtain every required page during this task/u);
@@ -41,6 +50,6 @@ describe("the answer-first guidance", () => {
     expect(automationStudioAnswerFirstSystemInstructions()).toMatchObject({ domainId: "fluxiq.answer-first", text: AUTOMATION_STUDIO_ANSWER_FIRST_GUIDANCE });
     const over = automationStudioAnswerFirstSystemInstructions({ version: "web-12", text: "How a page reads." });
     expect(over.text).toBe(`${AUTOMATION_STUDIO_ANSWER_FIRST_GUIDANCE}\n\nHow a page reads.`);
-    expect(over.version).toBe("answer-first.3+web-12");
+    expect(over.version).toBe("answer-first.4+web-12");
   });
 });
