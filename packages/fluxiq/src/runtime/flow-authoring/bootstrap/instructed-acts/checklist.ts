@@ -77,6 +77,14 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../llm/har
 // (`AutomationStudioInstructedActEvidenceTodo`), so a reader typed over the
 // other two falls back safely.
 //
+// **A choice the page already had made (paid run `run-mwuxd2v9-33928ea3`,
+// t1023).** A variant its act's step did because the host says the page had
+// that option chosen when the step ran is `done` by that step, with
+// `stoodChosen` (the option's words) and `stoodChosenSaid`: that no step of the
+// Flow chooses it, so a run whose page arrives otherwise does the act without
+// it, and what step would make it right however the page arrives
+// (`./standing-option.ts`). Information, never a todo.
+//
 // Nothing here calls a provider or reads a page; it is the instruction's words
 // and the draft.
 import type { JsonObject } from "../../../../core/index.ts";
@@ -90,6 +98,7 @@ import type { AutomationStudioInstructedAct, AutomationStudioInstructedChoice } 
 import { automationStudioInstructedActs } from "./instruction-acts.ts";
 import { automationStudioInstructedChoiceValueSaid } from "./instruction-choices.ts";
 import { automationStudioInstructedActRepeatSpans } from "./span.ts";
+import { automationStudioInstructedChoiceStoodChosenSaid } from "./standing-option.ts";
 import { automationStudioInstructedActsStanding, type AutomationStudioInstructedStanding } from "./standing.ts";
 
 /** Why an act on the checklist is not done yet. */
@@ -166,6 +175,14 @@ export type AutomationStudioInstructedChoiceChecklistItem = {
   afterActSaid?: string;
   /** For a time asked for by its rank, which one that is (`./instruction-choices.ts`, `automationStudioInstructedChoiceValueSaid`). */
   valueSaid?: string;
+  /**
+   * Done by its act's own step because the page had this option chosen when
+   * that step ran (`./standing-option.ts`, t1023): the words of the option the
+   * page showed chosen, and what that means for a run whose page arrives
+   * otherwise. Information, never a todo.
+   */
+  stoodChosen?: string;
+  stoodChosenSaid?: string;
 } & AutomationStudioInstructedTodoDetail;
 
 /** One act as the model is shown it. */
@@ -242,7 +259,7 @@ export function automationStudioInstructedActsChecklist(input: {
       ...item,
       choices: act.requires.map((choice) => {
         const valueSaid = automationStudioInstructedChoiceValueSaid(choice);
-        return { id: choice.id, choice: choice.choice, value: choice.value, quote: choice.quote, ...shown(standing.get(choice.id)), ...madeAfterAct(choice, standing.get(choice.id)), ...(valueSaid ? { valueSaid } : {}) };
+        return { id: choice.id, choice: choice.choice, value: choice.value, quote: choice.quote, ...shown(standing.get(choice.id)), ...madeAfterAct(choice, standing.get(choice.id)), ...stoodChosen(choice, standing.get(choice.id)), ...(valueSaid ? { valueSaid } : {}) };
       })
     };
   });
@@ -274,6 +291,13 @@ function madeAfterAct(choice: AutomationStudioInstructedChoice, stood: Automatio
   if (!stood || !("done" in stood) || !stood.afterAct) return {};
   const found = automationStudioInstructedChoiceAfterAct({ id: choice.id, of: choice.of, step: stood.done, actStep: stood.afterAct });
   return found ? { afterAct: found.actStep, afterActSaid: found.said } : {};
+}
+
+/** A choice its act's step did because the page had it chosen already: the option's words, and the sentence saying so (`./standing-option.ts`). */
+function stoodChosen(choice: AutomationStudioInstructedChoice, stood: AutomationStudioInstructedStanding | undefined): { stoodChosen?: string; stoodChosenSaid?: string } {
+  if (!stood || !("done" in stood) || !stood.stood) return {};
+  const words = stood.stood.words;
+  return { stoodChosen: words, stoodChosenSaid: automationStudioInstructedChoiceStoodChosenSaid({ id: choice.id, of: choice.of, step: stood.done.position, words }) };
 }
 
 /** The ids of the acts and choices the checklist shows as not done, each act before its choices. */

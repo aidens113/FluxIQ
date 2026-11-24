@@ -87,6 +87,17 @@ export type AutomationStudioFlowDraftStepToggle = { key: string; to: "on" | "off
 export type AutomationStudioFlowDraftStepChange = { words: string; how: "appeared" | "went" | "reads" | "rose" };
 
 /**
+ * One option that stood chosen on the page as a step found it, by the page's
+ * own typed state (checked, selected, pressed, current, or drawn apart from
+ * the like options beside it), as the host stated it on the step's own call
+ * (t1023): `key` names the control, as an opaque code the host keeps for one
+ * control for the whole build, and `words` are its words, screened as a
+ * control's are (`./control-words.ts`). Core reads the words only to find the
+ * option the person asked for (`../bootstrap/instructed-acts/standing-option.ts`).
+ */
+export type AutomationStudioFlowDraftStepChosen = { key: string; words: string };
+
+/**
  * One condition of a step that keeps some of the items it reads, in the host's
  * count, positionally as the step's argument lists its conditions: how many
  * items it `kept` (held of) and `rejected`, and `keptValues`, a few of the
@@ -197,6 +208,22 @@ export type AutomationStudioFlowDraftStep = {
    * count rise. Only a step whose effect is `mutate` carries it.
    */
   changed?: AutomationStudioFlowDraftStepChange[];
+  /**
+   * The options that stood chosen on the page as this step found it, as the
+   * host stated it on its own call (`AutomationStudioFlowDraftStepChosen`,
+   * t1023): those the page showed chosen then, and those it showed chosen on
+   * an earlier look at the same page and has not shown otherwise since -- a
+   * chooser closed again still holds what it showed. Only a step whose effect
+   * is `mutate` carries it.
+   *
+   * Paid run `run-mwuxd2v9-33928ea3` was asked to add an item "for pickup";
+   * the site's chooser showed Pickup chosen before any act, the add landed,
+   * and the checklist still owed the pickup for 190 steps, because a choice
+   * was done only by a step the model said made it. The step that does an act
+   * on a page where the option stands chosen does that option too
+   * (`../bootstrap/instructed-acts/standing-option.ts`).
+   */
+  chosen?: AutomationStudioFlowDraftStepChosen[];
   /**
    * The host's code for the list a read reads, as the caller stated it on its
    * own call: the same for the same list on the same page for the whole build.

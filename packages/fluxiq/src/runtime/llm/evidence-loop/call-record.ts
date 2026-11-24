@@ -7,7 +7,7 @@
 // calls cannot answer for any of them.
 
 import type { JsonObject } from "../../../core/index.ts";
-import type { AutomationStudioFlowDraftStepChange, AutomationStudioFlowDraftStepCondition, AutomationStudioFlowDraftStepReplay, AutomationStudioFlowDraftStepToggle } from "../../flow-authoring/draft/index.ts";
+import type { AutomationStudioFlowDraftStepChange, AutomationStudioFlowDraftStepChosen, AutomationStudioFlowDraftStepCondition, AutomationStudioFlowDraftStepReplay, AutomationStudioFlowDraftStepToggle } from "../../flow-authoring/draft/index.ts";
 import type { AutomationStudioLlmEvidenceTool } from "./tool.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "./tool-execution.ts";
 import { automationStudioLlmEvidenceDiagnostic } from "../evidence-diagnostic/index.ts";
@@ -43,7 +43,7 @@ export function automationStudioLlmEvidenceCallRecord(
   tool: AutomationStudioLlmEvidenceTool,
   input: JsonObject,
   execution?: { draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] }
-): { actionId: string; toolId?: string; input: JsonObject; ranWith?: JsonObject; effect: "observe" | "mutate"; proposes?: boolean; replay?: AutomationStudioFlowDraftStepReplay; control?: string; interruption?: true; written?: true; toggle?: AutomationStudioFlowDraftStepToggle; reads?: string; changed?: AutomationStudioFlowDraftStepChange[]; conditions?: AutomationStudioFlowDraftStepCondition[] } {
+): { actionId: string; toolId?: string; input: JsonObject; ranWith?: JsonObject; effect: "observe" | "mutate"; proposes?: boolean; replay?: AutomationStudioFlowDraftStepReplay; control?: string; interruption?: true; written?: true; toggle?: AutomationStudioFlowDraftStepToggle; reads?: string; changed?: AutomationStudioFlowDraftStepChange[]; conditions?: AutomationStudioFlowDraftStepCondition[]; chosen?: AutomationStudioFlowDraftStepChosen[] } {
   const declared = execution?.draft;
   const actionId = declared?.actionId ?? tool.toolId;
   return {
@@ -74,6 +74,9 @@ export function automationStudioLlmEvidenceCallRecord(
     ...(declared?.changed === undefined ? {} : { changed: declared.changed.map((line) => ({ words: line.words, how: line.how })) }),
     // What each of a read's conditions kept, already screened on the parse path; an unchanged rerun of the
     // read is told which condition left out no row (`../repeat-guard/narrowed-nothing.ts`, t693).
-    ...(declared?.conditions === undefined ? {} : { conditions: declared.conditions.map((entry) => ({ kept: entry.kept, rejected: entry.rejected, keptValues: [...entry.keptValues] })) })
+    ...(declared?.conditions === undefined ? {} : { conditions: declared.conditions.map((entry) => ({ kept: entry.kept, rejected: entry.rejected, keptValues: [...entry.keptValues] })) }),
+    // The options that stood chosen as the press found it, already screened on the parse path; the checklist counts a
+    // choice the act's step ran with standing as done by it (`../../flow-authoring/bootstrap/instructed-acts/standing-option.ts`, t1023).
+    ...(declared?.chosen === undefined ? {} : { chosen: declared.chosen.map((option) => ({ key: option.key, words: option.words })) })
   };
 }
