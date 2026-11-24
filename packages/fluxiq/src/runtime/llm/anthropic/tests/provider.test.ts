@@ -3,10 +3,13 @@ import { describe, expect, it, vi } from "vitest";
 import { createAutomationStudioAnthropicProvider } from "../provider.ts";
 import { AUTOMATION_STUDIO_ANTHROPIC_MESSAGES_URL, AUTOMATION_STUDIO_ANTHROPIC_API_VERSION } from "../messages.ts";
 import { automationStudioAnthropicRequest } from "../request.ts";
-import { DIAGNOSIS, USAGE, request, decisionRequest, textFor, envelope, jsonReply, streamReply } from "./fixtures.ts";
+import { DIAGNOSIS, USAGE, request, decisionRequest, textFor, envelope, jsonReply, streamReply, useFixtureModel } from "./fixtures.ts";
+
+// This file asserts Sonnet's prices and thinking setting, so it names Sonnet on purpose (t1012: the unnamed default is Haiku, see default-model.test.ts).
+useFixtureModel("claude-sonnet-5-5");
 
 function provider(response: () => Response = streamReply, extra: Partial<Parameters<typeof createAutomationStudioAnthropicProvider>[0]> = {}) {
-  return createAutomationStudioAnthropicProvider({ secretReference: { kind: "secret_reference", id: "secret:claude" }, resolveSecret: async () => "dummy-provider-key", fetchImpl: vi.fn(async () => response()) as typeof fetch, ...extra });
+  return createAutomationStudioAnthropicProvider({ secretReference: { kind: "secret_reference", id: "secret:claude" }, model: "claude-sonnet-5-5", resolveSecret: async () => "dummy-provider-key", fetchImpl: vi.fn(async () => response()) as typeof fetch, ...extra });
 }
 
 describe("native Anthropic task provider", () => {

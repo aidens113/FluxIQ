@@ -347,7 +347,7 @@ screened before raw reply logging or return. Rejected raw answers stay unlogged.
 
 The browser-safe `fluxiq/automation/llm-models` export retains the
 DeepSeek names and adds `AUTOMATION_STUDIO_ANTHROPIC_MODELS`,
-`AUTOMATION_STUDIO_ANTHROPIC_DEFAULT_MODEL` (`claude-sonnet-5-5`) and
+`AUTOMATION_STUDIO_ANTHROPIC_DEFAULT_MODEL` (`claude-haiku-5-5`, the built-in default; user 2026-11-20, t1012) and
 `AUTOMATION_STUDIO_ANTHROPIC_MODEL_LIMITS`. Sonnet, Haiku and Opus 5.5 have 1M
 context and 128K output. `FLUXIQ_LLM_DEFAULT_MODEL` accepts either provider's
 configured IDs; an explicit DeepSeek factory remains usable under a Claude

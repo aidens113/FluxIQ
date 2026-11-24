@@ -6,7 +6,6 @@ import { automationStudioAnthropicMessageBody } from "./request.ts";
 import { automationStudioAnthropicOutputFormat } from "../../models/providers/anthropic/index.ts";
 import { automationStudioAnthropicMessage, automationStudioAnthropicPaidFailure } from "./messages.ts";
 import { isRecord } from "../provider-transport/index.ts";
-import { AUTOMATION_STUDIO_LLM_DEFAULT_MODEL_NAMED } from "../../models/catalog/index.ts";
 
 export type AutomationStudioAnthropicPanelCommandOptions = {
   resolveKey(caller: AutomationStudioConversationCaller | null): Promise<string>;
@@ -16,7 +15,7 @@ export type AutomationStudioAnthropicPanelCommandOptions = {
 };
 
 export function createAutomationStudioAnthropicPanelCommandModel(options: AutomationStudioAnthropicPanelCommandOptions): AutomationStudioConversationModel {
-  const model = options.model ?? (AUTOMATION_STUDIO_LLM_DEFAULT_MODEL_NAMED ? AUTOMATION_STUDIO_ANTHROPIC_DEFAULT_MODEL : "claude-haiku-5-5");
+  const model = options.model ?? AUTOMATION_STUDIO_ANTHROPIC_DEFAULT_MODEL;
   if (!isAutomationStudioAnthropicModel(model)) throw new AutomationStudioLlmProviderError("llm.provider_model_unsupported", "Unsupported Anthropic panel-command model.");
   const maxResponseBytes = options.maxResponseBytes ?? AUTOMATION_STUDIO_LLM_DEFAULT_MAX_RESPONSE_BYTES;
   if (!Number.isInteger(maxResponseBytes) || maxResponseBytes <= 0 || maxResponseBytes > AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_RESPONSE_BYTES) throw new AutomationStudioLlmProviderError("llm.provider_response_limit_invalid", "Anthropic response-byte limit is invalid.");
