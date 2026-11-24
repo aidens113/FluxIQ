@@ -1,4 +1,4 @@
-import { AUTOMATION_STUDIO_LLM_DEFAULT_MODEL, AUTOMATION_STUDIO_LLM_DEFAULT_MODEL_NAMED } from "../../models/catalog/index.ts";
+import { AUTOMATION_STUDIO_ANTHROPIC_BUILT_IN_DEFAULT_MODEL, AUTOMATION_STUDIO_LLM_DEFAULT_MODEL, AUTOMATION_STUDIO_LLM_DEFAULT_MODEL_NAMED } from "../../models/catalog/index.ts";
 
 /**
  * The model a task starts on when it names none (user, 2026-11-20: "its just the model we start with"; t983).
@@ -8,5 +8,5 @@ import { AUTOMATION_STUDIO_LLM_DEFAULT_MODEL, AUTOMATION_STUDIO_LLM_DEFAULT_MODE
  */
 export function automationStudioLlmStartingModelId(providerId: unknown): string {
   if (AUTOMATION_STUDIO_LLM_DEFAULT_MODEL_NAMED) return AUTOMATION_STUDIO_LLM_DEFAULT_MODEL;
-  return providerId === "deepseek" ? "deepseek-flash" : "claude-haiku-5-5";
+  return providerId === "deepseek" ? "deepseek-flash" : AUTOMATION_STUDIO_ANTHROPIC_BUILT_IN_DEFAULT_MODEL;
 }

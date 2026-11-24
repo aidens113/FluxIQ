@@ -31,8 +31,8 @@ export const AUTOMATION_STUDIO_LLM_DEFAULT_MODEL = resolveAutomationStudioLlmDef
 /**
  * Whether `FLUXIQ_LLM_DEFAULT_MODEL` named the default, as the Lab's `--llm-model` does, rather
  * than Core falling back to its built-in one. Read once when Core loads, as the default is. A run
- * that names no model of its own runs on a named default; with none named, an attempt on a Claude
- * key starts on the model ladder's cheapest rung (`../../llm/role-routing/resolution.ts`).
+ * that names no model of its own runs on a named default; with none named, a task on a Claude
+ * key starts on the built-in Anthropic default, Haiku (`../../llm/role-routing/starting-model.ts`).
  */
 export const AUTOMATION_STUDIO_LLM_DEFAULT_MODEL_NAMED: boolean = Boolean((globalThis as { process?: { env?: Environment } }).process?.env?.[AUTOMATION_STUDIO_LLM_DEFAULT_MODEL_ENV]?.trim());
 export const AUTOMATION_STUDIO_ANTHROPIC_DEFAULT_MODEL: AutomationStudioAnthropicModel = isAutomationStudioAnthropicModel(AUTOMATION_STUDIO_LLM_DEFAULT_MODEL)

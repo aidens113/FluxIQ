@@ -3,7 +3,9 @@
 // Browser-safe: this module imports no runtime or Node code.
 export const AUTOMATION_STUDIO_ANTHROPIC_MODELS = ["claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5"] as const;
 export type AutomationStudioAnthropicModel = (typeof AUTOMATION_STUDIO_ANTHROPIC_MODELS)[number];
-export const AUTOMATION_STUDIO_ANTHROPIC_BUILT_IN_DEFAULT_MODEL: AutomationStudioAnthropicModel = "claude-sonnet-5-5";
+// The one place Core names the Claude model a task starts on when none is named (user, 2026-11-20: no model ladder,
+// Haiku for build and judge; t1012). The starting model, the provider, the panel command and settings all read it.
+export const AUTOMATION_STUDIO_ANTHROPIC_BUILT_IN_DEFAULT_MODEL: AutomationStudioAnthropicModel = "claude-haiku-5-5";
 export const AUTOMATION_STUDIO_ANTHROPIC_MODEL_LIMITS = Object.freeze({
   "claude-sonnet-5-5": Object.freeze({ contextTokens: 1_000_000, maxOutputTokens: 128_000 }),
   "claude-haiku-5-5": Object.freeze({ contextTokens: 1_000_000, maxOutputTokens: 128_000 }),
