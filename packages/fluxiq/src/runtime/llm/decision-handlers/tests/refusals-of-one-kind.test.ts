@@ -8,6 +8,7 @@ import type { JsonObject } from "../../../../core/index.ts";
 import { runAutomationStudioLlmEvidenceLoop } from "../../index.ts";
 import { automationStudioLlmEvidenceRefusedCallRun } from "../refusal-run.ts";
 import type { AutomationStudioLlmEvidenceDecisionHandlerContext } from "../types.ts";
+import type { AutomationStudioLlmLoopSignal } from "../../repeat-guard/index.ts";
 
 const press = { toolId: "press", description: "Press.", inputSchema: { type: "object" }, effect: "mutate" as const, perCallEffect: true };
 type Shown = ReadonlyArray<{ toolId: string; value: JsonObject }>;
@@ -97,5 +98,52 @@ describe("decisions refused for one reason, three in a row", () => {
     const decide = decisions(keep(1), keep(2), { kind: "tool_call", callId: "press.D", toolId: "press", input: { target: "D" }, add: true }, keep(3), { kind: "amend_draft", amendments: [{ step: 9, change: "keep" }] });
 
     await expect(loop(decide)).resolves.toMatchObject({ ok: true });
+  });
+});
+
+// t1014 (user, 2026-11-24: "THERE SHOULDNT BE ANY ARBITRARY FUCKING CALL LIMIT THAT RANDOMLY JUST RESETS EVERYTHING"):
+// where the caller takes loop detection's signal (the answer-first rounds) no count of refusals ends the round. The run
+// is a finding on loop detection's ladder, steered and decided, and only the ladder's last rung ends the round.
+describe("decisions refused for one reason, where the caller takes loop detection's signal (t1014)", () => {
+  const onTheLadder = (decide: ReturnType<typeof vi.fn>, signals: AutomationStudioLlmLoopSignal[]) => runAutomationStudioLlmEvidenceLoop({
+    tools: [press], decide, executeTool: site(), maxIterations: 30, maxToolCalls: 30, dryRun: false, propagateDecisionErrors: true,
+    unusableDecisions: { maxConsecutive: 8, stalled: () => stalledError },
+    loopSignal: (signal: AutomationStudioLlmLoopSignal) => {
+      signals.push(signal);
+      return "end";
+    }
+  } as Parameters<typeof runAutomationStudioLlmEvidenceLoop>[0]);
+  const steersOf = (decide: ReturnType<typeof vi.fn>) => decide.mock.calls.flatMap((_, index) => shownAt(decide, index).filter((entry) => entry.toolId === "core.loop_check").map((entry) => entry.value));
+
+  it("three in a row are caught as a repeat, not a round end: the model is asked to decide, and the round goes on to its result", async () => {
+    const signals: AutomationStudioLlmLoopSignal[] = [];
+    const decide = decisions(keep(1), keep(2), keep(3));
+
+    await expect(onTheLadder(decide, signals)).resolves.toMatchObject({ ok: true });
+    expect(signals).toEqual([]);
+    // The warning at the second names no figure that ends the round.
+    const warned = shownAt(decide, 5).find((entry) => entry.toolId === "core.refusal_run")?.value;
+    expect(warned).toMatchObject({ code: "llm_evidence_loop.refused_in_a_row", inARow: 2 });
+    expect(warned?.maxInARow).toBeUndefined();
+    expect(String(warned?.instruction)).toContain("is caught as a repeat, and you decide how to go on");
+    // The third is steered as loop detection's own finding, with the model's loop decision.
+    const steer = shownAt(decide, 6).find((entry) => entry.toolId === "core.loop_check")?.value;
+    expect(steer).toMatchObject({ code: "llm_evidence_loop.loop_steered", pattern: "no_progress", repeats: 3, toolIds: ["core.refusal_run"] });
+    expect(steer?.decide).toMatchObject({ tool: "core.loop_decision" });
+    expect(String(steer?.instruction)).toContain("refused, or changed nothing, for the same reason");
+  });
+
+  it("refused on and on for one reason, climbs the ladder: only its last rung ends the round, with what it repeated", async () => {
+    const signals: AutomationStudioLlmLoopSignal[] = [];
+    const decide = vi.fn();
+    for (const decision of built) decide.mockResolvedValueOnce(decision);
+    decide.mockImplementation(async () => keep(1 + (decide.mock.calls.length % 3)));
+
+    await expect(onTheLadder(decide, signals)).rejects.toBe(stalledError);
+    expect(signals).toHaveLength(1);
+    expect(signals[0]).toMatchObject({ kind: "change_approach" });
+    // Past the third: the count no longer ended it.
+    expect(decide.mock.calls.length).toBeGreaterThan(6);
+    expect(steersOf(decide).some((note) => JSON.stringify(note.toolIds) === JSON.stringify(["core.refusal_run"]))).toBe(true);
   });
 });

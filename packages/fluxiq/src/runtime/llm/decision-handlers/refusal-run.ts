@@ -1,7 +1,9 @@
 // Three decisions in a row refused, or changing nothing, for one reason end the
 // round, and the build tests and judges the Flow so far instead of spending its
 // purse (week report W2, the user's rule of 2026-10-06; the counting is
-// `../evidence-progress/refusal-run.ts`).
+// `../evidence-progress/refusal-run.ts`). **Where the caller takes loop detection's signal (the
+// answer-first rounds) no count ends the round (t1014):** the run is put on the ladder instead,
+// steered and decided, and only the ladder's last rung ends it (`onTheLadder`).
 //
 // What counts, and as which kind:
 //   - an amendment decision that changed nothing (`./amendment.ts`): its
@@ -33,7 +35,9 @@ import { automationStudioFlowDraftStepCopy } from "../../flow-authoring/draft/in
 import { automationStudioLlmDecisionContextSupersede } from "../decision-context/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_SAME_REFUSALS_IN_A_ROW } from "../evidence-progress/index.ts";
 import { automationStudioLlmEvidenceLoopFailure as failure, type AutomationStudioLlmEvidenceLoopResult } from "../evidence-loop/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_REFUSED_CODE, automationStudioLlmEvidenceRetriesLater } from "../repeat-guard/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_REFUSED_CODE, AUTOMATION_STUDIO_LLM_LOOP_REFUSED_RUN_TOOL_ID, automationStudioLlmEvidenceRetriesLater } from "../repeat-guard/index.ts";
+import { automationStudioLlmEvidenceLoopCaught } from "./loop-check.ts";
+import { automationStudioLlmEvidenceLoopRaise } from "./loop-signal.ts";
 import type { AutomationStudioLlmEvidenceDecisionHandlerContext } from "./types.ts";
 
 /** The evidence entry the warning before the last refusal of a run is told under. */
@@ -53,14 +57,8 @@ export function automationStudioLlmEvidenceRefusedOfAKind(
   issueCode: string
 ): AutomationStudioLlmEvidenceLoopResult | undefined {
   const inARow = context.refusalRun.refused(iteration, kind);
-  const { input, trace, accounting, draftSteps, evidence } = context;
-  if (inARow >= AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_SAME_REFUSALS_IN_A_ROW) {
-    if (input.unusableDecisions) {
-      const error = input.unusableDecisions.stalled({ issueCodes: [issueCode], trace: [...trace], accounting: { ...accounting }, steps: draftSteps.map((step) => automationStudioFlowDraftStepCopy(step)) });
-      if (input.propagateDecisionErrors) throw error;
-    }
-    return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting);
-  }
+  const { input, evidence } = context;
+  if (inARow >= AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_SAME_REFUSALS_IN_A_ROW) return input.loopSignal ? onTheLadder(context, iteration, inARow, issueCode) : stall(context, issueCode);
   automationStudioLlmDecisionContextSupersede(evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_REFUSAL_RUN_TOOL_ID);
   if (inARow < AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_SAME_REFUSALS_IN_A_ROW - 1) return undefined;
   const { refusal, reason } = reasonWords(kind, evidence);
@@ -69,12 +67,44 @@ export function automationStudioLlmEvidenceRefusedOfAKind(
     code: "llm_evidence_loop.refused_in_a_row",
     refusal,
     inARow,
-    maxInARow: AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_SAME_REFUSALS_IN_A_ROW,
-    instruction: input.discoveryOnly === true ? candidateWarning(inARow, reason) : input.draft === false ? undraftedWarning(inARow, reason) : draftWarning(inARow, reason)
+    // Where no count ends the round there is no figure to reach (t1014).
+    ...(input.loopSignal ? {} : { maxInARow: AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_SAME_REFUSALS_IN_A_ROW }),
+    instruction: input.loopSignal ? caughtWarning(inARow, reason) : input.discoveryOnly === true ? candidateWarning(inARow, reason) : input.draft === false ? undraftedWarning(inARow, reason) : draftWarning(inARow, reason)
   };
   context.accountEvidence(value);
   evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_REFUSAL_RUN_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_REFUSAL_RUN_TOOL_ID, value });
   return undefined;
+}
+
+/** How the round stops on a refusal run where the caller takes no loop signal: the error its caller built for a stall, or the loop's own ending. */
+function stall(context: AutomationStudioLlmEvidenceDecisionHandlerContext, issueCode: string): AutomationStudioLlmEvidenceLoopResult {
+  const { input, trace, accounting, draftSteps } = context;
+  if (input.unusableDecisions) {
+    const error = input.unusableDecisions.stalled({ issueCodes: [issueCode], trace: [...trace], accounting: { ...accounting }, steps: draftSteps.map((step) => automationStudioFlowDraftStepCopy(step)) });
+    if (input.propagateDecisionErrors) throw error;
+  }
+  return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting);
+}
+
+/**
+ * A refusal run where the caller takes loop detection's signal (t1014, user 2026-11-24: "THERE SHOULDNT BE ANY ARBITRARY
+ * FUCKING CALL LIMIT THAT RANDOMLY JUST RESETS EVERYTHING"): no count ends the round. The run is a finding on loop
+ * detection's ladder (`./loop-check.ts`), steered with the model's own loop decision, and each further decision refused
+ * for the same reason is caught again and climbs it; only the ladder's last rung, raised as any other
+ * (`./loop-signal.ts`), ends the round. The 2026-10-06 rule (three in a row end the round and the Flow is tested) holds
+ * for a loop with no signal.
+ */
+function onTheLadder(context: AutomationStudioLlmEvidenceDecisionHandlerContext, iteration: number, inARow: number, issueCode: string): AutomationStudioLlmEvidenceLoopResult | undefined {
+  automationStudioLlmEvidenceLoopCaught(context, iteration, { pattern: "no_progress", repeats: inARow, toolIds: [AUTOMATION_STUDIO_LLM_LOOP_REFUSED_RUN_TOOL_ID], unchanged: ["page", "rows", "acts", "draft"] });
+  const signal = context.loops.due();
+  if (!signal || automationStudioLlmEvidenceLoopRaise(context, iteration, signal) === "continue") return undefined;
+  return stall(context, issueCode);
+}
+
+/** The warning where no count ends the round (t1014): one more is caught as a repeat, and the model decides. */
+function caughtWarning(inARow: number, reason: string): string {
+  return `Your last ${inARow} decisions were refused, or changed nothing, for the same reason (${reason}). One more decision refused for it is caught as a repeat, and you decide how to go on. `
+    + "Do not send another decision of that kind: do what next beside the refusal says instead, run what the Flow still lacks, or complete if the Flow already does what the person asked.";
 }
 
 /** The warning in draft mode: the round ends and the Flow so far is tested and judged. */

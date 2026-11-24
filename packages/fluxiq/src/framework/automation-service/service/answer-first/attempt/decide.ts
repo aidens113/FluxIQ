@@ -5,7 +5,9 @@
 // the seam the project supervisor's takes.
 //
 // **A fresh round's note in front of the evidence.** It is constant for the round, so every
-// request stays a byte prefix of the next, and being a `core.` entry it is read as Core's.
+// request stays a byte prefix of the next, and being a `core.` entry it is read as Core's. From
+// the second round on, what the earlier rounds did and found follows it, constant for the round
+// as well (`../earlier-rounds/`, t1014).
 //
 // **The result's header in a fixed slot, as the current view is carried** (lane t905, design (b)1): Core's
 // own entry, last in the window and worked out from the attempt's one result on every request
@@ -41,7 +43,7 @@ const RESULT_TOOL_ID = "core.result";
 type Decide = AutomationStudioLlmEvidenceLoopInput["decide"];
 
 /** The loop's `decide` for one round. */
-export function automationStudioAnswerFirstDecide(run: AutomationStudioAnswerFirstAttemptRun, round: { ordinal: number; note: JsonObject | undefined; provider: AutomationStudioLlmProvider; startLocation: string | undefined }): Decide {
+export function automationStudioAnswerFirstDecide(run: AutomationStudioAnswerFirstAttemptRun, round: { ordinal: number; note: JsonObject | undefined; earlier?: { callId: string; toolId: string; value: JsonObject } | undefined; provider: AutomationStudioLlmProvider; startLocation: string | undefined }): Decide {
   const { input } = run;
   const denied = input.binding?.deniedEvidenceKeys ?? [];
   return input.routing.observing(async ({ iteration, tools, evidence, decisionSchema, canComplete, signal }) => {
@@ -50,7 +52,7 @@ export function automationStudioAnswerFirstDecide(run: AutomationStudioAnswerFir
     run.decidedAt = iteration;
     run.result.draft(run.steps);
     const slot = { callId: RESULT_TOOL_ID, toolId: RESULT_TOOL_ID, value: { result: run.result.slot(), processingMode: run.result.processingDeclaration() === undefined ? "legacy" : "automatic" } };
-    const window = [...(round.note ? [{ callId: `${NOTE_TOOL_ID}.${round.ordinal}`, toolId: NOTE_TOOL_ID, value: round.note }] : []), ...evidence, slot];
+    const window = [...(round.note ? [{ callId: `${NOTE_TOOL_ID}.${round.ordinal}`, toolId: NOTE_TOOL_ID, value: round.note }] : []), ...(round.earlier ? [round.earlier] : []), ...evidence, slot];
     const shown = input.routing.shown(window, denied);
     for (;;) {
       const decision = await input.runHarness({

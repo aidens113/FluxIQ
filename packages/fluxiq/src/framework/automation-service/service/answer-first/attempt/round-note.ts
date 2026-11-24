@@ -6,8 +6,9 @@
 //
 // A task with nothing saved, in its first round, is told nothing at all: that round is what a
 // first attempt always was. From there on every round is told again what the task brought with it,
-// since a round starts with an empty evidence window. A carried-on attempt is told so, and what
-// stands (`../carry-on/`).
+// since a round's own evidence window starts afresh. What the earlier rounds' calls found rides
+// beside this note as evidence, not in it (`../earlier-rounds/`, t1014): this note stays Core's own
+// words and counts. A carried-on attempt is told so, and what stands (`../carry-on/`).
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioAnswerFirstToldTried } from "../loop-signal/index.ts";

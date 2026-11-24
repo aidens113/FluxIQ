@@ -158,6 +158,20 @@ const DECISION_FEEDBACK_INSTRUCTION = "Your previous decision could not be used,
 const UNREADABLE_INSTRUCTION = "Nothing ran and nothing changed. Answer the same question again, with exactly one complete JSON object of the accepted shape and nothing before or after it. "
   + "Keep it short: a rerun's input carries only the keys that change.";
 
+/** Where no count ends the loop (t1014): what follows a reply sent again the same way. */
+const UNREADABLE_UNCOUNTED_INSTRUCTION = "A reply that cannot be read the same way as the one before is caught as a repeat, and you decide how to go on: fix exactly what is named here.";
+
+/**
+ * What could not be read of an unreadable reply, as one clause: the case in words and, where the reply parted from the
+ * schema, each path and rule it missed (t1000, t1014). The same clause twice in a row is the same unreadable reply
+ * again (`./repeat-guard/loop-detection/unreadable/`). Core's words and the schema's only, never a word of the reply.
+ */
+export function automationStudioLlmUnreadableDecisionSaid(issueCodes: readonly string[], reply: AutomationStudioLlmProviderReplyAccount | undefined): string {
+  const said = automationStudioLlmUnreadableReplySaid({ case: reply?.case, issueCodes });
+  const misses = automationStudioLlmProviderReplyAccount(reply)?.misses ?? [];
+  return misses.length === 0 ? said : `${said}: ${misses.map((miss) => `${miss.path} ${miss.rule}`).join("; ")}`;
+}
+
 /**
  * The unreadable cases a bracket was miscounted in. Ten replies of
  * run-mvcwp3wh-bcea2115 closed a tool call's input before its last key and then
@@ -299,15 +313,17 @@ export function automationStudioLlmUnusableDecisionFeedback(input: {
     // Where it did not fit, in the schema's words and never its own, read back through the account's bounds at this model boundary.
     const misses = automationStudioLlmProviderReplyAccount(reply)?.misses ?? [];
     const atFault = misses.length > 0 ? ` At fault: ${misses.map((miss) => `${miss.path} ${miss.rule}`).join("; ")}.` : "";
+    // Where no count ends the loop (t1014, a caller that takes loop detection's signal), the same unreadable reply again is caught as a repeat instead.
+    const counted = Number.isFinite(maxInARow);
     return {
       ok: false,
       code: "llm_evidence_loop.reply_unreadable",
       issueCodes,
       unreadable: { ...(reply ? { case: reply.case } : {}), said, ...(misses.length > 0 ? { misses } : {}) },
       unreadableInARow: inARow,
-      maxUnreadableInARow: maxInARow,
+      ...(counted ? { maxUnreadableInARow: maxInARow } : {}),
       accepted: acceptedDecision(input.offers),
-      instruction: `Your previous reply could not be read: ${said}.${atFault} ${UNREADABLE_INSTRUCTION}${nesting} ${maxInARow} unreadable replies in a row stop this build; that was ${inARow}.`
+      instruction: `Your previous reply could not be read: ${said}.${atFault} ${UNREADABLE_INSTRUCTION}${nesting} ${counted ? `${maxInARow} unreadable replies in a row stop this build; that was ${inARow}.` : UNREADABLE_UNCOUNTED_INSTRUCTION}`
     };
   }
   return {
