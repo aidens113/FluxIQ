@@ -2,7 +2,7 @@
 
 import type { AutomationStudioAttemptAct } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../core/index.ts";
-import type { AutomationStudioJudgeEvidenceProjector, AutomationStudioLlmHarnessInput, AutomationStudioLlmProvider, AutomationStudioLlmTaskResult } from "../../llm/index.ts";
+import type { AutomationStudioJudgeEvidenceProjector, AutomationStudioLlmHarnessInput, AutomationStudioLlmProvider, AutomationStudioLlmTaskResult, AutomationStudioLlmVerificationDefect } from "../../llm/index.ts";
 import type { AutomationStudioLlmTokenLimits } from "../../models/limits/index.ts";
 import type { AutomationStudioResultEndView, AutomationStudioResultTrailStep } from "../contracts/index.ts";
 import type { AutomationStudioFlowLessReadLeftOut } from "./read-left-out.ts";
@@ -84,6 +84,16 @@ export type AutomationStudioFlowLessJudgeInput = {
 };
 
 /**
+ * What a no found wrong, as the model that goes on is shown it (`./judged-no-found.ts`, t1011): the check's own list of
+ * defects, screened (`../verdict/defects.ts`), and Core's own check of the rows it named against what the result holds
+ * (`checkedRows`, `../request-rows/checked-rows.ts`). Each absent where empty.
+ */
+export type AutomationStudioFlowLessFound = {
+  defects?: AutomationStudioLlmVerificationDefect[];
+  checkedRows?: string[];
+};
+
+/**
  * `not_judged` is a call that gave nothing, and says nothing about the answer:
  * `refusedByPurse` where the attempt's money would not pay for it, `unanswered`
  * for anything else.
@@ -97,6 +107,8 @@ export type AutomationStudioFlowLessJudgement = {
    * verdict: on a yes what was checked, on a no what failed, on an unsure what it was meant to settle. Set when a judge answered.
    */
   checkedWhat?: string;
+  /** On a no: what it found wrong, for the model that goes on after it (`./judged-no-found.ts`, t1011). Absent where it named nothing. */
+  found?: AutomationStudioFlowLessFound;
   refusedByPurse?: boolean;
   /** The model service said the account has no balance: an ending of the attempt, never a check that was merely not answered. */
   emptyBalance?: boolean;

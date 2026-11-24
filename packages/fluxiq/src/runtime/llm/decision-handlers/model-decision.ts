@@ -9,7 +9,20 @@
 //   change_approach   the repeat stays refused, and the model goes on the way it named
 //   ask_person        the person is asked the model's own question through the loop's caller
 //                     (`loopSignal`), which ends the round there and carries the attempt on
-//   finish_with_best  its result goes to the completion check as any completion does
+//   finish_with_best  its result goes to the completion check as any completion does: accepted, it
+//                     is the attempt's result and the loop ends; refused, the repeat stays refused,
+//                     as after change_approach, and the model is told to work on what the check named
+//
+// **A best result judged no is not the end of the repeat (t1011).** Run `run-mwug2xjw-41f62603`
+// (0116-0131): the model chose finish_with_best on a repeated fix; the check said no and listed what
+// was wrong; the incident had already been closed when the decision was taken, so the watch went
+// back to clear, the steer that asked for the decision stayed in front of the model saying its next
+// decision was a call to core.loop_decision, and its answer still said the result was being checked.
+// The model went back to a look it had made before the catch. So the watch hears of
+// finish_with_best only once the check has answered: a refusal leaves it refusing, as a change of
+// approach does, and the answer says the result was not accepted, where the check's reasons are, and
+// that the next step works on them. A carried-out decision also takes its steer out of the window
+// (`core.loop_check`), whose question it has answered.
 //
 // The repeat guard's refusal of an exact repeat asks for the same decision
 // (`./refusal-decision-ask.ts`): there `continue` lets the call run again once
@@ -27,7 +40,8 @@ import type { JsonObject } from "../../../core/index.ts";
 import { emitAutomationStudioActivity } from "../../activity/index.ts";
 import type { AutomationStudioLlmEvidenceLoopDecision, AutomationStudioLlmEvidenceLoopResult } from "../evidence-loop/index.ts";
 import { AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID, automationStudioLlmLoopDecisionRead, type AutomationStudioLlmLoopDecision, type AutomationStudioLlmLoopDecisionOptions } from "../loop-decision/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_SIGNAL_CODES, type AutomationStudioLlmLoopFinding, type AutomationStudioLlmLoopSignal } from "../repeat-guard/index.ts";
+import { automationStudioLlmDecisionContextSupersede } from "../decision-context/supersede.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CHECK_TOOL_ID, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_SIGNAL_CODES, type AutomationStudioLlmLoopFinding, type AutomationStudioLlmLoopSignal } from "../repeat-guard/index.ts";
 import { automationStudioLlmStepLogEvent } from "../step-log/index.ts";
 import { automationStudioLlmEvidenceLoopDecisionOptions } from "./decision-options.ts";
 import { automationStudioLlmEvidenceLoopRaise } from "./loop-signal.ts";
@@ -65,6 +79,9 @@ const CARRIED: Readonly<Record<AutomationStudioLlmLoopDecision["decision"], stri
   finish_with_best: "Your result is being checked as this attempt's result."
 });
 
+/** What a best result the check refused is told, in place of `CARRIED.finish_with_best` (header). */
+const BEST_REFUSED = "Your best result was not accepted: core.completion_check says why, what would change its answer and, where it lists defects, what each one is fixed by. The repeat you were caught in stays refused. Your next step works on what the check named, a different way from the one you were repeating.";
+
 /** What `continue` is told about an exact repeat: the guard still refuses it until something changes. */
 const CONTINUE_EXACT = "The same call on the same unchanged page is still refused, because it already failed or changed nothing here. Make it again once something on the page has changed, or decide again.";
 
@@ -83,11 +100,32 @@ export async function automationStudioLlmEvidenceHandleLoopDecision(context: Aut
     return asked(context, iteration, call, read.question, read.why, about, steps, options);
   }
   recorded(context, iteration, read, about, options);
+  if (read.decision === "finish_with_best") return await finished(context, iteration, call, read.result, steps);
   context.loops.decided(read.decision);
   answered(context, iteration, call, { ok: true, code: CODES.carried, decision: read.decision, instruction: read.decision === "continue" && about?.pattern === "exact_repeat" ? CONTINUE_EXACT : CARRIED[read.decision] });
-  if (read.decision !== "finish_with_best") return undefined;
-  const next = await steps.complete(read.result);
-  return next.kind === "end" ? next.result : undefined;
+  return undefined;
+}
+
+/**
+ * The best result, checked as any completion is (header). Accepted, the loop ends with it. Refused, the watch keeps
+ * the repeat refused, as after a change of approach, and the answer the model sees says so after the check's reasons.
+ */
+async function finished(context: AutomationStudioLlmEvidenceDecisionHandlerContext, iteration: number, call: ToolCall, result: JsonObject, steps: AutomationStudioLlmEvidenceModelDecisionSteps): Promise<AutomationStudioLlmEvidenceLoopResult | undefined> {
+  answered(context, iteration, call, { ok: true, code: CODES.carried, decision: "finish_with_best", instruction: CARRIED.finish_with_best });
+  const next = await steps.complete(result);
+  if (next.kind === "end") return next.result;
+  context.loops.decided("change_approach");
+  // The answer given while it was being checked is no longer true: it is replaced, after the check's own reasons.
+  for (let index = context.evidence.length - 1; index >= 0; index -= 1) {
+    const entry = context.evidence[index]!;
+    if (entry.toolId !== AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID || entry.callId !== call.callId) continue;
+    context.evidence.splice(index, 1);
+    break;
+  }
+  const value: JsonObject = { ok: true, code: CODES.carried, decision: "finish_with_best", accepted: false, instruction: BEST_REFUSED };
+  context.accountEvidence(value);
+  context.evidence.push({ callId: call.callId, toolId: AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID, value });
+  return undefined;
 }
 
 /** The person is asked the model's own question through the loop's caller, which ends the round there; with no caller, nobody can be asked and the model chooses again. */
@@ -112,6 +150,8 @@ function answered(context: AutomationStudioLlmEvidenceDecisionHandlerContext, it
 /** On the attempt's record, in a step folder and in the chat. */
 function recorded(context: AutomationStudioLlmEvidenceDecisionHandlerContext, iteration: number, decision: AutomationStudioLlmLoopDecision, about: AutomationStudioLlmLoopFinding | undefined, options: AutomationStudioLlmLoopDecisionOptions): void {
   context.loops.record.decided({ decision: decision.decision, ...(about ? { pattern: about.pattern, repeats: about.repeats } : {}) });
+  // The steer asked for this decision; once it is made, its "decide first" no longer holds (header).
+  automationStudioLlmDecisionContextSupersede(context.evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CHECK_TOOL_ID);
   const words = wordsOf(decision);
   const text = `FluxIQ noticed it was repeating itself and decided ${CHAT[decision.decision]}${words ? `: ${words}` : "."}`;
   emitAutomationStudioActivity({ phase: "thinking", label: "Decided how to go on", detail: { kind: "thought", title: "Decided how to go on", text, status: "succeeded" } });
