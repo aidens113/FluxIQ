@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowRunDetail } from "../../../../../flows/authoring/model/index.ts";
 import { AutomationStudioFlowBootstrapGenerationError, automationStudioFlowBootstrapGenerationCatch, flowBootstrapBuildEndingFailure, flowBootstrapPhaseFailure, flowBootstrapHarnessFailure } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, AutomationStudioLlmRunBudgetLedger, AutomationStudioLlmRequestRefusedError, AutomationStudioLlmProviderError, AutomationStudioLlmProviderRetryLedger, automationStudioLlmRunCostCeilingUsd, runAutomationStudioLlmHarness } from "../../../../../runtime/llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, AutomationStudioLlmRunBudgetLedger, AutomationStudioLlmRequestRefusedError, AutomationStudioLlmProviderError, AutomationStudioLlmProviderRetryLedger, automationStudioLlmRunCostCeilingUsd, runAutomationStudioLlmHarness, type AutomationStudioLlmProvider } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioLlmBuildPurse, automationStudioLlmBuildPurseScope } from "../../../../../runtime/llm/build-purse/index.ts";
 import {
   AUTOMATION_STUDIO_REFUTED_RESULT_NODE_ID,
@@ -207,9 +207,12 @@ describe("a re-author whose build fails", () => {
     expect(marker(result).attempts[0]).toMatchObject({ code: "flow_bootstrap.provider_timeout", retryable: true });
     expect(marker(result).attempts[0].accounting).not.toHaveProperty("estimatedCostUsd");
     expect(marker(result).attempts[0].accounting).not.toHaveProperty("inputTokens");
+    // The timeout reported no cost, so it settled at zero, not at its hold (t966, 89e40b545:
+    // whether the provider reported usage decides a failed call's charge, never its code).
+    // The second build is handed the whole purse, and the purse holds only its own charge.
     expect(generate.mock.calls[0]?.[2]).toBe(automationStudioLlmRunCostCeilingUsd());
-    expect(generate.mock.calls[1]?.[2]).toBeCloseTo(automationStudioLlmRunCostCeilingUsd() - 0.01, 9);
-    expect(marker(result).purse).toMatchObject({ spentUsd: 0.02, averagedCalls: 2 });
+    expect(generate.mock.calls[1]?.[2]).toBe(automationStudioLlmRunCostCeilingUsd());
+    expect(marker(result).purse).toMatchObject({ spentUsd: 0.01, averagedCalls: 2 });
   });
 
   it("preserves an unaccounted timeout as unknown and refuses another paid build", async () => {
@@ -225,19 +228,29 @@ describe("a re-author whose build fails", () => {
     const generate = vi.fn<AutomationStudioRefutedResultRepairPortDependencies["generate"]>(async (_request, _brief, costLeftUsd, _pages, _ending, onCharged) => {
       calls += 1;
       const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: costLeftUsd });
+      const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2, estimatedCostUsd: 0 };
+      const ask = (runTask: AutomationStudioLlmProvider["runTask"]) => automationStudioLlmBuildPurseScope(purse, () => runAutomationStudioLlmHarness({
+        taskKind: "runtime_diagnosis", projectId: "project.one", flowId: "flow.one", runId: "run.one", instructions: [],
+        tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 }, maxEstimatedCostUsd: 0.1,
+        providerRetry: { wait: async () => {}, ledger: new AutomationStudioLlmProviderRetryLedger() },
+        provider: { metadata: { provider: "mock", model: "mock" }, ...(reported ? { estimateCostUsd: () => 0 } : {}), runTask }
+      }));
       try {
-        const result = await automationStudioLlmBuildPurseScope(purse, () => runAutomationStudioLlmHarness({
-          taskKind: "runtime_diagnosis", projectId: "project.one", flowId: "flow.one", runId: "run.one", instructions: [],
-          tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 }, maxEstimatedCostUsd: 0.1,
-          providerRetry: { wait: async () => {}, ledger: new AutomationStudioLlmProviderRetryLedger() },
-          provider: { metadata: { provider: "mock", model: "mock" }, ...(reported ? { estimateCostUsd: () => 0 } : {}), runTask: async () => {
-            const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2, estimatedCostUsd: 0 };
-            if (calls === 1) throw reported
-              ? new AutomationStudioLlmProviderError("llm.provider_rate_limited", "Synthetic free refusal", true, 429, undefined, undefined, undefined, undefined, undefined, usage)
-              : new AutomationStudioLlmProviderError("llm.provider_timeout", "Synthetic unpriced timeout", true);
-            return { response: { kind: "diagnosis", summary: "Synthetic answer." }, usage };
-          } }
-        }));
+        if (calls === 1 && !reported) {
+          // An unpriced provider's answered call that reported no usage: the purse can only
+          // hold it at zero, unreported. A failed call with no usage is no longer that case --
+          // it is billed nothing, a known zero (t966, 89e40b545) -- so the unknown charge comes
+          // from an answer, and the build then fails for a reason that may pass.
+          const answered = await ask(async () => ({ response: { kind: "diagnosis", summary: "Synthetic answer." } }));
+          expect(answered.ok).toBe(true);
+          const timedOut = await ask(async () => { throw new AutomationStudioLlmProviderError("llm.provider_timeout", "Synthetic unpriced timeout", true); });
+          expect(timedOut.ok).toBe(false);
+          if (!timedOut.ok) throw flowBootstrapHarnessFailure(timedOut);
+        }
+        const result = await ask(async () => {
+          if (calls === 1) throw new AutomationStudioLlmProviderError("llm.provider_rate_limited", "Synthetic free refusal", true, 429, undefined, undefined, undefined, undefined, undefined, usage);
+          return { response: { kind: "diagnosis", summary: "Synthetic answer." }, usage };
+        });
         if (!result.ok) throw flowBootstrapHarnessFailure(result);
         return automationStudioReauthorProposed("adaptation.free", {});
       } finally {

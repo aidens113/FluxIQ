@@ -22,7 +22,7 @@ import { judgedNo } from "./endings/support.ts";
 import { pressCard, pressLoan, savedStep, type LibraryNodeOver } from "./fake-library-engine.ts";
 import { complete, LOOK_TOOL, RENEW_CARD, RENEW_LOAN, runNode, toolCall } from "./fake-library.ts";
 import { toldTo } from "./later-attempts.ts";
-import { CARD_TASK, cardFirstAttempt, honestFirstAttempt, LOAN_STEP, LOAN_TASK, onceEach, PERMITTED, READ_STEP } from "./honest-attempts.ts";
+import { ACTION_ONLY, CARD_TASK, cardFirstAttempt, honestFirstAttempt, LISTED, LOAN_STEP, LOAN_TASK, onceEach, PERMITTED, READ_STEP } from "./honest-attempts.ts";
 import { ATLAS, BIRDS, CLOCKS, DUNES, forwardFrom, ON_THE_CARD, pressCardByHand, RENEW, siteLane, TITLES, type Lane, type LibrarySays } from "./library-site.ts";
 
 vi.setConfig({ testTimeout: 180_000 });
@@ -67,10 +67,10 @@ const LOOK_FIRST = "attempt.act_look_first";
 const ALREADY_DONE = "attempt.act_already_done";
 // Most proofs here are of a saved Flow's run that presses again after an achieved attempt, so that attempt is a person's Run
 // again: since t869 the same words carry what landed and never reach the press. After a Stop or a cut-off the same words stay.
-const card = { instruction: CARD_TASK, ...PERMITTED };
+const card = { instruction: CARD_TASK, taskProcessing: ACTION_ONLY, ...PERMITTED };
 /** A person's Run again on the card task: the press that means do it again, with an empty act record. */
 const pressedCard = { ...card, runAgain: true };
-const loans = { instruction: LOAN_TASK, ...PERMITTED };
+const loans = { instruction: LOAN_TASK, taskProcessing: LISTED, ...PERMITTED };
 /** A person's Run again on the loans task. */
 const pressedLoans = { ...loans, runAgain: true };
 const look = (callId = "look") => toolCall(callId, LOOK_TOOL, {});

@@ -11,7 +11,7 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmTask
 import { keptAttempt, pendingAsk } from "./endings/support.ts";
 import { LOANS_OUTPUT } from "./fake-library-engine.ts";
 import { complete, fakeLibrary, fakeLibraryBinding, READ_LOANS, RENEW_LOAN, runNode, scriptedAttempt, toolCall, type FakeLibraryFault } from "./fake-library.ts";
-import { LOAN_TASK, PERMITTED } from "./honest-attempts.ts";
+import { LISTED, LOAN_TASK, PERMITTED } from "./honest-attempts.ts";
 import { readLoans } from "./later-attempts.ts";
 import { ATLAS, BIRDS, CLOCKS, DUNES, RENEW, siteLane, type LibrarySite } from "./library-site.ts";
 
@@ -78,7 +78,7 @@ describe("a model that keeps pressing a row it cannot tell from one done", () =>
       shown.push(shownIn(request));
       return keepGoing(request) ?? pressed((at += 1));
     };
-    const running = started(lane.attempt({ instruction: LOAN_TASK, ...PERMITTED, maxTotalEstimatedCostUsd: BUDGET_USD, keepLooking: true, script: [readLoans(), ...Array.from({ length: 300 }, () => decide)] }));
+    const running = started(lane.attempt({ instruction: LOAN_TASK, taskProcessing: LISTED, ...PERMITTED, maxTotalEstimatedCostUsd: BUDGET_USD, keepLooking: true, script: [readLoans(), ...Array.from({ length: 300 }, () => decide)] }));
     return { lane, target, shown, running, decisions: () => at };
   };
   /** Waits until `holds`, as the attempt goes on by itself. */
@@ -131,7 +131,7 @@ describe("a model that keeps pressing a row it cannot tell from one done", () =>
     const shown: string[] = [];
     const ask = asksOnce();
     let at = 0;
-    const running = started(lane.attempt({ instruction: LOAN_TASK, ...PERMITTED, maxTotalEstimatedCostUsd: BUDGET_USD, keepLooking: true, script: [readLoans(), ...Array.from({ length: 300 }, () => (request: AutomationStudioLlmTaskRequest) => {
+    const running = started(lane.attempt({ instruction: LOAN_TASK, taskProcessing: LISTED, ...PERMITTED, maxTotalEstimatedCostUsd: BUDGET_USD, keepLooking: true, script: [readLoans(), ...Array.from({ length: 300 }, () => (request: AutomationStudioLlmTaskRequest) => {
       shown.push(shownIn(request));
       return ask(request) ?? pressed((at += 1));
     })] }));
@@ -158,7 +158,7 @@ describe("a model told to read that reads and presses the same again", () => {
       target.library.shelf = `open at minute ${at}`;
       return runNode(`read.${at}`, READ_LOANS, { recordOutput: LOANS_OUTPUT, asking: at });
     };
-    const running = started(lane.attempt({ instruction: LOAN_TASK, ...PERMITTED, maxTotalEstimatedCostUsd: BUDGET_USD, keepLooking: true, script: [readLoans(), pressed(0), ...Array.from({ length: 300 }, () => decide)] }));
+    const running = started(lane.attempt({ instruction: LOAN_TASK, taskProcessing: LISTED, ...PERMITTED, maxTotalEstimatedCostUsd: BUDGET_USD, keepLooking: true, script: [readLoans(), pressed(0), ...Array.from({ length: 300 }, () => decide)] }));
     await waitUntil(() => shown.some(askedToDecide));
     // Caught with money still there; it goes on spending after, so the row is read when it is caught, not later.
     expect((await keptAttempt(lane.service, lane.projectId, "flow.loans"))?.attempt.spend.usd).toBeLessThan(BUDGET_USD);
@@ -177,7 +177,7 @@ describe("a model told to read that reads and presses the same again", () => {
       shown.push(shownIn(request));
       return (at += 1) % 2 === 0 ? pressed(at) : runNode(`read.${at}`, READ_LOANS, { recordOutput: LOANS_OUTPUT, asking: at });
     };
-    const running = started(lane.attempt({ instruction: LOAN_TASK, ...PERMITTED, maxTotalEstimatedCostUsd: BUDGET_USD, keepLooking: true, script: [readLoans(), pressed(0), ...Array.from({ length: 300 }, () => decide)] }));
+    const running = started(lane.attempt({ instruction: LOAN_TASK, taskProcessing: LISTED, ...PERMITTED, maxTotalEstimatedCostUsd: BUDGET_USD, keepLooking: true, script: [readLoans(), pressed(0), ...Array.from({ length: 300 }, () => decide)] }));
     await waitUntil(() => shown.some(askedToDecide));
     // Caught with money still there; it goes on spending after, so the row is read when it is caught, not later.
     expect((await keptAttempt(lane.service, lane.projectId, "flow.loans"))?.attempt.spend.usd).toBeLessThan(BUDGET_USD);
@@ -201,7 +201,7 @@ describe("what is not a loop", () => {
       site.handles.set(`t${at}`, title);
       return pressBy(`t${at}`);
     });
-    const finished = await lane.attempt({ instruction: LOAN_TASK, ...PERMITTED, script: [readLoans(), ...presses, complete("Renewed every loan.")] });
+    const finished = await lane.attempt({ instruction: LOAN_TASK, taskProcessing: LISTED, ...PERMITTED, script: [readLoans(), ...presses, complete("Renewed every loan.")] });
     expect(finished.answer.attempt.status).toBe("achieved");
     expect(target.library.renewals).toEqual(Object.fromEntries(titles.map((title) => [title, 1])));
     const caught = Object.values(finished.answer.attempt.loopsCaught);
@@ -235,6 +235,7 @@ describe("a repair harness's tools on the attempt path", () => {
     const { binding, ran } = withRecovery();
     const offered: string[][] = [];
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       over: { llmEvidenceRuntime: binding },
       script: [
         (request) => {

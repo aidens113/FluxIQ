@@ -295,7 +295,8 @@ describe("binding a step's arguments", () => {
     expect(refusedFor({})).toEqual([{ step: 2, reason: "bind_not_a_binding" }]);
     expect(refusedFor({ page: { $input: "page", test: 2 } })).toEqual([{ step: 2, reason: "bind_new_key", parameter: "page", bindable: ["query", "options", "options.limit"] }]);
     expect(refusedFor({ options: { sort: { $input: "sort", test: "asc" } } })).toEqual([{ step: 2, reason: "bind_new_key", parameter: "options.sort", bindable: ["query", "options", "options.limit"] }]);
-    expect(refusedFor({ query: { $input: "Query" } })).toEqual([{ step: 2, reason: "bind_malformed", parameter: "query" }]);
+    // A Flow input's name now follows FluxNode's identifier (letters, digits, underscore; not a leading digit), so a capital is no longer malformed (8c50dc21c, t984).
+    expect(refusedFor({ query: { $input: "1query" } })).toEqual([{ step: 2, reason: "bind_malformed", parameter: "query" }]);
     expect(refusedFor({ query: { $step: 1, output: "records", extra: true } })).toEqual([{ step: 2, reason: "bind_malformed", parameter: "query" }]);
     expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "bind" }]).refused).toEqual([{ step: 2, reason: "bind_not_a_binding" }]);
     expect(draft).toEqual(before);

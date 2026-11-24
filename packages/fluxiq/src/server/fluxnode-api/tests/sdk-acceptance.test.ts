@@ -21,6 +21,13 @@ const inputs = z.object({ title: z.string() });
 const loans = z.object({ loans: z.array(z.object({ title: z.string(), due: z.string() })).min(1) });
 type Check = FluxNodeCheck<typeof inputs, typeof loans>;
 
+/**
+ * What the model declares of the task's data before it completes (t984): a FluxNode run has no chat reading, so the lane
+ * has the scripted model declare it through `core.set_result_processing` (`library-lane.ts`), one decision more than
+ * the script's. The loans whose title holds the run's own `title` input, in the node's two columns.
+ */
+const titled = (test: string) => ({ process: { where: [{ field: "title", contains: { $input: "title", test } }], columns: ["title", "due"] } });
+
 /** A scripted decision that first writes down what the loop told the model, then makes `next`. */
 function noting(said: string[], next: JsonObject): (request: AutomationStudioLlmTaskRequest) => JsonObject {
   return (request) => {
@@ -43,7 +50,7 @@ const uncheckedNode = () => defineFluxNode({ name: "library.find-loans", runtime
 describe("fluxiq.run over HTTP on the real runner", () => {
   it("1. run 1 explores and returns typed outputs with lineage", async () => {
     const lane = await sdkLane(cleanups);
-    const model = lane.arm({ script: [findLoans("Atlas"), complete("Found the loans.")] });
+    const model = lane.arm({ taskProcessing: titled("Atlas"), script: [findLoans("Atlas"), complete("Found the loans.")] });
     const checked: unknown[] = [];
     const node = loansNode(({ outputs, inputs: given }) => {
       checked.push({ outputs, inputs: given });
@@ -65,7 +72,7 @@ describe("fluxiq.run over HTTP on the real runner", () => {
   it("2. run 2 with new inputs replays with zero model calls and returns the new inputs' result", async () => {
     const lane = await sdkLane(cleanups);
     const node = loansNode();
-    lane.arm({ script: [findLoans("Atlas"), complete("Found the loans.")] });
+    lane.arm({ taskProcessing: titled("Atlas"), script: [findLoans("Atlas"), complete("Found the loans.")] });
     const first = await lane.fluxiq.run(node, { title: "Atlas" });
     expect(first.status).toBe("achieved");
 
@@ -83,7 +90,11 @@ describe("fluxiq.run over HTTP on the real runner", () => {
   it("3. a failing check goes back into the loop, and a later pass ends achieved by the check", async () => {
     const lane = await sdkLane(cleanups);
     const said: string[] = [];
+    // Only the columns are declared (t984, as `fluxnode/tests/fluxnode-runs.test.ts` does): the guard under test is the
+    // program's check, which must refuse the Atlas loan an incomplete declaration lets through. Declared in full, the data
+    // stage drops that row itself before the check is asked.
     const model = lane.arm({
+      taskProcessing: { process: { columns: ["title", "due"] } },
       script: [findLoans("Atlas"), complete("Found the loans."), noting(said, findLoans("Clock", "find.clock")), complete("Found the loans with Clock.")]
     });
     const seen: string[] = [];
@@ -102,13 +113,14 @@ describe("fluxiq.run over HTTP on the real runner", () => {
     expect(run.path).toBe("explored");
     expect(model.judgeCalls()).toHaveLength(0);
     expect(run.cost.calls).toBe(model.asked().length);
-    expect(model.decisions()).toHaveLength(4);
+    // The read, the declaration, the refused completion, the second read and the accepted completion.
+    expect(model.decisions()).toHaveLength(5);
   });
 
   it("4a. budgetUsd 0 with a learned Flow is replay only: achieved at zero calls", async () => {
     const lane = await sdkLane(cleanups);
     const node = loansNode();
-    lane.arm({ script: [findLoans("Atlas"), complete("Found the loans.")] });
+    lane.arm({ taskProcessing: titled("Atlas"), script: [findLoans("Atlas"), complete("Found the loans.")] });
     expect((await lane.fluxiq.run(node, { title: "Atlas" })).status).toBe("achieved");
 
     const model = lane.arm();
@@ -137,33 +149,35 @@ describe("fluxiq.run over HTTP on the real runner", () => {
       const lane = await sdkLane(cleanups);
       const card = runNode("card", "domain.library.renew_card", {}, ["modify_existing"], { add: true });
       const said: string[] = [];
-      const model = lane.arm({ script: [card, noting(said, findLoans("Birds")), complete("Found the loans.")] });
+      const model = lane.arm({ taskProcessing: titled("Birds"), script: [card, noting(said, findLoans("Birds")), complete("Found the loans.")] });
       const run = await lane.fluxiq.run(loansNode(), { title: "Birds" });
       expect(run.status).toBe("achieved");
       if (run.status !== "achieved") throw new Error(`not achieved: ${run.status}`);
       expect(run.outputs).toEqual({ loans: [{ title: "Birds of the Coast", due: "2030-01-02" }] });
       expect(lane.library.renewals).toEqual({});
       expect(said[0]).toContain("an act this task may not do (modify_existing)");
-      expect(model.decisions()).toHaveLength(3);
+      // The refused attempt, the read, the declaration and the completion.
+      expect(model.decisions()).toHaveLength(4);
     });
 
     it("an address off the scope's sites", async () => {
       const lane = await sdkLane(cleanups);
       const said: string[] = [];
-      const model = lane.arm({ script: [findLoans("https://elsewhere.example/loans", "away"), noting(said, findLoans("Birds")), complete("Found the loans.")] });
+      const model = lane.arm({ taskProcessing: titled("Birds"), script: [findLoans("https://elsewhere.example/loans", "away"), noting(said, findLoans("Birds")), complete("Found the loans.")] });
       const run = await lane.fluxiq.run(loansNode(() => true, { acts: [], sites: ["library.example"] }), { title: "Birds" });
       expect(run.status).toBe("achieved");
       if (run.status !== "achieved") throw new Error(`not achieved: ${run.status}`);
       expect(run.outputs).toEqual({ loans: [{ title: "Birds of the Coast", due: "2030-01-02" }] });
       expect(said[0]).toContain("elsewhere.example is outside the sites this task may use (library.example)");
       expect(lane.library.calls.filter((call) => JSON.stringify(call.value).includes("elsewhere.example"))).toEqual([]);
-      expect(model.decisions()).toHaveLength(3);
+      // The refused attempt, the read, the declaration and the completion.
+      expect(model.decisions()).toHaveLength(4);
     });
   });
 
   it("6. judge off with no check ends achieved and unverified, with no judge call", async () => {
     const lane = await sdkLane(cleanups);
-    const model = lane.arm({ script: [findLoans("Birds"), complete("Found the loans.")] });
+    const model = lane.arm({ taskProcessing: titled("Birds"), script: [findLoans("Birds"), complete("Found the loans.")] });
     const run = await lane.fluxiq.run(unverifiedNode(), { title: "Birds" });
     expect(run.status).toBe("achieved");
     expect(run.verdict).toMatchObject({ label: "unverified" });
@@ -184,7 +198,7 @@ describe("fluxiq.run over HTTP on the real runner", () => {
       .map(finder, { inputs: { title: { field: "title" } }, concurrency: 1, as: "found" })
       .outputs(report)
       .build();
-    const model = lane.arm({ script: [findLoans("Atlas"), complete("Found the loans.")] });
+    const model = lane.arm({ taskProcessing: titled("Atlas"), script: [findLoans("Atlas"), complete("Found the loans.")] });
     const run = await lane.fluxiq.runPipeline<Row>(built, { titles: [{ title: "Atlas" }, { title: "Clock" }] });
     expect(run.status).toBe("achieved");
     if (run.status !== "achieved") throw new Error(`not achieved: ${run.status}`);
@@ -198,8 +212,8 @@ describe("fluxiq.run over HTTP on the real runner", () => {
       expect.objectContaining({ pointer: "/0/found/loans/0", source: expect.objectContaining({ kind: "read" }) }),
       expect.objectContaining({ pointer: "/1/found/loans/0", source: expect.objectContaining({ kind: "read" }) })
     ]));
-    // One exploration made every model call: the second record replayed what the first learned.
-    expect(model.decisions()).toHaveLength(2);
+    // One exploration made every model call (its read, its declaration and its completion): the second record replayed what the first learned.
+    expect(model.decisions()).toHaveLength(3);
 
     const again = lane.arm();
     const second = await lane.fluxiq.runPipeline<Row>(built, { titles: [{ title: "Atlas" }, { title: "Clock" }] });

@@ -8,7 +8,7 @@ import { automationStudioAnswerFirstKnownFlow } from "../../route/index.ts";
 import { automationStudioAnswerFirstSavedStateOf } from "../../task-memory/index.ts";
 import { judgedNo } from "../../tests/endings/support.ts";
 import { complete, READ_LOANS, RENEW_CARD, RENEW_LOAN } from "../../tests/fake-library.ts";
-import { CARD_TASK, cardFirstAttempt, honestFirstAttempt, LOAN_STEP, LOAN_TASK, onceEach, PERMITTED, READ_STEP, repeatOverRows } from "../../tests/honest-attempts.ts";
+import { CARD_TASK, cardFirstAttempt, honestFirstAttempt, LISTED, LOAN_STEP, LOAN_TASK, onceEach, PERMITTED, READ_STEP, repeatOverRows } from "../../tests/honest-attempts.ts";
 import { readLoans, TASK } from "../../tests/later-attempts.ts";
 import { ATLAS, forwardFrom, TITLES, writeStep } from "../../tests/library-site.ts";
 import { appliedLane, baseOf, changesOn, FLOW, flowAsItStands, graphOf, personRuns, stepsInTheFlow } from "./applied-lane.ts";
@@ -22,8 +22,8 @@ afterEach(async () => {
 });
 
 const PART_NOT_WRITTEN = "Part of the record was not written";
-const firstAttempt = { script: [readLoans(), complete("Listed.")] };
-const again = { instruction: LOAN_TASK, ...PERMITTED };
+const firstAttempt = { taskProcessing: LISTED, script: [readLoans(), complete("Listed.")] };
+const again = { instruction: LOAN_TASK, taskProcessing: LISTED, ...PERMITTED };
 /** A person's Run again: the press that means do it again, with an empty act record (t869). */
 const pressedAgain = { ...again, runAgain: true };
 const LENGTHEN = "Extend";
@@ -181,7 +181,7 @@ describe("a person's own edit", () => {
     await lane.attempt(firstAttempt);
     await lane.attempt({});
     const other = "List the loans due soonest on my library account.";
-    await lane.attempt({ instruction: other, script: [readLoans(), complete("Listed.")] });
+    await lane.attempt({ instruction: other, taskProcessing: { process: { sort: [{ field: "due", order: "asc", as: "date" }] } }, script: [readLoans(), complete("Listed.")] });
     expect(await baseOf(lane, other)).toEqual({ flowId: FLOW, keptAsDraftSinceMs: expect.any(Number) });
     const standing = await flowAsItStands(lane);
     const second = await lane.attempt({ instruction: other });

@@ -26,6 +26,7 @@ describe("a refusal before any model call", () => {
     let looked = 0;
     let legacyCode: string | undefined;
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       before: async (service, project) => {
         adaptations(service).listFlowBootstrapAdaptations = async () => {
           looked += 1;
@@ -47,6 +48,7 @@ describe("a refusal before any model call", () => {
     let asked = 0;
     let restore: (() => void) | undefined;
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       before: async (service, project) => {
         // A top-level Flow's work is its Subflows: one is what makes it not blank.
         const subflows = vi.spyOn(service, "listFlowSubflowSummaries").mockImplementation(async () => {

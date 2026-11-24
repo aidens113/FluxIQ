@@ -469,6 +469,9 @@ function adaptationPolicy(): AutomationStudioAdaptationPolicy {
     allowExternalSideEffects: false,
     requireApprovalForDestructiveChanges: true,
     requireApprovalForExternalSideEffects: true,
+    // The Flow names DeepSeek, whose real adapter and wire this recovery drives. A run that names no
+    // model starts on Claude Haiku, its repairs included (t983, 002650596; user, 2026-11-20).
+    metadata: { llmProvider: "deepseek", llmModel: "deepseek-flash" },
     createdAt: 1,
     updatedAt: 1
   };

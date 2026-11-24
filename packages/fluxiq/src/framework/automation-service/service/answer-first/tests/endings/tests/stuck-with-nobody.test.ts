@@ -19,6 +19,7 @@ afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(
 describe("a stuck attempt with nobody to ask", () => {
   it("is steered onto a different way, never waits, and goes on until its budget is gone", async () => {
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       judge: [judgedNo("Not it.")],
       usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.02 },
       resolver: { maxTotalEstimatedCostUsd: 0.4 },

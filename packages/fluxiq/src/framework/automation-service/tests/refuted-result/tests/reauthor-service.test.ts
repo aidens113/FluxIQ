@@ -195,6 +195,7 @@ async function createHarness(options: {
     }),
   });
   const taskKinds: string[] = [];
+  const readings = { count: 0 };
   const decisionPayloads: string[] = [];
   let signalReauthorProviderStarted!: () => void;
   let releaseReauthorProvider!: () => void;
@@ -221,8 +222,15 @@ async function createHarness(options: {
       const task = JSON.parse(
         body.messages?.find((message) => message.role === "user")?.content ??
           "{}",
-      ) as { taskKind?: string };
+      ) as { taskKind?: string; context?: { metadata?: { source?: unknown } } };
       const taskKind = String(task.taskKind);
+      // The re-author build reads its instruction when it starts (t976, b2ee9ed45), before its first
+      // decision. It is not one of the decisions this script answers or counts, and the request this
+      // provider refuses below is the re-author's decision, not that reading.
+      if (task.context?.metadata?.source === "instructionAuthority") {
+        readings.count += 1;
+        return jsonResponse({ kind: "evidence_tool_decision", summary: "Read the instruction.", decision: { kind: "complete", result: { instructed: [] } } });
+      }
       taskKinds.push(taskKind);
 
       if (taskKind === "loop_verification") {
@@ -337,6 +345,10 @@ async function createHarness(options: {
       ...flow,
       metadata: {
         ...(flow.metadata ?? {}),
+        // The Flow names DeepSeek, the provider of the key and the wire this harness stands in for.
+        // A task that names no model starts on Claude Haiku since t983 (002650596; user, 2026-11-20).
+        llmProvider: "deepseek",
+        llmModel: "deepseek-flash",
         ...training,
         trainingModeSettings: {
           ...(training.trainingModeSettings as JsonObject),
@@ -490,7 +502,11 @@ describe("refuted-result service composition", () => {
       await harness.reauthorProviderStarted;
       let overlapFailure: unknown;
       try {
-        const other = await harness.service.createFlow({ projectId: harness.projectId, flowId: "flow.public-concurrent", name: "Public concurrent" });
+        const created = await harness.service.createFlow({ projectId: harness.projectId, flowId: "flow.public-concurrent", name: "Public concurrent" });
+        // Like this run's Flow, it names DeepSeek, whose key and wire this harness stands in for: a Flow that names
+        // no model starts on Claude Haiku since t983 (002650596; user, 2026-11-20), which this key cannot pay for,
+        // so its generation would end before it reached the provider this case shows it reaching.
+        const other = await harness.service.saveFlow({ projectId: harness.projectId, flow: { ...created, metadata: { ...(created.metadata ?? {}), llmProvider: "deepseek", llmModel: "deepseek-flash" } } });
         await harness.service.saveFlowGenerationInstruction({ projectId: harness.projectId, flowId: other.flowId, instruction: "Return the requested records." });
         await expect(harness.service.generateFlowBootstrapAdaptation({
           projectId: harness.projectId, flowId: other.flowId,

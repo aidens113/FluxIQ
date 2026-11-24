@@ -219,6 +219,12 @@ async function build(reply: (call: number) => JsonObject, observedStateKeys?: re
       const body = JSON.parse(String(init?.body)) as { messages: Array<{ role: string; content: string }> };
       const system = body.messages.find((message) => message.role === "system")!.content;
       const user = body.messages.find((message) => message.role === "user")!.content;
+      // The build's one reading of its instruction, made when it starts (t976, b2ee9ed45), is not one
+      // of its decisions: it has no window and no tools, so it is answered apart and not compared.
+      if ((JSON.parse(user) as { context?: { metadata?: { source?: unknown } } }).context?.metadata?.source === "instructionAuthority") {
+        const content = JSON.stringify({ kind: "evidence_tool_decision", summary: "Read.", decision: { kind: "complete", result: { instructed: [] } } });
+        return new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content } }], usage: { prompt_tokens: 300, completion_tokens: 30, total_tokens: 330 } }), { status: 200, headers: { "content-type": "application/json" } });
+      }
       sent.push({ wire: String(init?.body), system, user, payload: JSON.parse(user) as SentPayload });
       const content = JSON.stringify({ kind: "evidence_tool_decision", summary: "Next.", decision: reply(sent.length) });
       return new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content } }], usage: { prompt_tokens: 1_200, completion_tokens: 150, total_tokens: 1_350 } }), { status: 200, headers: { "content-type": "application/json" } });
@@ -233,7 +239,10 @@ async function build(reply: (call: number) => JsonObject, observedStateKeys?: re
   service.bindLlmEvidenceRuntime(binding(observedStateKeys));
   try {
     const project = await service.createProject({ name: "Prefix", domainId: "web-automation" });
-    const flow = await service.createFlow({ projectId: project.id, flowId: "flow.created", name: "Blank Flow" });
+    const created = await service.createFlow({ projectId: project.id, flowId: "flow.created", name: "Blank Flow" });
+    // The Flow names DeepSeek, whose context cache and wire this measures. A task that names no
+    // model starts on Claude Haiku since t983 (002650596; user, 2026-11-20), which this DeepSeek key cannot pay for.
+    const flow = await service.saveFlow({ projectId: project.id, flow: { ...created, metadata: { ...created.metadata, llmProvider: "deepseek", llmModel: "deepseek-flash" } } });
     const now = Date.now();
     await service.saveFlowInstruction(project.id, {
       schemaVersion: "0.1", instructionId: "instruction.build", title: "Build", body: "Open the catalog, filter it, and add two items to the cart.",

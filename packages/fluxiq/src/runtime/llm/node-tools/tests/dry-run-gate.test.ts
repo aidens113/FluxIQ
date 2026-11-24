@@ -342,9 +342,10 @@ describe("what a passing test reports", () => {
     expect(first.verdict.ok).toBe(true);
     expect(first.verdict.outcomes.find((outcome) => outcome.step === 3)?.mode).toBe("verify");
     expect(first.observations).toEqual([
-      { step: 2, stepId: "d2", resultCode: REPLAYED, evidence: { page: "dryrun.1.2" } },
-      { step: 3, stepId: "d3", resultCode: REPLAYED, evidence: { page: "dryrun.1.3" } },
-      { step: 4, stepId: "d4", resultCode: REPLAYED, evidence: { page: "dryrun.1.4" } }
+      // Each observation carries whether the step's effect landed and the consequences its step declared (cf5160993, 284eb77ba).
+      { step: 2, stepId: "d2", resultCode: REPLAYED, evidence: { page: "dryrun.1.2" }, effectApplied: true, consequences: [] },
+      { step: 3, stepId: "d3", resultCode: REPLAYED, evidence: { page: "dryrun.1.3" }, effectApplied: true, consequences: ["create_new"] },
+      { step: 4, stepId: "d4", resultCode: REPLAYED, evidence: { page: "dryrun.1.4" }, effectApplied: true, consequences: [] }
     ]);
 
     // Completed again unchanged: not replayed, and reported as the first replay's.
@@ -391,8 +392,8 @@ describe("what a passing test reports", () => {
     expect(report.verdict).toMatchObject({ ok: true, attempt: 3 });
     expect(report.signature).toBe(automationStudioFlowDraftFlowSignature(steps));
     expect(report.observations).toEqual([
-      { step: 1, stepId: "d1", resultCode: AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.replayed, evidence: {} },
-      { step: 2, stepId: "d2", resultCode: AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.failed, evidence: {} }
+      { step: 1, stepId: "d1", resultCode: AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.replayed, evidence: {}, effectApplied: true },
+      { step: 2, stepId: "d2", resultCode: AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.failed, evidence: {}, effectApplied: true }
     ]);
   });
 });

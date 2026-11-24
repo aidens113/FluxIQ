@@ -168,7 +168,13 @@ async function createHarness() {
     fetchImpl: (async (_url: unknown, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body ?? "{}")) as { messages?: Array<{ role?: string; content?: string }> };
       const sent = body.messages?.find((message) => message.role === "user")?.content ?? "{}";
-      const taskKind = String((JSON.parse(sent) as { taskKind?: string }).taskKind);
+      const task = JSON.parse(sent) as { taskKind?: string; context?: { metadata?: { source?: unknown } } };
+      const taskKind = String(task.taskKind);
+      // The re-author build reads its instruction when it starts (t976, b2ee9ed45): not one of the
+      // decisions this script answers, so it is answered apart and not listed with them.
+      if (task.context?.metadata?.source === "instructionAuthority") {
+        return providerResponse({ kind: "evidence_tool_decision", summary: "Read the instruction.", decision: { kind: "complete", result: { instructed: [] } } });
+      }
       calls.push({ taskKind, sent });
 
       if (taskKind === "loop_verification") {
@@ -221,6 +227,10 @@ async function createHarness() {
       ...flow,
       metadata: {
         ...(flow.metadata ?? {}),
+        // The Flow names DeepSeek, the provider of the key and the wire this harness stands in for.
+        // A task that names no model starts on Claude Haiku since t983 (002650596; user, 2026-11-20).
+        llmProvider: "deepseek",
+        llmModel: "deepseek-flash",
         ...training,
         trainingModeSettings: { ...(training.trainingModeSettings as JsonObject), resultCheck: { schedule: { enabled: true, shape: "every_run", initialRunCount: 3, interval: 5, decay: 5 } } }
       }

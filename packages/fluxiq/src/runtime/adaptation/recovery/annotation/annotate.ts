@@ -46,6 +46,7 @@ import {
   AUTOMATION_STUDIO_NO_REPAIR_REASONS,
   AutomationStudioLlmRunBudgetLedger,
   automationStudioLlmResolutionWithinFlowSettings,
+  automationStudioLlmRoleRoutedResolution,
   resolveAutomationStudioLlmTokenLimits,
   runAutomationStudioLlmHarness,
   sanitizeAutomationStudioLlmFailureEvidence,
@@ -190,14 +191,19 @@ async function annotateRunDetail(input: AutomationStudioRuntimeRecoveryAnnotatio
   let provider: AutomationStudioLlmProvider | undefined;
   let providerResolution: AutomationStudioLlmProviderResolution | undefined;
   try {
-    const resolvedProvider = await ports.resolveLlmProvider?.({
+    // The run's one starting model (user, 2026-11-20: "its just the model we start with"; t983): the
+    // Flow's own, else the same default the run's build and its judge resolve
+    // (`../../../llm/role-routing/resolution.ts`, `judge-model.ts`). Asked of the host's resolver
+    // with no model, a diagnosis and its patch were served the host's default while the run's judge
+    // asked for the starting model, so one run could be repaired on one model and judged on another.
+    const resolvedProvider = ports.resolveLlmProvider ? await automationStudioLlmRoleRoutedResolution(ports.resolveLlmProvider, {
       projectId: input.context.projectId,
       flowId: input.context.flowId,
       ...(typeof providerMetadata?.llmProvider === "string" && providerMetadata.llmProvider !== "host" ? { providerId: providerMetadata.llmProvider } : {}),
       ...(typeof providerMetadata?.llmModel === "string" ? { modelId: providerMetadata.llmModel } : {}),
       ...(input.llmExecution ? { caller: { actorUserId: input.llmExecution.actorUserId, actorSessionId: input.llmExecution.actorSessionId } } : {}),
       ...(providerMetadata ? { metadata: providerMetadata } : {})
-    });
+    }) : undefined;
     if (resolvedProvider && "provider" in resolvedProvider) {
       providerResolution = resolvedProvider;
       provider = resolvedProvider.provider;

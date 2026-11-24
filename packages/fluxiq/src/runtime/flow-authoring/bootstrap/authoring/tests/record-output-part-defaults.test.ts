@@ -79,7 +79,9 @@ describe("a record output derived from the part the step serves", () => {
   it("does not drop a column a written where tests", () => {
     const output = recordOutput({ ...PART, columns: ["amount"] }, [`  recordOutput: ${JSON.stringify({ schema: ["amount", "title"], process: { where: [{ field: "title", contains: "x" }] } })}`]);
 
-    expect((output.process as JsonObject).columns).toBeUndefined();
+    // Until t970 `columns` was left out here; the schema now keeps the tested field and `columns` still states the answer's view (record-defaults/process-defaults.ts).
+    expect((output.process as JsonObject).columns).toEqual(["amount"]);
+    expect(fieldIds(output)).toEqual(["amount", "title"]);
   });
 
   it("keeps a field the processing sorts or tests though the answer hides it", () => {

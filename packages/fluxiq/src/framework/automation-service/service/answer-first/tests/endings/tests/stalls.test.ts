@@ -29,6 +29,7 @@ describe("a round that cannot go on is not an ending", () => {
       return notes.length === 1 ? runNode("read", READ_LOANS, {}, [], { add: true }) : complete("Listed.");
     };
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       library,
       before: noWaiting(),
       fault: (call) => (call.value.parameters as JsonObject | undefined)?.from === "the wrong list" ? failing : undefined,
@@ -62,7 +63,7 @@ describe("a round that cannot go on is not an ending", () => {
       library.shelf = `shelf ${(moved += 1)}`;
       return toolCall(`look.${moved}`, LOOK_TOOL, { shelf: moved });
     };
-    const attempt = await scriptedAttempt({ library, resolver: { maxCallsPerRun: 5 }, before: noWaiting(), script: Array.from({ length: 80 }, () => decide) }, cleanups);
+    const attempt = await scriptedAttempt({ taskProcessing: { process: {} }, library, resolver: { maxCallsPerRun: 5 }, before: noWaiting(), script: Array.from({ length: 80 }, () => decide) }, cleanups);
     const answer = expectReached(attempt);
     expect(answer.result?.rows?.totalRows).toBe(3);
     expect(notes[0]).toContain("carriedOver");
@@ -75,6 +76,7 @@ describe("a round that cannot go on is not an ending", () => {
     let unreadable = 0;
     let told = "";
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       before: noWaiting(),
       wrapProvider: (provider) => ({
         ...provider,
@@ -100,6 +102,7 @@ describe("a round that cannot go on is not an ending", () => {
     const waits: number[] = [];
     let silences = 3;
     const attempt = await scriptedAttempt({
+      taskProcessing: null,
       instruction: "Renew the card on my library account.",
       permittedConsequences: ["modify_existing"],
       before: noWaiting(waits),
@@ -146,6 +149,7 @@ describe("a round that cannot go on is not an ending", () => {
       return complete("Listed, and looked again.");
     };
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       library,
       instruction: "Renew the card and list every loan on my library account.",
       permittedConsequences: ["modify_existing"],

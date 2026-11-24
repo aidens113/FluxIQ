@@ -11,6 +11,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
+import { automationStudioAnsweringInstructionReading } from "./instruction-reading.ts";
 import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
 import { blankFixture, copyDataDirSeed, caller, isJudgeRequest, judgeReply, mockProvider, plan, rejectedGenerationDiagnostic, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
@@ -56,7 +57,8 @@ async function build(repairs: "finish" | "refuse") {
   let repairing = false;
   let repairCalls = 0;
   const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
-  const provider = mockProvider(async (request) => {
+  // The build reads its instruction when it starts (t976, b2ee9ed45): not one of the model's decisions either.
+  const provider = mockProvider(automationStudioAnsweringInstructionReading(async (request) => {
     // The judge of a test of the Flow says yes; it is not one of the model's decisions.
     if (isJudgeRequest(request)) return judgeReply();
     requests.push(request);
@@ -71,7 +73,7 @@ async function build(repairs: "finish" | "refuse") {
         // A plan with no Subflow: refused every time, the same way, until the loop stops.
         : { kind: "complete", result: { summary: "Done.", plan: { ...plan(), subflows: [] } } };
     return { response: { kind: "evidence_tool_decision", summary: "Step.", decision }, usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 } };
-  });
+  }, { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 }));
   const instance = new AutomationStudioService({
     dataDir: tempRoot,
     llmProviderResolver: (() => ({ provider, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 })) as never,
@@ -96,7 +98,8 @@ async function buildEmpty(again: "finish" | "same", maxCallsPerRun?: number) {
   const requests: AutomationStudioLlmTaskRequest[] = [];
   let exploringAgain = 0;
   const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
-  const provider = mockProvider(async (request) => {
+  // The build reads its instruction when it starts (t976, b2ee9ed45): not one of the model's decisions either.
+  const provider = mockProvider(automationStudioAnsweringInstructionReading(async (request) => {
     // The judge of a test of the Flow says yes; it is not one of the model's decisions.
     if (isJudgeRequest(request)) return judgeReply();
     requests.push(request);
@@ -111,7 +114,7 @@ async function buildEmpty(again: "finish" | "same", maxCallsPerRun?: number) {
         ? { kind: "complete", result: { summary: "Built.", plan: plan() } }
         : { kind: "complete", result: { summary: "Done.", plan: { ...plan(), subflows: [] } } };
     return { response: { kind: "evidence_tool_decision", summary: "Step.", decision }, usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 } };
-  });
+  }, { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 }));
   const instance = new AutomationStudioService({
     dataDir: tempRoot,
     llmProviderResolver: (() => ({ provider, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2, ...(maxCallsPerRun ? { maxCallsPerRun } : {}) })) as never,

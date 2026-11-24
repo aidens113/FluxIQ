@@ -17,6 +17,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioActivityHub } from "../../../../../runtime/automation-activity/index.ts";
 import { AutomationStudioLlmProviderError, type AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
+import { automationStudioAnsweringInstructionReading } from "./instruction-reading.ts";
 import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
 import { blankFixture, copyDataDirSeed, caller, isJudgeRequest, judgeReply, mockProvider, plan, rejectedGenerationDiagnostic, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
@@ -56,12 +57,22 @@ const USAGE = { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedC
 /** What the DeepSeek adapter throws when its own deadline passes with no answer. */
 const timedOut = () => new AutomationStudioLlmProviderError("llm.provider_timeout", "DeepSeek did not respond before the request timeout.", true);
 
-/** A provider that gives no answer where `silent` says, and otherwise acts once, adds the step and finishes; the judge of its test says yes. */
-async function build(silent: (call: number) => boolean) {
+/**
+ * A provider that gives no answer where `silent` says, and otherwise acts once, adds the step and finishes; the judge of its test says yes.
+ * The build reads its instruction when it starts (t976, b2ee9ed45), apart from the decisions `silent` numbers: that reading is
+ * answered unless `readingAnswered` is false, and counted apart (`readings`).
+ */
+async function build(silent: (call: number) => boolean, options: { readingAnswered?: boolean } = {}) {
   const requests: AutomationStudioLlmTaskRequest[] = [];
+  const read = { count: 0 };
   let acted = false;
   const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
-  const provider = mockProvider(async (request) => {
+  const reading = (request: AutomationStudioLlmTaskRequest) => {
+    if (request.metadata?.source !== "instructionAuthority") return;
+    read.count += 1;
+    if (options.readingAnswered === false) throw timedOut();
+  };
+  const decisions = automationStudioAnsweringInstructionReading(async (request: AutomationStudioLlmTaskRequest) => {
     requests.push(request);
     if (isJudgeRequest(request)) return judgeReply();
     if (silent(requests.length)) throw timedOut();
@@ -70,6 +81,10 @@ async function build(silent: (call: number) => boolean) {
       : { kind: "tool_call", callId: `call.${requests.length}`, toolId: "example.act", input: { press: 1 }, add: true };
     acted = true;
     return { response: { kind: "evidence_tool_decision", summary: "Step.", decision }, usage: USAGE };
+  }, USAGE);
+  const provider = mockProvider(async (request) => {
+    reading(request);
+    return await decisions(request);
   });
   const instance = new AutomationStudioService({
     dataDir: tempRoot,
@@ -83,16 +98,18 @@ async function build(silent: (call: number) => boolean) {
   });
   services.add(instance);
   const generation = instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller() });
-  return { requests, generation };
+  return { requests, readings: () => read.count, generation };
 }
 
 describe("a Flow build whose model provider stops answering", () => {
   it("ends after three unanswered requests, once, saying the provider is not responding and that nothing was changed", async () => {
-    const { requests, generation } = await build(() => true);
+    // The provider answers nothing, the start's reading included (t976).
+    const { requests, readings, generation } = await build(() => true, { readingAnswered: false });
 
     const diagnostic = await rejectedGenerationDiagnostic(generation);
 
-    // Three requests, one round: never the eight-and-a-second-round of the outage.
+    // Three requests, one round: never the eight-and-a-second-round of the outage. The start's reading, unanswered too, is apart.
+    expect(readings()).toBe(1);
     expect(requests).toHaveLength(3);
     expect(diagnostic.code).toBe("flow_bootstrap.provider_unavailable");
     expect(diagnostic.retryable).toBe(true);

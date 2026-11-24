@@ -25,6 +25,7 @@ import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefini
 import { AutomationStudioNativeNodeRuntime } from "../../../../../runtime/native-nodes/index.ts";
 import { AUTOMATION_STUDIO_RESULT_CHECK_CODES } from "../../../../../runtime/result-verification/check-schedule/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
+import { automationStudioAnsweringInstructionReading } from "../../service-bootstrap/tests/instruction-reading.ts";
 import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
 import { adaptiveTrainingMetadata } from "../../service-fixtures.ts";
 
@@ -110,7 +111,7 @@ it("judges a re-authored Flow's re-run with the caller's key, after the standing
     // The caller's key: the re-author's build, and every check that judges a repair.
     llmProviderResolver: () => ({ provider: {
       metadata: { provider: "mock", model: "caller" },
-      runTask: async (request) => {
+      runTask: automationStudioAnsweringInstructionReading(async (request) => {
         callerCalls.push(request.taskKind);
         if (request.taskKind === "evidence_tool_decision") {
           decisions += 1;
@@ -124,7 +125,7 @@ it("judges a re-authored Flow's re-run with the caller's key, after the standing
           };
         }
         return { response: { kind: "diagnosis", summary: "The repaired Flow answers the instruction.", diagnosis: { answersRequest: "yes" } }, usage: USAGE };
-      }
+      }, USAGE)
     } }),
     // The Flow's standing authorization: routine sampling, which refutes.
     resultCheckProviderResolver: (request) => ({

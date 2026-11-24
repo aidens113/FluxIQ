@@ -28,22 +28,17 @@ describe("a completion refused again", () => {
     expect([refused(1), refused(2), refused(3)]).toEqual(["steered", "change_approach", "change_approach"]);
   });
 
-  it("climbs one model rung each time it is refused again, sticky, and records why; at the top it climbs nothing and still stops the round", () => {
+  // A task keeps the model it starts with and nothing climbs when it is stuck (user, 2026-11-20, U1; 002650596 made
+  // `automationStudioLlmModelLadderClimb` a no-op). The refusal still steers, then stops the round, and leaves the model alone.
+  it("never changes the model it is served by, however often it is refused again, and still stops the round", () => {
     const { record, refused } = ladder();
     record.ladder.serve(["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"]);
     expect(refused(1)).toBe("steered");
-    expect(record.ladder.level).toBe(1);
+    expect(record.ladder.level).toBe(0);
     expect(refused(2)).toBe("change_approach");
-    expect(record.ladder.level).toBe(2);
     expect(refused(3)).toBe("change_approach");
-    expect(record.ladder.level).toBe(2);
-    expect(record.data().ladder).toEqual({
-      base: "claude-haiku-5-5",
-      escalations: [
-        { from: "claude-haiku-5-5", to: "claude-sonnet-5-5", reason: "completion_refused_again", pattern: "near_repeat" },
-        { from: "claude-sonnet-5-5", to: "claude-opus-5-5", reason: "completion_refused_again", pattern: "near_repeat" }
-      ]
-    });
+    expect(record.ladder.level).toBe(0);
+    expect(record.data().ladder?.escalations ?? []).toEqual([]);
   });
 
   it("tells the fresh round what it repeated and to take a different approach", () => {

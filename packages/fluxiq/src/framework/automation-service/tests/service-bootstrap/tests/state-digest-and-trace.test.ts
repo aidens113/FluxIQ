@@ -15,6 +15,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
+import { automationStudioAnsweringInstructionReading } from "./instruction-reading.ts";
 import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
 import { blankFixture, caller, isJudgeRequest, judgeReply, mockProvider, plan, copyDataDirSeed, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
@@ -109,10 +110,11 @@ async function build(options: { digests?: boolean } = {}) {
     { kind: "complete", result: { summary: "Built.", plan: plan() } }
   ];
   let call = 0;
-  const provider = mockProvider(async (request) => isJudgeRequest(request) ? judgeReply() : ({
+  // The build reads its instruction when it starts (t976, b2ee9ed45): answered apart, not one of the decisions scripted here.
+  const provider = mockProvider(automationStudioAnsweringInstructionReading(async (request) => isJudgeRequest(request) ? judgeReply() : ({
     response: { kind: "evidence_tool_decision", summary: "Step.", decision: decisions[Math.min(call++, decisions.length - 1)]! },
     usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 }
-  }));
+  }), { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 }));
   const { project, flow } = await seeded(example);
   const instance = new AutomationStudioService({
     dataDir: tempRoot,

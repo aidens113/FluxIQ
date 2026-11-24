@@ -8,6 +8,7 @@ import { automationStudioFlowBootstrapSizeLimits } from "../../../../../runtime/
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
 import type { AutomationStudioLlmProviderResolverInput, AutomationStudioServiceOptions } from "../../../service.ts";
 import { AutomationStudioService } from "../../../service.ts";
+import { automationStudioAnsweringInstructionReading } from "./instruction-reading.ts";
 import { plan, mockProvider, blankFixture, caller, expectNoTopology, rejectedGenerationDiagnostic, copyDataDirSeed, seedDataDir, blankFixturesPerService, type DataDirSeed } from "./fixtures.ts";
 
 // Heavy service test: under full-suite load it ran past the 15 s default (t289).
@@ -129,14 +130,16 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     })]
   ])("feeds back, then reports a content-free failure for, invalid %s", async (_label, expectedRefusal, expectedIssue, completion) => {
     const requests: AutomationStudioLlmTaskRequest[] = [];
-    const provider = mockProvider(async (request) => (requests.push(request), {
+    // The build reads its instruction when it starts (t976, b2ee9ed45): answered apart from the decisions
+    // counted here, and paid for at a decision's price, so the build's accounting holds four calls.
+    const provider = mockProvider(automationStudioAnsweringInstructionReading(async (request) => (requests.push(request), {
       response: {
         kind: "evidence_tool_decision",
         summary: "Complete candidate.",
         decision: { kind: "complete", result: completion() }
       },
       usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }
-    }));
+    }), { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }));
     const { project, flow } = await seeded(single);
     const instance = createService({
       provider,
@@ -168,9 +171,9 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       accounting: {
         provider: "mock-production",
         model: "mock-bootstrap",
-        inputTokens: 30,
-        outputTokens: 15,
-        totalTokens: 45
+        inputTokens: 40,
+        outputTokens: 20,
+        totalTokens: 60
       },
       evidenceLoop: {
         iterationCount: 3,
@@ -183,7 +186,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       },
       issueCodes: expect.arrayContaining([expectedIssue])
     });
-    expect(diagnostic.accounting?.estimatedCostUsd).toBeCloseTo(0.003, 9);
+    expect(diagnostic.accounting?.estimatedCostUsd).toBeCloseTo(0.004, 9);
     expect(Object.keys(diagnostic)).toEqual(expect.arrayContaining(["code", "stage", "accounting"]));
     expect(JSON.stringify(diagnostic)).not.toMatch(/Candidate|missing\.definition|unexpected/);
     await expectNoTopology(instance, project.id, flow.flowId);
@@ -307,7 +310,8 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       response: { kind: "flow_bootstrap", summary: "Build once.", plan: plan() }
     }));
     const { project, flow } = await seeded(single);
-    const instance = createService({ provider: mockProvider(providerRun) });
+    // The first build reads its instruction when it starts (t976, b2ee9ed45), apart from the plan `providerRun` answers.
+    const instance = createService({ provider: mockProvider(automationStudioAnsweringInstructionReading(providerRun, { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 })) });
     await instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller() });
 
     await expect(instance.generateFlowBootstrapAdaptation({

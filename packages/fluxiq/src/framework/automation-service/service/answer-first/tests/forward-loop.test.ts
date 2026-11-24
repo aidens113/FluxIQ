@@ -80,6 +80,7 @@ async function firstRowByHandThenTheLoop(input: Run) {
   const library = fakeLibrary();
   const site: Site = { at: "list", on: new Set(), presses: {}, opened: [], backs: 0, reached: 0, failSetOn: input.failSetOn ?? [], failBack: input.failBack ?? [], failRead: input.failRead ?? false, rowsAnswered: input.rowsAnswered ?? true };
   const attempt = await scriptedAttempt({
+    taskProcessing: null,
     library,
     instruction: "Renew every loan on my library account.",
     permittedConsequences: ["modify_existing"],

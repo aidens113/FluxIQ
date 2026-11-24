@@ -10,7 +10,7 @@ import { automationStudioAnswerFirstSavedStateOf, automationStudioAnswerFirstSte
 import { LOANS_OUTPUT, savedStep } from "./fake-library-engine.ts";
 import { complete, judgedYes, READ_LOANS, RENEW_CARD, RENEW_LOAN } from "./fake-library.ts";
 import { readLoans, toldTo } from "./later-attempts.ts";
-import { BOTH_TASK, honestFirstAttempt, honestFirstAttemptWithCard, LOAN_STEP, LOAN_TASK, onceEach, PERMITTED, READ_STEP, repeatOverRows } from "./honest-attempts.ts";
+import { ACTION_ONLY, BOTH_TASK, honestFirstAttempt, honestFirstAttemptWithCard, LOAN_STEP, LOAN_TASK, onceEach, PERMITTED, READ_STEP, LISTED, repeatOverRows } from "./honest-attempts.ts";
 import { ATLAS, BIRDS, CLOCKS, DUNES, forwardFrom, pressCardByHand, pressLoanByHand, siteLane, TITLES, writeStep } from "./library-site.ts";
 
 vi.setConfig({ testTimeout: 180_000 });
@@ -21,7 +21,7 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup();
 });
 
-const again = { instruction: LOAN_TASK, ...PERMITTED };
+const again = { instruction: LOAN_TASK, taskProcessing: LISTED, ...PERMITTED };
 /** A person's Run again: the press that means do it again, with an empty act record (t869). */
 const pressedAgain = { ...again, runAgain: true };
 const NEW_CARD_NAME = "Renew library card";
@@ -194,7 +194,7 @@ describe("lasting acts across attempts", () => {
   it("three of one control, as asked: exactly three across a broken run and its repair", async () => {
     const TASK = "Renew the card three times on my library account.";
     const { lane, target, over } = await siteLane(cleanups);
-    const first = await lane.attempt({ instruction: TASK, ...PERMITTED, script: [pressCardByHand("c1"), pressCardByHand("c2"), pressCardByHand("c3"), complete("Renewed it three times.")] });
+    const first = await lane.attempt({ instruction: TASK, taskProcessing: ACTION_ONLY, ...PERMITTED, script: [pressCardByHand("c1"), pressCardByHand("c2"), pressCardByHand("c3"), complete("Renewed it three times.")] });
     expect(first.answer.attempt.status).toBe("achieved");
     expect(target.library.renewals.card).toBe(3);
     let cardCalls = 0;
@@ -204,7 +204,7 @@ describe("lasting acts across attempts", () => {
       return cardCalls === 1 ? undefined : { status: "failed", route: "failed", message: "Not now.", failure: { category: "target_not_found", code: "library.not_now", retryable: false, stage: "target_resolution", effect: "unacted" } };
     });
     const FIRST_CARD_STEP = 2;
-    const second = await lane.attempt({ instruction: TASK, ...PERMITTED, runAgain: true, script: [forwardFrom(FIRST_CARD_STEP), complete("Renewed it three times.")] });
+    const second = await lane.attempt({ instruction: TASK, taskProcessing: ACTION_ONLY, ...PERMITTED, runAgain: true, script: [forwardFrom(FIRST_CARD_STEP), complete("Renewed it three times.")] });
     expect(toldTo(second.decisions[0])?.flowRun).toMatchObject({ stoppedAt: FIRST_CARD_STEP + 1 });
     expect(second.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow_then_repair" });
     // One by the engine, then two by the walker from the first of the three, and its third pass only checks.
@@ -218,7 +218,7 @@ describe("a count carried across attempts", () => {
   it("three of one control, cut off by the purse after two: the same words press the third and no more", async () => {
     const TASK = "Renew the card three times on my library account.";
     const { lane, target } = await siteLane(cleanups);
-    const first = await lane.attempt({ instruction: TASK, ...PERMITTED, costUsd: 0.04, maxTotalEstimatedCostUsd: 0.09, keepLooking: true, script: [pressCardByHand("c1"), pressCardByHand("c2")] });
+    const first = await lane.attempt({ instruction: TASK, taskProcessing: ACTION_ONLY, ...PERMITTED, costUsd: 0.04, maxTotalEstimatedCostUsd: 0.09, keepLooking: true, script: [pressCardByHand("c1"), pressCardByHand("c2")] });
     expect(first.answer.attempt.status).toBe("budget_out");
     expect(target.library.renewals.card).toBe(2);
     const second = await lane.attempt({ instruction: TASK, ...PERMITTED });

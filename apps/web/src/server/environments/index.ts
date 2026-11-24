@@ -10,5 +10,6 @@ export { createTenantEnrolment } from "./tenant-enrolment";
 export { environmentEnrolmentRoutes } from "./enrolment-routes";
 export { environmentLive } from "./environment-live";
 export { getEnvironmentStore } from "./environment-store";
+export { getPlatformEnvironmentStore } from "./platform-environment-store";
 export { resolveEnvironmentEnrolmentRoute } from "./resolve-enrolment-route";
 export type { EnvironmentControllerComposition, EnvironmentControllerInputs, EnvironmentWorkspaceAcquire, TenantEnrolmentOptions } from "./types";

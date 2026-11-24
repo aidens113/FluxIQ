@@ -25,7 +25,7 @@ async function answered(instruction: string) {
   const library = fakeLibrary();
   // Each row as the page writes it: the two columns a person might name, and a link to the loan's page.
   library.shapes = { linked: (loan) => ({ title: loan.title, due: loan.due, link: linkOf(loan.title) }) };
-  const attempt = await scriptedAttempt({ library, instruction, script: [runNode("read", READ_LOANS, { shape: "linked" }, [], { add: true }), complete("Listed.")] }, cleanups);
+  const attempt = await scriptedAttempt({ library, instruction, taskProcessing: { process: {} }, script: [runNode("read", READ_LOANS, { shape: "linked" }, [], { add: true }), complete("Listed.")] }, cleanups);
   if (attempt.answered.status !== "answered") throw new Error(`expected an answer, got ${attempt.answered.status}`);
   const rows = attempt.answered.result?.rows;
   const judges = attempt.requests.filter((request) => request.taskKind === "loop_verification");
@@ -87,6 +87,7 @@ function listAnswer(value: JsonObject, library: FakeLibrary): AutomationStudioLl
 describe("a round's forward run sends a read again with the columns the person named", () => {
   async function forwarded(instruction: string) {
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       instruction,
       fault: (call, library) => listAnswer(call.value, library),
       before: (service) => { service.bindNativeNodeRuntime(fakeLibraryNodes().register(

@@ -16,6 +16,7 @@ describe("a later read that got smaller", () => {
   it("is carried to the result, and a list that did not shrink carries nothing", async () => {
     const library = fakeLibrary();
     const shrunk = await scriptedAttempt({
+      taskProcessing: { process: {} },
       library,
       script: [
         runNode("first", READ_LOANS, { recordOutput: { datasetId: "loans" } }, [], { add: true }),
@@ -34,7 +35,7 @@ describe("a later read that got smaller", () => {
     const answer = last?.context.evidenceLoop?.evidence.find((entry) => entry.callId === "second")?.value as JsonObject | undefined;
     expect(answer?.resultNote).toMatch(/^result 3 → 2 rows/u);
 
-    const same = await scriptedAttempt({ library: fakeLibrary(), script: [runNode("first", READ_LOANS, { recordOutput: { datasetId: "loans" } }, [], { add: true }), complete("Listed.")] }, cleanups);
+    const same = await scriptedAttempt({ taskProcessing: { process: {} }, library: fakeLibrary(), script: [runNode("first", READ_LOANS, { recordOutput: { datasetId: "loans" } }, [], { add: true }), complete("Listed.")] }, cleanups);
     if (same.answered.status !== "answered") throw new Error(`expected an answer, got ${same.answered.status}`);
     expect(same.answered.result?.rows).not.toHaveProperty("fewerThanEarlier");
   });

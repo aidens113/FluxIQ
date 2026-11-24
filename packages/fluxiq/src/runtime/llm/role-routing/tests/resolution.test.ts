@@ -61,4 +61,17 @@ describe("one automation model", () => {
     expect(await runWithAutomationStudioRunOverrides({ models: { judge: "other" } }, async () => automationStudioLlmRunJudgeModelId("custom-start"))).toBe("custom-start");
     expect(await runWithAutomationStudioRunOverrides({ models: { explore: "selected", judge: "other" } }, async () => automationStudioLlmRunJudgeModelId("custom-start"))).toBe("selected");
   });
+
+  it("judges a Flow that names only its provider on that provider's default, the model its build resolves", async () => {
+    const asked: AutomationStudioLlmProviderResolverInput[] = [];
+    await automationStudioLlmRoleRoutedResolution(resolver(asked), { projectId: "p", flowId: "f", providerId: "deepseek" });
+    // A Flow naming only DeepSeek gets a DeepSeek judge, never a Claude model its provider cannot serve.
+    expect(automationStudioLlmRunJudgeModelId(undefined, "deepseek")).toBe(AUTOMATION_STUDIO_LLM_DEFAULT_MODEL_NAMED ? AUTOMATION_STUDIO_LLM_DEFAULT_MODEL : "deepseek-flash");
+    expect(automationStudioLlmRunJudgeModelId(undefined, "deepseek")).toBe(asked[0]?.modelId);
+    // A Flow naming nothing, or the host, still starts and is judged on Haiku.
+    expect(automationStudioLlmRunJudgeModelId(undefined)).toBe(AUTOMATION_STUDIO_LLM_DEFAULT_MODEL_NAMED ? AUTOMATION_STUDIO_LLM_DEFAULT_MODEL : "claude-haiku-5-5");
+    expect(automationStudioLlmRunJudgeModelId(undefined, "host")).toBe(AUTOMATION_STUDIO_LLM_DEFAULT_MODEL_NAMED ? AUTOMATION_STUDIO_LLM_DEFAULT_MODEL : "claude-haiku-5-5");
+    // A named model still wins over the provider's default.
+    expect(automationStudioLlmRunJudgeModelId("custom-start", "deepseek")).toBe("custom-start");
+  });
 });

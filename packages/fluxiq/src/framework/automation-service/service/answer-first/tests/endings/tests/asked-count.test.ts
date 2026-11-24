@@ -25,6 +25,7 @@ describe("an act the person asked for several times", () => {
     const attempt = await scriptedAttempt({
       instruction: "Renew the card three times on my library account.",
       permittedConsequences: ["modify_existing"],
+      taskProcessing: null,
       script: [
         press("card.1", { add: true }), press("card.2"), press("card.3"), press("card.4"),
         (request: AutomationStudioLlmTaskRequest) => {
@@ -44,6 +45,7 @@ describe("an act the person asked for several times", () => {
     const attempt = await scriptedAttempt({
       instruction: "Add two of this.",
       permittedConsequences: ["modify_existing"],
+      taskProcessing: null,
       script: pressing(3)
     }, cleanups);
     expectReached(attempt, 2);
@@ -54,6 +56,7 @@ describe("an act the person asked for several times", () => {
     const attempt = await scriptedAttempt({
       instruction: "Add two packs of the bookmarks to my basket, and save the receipt.",
       permittedConsequences: ["modify_existing"],
+      taskProcessing: null,
       script: [
         runNode("add.1", RENEW_CARD, {}, ["modify_existing"], { add: true, act: "a1" }),
         runNode("add.2", RENEW_CARD, {}, ["modify_existing"], { act: "a1" }),
@@ -71,6 +74,7 @@ describe("an act the person asked for several times", () => {
     const attempt = await scriptedAttempt({
       instruction: "Renew the card on my library account.",
       permittedConsequences: ["modify_existing"],
+      taskProcessing: null,
       script: pressing(3)
     }, cleanups);
     expectReached(attempt);
@@ -82,6 +86,7 @@ describe("an act the person asked for several times", () => {
     const attempt = await scriptedAttempt({
       instruction: "Renew the card on my library account.",
       permittedConsequences: ["modify_existing"],
+      taskProcessing: null,
       saying: "The person asked for ten of these, so I am pressing it ten times.",
       script: [
         claiming("card.1", {}, { add: true }),
@@ -104,6 +109,7 @@ describe("an act the person asked for several times", () => {
       // The page says five, and the request's only number is about something else.
       instruction: "Find the book listed three times and renew the card issued two years ago.",
       permittedConsequences: ["modify_existing"],
+      taskProcessing: null,
       script: pressing(4)
     }, cleanups);
     expectReached(attempt);
@@ -116,6 +122,7 @@ describe("an act the person asked for several times", () => {
       library,
       instruction: "Renew my loans three times.",
       permittedConsequences: ["modify_existing"],
+      taskProcessing: null,
       script: [
         runNode("read", READ_LOANS, {}, [], { add: true }),
         toolCall("row.1", "core.run_node", { node: RENEW_LOAN, parameters: { title: "Atlas of Rivers" }, item: { title: "Atlas of Rivers", due: "2030-01-01" }, consequences: ["modify_existing"] }, { add: true }),
@@ -141,6 +148,7 @@ describe("an act the person asked for several times", () => {
       library,
       instruction: "Renew the card twice on my library account.",
       permittedConsequences: ["modify_existing"],
+      taskProcessing: null,
       before: noWaiting(),
       resolver: { maxCallsPerRun: 12 },
       script: Array.from({ length: 60 }, () => decide)

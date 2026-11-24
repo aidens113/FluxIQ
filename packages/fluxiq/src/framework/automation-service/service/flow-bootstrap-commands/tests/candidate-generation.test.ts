@@ -5,6 +5,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { AutomationStudioService } from "../../../service.ts";
 import { AutomationStudioFlowCandidateDraftStore, type AutomationStudioFlowCandidateDraftRecord } from "../../candidate-drafts/index.ts";
+import { automationStudioAnsweringInstructionReading } from "../../../tests/service-bootstrap/tests/instruction-reading.ts";
 import { blankFixture, caller, judgeReply, mockProvider, plan } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 
 /** The fixture plan with its end step under another key: a change in what the Flow is, not only in its names (t485). */
@@ -25,7 +26,9 @@ describe("candidate facade uses the actual service", () => {
     let calls = 0, discoveries = 0, stale = false;
     let service!: AutomationStudioService, projectId = "", flowId = "";
     const requests: string[] = [];
-    const provider = mockProvider(async (request) => {
+    // The build reads its instruction when it starts (t976, b2ee9ed45): answered apart from the decisions
+    // scripted and counted here, at a decision's price.
+    const provider = mockProvider(automationStudioAnsweringInstructionReading(async (request) => {
       requests.push(request.taskKind);
       if (request.taskKind === "loop_verification") return judgeReply("yes");
       calls++;
@@ -40,7 +43,7 @@ describe("candidate facade uses the actual service", () => {
         : { kind: "complete", result: { revision: latest?.revision, digest: latest?.digest } };
       if (calls === 5) { stale = ending === "stale"; if (ending === "cancel") service.buildCancellation.cancel(projectId, flowId); }
       return { response: { kind: "evidence_tool_decision", summary: "Scripted candidate authoring", decision }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 } };
-    });
+    }, { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }));
     service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 12, maxEstimatedCostUsd: 0.1 }),
       llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect", inputSchema: { type: "object" }, effect: "observe" }], executeTool: async () => {
         discoveries++; return { kind: "llm_evidence_tool_execution", evidence: { area: "wrong", unrelated: true }, effectApplied: false, targetsUnchanged: true };
@@ -54,13 +57,13 @@ describe("candidate facade uses the actual service", () => {
       vi.spyOn(service, "getLlmExecutionBinding").mockImplementation(async (p, f) => { const binding = await readBinding(p, f); return stale ? { ...binding, settingsRevision: binding.settingsRevision + 1 } : binding; });
       if (ending === "save_failure") vi.spyOn(draftStore(service), "save").mockRejectedValue(new Error("synthetic disk failure"));
       const building = service.generateFlowBootstrapAdaptation({ projectId, flowId, caller: caller(), evidenceGuided: true, authoringMode: "candidate" });
-      // Five decisions at $0.001 and two judge calls at $0.0005.
-      const spent = { estimatedCostUsd: expect.closeTo(0.006, 6), totalTokens: 515 };
+      // The reading of the instruction at the start (t976) and five decisions at $0.001, and two judge calls at $0.0005.
+      const spent = { estimatedCostUsd: expect.closeTo(0.007, 6), totalTokens: 530 };
       if (ending === "proposed") {
         const result = await building;
         if (result.status !== "proposed") throw new Error(`expected a proposal, got ${result.status}`);
         const saved = await draftStore(service).get(projectId, flowId);
-        expect(result).toMatchObject({ status: "proposed", accounting: { inputTokens: 450, outputTokens: 65, ...spent }, candidate: { candidateId: saved?.candidateId, revision: 2, digest: saved?.candidate.digest, trial: { verdict: "yes", calls: 2 } } });
+        expect(result).toMatchObject({ status: "proposed", accounting: { inputTokens: 460, outputTokens: 70, ...spent }, candidate: { candidateId: saved?.candidateId, revision: 2, digest: saved?.candidate.digest, trial: { verdict: "yes", calls: 2 } } });
         // The draft is kept beside the proposal, as the record of what was tried.
         expect(saved).toMatchObject({ sourceInstructionIds: ["instruction.build"], instructionText: "Build a primary path\nCreate a deterministic Start to End Flow.", candidate: { revision: 2, status: "draft" } });
         expect(saved?.candidate.buildPlan.subflows[0]?.nodes.map((node) => node.definitionId)).toEqual(["builtin.control.start", "builtin.control.end"]);

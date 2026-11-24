@@ -31,6 +31,11 @@ vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 let tempRoot: string;
 const services = new Set<AutomationStudioService>();
+/**
+ * The Flow names DeepSeek, the provider of the key and the wire these runs stand in for. A run that
+ * names no model starts on Claude Haiku, its repairs included (t983, 002650596; user, 2026-11-20).
+ */
+const DEEPSEEK = { llmProvider: "deepseek", llmModel: "deepseek-flash" } as const;
 
 /** What the scripted model says, per task kind, in the order it is asked. */
 const GATHER_THEN_ANSWER: Record<string, JsonObject[]> = {
@@ -117,7 +122,7 @@ describe("AutomationStudioService iterating recovery", () => {
     // verification that "changes nothing" may still act on a page.
     const service = track(new AutomationStudioService({ dataDir: tempRoot, seedFixture: false }));
     const project = await service.createProject({ name: "Any intent" });
-    const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.any-intent", metadata: adaptiveTrainingMetadata() });
+    const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.any-intent", metadata: { ...adaptiveTrainingMetadata(), ...DEEPSEEK } });
     await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
     await expect(service.runRuntimeSession({
       projectId: project.id,
@@ -199,7 +204,7 @@ async function recoveryFixture(intent: AutomationStudioRuntimeSessionLlmIntent) 
     }
   }));
   const project = await service.createProject({ name: `Iterating recovery ${intent}` });
-  const flow = await createFailingCanonicalFlow(service, project.id, { flowId: `flow.iterating-${intent.replaceAll("_", "-")}`, metadata: adaptiveTrainingMetadata() });
+  const flow = await createFailingCanonicalFlow(service, project.id, { flowId: `flow.iterating-${intent.replaceAll("_", "-")}`, metadata: { ...adaptiveTrainingMetadata(), ...DEEPSEEK } });
   await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Run the Flow's steps in order and return its result." });
   return {
     taskKinds,

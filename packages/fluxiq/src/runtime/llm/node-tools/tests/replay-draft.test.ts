@@ -409,9 +409,10 @@ describe("what a replay observed", () => {
     expect(verdict.ok).toBe(true);
     expect(verdict.outcomes[1]?.mode).toBe("verify");
     expect(observations).toEqual([
-      { step: 1, stepId: "d1", resultCode: "core.replay.replayed", evidence: { pressed: "node.open_towels" } },
-      { step: 2, stepId: "d2", resultCode: "core.replay.verified", evidence: { pressed: "node.add_to_cart" } },
-      { step: 3, stepId: "d3", resultCode: "core.replay.replayed", evidence: { rows: [{ name: "Towels", price: "9.99" }] } }
+      // Each observation also states whether the step's effect landed (a verified step's did not) and the consequences it declared (cf5160993, 284eb77ba).
+      { step: 1, stepId: "d1", resultCode: "core.replay.replayed", evidence: { pressed: "node.open_towels" }, effectApplied: true, consequences: [] },
+      { step: 2, stepId: "d2", resultCode: "core.replay.verified", evidence: { pressed: "node.add_to_cart" }, effectApplied: false, consequences: ["create_new"] },
+      { step: 3, stepId: "d3", resultCode: "core.replay.replayed", evidence: { rows: [{ name: "Towels", price: "9.99" }] }, effectApplied: true, consequences: [] }
     ]);
   });
 

@@ -10,6 +10,7 @@ import { AutomationStudioNativeNodeRuntime } from "../../../../../runtime/native
 import type { AutomationStudioFlowNode } from "../../../../../flows/authoring/model/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
+import { automationStudioAnsweringInstructionReading } from "../../../tests/service-bootstrap/tests/instruction-reading.ts";
 import { automationStudioReplayingBinding } from "../../../tests/replaying-binding.ts";
 import { adaptiveTrainingMetadata } from "../../../tests/service-fixtures.ts";
 
@@ -139,7 +140,8 @@ export async function startRepairedRun(script: RepairedRunScript, dataDir: strin
   const usage = { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 };
   const provider: AutomationStudioLlmProvider = {
     metadata: { provider: "mock", model: "mock-repaired-rows" },
-    runTask: async (request: AutomationStudioLlmTaskRequest) => {
+    // A re-author build reads its instruction when it starts (t976), apart from the decisions scripted here.
+    runTask: automationStudioAnsweringInstructionReading(async (request: AutomationStudioLlmTaskRequest) => {
       taskKinds.push(request.taskKind);
       if (request.taskKind === "loop_verification") {
         // The judge reads the rows it was shown: a row that is not a listing is no answer, and neither is the end of a list without its start.
@@ -159,7 +161,7 @@ export async function startRepairedRun(script: RepairedRunScript, dataDir: strin
         return { response: { kind: "runtime_patch", summary: "Read the narrowed list.", riskLevel: "low", patches: [patch] }, usage };
       }
       return { response: { kind: "diagnosis", summary: "The list is not narrowed.", diagnosis: { explorationNeeded: false, patchNeeded: script.diagnosisWantsNoPatch !== true } }, usage };
-    }
+    }, usage)
   };
   const defaults = AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS;
   const runtime = automationStudioReplayingBinding({

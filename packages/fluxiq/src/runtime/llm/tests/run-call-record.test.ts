@@ -188,9 +188,10 @@ describe("the harness's line for each call", () => {
       reported: { inputTokens: 300, outputTokens: 40, totalTokens: 340, estimatedCostUsd: 0.0002 },
       charged: { tokens: "reported", cost: "reported" }
     });
-    expect(second).toMatchObject({ requestId: "request.failed", validation: { ok: false }, reported: { totalTokens: null }, charged: { totalTokens: failed.request.estimatedInputTokens + 2_000, tokens: "reserved", cost: "reserved" } });
-    // Reserved, and so charged, at the request's own measured size, not its 8,000-token input limit.
-    expect(failed.request.estimatedInputTokens).toBeLessThan(8_000);
+    // A failure that reported no cost billed nothing, so its reservation settles at zero and is
+    // recorded as reported zero, never kept at the hold (t966, 89e40b545). The reply's own
+    // invalidity is still recorded.
+    expect(second).toMatchObject({ requestId: "request.failed", validation: { ok: false }, reported: { totalTokens: 0 }, charged: { totalTokens: 0, tokens: "reported", cost: "reported" } });
     expect(second?.validation?.issueCodes).toEqual(failed.diagnostics.map((diagnostic) => diagnostic.code));
     expect(JSON.stringify(second)).not.toContain("private detail");
     expect(third).toMatchObject({ requestId: "request.garbled", validation: { ok: false } });

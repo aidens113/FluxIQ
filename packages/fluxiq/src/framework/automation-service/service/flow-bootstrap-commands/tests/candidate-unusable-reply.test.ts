@@ -13,9 +13,12 @@ import { AutomationStudioService } from "../../../service.ts";
 import type { AutomationStudioFlowBootstrapCreationSpendStore } from "../../index.ts";
 import { automationStudioFlowBootstrapEvidenceLoopLimits } from "../../../../../runtime/loop-limits/index.ts";
 import { automationStudioConversationCallCause } from "../../../../../runtime/conversations/commands/index.ts";
+import { automationStudioAnsweringInstructionReading } from "../../../tests/service-bootstrap/tests/instruction-reading.ts";
 import { blankFixture, caller, judgeReply, mockProvider, plan } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 
 const DECISION_USD = 0.001;
+/** What the build's reading of its instruction at the start costs (t976). */
+const READING_USD = DECISION_USD;
 const MAX_CALLS = 12;
 
 type Reply = (call: number, latest: { revision?: number; digest?: string } | undefined) => Record<string, unknown>;
@@ -30,13 +33,15 @@ const malformedSubmission = { kind: "callId", input: { summary: "complete revisi
 async function candidateBuild(reply: Reply) {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-candidate-unusable-"));
   let calls = 0;
-  const provider = mockProvider(async (request) => {
+  // The build reads its instruction when it starts (t976, b2ee9ed45): answered apart from the decisions scripted
+  // and counted here, and paid for at a decision's price (READING_USD).
+  const provider = mockProvider(automationStudioAnsweringInstructionReading(async (request) => {
     if (request.taskKind === "loop_verification") return judgeReply("yes");
     calls++;
     const evidence = request.context.evidenceLoop?.evidence ?? [];
     const latest = [...evidence].reverse().find((entry) => entry.toolId === "core.submit_candidate")?.value as { revision?: number; digest?: string } | undefined;
     return { response: { kind: "evidence_tool_decision", summary: "Scripted candidate authoring", decision: reply(calls, latest) }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: DECISION_USD } };
-  });
+  }, { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: READING_USD }));
   const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: MAX_CALLS, maxEstimatedCostUsd: 0.1 }),
     llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect", inputSchema: { type: "object" }, effect: "observe" }],
       executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { area: "item" }, effectApplied: false, targetsUnchanged: true }) } });
@@ -56,8 +61,8 @@ describe("a candidate build survives an unusable reply and accounts for its spen
       : { kind: "complete", result: { revision: latest?.revision, digest: latest?.digest } });
     try {
       if (!build.settled.ok) throw build.settled.error;
-      // Five decisions, the refused one among them, and the trial's two judge calls at $0.0005.
-      expect(build.settled.result).toMatchObject({ status: "proposed", accounting: { estimatedCostUsd: expect.closeTo(5 * DECISION_USD + 0.001, 6) }, candidate: { revision: 1, trial: { verdict: "yes" } } });
+      // Five decisions, the refused one among them, the trial's two judge calls at $0.0005, and the start's reading (t976).
+      expect(build.settled.result).toMatchObject({ status: "proposed", accounting: { estimatedCostUsd: expect.closeTo(5 * DECISION_USD + 0.001 + READING_USD, 6) }, candidate: { revision: 1, trial: { verdict: "yes" } } });
       expect(build.calls()).toBe(5);
     } finally { await build.close(); }
   }, 60_000);
@@ -69,7 +74,8 @@ describe("a candidate build survives an unusable reply and accounts for its spen
       // The shared bound: the same figure the legacy round's `unusableDecisions` is built from.
       const bound = automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: MAX_CALLS }).maxConsecutiveUnusableDecisions;
       expect(build.calls()).toBe(1 + bound);
-      const spent = (1 + bound) * DECISION_USD;
+      // The decisions and the start's reading (t976).
+      const spent = (1 + bound) * DECISION_USD + READING_USD;
       const diagnostic = (build.settled.error as { diagnostic?: Record<string, unknown> }).diagnostic;
       expect(diagnostic).toMatchObject({ code: "flow_bootstrap.evidence_unusable_decision", stage: "provider_output_validation", providerInvocation: "attempted", providerResponse: "received",
         accounting: { estimatedCostUsd: expect.closeTo(spent, 6) }, issueCodes: ["llm_output.invalid_evidence_decision"] });
@@ -89,10 +95,11 @@ describe("a candidate build survives an unusable reply and accounts for its spen
     try {
       if (build.settled.ok) throw new Error(`expected the build to end, got ${build.settled.result.status}`);
       const diagnostic = (build.settled.error as { diagnostic?: Record<string, unknown> }).diagnostic;
-      // The harness's failure keeps the failed request's identity; the spend is the build's, the two paid decisions before it.
-      expect(diagnostic).toMatchObject({ code: "flow_bootstrap.provider_transport_unknown", stage: "provider_request", accounting: { requestId: expect.stringMatching(/^llm\.evidence_tool_decision\./u), inputTokens: 20, outputTokens: 10, totalTokens: 30, estimatedCostUsd: expect.closeTo(2 * DECISION_USD, 6) } });
-      // The purse settles the call that got no answer at what it held for it, so it counts at least what the failure reports.
-      expect(build.creationSpend?.spentUsd).toBeCloseTo(3 * DECISION_USD, 6);
+      // The harness's failure keeps the failed request's identity; the spend is the build's: the start's reading (t976) and the two paid decisions before the throw.
+      expect(diagnostic).toMatchObject({ code: "flow_bootstrap.provider_transport_unknown", stage: "provider_request", accounting: { requestId: expect.stringMatching(/^llm\.evidence_tool_decision\./u), inputTokens: 30, outputTokens: 15, totalTokens: 45, estimatedCostUsd: expect.closeTo(2 * DECISION_USD + READING_USD, 6) } });
+      // The call that got no answer reported no usage, so the purse settles it at zero, never at its hold (t966, 89e40b545):
+      // the purse holds exactly what the failure reports.
+      expect(build.creationSpend?.spentUsd).toBeCloseTo(2 * DECISION_USD + READING_USD, 6);
     } finally { await build.close(); }
   }, 60_000);
 });

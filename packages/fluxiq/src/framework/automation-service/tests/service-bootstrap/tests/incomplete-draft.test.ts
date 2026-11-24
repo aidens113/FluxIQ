@@ -12,6 +12,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { AutomationStudioFlowBootstrapIncompleteDraftStore, AutomationStudioFlowPaths, AutomationStudioProjectPaths, type AutomationStudioProjectStore } from "../../../service/index.ts";
+import { automationStudioAnsweringInstructionReading } from "./instruction-reading.ts";
 import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
 import { blankFixture, copyDataDirSeed, expectNoTopology, caller, isJudgeRequest, judgeReply, mockProvider, plan, rejectedGenerationDiagnostic, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
@@ -57,13 +58,14 @@ describe("a Flow build that runs out, and the build after it", () => {
     let calls = 0;
     const instance = new AutomationStudioService({
       dataDir: tempRoot,
-      llmProviderResolver: (() => ({ provider: mockProvider(async (request) => {
+      // Each build reads its instruction when it starts (t976, b2ee9ed45), apart from the decisions counted here.
+      llmProviderResolver: (() => ({ provider: mockProvider(automationStudioAnsweringInstructionReading(async (request) => {
         requests.push(request);
         const callId = `same-goal.${++calls}`;
         return { response: { kind: "evidence_tool_decision", summary: "Gather.", decision: {
           kind: "tool_call", callId, toolId: "example.act", input: { press: calls }, add: true
         } }, usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 } };
-      }), maxCallsPerRun: 4, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 })) as never,
+      }, { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 })), maxCallsPerRun: 4, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 })) as never,
       llmEvidenceRuntime: automationStudioReplayingBinding({ domainId: "example", deniedEvidenceKeys: [],
         tools: [{ toolId: "example.act", description: "Change target.", inputSchema: { type: "object" }, effect: "mutate" }],
         executeTool: async (input) => ({ kind: "llm_evidence_tool_execution", evidence: { changed: input.callId }, effectApplied: true, resultCode: "example.acted" }) })
@@ -115,7 +117,8 @@ describe("a Flow build that runs out, and the build after it", () => {
     let call = 0;
     const requests: AutomationStudioLlmTaskRequest[] = [];
     const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
-    const provider = mockProvider(async (request) => {
+    // Each build reads its instruction when it starts (t976, b2ee9ed45), apart from the decisions counted here.
+    const provider = mockProvider(automationStudioAnsweringInstructionReading(async (request) => {
       // The finished Flow's test is judged, and judged a success: a build finishes only on that (user, 2026-10-02).
       if (isJudgeRequest(request)) return judgeReply("yes");
       requests.push(request);
@@ -125,7 +128,7 @@ describe("a Flow build that runs out, and the build after it", () => {
         ? { kind: "complete", result: { summary: "Built.", plan: plan() } }
         : { kind: "tool_call", callId: `call.${call}`, toolId: "example.act", input: { press: call }, add: true };
       return { response: { kind: "evidence_tool_decision", summary: "Step.", decision }, usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 } };
-    });
+    }, { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 }));
     const instance = new AutomationStudioService({
       dataDir: tempRoot,
       llmProviderResolver: (() => ({ provider, maxCallsPerRun: 4, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 })) as never,

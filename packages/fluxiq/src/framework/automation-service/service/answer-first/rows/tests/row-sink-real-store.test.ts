@@ -69,7 +69,9 @@ describe("the ledger answer on the real run datasets", () => {
     const restored = new AutomationStudioRunDatasets(projects, pool);
     const page = await restored.getRunDatasetPage({ projectId: PROJECT, runId: RUN, datasetId: stored.datasetId }, { retained: "answer" });
     expect(page).toMatchObject({ rows: [], schema: answer.recordSchema, summary: { datasetId: stored.datasetId, recordCount: 0 } });
-    expect(await restored.readRunDatasetEvidence({ projectId: PROJECT, runId: RUN })).toEqual([{ datasetId: stored.datasetId, batchKey: "read/empty" }]);
+    // Changed by t984 (8c50dc21c, exact batches): the evidence names each batch's producing node and its invalid-row
+    // count, which the sink writes as `exploration.<tool>` (`../row-sink.ts`) and none here.
+    expect(await restored.readRunDatasetEvidence({ projectId: PROJECT, runId: RUN })).toEqual([{ datasetId: stored.datasetId, batchKey: "read/empty", nodeId: "exploration.web.read", invalidCount: 0 }]);
   });
 
   it("publishes all pages and a reread in exact page order, including exports and source provenance", async () => {

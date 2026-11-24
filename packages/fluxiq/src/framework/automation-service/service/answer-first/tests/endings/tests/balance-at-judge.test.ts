@@ -14,6 +14,7 @@ describe("an empty balance at the judge", () => {
   it("ends budget_out once, keeping the rows, and asks nothing more", async () => {
     let judged = 0;
     const attempt = await scriptedAttempt({
+      taskProcessing: { process: {} },
       keepLooking: true,
       wrapProvider: (provider) => ({
         ...provider,
