@@ -91,7 +91,14 @@ web-extension repository keeps its entries at the top of the same
 pruning. The store prunes itself after every write: entries unused for 14 days,
 then the least recently used while it holds more than 5 GB. A per-step lock
 stops two processes building one step in one tree at once; the waiter decides
-again and normally reuses.
+again and normally reuses. A process that only reads a step's outputs for a
+long time, such as a downstream Lab run importing Core's libraries, takes the
+same lock as a reader (`acquireStepReadLock`): any number of readers hold a
+step together, each in its own heartbeated entry beside the lock
+(`.json.lock.reader-<token>`); a build creates the lock and then waits until
+no live reader remains, removing dead or 30-minute-stale entries, and new
+readers queue behind a waiting build, so it is never starved and never
+replaces outputs under a reader.
 
 ```bash
 FLUXIQ_BUILD_FORCE=1 pnpm build          # rebuild every step; the store is not consulted
