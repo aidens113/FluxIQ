@@ -24,6 +24,8 @@ export type AutomationStudioAnswerFirstResultRead = {
   version: AutomationStudioAnswerFirstResultVersion;
   /** Where in the list, as the domain's answer said it (`page=2`, `offset=40`, `cursor=abc`). Absent: not said. */
   place?: string | undefined;
+  /** Where the read ran and how often its list had moved, worked out by the feed (`../result-feed/place-of.ts`): two reads with one spot are one page read again. Never a place the pager said, and never shown as one. */
+  spot?: string | undefined;
   /** The rows the read's conditions kept, every one. */
   kept: readonly JsonObject[];
   /** Actual source validation count; absent legacy evidence is unknown, never zero. */
@@ -66,6 +68,7 @@ export type AutomationStudioAnswerFirstResultEvent =
 export type AutomationStudioAnswerFirstResultPage = {
   source: string;
   place: string | undefined;
+  spot: string | undefined;
   kept: readonly JsonObject[];
   invalidCount?: number;
   leftOut: AutomationStudioFlowLessReadLeftOut | undefined;

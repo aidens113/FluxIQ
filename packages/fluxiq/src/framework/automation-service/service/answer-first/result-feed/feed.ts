@@ -65,6 +65,7 @@ import { automationStudioFlowBootstrapInstructionAsk } from "../../../../../runt
 import { automationStudioAnswerFirstResultReplacements } from "./replacements.ts";
 import { readAutomationStudioAnswerFirstResultEvidence } from "./read-evidence.ts";
 import { automationStudioAnswerFirstListMoveOf, automationStudioAnswerFirstListMovePaging } from "./list-move.ts";
+import { automationStudioAnswerFirstReadPlaces } from "./place-of.ts";
 
 /** What the latest decision says its call is: a step the draft adds as it runs, or a rerun of a kept step. Absent: a look. */
 export type AutomationStudioAnswerFirstResultIntent =
@@ -132,6 +133,8 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
   const reference = input.processingReferenceTimeMs ?? Date.now();
   let legacyRefusal: string | undefined;
   const replacements = automationStudioAnswerFirstResultReplacements();
+  /** A place for every read the pager named none for, from the page it ran on and the moves its list has made (`./place-of.ts`). */
+  const places = automationStudioAnswerFirstReadPlaces();
   const carriedLeftOut = new Map<string, AutomationStudioResultEvidencePage["leftOut"]>();
   const carriedVersions = new Map<string, number>();
   /** A draft step's chain (its own id, or the step it stands for) to its ledger id. */
@@ -348,6 +351,7 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
       if (!read) {
         // A move of a list on its own page settles that list's paging (`./list-move.ts`); any other call that read nothing changes nothing.
         const move = automationStudioAnswerFirstListMoveOf(answer.evidence);
+        if (move?.verdict === "moved") places.moved(move.listKey);
         const paging = move ? automationStudioAnswerFirstListMovePaging(port.ledger(), move) : [];
         return paging.length ? record(paging, before) : undefined;
       }
@@ -356,15 +360,15 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
       if (now?.kind === "rerun") refreshed(idOf(now.step), read);
       if (now?.kind === "add") declare(call.callId, call.value);
       if (now?.kind === "rerun") declare(idOf(now.step), call.value);
-      if (now?.kind === "add") return record([{ kind: "page", step: withWrites({ id: call.callId, position: now.position, intermediate: now.intermediate }, call.value), read }], before, call);
-      if (now?.kind === "rerun") return record([{ kind: "page", step: refOf(now.step), read }], before, call);
+      if (now?.kind === "add") return record([{ kind: "page", step: withWrites({ id: call.callId, position: now.position, intermediate: now.intermediate }, call.value), read: places.spotted(read, call.callId) }], before, call);
+      if (now?.kind === "rerun") return record([{ kind: "page", step: refOf(now.step), read: places.spotted(read, idOf(now.step)) }], before, call);
       return record([{ kind: "look", read }], before);
     },
     passed(step, steps, answer) {
       const held = pass;
       pass = undefined;
       if (held?.read) {
-        const read = { ...held.read, version: automationStudioAnswerFirstResultVersionOf(step.input, held.read.version.listKey) };
+        const read = places.spotted({ ...held.read, version: automationStudioAnswerFirstResultVersionOf(step.input, held.read.version.listKey) }, idOf(step));
         refreshed(idOf(step), read);
         told(record([{ kind: "page", step: refOf(step), read }], undefined, held.call));
         return;
@@ -373,7 +377,10 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
       if (!loop || !automationStudioAnswerFirstResultStepHolder(port.ledger(), idOf(loop))) return;
       const ended = endedWords(answer);
       if (ended !== undefined) told(record([{ kind: "paging", stepId: idOf(loop), paging: { verdict: "ended", reason: ended } }]));
-      else if (answer.effectApplied) told(record([{ kind: "paging", stepId: idOf(loop), paging: { verdict: "moved" } }]));
+      else if (answer.effectApplied) {
+        places.moved(automationStudioAnswerFirstResultStepHolder(port.ledger(), idOf(loop))?.reads.listKey);
+        told(record([{ kind: "paging", stepId: idOf(loop), paging: { verdict: "moved" } }]));
+      }
     },
     batches(entries) {
       const before = rows().totalRows;
@@ -382,7 +389,7 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
         if (!step) continue;
         declare(idOf(step), step.input);
         stored(batch.batchKey, batch.datasetId, batch.truncated, batch.schema);
-        const read = automationStudioAnswerFirstResultReadOfBatch(batch, step);
+        const read = places.spotted(automationStudioAnswerFirstResultReadOfBatch(batch, step), idOf(step), batch.batchKey);
         refreshed(idOf(step), read);
         events.push({ kind: "page", step: refOf(step), read });
       }
