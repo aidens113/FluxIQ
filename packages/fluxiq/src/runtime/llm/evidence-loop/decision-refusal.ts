@@ -11,6 +11,7 @@
 // shapes (`../unusable-decision.ts`, which says what each code below means to
 // the model). They count toward the no-progress guard like any other refusal,
 // because sending the same wrong shape again is the model repeating itself.
+import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioLlmUsageSummary } from "../harness/index.ts";
 import type { AutomationStudioFlowDraftBindingContext } from "../../flow-authoring/draft/index.ts";
 import type { AutomationStudioLlmEvidenceLoopDecision } from "./decision.ts";
@@ -37,7 +38,7 @@ export function automationStudioLlmEvidenceDecisionRefusal(
   raw: unknown,
   /** What the loop read out of it. */
   decision: AutomationStudioLlmEvidenceLoopDecision | undefined,
-  offered: { complete: boolean; amend: boolean; unknownTool?: { known: ReadonlySet<string>; shown: readonly { toolId: string }[] } },
+  offered: { complete: boolean; amend: boolean; unknownTool?: { known: ReadonlySet<string>; shown: readonly { toolId: string; inputSchema?: JsonObject }[] } },
   /** The draft the reply was read against, as the parse was given it (`../evidence-loop-decision.ts`). */
   binding?: AutomationStudioFlowDraftBindingContext
 ): { issueCodes: string[]; usage?: AutomationStudioLlmUsageSummary; unknownTool?: AutomationStudioLlmUnusableDecisionUnknownTool } | undefined {
