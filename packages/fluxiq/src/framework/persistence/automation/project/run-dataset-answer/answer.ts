@@ -5,6 +5,7 @@ import {
   type AutomationStudioRecordProcessingMissingEvidence,
   type AutomationStudioRecordSchema
 } from "@fluxiq/contracts/automation";
+import { automationStudioRunDatasetCapturedFields } from "./captured-fields.ts";
 import type { AutomationStudioRunDatasetCollectedRow, AutomationStudioRunDatasetRowInsert } from "./types.ts";
 
 // Carries each collected row's source through processing: the pure function returns fresh
@@ -19,8 +20,18 @@ const SOURCE_ROW = Symbol("run dataset source row");
 export function automationStudioRunDatasetAnswer(collected: readonly AutomationStudioRunDatasetCollectedRow[], schema: AutomationStudioRecordSchema, process: AutomationStudioRecordProcessing | undefined, now: number | undefined): { rows: AutomationStudioRunDatasetRowInsert[]; account: AutomationStudioRecordProcessingAccount } | { unavailable: true; reason: string; missingEvidence?: AutomationStudioRecordProcessingMissingEvidence[] } {
   const automatic = process?.declaration?.version === 1;
   if (automatic && (!Number.isSafeInteger(now) || (now as number) < 0)) return { unavailable: true, reason: "processing_reference_missing" };
+  // Each row carries what its own batch captured, so a captured field the item does not show reads as the
+  // answer-first feed reads it: "not shown", never missing evidence (t998). One list per batch, read once.
+  const capturedByBatch = new Map<string, string[] | undefined>();
+  const capturedOf = (row: AutomationStudioRunDatasetCollectedRow): string[] | undefined => {
+    if (!capturedByBatch.has(row.batch_key)) capturedByBatch.set(row.batch_key, automationStudioRunDatasetCapturedFields(row.captured_fields_json));
+    return capturedByBatch.get(row.batch_key);
+  };
   const input = {
-    rows: collected.map((row) => ({ values: Object.assign(JSON.parse(row.row_json) as Record<string, unknown>, { [SOURCE_ROW]: row }), nodeId: row.node_id, batchKey: row.batch_key })),
+    rows: collected.map((row) => {
+      const captured = capturedOf(row);
+      return { values: Object.assign(JSON.parse(row.row_json) as Record<string, unknown>, { [SOURCE_ROW]: row }), nodeId: row.node_id, batchKey: row.batch_key, ...(captured === undefined ? {} : { captured }) };
+    }),
     schema,
     ...(process === undefined ? {} : { process }),
     now: now ?? Date.now()

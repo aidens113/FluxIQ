@@ -111,17 +111,19 @@ it("saved replay uses the same original reference/selection and full originals a
 });
 
 it("atomically invalidates an earlier answer when amended required evidence is missing, preserving collected records for repair", async () => {
-  const original = { id: "a", title: "A", price: "$2", date: "1 day ago" };
+  // Until t998 this used an absent `promoted` flag, but the batch captured `promoted`, so its absence now reads as
+  // "not shown" (t993, t998). Required evidence is missing here because the price the item shows cannot be read.
+  const original = { id: "a", title: "A", price: "ask", date: "1 day ago" };
   await store.appendBatch(batch({ process: processOf({ columns: ["title"] }), rows: [original] }));
   await store.processRunDatasets("run");
   expect((await store.getPage({ ...ids, retained: "answer" }))?.rows).toEqual([original]);
-  const amended = processOf({ where: [{ field: "promoted", equals: "true", not: true }], columns: ["title"] });
+  const amended = processOf({ where: [{ field: "price", atMost: 5 }], columns: ["title"] });
   await store.setProcess({ ...ids, process: amended });
   await expect(store.getPage({ ...ids, retained: "answer" })).rejects.toThrow("retained answer is not ready");
   expect(await sql("select answer_rows_retained, processed_at_ms, processing_json from run_datasets")).toEqual([{ answer_rows_retained: 0, processed_at_ms: null, processing_json: null }]);
   expect(await sql("select row_json from run_dataset_answer_rows")).toEqual([]);
   expect((await store.getPage({ ...ids, retained: "collected" }))?.rows).toEqual([original]);
-  const repaired = { ...original, promoted: false };
+  const repaired = { ...original, price: "$2" };
   await store.appendBatch(batch({ startsOver: true, attemptId: "repaired", batchKey: "repaired", process: amended, rows: [repaired] }));
   await store.processRunDatasets("run");
   expect((await store.getPage({ ...ids, retained: "answer" }))?.rows).toEqual([repaired]);
