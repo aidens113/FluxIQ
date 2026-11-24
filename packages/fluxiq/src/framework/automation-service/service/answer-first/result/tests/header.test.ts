@@ -33,7 +33,17 @@ describe("the result header", () => {
   it("says when the list moved on after the last page read, and when the first place is not among the pages", () => {
     const port = automationStudioAnswerFirstResultPort(SEAT_REQUEST);
     port.record([page(step(9), "c1", seats("C", 4), { place: "page=3", paging: MOVED })]);
-    expect(port.header()).toContain("the first place is not among them; the list moved on after page=3 and nothing after it was read");
+    expect(port.header()).toContain("the first place is not among them; a page follows page=3 (the list moved on), not read yet");
+  });
+
+  it("states the list's paging plainly: not yet checked before any check, a page follows, or ended, never unsettled after an end (t1013)", () => {
+    const port = automationStudioAnswerFirstResultPort(SEAT_REQUEST);
+    port.record([page(step(9), "c1", seats("A", 4), { place: "offset=0" })]);
+    expect(port.header()).toContain("paging after offset=0 not yet checked");
+    port.record([{ kind: "paging", stepId: "s9", paging: { verdict: "ended", reason: "no Next control on the list's own page" } }]);
+    expect(port.header()).toContain("the list ended after offset=0 (no Next control on the list's own page)");
+    expect(port.header()).not.toContain("not yet checked");
+    expect(port.header()).not.toContain("nothing has said");
   });
 
   it("says the columns are not certain where the reader was unsure, and names the step's own columns where none were named", () => {

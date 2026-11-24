@@ -40,11 +40,16 @@ export function automationStudioAnswerFirstResultApply(ledger: AutomationStudioA
   }
 }
 
-/** What the pager said after the step's most recently read page, said after that page was recorded. */
+/**
+ * What the pager said after the step's most recently read page, said after that page was recorded. Once the list moved
+ * on after that page, a later "ended" was seen on a page after it that no read of this step holds, so the page keeps
+ * "moved": a page follows it (t1013; ending it there would cut the list short with nobody noticing).
+ */
 function pagingSaid(ledger: AutomationStudioAnswerFirstResultLedger, stepId: string, paging: AutomationStudioAnswerFirstResultPaging): AutomationStudioAnswerFirstResultLedger {
   const step = automationStudioAnswerFirstResultStepHolder(ledger, stepId);
   if (!step?.pages.length) return ledger;
   const latest = Math.max(...step.pages.map((page) => page.seq));
+  if (paging.verdict === "ended" && step.pages.some((page) => page.seq === latest && page.paging?.verdict === "moved")) return ledger;
   const pages = step.pages.map((page) => (page.seq === latest ? { ...page, paging } : page));
   return automationStudioAnswerFirstResultWithStep(ledger, { ...step, pages });
 }

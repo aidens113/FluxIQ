@@ -162,6 +162,17 @@ describe("what the pager said after a page", () => {
     port.record([{ kind: "paging", stepId: "s9", paging: MOVED }]);
     expect(port.outputStep()?.pages.map((each) => each.paging)).toEqual([MOVED, undefined]);
   });
+
+  it("keeps a page that the list moved on from as moved when an end is said later, which was seen past it (t1013)", () => {
+    const port = automationStudioAnswerFirstResultPort(SEAT_REQUEST);
+    port.record([page(step(9), "c1", seats("A", 12), { place: "page=1" })]);
+    port.record([{ kind: "paging", stepId: "s9", paging: MOVED }]);
+    port.record([{ kind: "paging", stepId: "s9", paging: ENDED }]);
+    expect(port.outputStep()?.pages.map((each) => each.paging)).toEqual([MOVED]);
+    port.record([page(step(9), "c2", seats("B", 5), { place: "page=2" })]);
+    port.record([{ kind: "paging", stepId: "s9", paging: ENDED }]);
+    expect(port.outputStep()?.pages.map((each) => each.paging)).toEqual([MOVED, ENDED]);
+  });
 });
 
 describe("the output step", () => {

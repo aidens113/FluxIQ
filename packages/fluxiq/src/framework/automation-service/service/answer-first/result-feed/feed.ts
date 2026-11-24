@@ -10,6 +10,9 @@
 // - **A run's pass** (`passed`, the forward run's report, `../attempt/round.ts`): the read the chain just stored is that
 //   draft step's page; a step that moves a paging loop's list on says that list's paging (`moved`, or `ended` with the
 //   words it said).
+// - **A move of a list the model ran itself** (`called`, a call that read nothing): its answer's `listMove` names the
+//   list by its `listKey`, and every draft read step of that list gets the verdict on its latest page (`./list-move.ts`,
+//   t1013), so the header says a page follows, the list ended, or it is not yet checked.
 // - **A saved Flow's run** (`batches`, `../flow-run/flow-run.ts`): each record batch is a page of its node's draft step.
 // - **The draft** (`draft`, before every decision and before the save): each kept read step as it now reads, a look the
 //   draft took (`take`, or `add` of a look's step), and a read step that left. A draft step's ledger id is the call that
@@ -61,6 +64,7 @@ import { automationStudioAnswerFirstResultSourceState } from "./source-state.ts"
 import { automationStudioFlowBootstrapInstructionAsk } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { automationStudioAnswerFirstResultReplacements } from "./replacements.ts";
 import { readAutomationStudioAnswerFirstResultEvidence } from "./read-evidence.ts";
+import { automationStudioAnswerFirstListMoveOf, automationStudioAnswerFirstListMovePaging } from "./list-move.ts";
 
 /** What the latest decision says its call is: a step the draft adds as it runs, or a rerun of a kept step. Absent: a look. */
 export type AutomationStudioAnswerFirstResultIntent =
@@ -341,7 +345,12 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
         if (call.value.replay !== "reset") pass = read ? { read, call } : {};
         return undefined;
       }
-      if (!read) return undefined;
+      if (!read) {
+        // A move of a list on its own page settles that list's paging (`./list-move.ts`); any other call that read nothing changes nothing.
+        const move = automationStudioAnswerFirstListMoveOf(answer.evidence);
+        const paging = move ? automationStudioAnswerFirstListMovePaging(port.ledger(), move) : [];
+        return paging.length ? record(paging, before) : undefined;
+      }
       const now = intent;
       intent = undefined;
       if (now?.kind === "rerun") refreshed(idOf(now.step), read);
