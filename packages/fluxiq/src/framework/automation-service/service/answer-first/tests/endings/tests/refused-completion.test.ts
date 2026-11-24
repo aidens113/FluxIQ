@@ -102,12 +102,18 @@ describe("three refused completions in a row", () => {
 describe("new evidence between completions", () => {
   it("starts it again: a real read then a complete is judged again, and the ladder has not moved on", async () => {
     const library = fakeLibrary();
-    const more = (title: string, callId: string) => () => {
-      // A loan the page now shows: the same read on an unmoved page is answered from memory, and is no read.
+    // A loan the page now shows, looked at, then the Flow's read step run again (amend_draft rerun). The same read sent
+    // again on the same draft is refused unrun, however the page moved; this once passed only because a count of refused
+    // repeats ended the round and the fresh round's guard knew nothing. No count ends a round now (t1014), so the model
+    // looks and reruns its read step, the way the loop offers to read again.
+    const changed = (title: string, callId: string) => () => {
       library.loans.push({ title, due: "2030-02-01" });
       library.shelf = title;
-      return read(callId);
+      return toolCall(`look.${callId}`, "library.look", { shelf: title });
     };
+    // Each rerun names its own pass: the same amendment sent twice is refused unrun as the same amendment.
+    const rerunRead = (callId: string) => ({ kind: "amend_draft", amendments: [{ step: 2, change: "rerun", input: { parameters: { pass: callId } } }] });
+    const more = (title: string, callId: string) => [changed(title, callId), rerunRead(callId)];
     const attempt = await scriptedAttempt({
       taskProcessing: { process: {} },
       ...largeContext,
@@ -118,10 +124,10 @@ describe("new evidence between completions", () => {
         read(),
         complete("Listed."),
         complete("Listed, again."),
-        more("Dams and Weirs", "read.second"),
+        ...more("Dams and Weirs", "read.second"),
         complete("Listed more."),
         complete("Listed more, again."),
-        more("Eels of the Fens", "read.third"),
+        ...more("Eels of the Fens", "read.third"),
         complete("Listed them all.")
       ]
     }, cleanups);

@@ -74,7 +74,9 @@ describe("a round that cannot go on is not an ending", () => {
     expect(library.calls.filter((call) => call.value.replay === "reset")).toEqual([]);
   });
 
-  it("unreadable replies are a fresh round, and reach the result", async () => {
+  // t1014: no count of unreadable replies ends a round any more. The same unreadable reply again is a loop finding for the
+  // deciding role, steered and decided; only loop detection's last rung starts the fresh round, which is told what repeated.
+  it("unreadable replies sent the same way are caught as a loop, whose last rung is a fresh round told so, and reach the result", async () => {
     let unreadable = 0;
     let told = "";
     const attempt = await scriptedAttempt({
@@ -97,7 +99,9 @@ describe("a round that cannot go on is not an ending", () => {
     const answer = expectReached(attempt);
     expect(answer.result?.rows?.totalRows).toBe(3);
     expect(unreadable).toBeGreaterThan(1);
-    expect(told).toContain("unreadable");
+    expect(told).toContain("\"toolIds\":[\"evidence_tool_decision\"]");
+    expect(told).toContain("replies could not be read, each the same way");
+    expect(Object.values(answer.attempt.loopsCaught).reduce((sum, each) => sum + each.changeApproach, 0)).toBeGreaterThanOrEqual(1);
   });
 
   it("a provider silent then back is waited out with backoff, said in chat, with no act repeated", async () => {

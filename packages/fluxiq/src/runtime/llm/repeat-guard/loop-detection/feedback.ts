@@ -6,6 +6,20 @@
 
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioLlmLoopFinding, AutomationStudioLlmLoopPattern, AutomationStudioLlmLoopSignal, AutomationStudioLlmLoopUnchanged } from "./types.ts";
+import { AUTOMATION_STUDIO_LLM_LOOP_REFUSED_RUN_TOOL_ID } from "./refused-run.ts";
+import { AUTOMATION_STUDIO_LLM_LOOP_UNREADABLE_DECISION_TOOL_ID } from "./unreadable/index.ts";
+
+/**
+ * The completion check's entry (`../../evidence-loop/completion-check.ts`), which a completion refused again over the same
+ * draft is caught under (`../../evidence-loop/refused-again.ts`, t1014). Named here, not imported: loop detection sits
+ * below the evidence loop and imports nothing of it.
+ */
+const COMPLETION_CHECK_TOOL_ID = "core.completion_check";
+
+/** Whether a finding is about the model's own replies that could not be read (`./unreadable/`, t1014): no call ran, so none is refused. */
+function unreadable(finding: Pick<AutomationStudioLlmLoopFinding, "toolIds">): boolean {
+  return finding.toolIds.includes(AUTOMATION_STUDIO_LLM_LOOP_UNREADABLE_DECISION_TOOL_ID);
+}
 
 /** The entry a steer is shown under; a newer one replaces the older. */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CHECK_TOOL_ID = "core.loop_check";
@@ -39,6 +53,9 @@ export type AutomationStudioLlmLoopAudience = keyof typeof DO_INSTEAD;
 function repeated(finding: AutomationStudioLlmLoopFinding): string {
   const unchanged = finding.unchanged.map((word) => UNCHANGED_WORDS[word]).join(", ");
   const calls = finding.toolIds.join(", ");
+  if (unreadable(finding)) return `Your last ${finding.repeats} replies could not be read, each the same way as the one before: what could not be read, and where, is named in core.decision_check. Sending your reply the same way again will be read the same way.`;
+  if (finding.toolIds.includes(COMPLETION_CHECK_TOOL_ID)) return `You have completed ${finding.repeats} times over the same draft, and the check refused it the same way each time (what it said is in core.completion_check). Completing again unchanged will be refused the same way.`;
+  if (finding.toolIds.includes(AUTOMATION_STUDIO_LLM_LOOP_REFUSED_RUN_TOOL_ID)) return `Your last ${finding.repeats} decisions were refused, or changed nothing, for the same reason (named in core.refusal_run).`;
   if (finding.pattern === "near_repeat" && finding.replays) return `You have replayed the Flow's steps with ${calls} ${finding.repeats} times, from different steps, without the result changing, without a new run through to its end, and without trying to complete. Replaying from another step will not change that: complete with what the result holds if it answers the task, or change the steps that keep it from doing so.`;
   if (finding.pattern === "near_repeat" && finding.succeeded) return `You have made the same call to ${calls} ${finding.repeats} times, and it went through every time with the same result: ${unchanged}. Doing it again will bring the same result.`;
   if (finding.pattern === "near_repeat") return `You have made the same call to ${calls} on the same page ${finding.repeats} times, changing at most its wording, and it came to nothing: ${unchanged}.`;
@@ -55,6 +72,8 @@ function repeated(finding: AutomationStudioLlmLoopFinding): string {
  */
 export function automationStudioLlmLoopSteerNote(finding: AutomationStudioLlmLoopFinding, audience: AutomationStudioLlmLoopAudience, nextRefused = true, decide?: JsonObject): JsonObject {
   const then = decide ? String(decide.instruction) : DO_INSTEAD[audience];
+  // A reply that could not be read ran nothing, so nothing is refused before it runs: it is asked again, and told this (t1014).
+  const doingIt = unreadable(finding) ? "" : ` Doing the same again will do the same${nextRefused ? `, and the next one like it will be refused before it runs${decide ? " unless you decide to continue" : ""}` : ""}.`;
   return {
     ok: true,
     code: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_STEERED_CODE,
@@ -62,7 +81,7 @@ export function automationStudioLlmLoopSteerNote(finding: AutomationStudioLlmLoo
     repeats: finding.repeats,
     toolIds: [...finding.toolIds],
     unchanged: [...finding.unchanged],
-    instruction: `${repeated(finding)} Doing the same again will do the same${nextRefused ? `, and the next one like it will be refused before it runs${decide ? " unless you decide to continue" : ""}` : ""}. ${then}`,
+    instruction: `${repeated(finding)}${doingIt} ${then}`,
     ...(decide ? { decide } : {})
   };
 }
@@ -80,6 +99,8 @@ export function automationStudioLlmLoopRefusalInstruction(finding: { pattern: Au
 /** The chat step for a steer: a person's words, with no code in them. */
 export function automationStudioLlmLoopChatWords(finding: AutomationStudioLlmLoopFinding): { title: string; text: string } {
   const title = "Noticed it was repeating itself";
+  if (finding.toolIds.includes(AUTOMATION_STUDIO_LLM_LOOP_REFUSED_RUN_TOOL_ID)) return { title, text: `FluxIQ's last ${finding.repeats} steps were turned down for the same reason, so it is deciding how to go on differently.` };
+  if (unreadable(finding)) return { title, text: `FluxIQ's model sent a reply it could not read ${finding.repeats} times in a row, the same way each time, so it has been told exactly what to fix and is deciding how to go on.` };
   if (finding.pattern === "near_repeat" && finding.replays) return { title, text: `FluxIQ ran its saved steps again ${finding.repeats} times from different places and the result did not change, so it is deciding what to do next.` };
   if (finding.pattern === "near_repeat" && finding.succeeded) return { title, text: `FluxIQ did the same thing ${finding.repeats} times and got the same result each time, so it is deciding what to do next.` };
   if (finding.pattern === "near_repeat") return { title, text: `FluxIQ tried the same thing ${finding.repeats} times and nothing changed, so it is trying something else.` };

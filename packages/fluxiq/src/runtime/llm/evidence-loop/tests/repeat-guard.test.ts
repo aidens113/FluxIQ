@@ -8,6 +8,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
 import { runAutomationStudioLlmEvidenceLoop } from "../../index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID } from "../../evidence-loop.ts";
+import type { AutomationStudioLlmLoopSignal } from "../../repeat-guard/index.ts";
+import { automationStudioLlmEvidenceRefusedAgainEnds } from "../index.ts";
 
 const tools = [
   { toolId: "read", description: "Read the list in view.", inputSchema: { type: "object" }, effect: "observe" as const },
@@ -494,5 +496,59 @@ describe("a rerun sent as a check, then the same input as a plain call", () => {
     const sent = executeTool.mock.calls.map(([call]) => [call.value.node, call.value.replay ?? null]);
     expect(sent).toEqual([["web.output.dom-click", null], ["web.output.dom-type", "verify"], ["web.output.dom-type", null]]);
     expect(shownAt(decide, 3).some((entry) => entry.toolId === "core.repeat_check")).toBe(false);
+  });
+});
+
+// t1014 (user, 2026-11-24: "THERE SHOULDNT BE ANY ARBITRARY FUCKING CALL LIMIT THAT RANDOMLY JUST RESETS EVERYTHING"):
+// where the caller takes loop detection's signal, a completion refused again over the same draft no longer ends the
+// round on its count of refused repeats (`../refused-again.ts`): it is a finding on the ladder, and only the ladder ends it.
+describe("a completion refused again over the same draft, where the caller takes loop detection's signal (t1014)", () => {
+  type Ctx = Parameters<typeof automationStudioLlmEvidenceRefusedAgainEnds>[0];
+  const signal: AutomationStudioLlmLoopSignal = { kind: "change_approach", pattern: "near_repeat", repeats: 3, toolIds: ["core.completion_check"], unchanged: [], approaches: 1 };
+  const ctx = (loopSignal: boolean, due?: AutomationStudioLlmLoopSignal) => ({ input: loopSignal ? { loopSignal: () => "end" } : {}, loops: { due: () => due } }) as unknown as Ctx;
+
+  it("ends nothing below the count, and keeps the old ending for a caller with no signal", () => {
+    const caught = vi.fn();
+    const raise = vi.fn(() => "end" as const);
+    expect(automationStudioLlmEvidenceRefusedAgainEnds(ctx(true), 4, 2, { caught, raise })).toBe(false);
+    expect(automationStudioLlmEvidenceRefusedAgainEnds(ctx(false), 4, 3, { caught, raise })).toBe(true);
+    expect(caught).not.toHaveBeenCalled();
+  });
+
+  it("is caught on the ladder instead of ending the round, and ends it only on the ladder's own rung", () => {
+    const caught = vi.fn();
+    const raise = vi.fn(() => "end" as const);
+    expect(automationStudioLlmEvidenceRefusedAgainEnds(ctx(true), 7, 3, { caught, raise })).toBe(false);
+    expect(caught).toHaveBeenCalledWith(expect.anything(), 7, expect.objectContaining({ pattern: "near_repeat", repeats: 3, toolIds: ["core.completion_check"] }));
+    expect(raise).not.toHaveBeenCalled();
+    // The ladder's change of approach is due: raised as any other rung, and the round ends unless the caller goes on.
+    expect(automationStudioLlmEvidenceRefusedAgainEnds(ctx(true, signal), 9, 5, { caught, raise })).toBe(true);
+    expect(raise).toHaveBeenCalledWith(expect.anything(), 9, signal);
+    expect(automationStudioLlmEvidenceRefusedAgainEnds(ctx(true, signal), 10, 6, { caught, raise: () => "continue" })).toBe(false);
+  });
+
+  it("through the loop: the refused completion is caught as a repeat, and the round ends on loop detection's signal, not a bare stall", async () => {
+    const cycle = [partRun(0), complete, partRun(0)];
+    const decide = vi.fn();
+    for (const decision of builtDraft) decide.mockResolvedValueOnce(decision);
+    decide.mockImplementation(async () => {
+      const next = cycle[(decide.mock.calls.length - 3) % cycle.length]!;
+      return next.kind === "tool_call" ? { ...next, callId: `d${decide.mock.calls.length}` } : next;
+    });
+    const signals: AutomationStudioLlmLoopSignal[] = [];
+    const ran = runAutomationStudioLlmEvidenceLoop({
+      tools, decide, executeTool: requests(), maxIterations: 40, maxToolCalls: 40, propagateDecisionErrors: true, checkCompletion: refusingPlan,
+      unusableDecisions: { maxConsecutive: 30, stalled: () => stalledError },
+      loopSignal: (raised: AutomationStudioLlmLoopSignal) => {
+        signals.push(raised);
+        return "end";
+      }
+    } as Parameters<typeof runAutomationStudioLlmEvidenceLoop>[0]);
+
+    await expect(ran).rejects.toBe(stalledError);
+    expect(signals).toHaveLength(1);
+    expect(signals[0]).toMatchObject({ kind: "change_approach" });
+    const steered = decide.mock.calls.flatMap((_, index) => shownAt(decide, index).filter((entry) => entry.toolId === "core.loop_check").map((entry) => entry.value));
+    expect(steered.some((note) => JSON.stringify(note.toolIds) === JSON.stringify(["core.completion_check"]))).toBe(true);
   });
 });

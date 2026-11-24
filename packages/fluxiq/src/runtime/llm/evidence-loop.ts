@@ -20,7 +20,7 @@ import {
   automationStudioLlmEvidenceAnswerCheck,
   automationStudioLlmEvidenceAskedAgain, automationStudioLlmEvidenceClaimWrittenAct, automationStudioLlmEvidenceSecondCopyRefused,
   automationStudioLlmEvidenceHandleAmendment, automationStudioLlmEvidenceSettleHeldAmendments,
-  automationStudioLlmEvidenceHandleAnsweredRequest, automationStudioLlmEvidenceLoopCheck, automationStudioLlmEvidenceLoopOverdue, automationStudioLlmEvidenceLoopRan,
+  automationStudioLlmEvidenceHandleAnsweredRequest, automationStudioLlmEvidenceLoopCaught, automationStudioLlmEvidenceLoopCheck, automationStudioLlmEvidenceLoopOverdue, automationStudioLlmEvidenceLoopRaise, automationStudioLlmEvidenceLoopRan,
   automationStudioLlmEvidenceHandleRefusedRepeat, automationStudioLlmEvidenceRefusedCallRun, automationStudioLlmEvidenceRerunChangedNothing, automationStudioLlmEvidenceSearchingWithoutActing,
   automationStudioLlmEvidenceHandleCompletion, automationStudioLlmEvidenceHandleLoopDecision, automationStudioLlmEvidenceStallNow, AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID,
   automationStudioLlmEvidenceHandleFailedCall,
@@ -44,7 +44,7 @@ import {
   automationStudioLlmEvidenceLoopEmptyAccounting,
   automationStudioLlmEvidenceRedirectFacts,
   automationStudioLlmEvidenceLoopFailure as failure, automationStudioLlmEvidenceLoopToolSetIssue,
-  automationStudioLlmEvidenceNoProgress, automationStudioLlmEvidenceRefusalRun,
+  automationStudioLlmEvidenceNoProgress, automationStudioLlmEvidenceRefusalRun, automationStudioLlmEvidenceRefusedAgainEnds, automationStudioLlmEvidenceUnreadableReplies,
   automationStudioLlmEvidenceUnusedCallId, automationStudioLlmEvidenceOpeningCallId, automationStudioLlmEvidenceLoopProgressTrace, automationStudioLlmEvidenceFinalDecisionRow, automationStudioLlmEvidenceLoopPurse,
   type AutomationStudioLlmEvidenceLoopDecision, type AutomationStudioLlmEvidenceTool,
   type AutomationStudioLlmEvidenceLoopExhaustedBound,
@@ -78,9 +78,9 @@ import {
   type AutomationStudioLlmUnusableDecisionOffers, type AutomationStudioLlmUnusableDecisionUnknownTool,
   type AutomationStudioLlmUnusableDecisionFieldIssue
 } from "./unusable-decision.ts";
-import { automationStudioLlmReplyUnreadable, automationStudioLlmUnreadableReplies } from "../models/failures/index.ts";
+import { automationStudioLlmReplyUnreadable } from "../models/failures/index.ts";
 import { automationStudioLlmProviderUnanswered, automationStudioLlmProviderUnansweredCount } from "../models/failures/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW, AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID, automationStudioLlmEvidenceDraftKey, automationStudioLlmEvidenceRepeatGuard, automationStudioLlmEvidenceTimingOfNodes, automationStudioLlmLoopWatch } from "./repeat-guard/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID, automationStudioLlmEvidenceDraftKey, automationStudioLlmEvidenceRepeatGuard, automationStudioLlmEvidenceTimingOfNodes, automationStudioLlmLoopWatch } from "./repeat-guard/index.ts";
 import { createAutomationStudioLlmRerunProvenance, type AutomationStudioLlmRerunScope } from "./rerun-provenance/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_NODES_TOOL_ID } from "./node-reruns/index.ts";
 import { automationStudioLlmEvidenceBatchMember, automationStudioLlmEvidenceToolAdmission, automationStudioLlmEvidenceToolWithdrawal, automationStudioLlmPriorNodesLoop, automationStudioLlmPriorNodesSettlementContext, automationStudioLlmPriorNodesUnsettled } from "./prior-nodes/index.ts";
@@ -281,8 +281,8 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
     if (noProgress.sameIssuesAgain(issueSet) || sameDraftRefusedAgain) noProgress.stepped();
     else noProgress.restarted();
     recordRow(step, transition);
-    // It is also one more repeat refused in a row, beside the identical part runs it sat between (`repeat-guard/outcomes.ts`, run-musr9pv3-f4bf6256).
-    const repeatsStall = sameDraftRefusedAgain && handling.repeats.refusedAgain(step.iteration) >= AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW;
+    // It is also one more repeat refused in a row, beside the identical part runs it sat between (`repeat-guard/outcomes.ts`, run-musr9pv3-f4bf6256); with a loop signal, loop detection's ladder decides (`./evidence-loop/refused-again.ts`, t1014).
+    const repeatsStall = sameDraftRefusedAgain && automationStudioLlmEvidenceRefusedAgainEnds(handling, step.iteration, handling.repeats.refusedAgain(step.iteration), { caught: automationStudioLlmEvidenceLoopCaught, raise: automationStudioLlmEvidenceLoopRaise });
     if (!repeatsStall && !noProgress.reached() && counters.unusableInARow < limits.maxUnusableDecisionsInARow) {
       // A refused completion is the one stall the redirection has something
       // specific to say about: its issue codes are what stand between the
@@ -311,26 +311,18 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
     automationStudioLlmFailedDecisionFeedback({ iteration, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID, feedback, evidence, accountEvidence });
     return "ask_again";
   };
-  // A reply that arrived and could not be read (`./unreadable-reply.ts`): its own
-  // count, never the no-progress guard's -- the model repeated nothing -- asked
-  // again with the same context and a note of what could not be read, until an
-  // unbroken run of them ends the loop as exactly that.
-  const unreadable = automationStudioLlmUnreadableReplies(limits.maxUnreadableRepliesInARow);
+  // A reply that could not be read: asked again; a count ends it only with no loop signal, else a repeat is loop detection's (`./evidence-loop/unreadable-reply.ts`, t1014).
+  const unreadable = automationStudioLlmEvidenceUnreadableReplies({ loopSignal: input.loopSignal !== undefined, maxInARow: limits.maxUnreadableRepliesInARow, progress: () => ({ steps: noProgress.steps, max: limits.maxStepsWithoutProgress }), ended: (summary) => failure(draftSteps, "llm_evidence_loop.unreadable_replies", trace, accounting, undefined, summary),
+    record: (iteration, thrown) => {
+      history.record(iteration, { kind: "unusable", signature: automationStudioLlmDecisionContextSignature({ kind: "unusable", issueCodes: thrown.issueCodes }), issueCodes: thrown.issueCodes });
+      const usage = automationStudioLlmFailedDecisionUsage(thrown);
+      recordRow({ iteration, decision: "unusable", resultCode: thrown.issueCodes[0]!, ...(thrown.reply ? { resultReason: thrown.reply.case } : {}), ...(usage ? { usage } : {}) });
+    },
+    tell: (iteration, feedback) => automationStudioLlmFailedDecisionFeedback({ iteration, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID, feedback, evidence, accountEvidence }), caught: (iteration, finding) => automationStudioLlmEvidenceLoopCaught(handling, iteration, finding), overdue: (iteration) => handling.loopOverdue(iteration) });
   // A call that got no answer at all (`./unanswered-calls.ts`): nothing is
   // said to the model, which did nothing, and an unbroken run of them ends the
   // loop as an outage rather than as the model's stall.
   const unanswered = automationStudioLlmProviderUnansweredCount();
-  const unreadableReply = (iteration: number, thrown: AutomationStudioLlmUnusableDecisionError, offers: AutomationStudioLlmUnusableDecisionOffers): "ask_again" | AutomationStudioLlmEvidenceLoopResult => {
-    const { issueCodes, reply } = thrown;
-    const usage = automationStudioLlmFailedDecisionUsage(thrown instanceof AutomationStudioLlmUnusableDecisionError ? thrown : undefined);
-    const ended = unreadable.unread(reply?.case ?? issueCodes[0]!);
-    history.record(iteration, { kind: "unusable", signature: automationStudioLlmDecisionContextSignature({ kind: "unusable", issueCodes }), issueCodes });
-    recordRow({ iteration, decision: "unusable", resultCode: issueCodes[0]!, ...(reply ? { resultReason: reply.case } : {}), ...(usage ? { usage } : {}) });
-    if (ended) return failure(draftSteps, "llm_evidence_loop.unreadable_replies", trace, accounting, undefined, unreadable.summary());
-    const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes, stepsWithoutProgress: noProgress.steps, maxStepsWithoutProgress: limits.maxStepsWithoutProgress, offers, unreadable: { reply, inARow: unreadable.inARow, maxInARow: limits.maxUnreadableRepliesInARow } });
-    automationStudioLlmFailedDecisionFeedback({ iteration, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID, feedback, evidence, accountEvidence });
-    return "ask_again";
-  };
   // **A loop that ran out of turns ends as that, whatever its last decision
   // was** (`./evidence-loop/exhaustion.ts` says what the other reading cost and
   // which live run it was). Shared by every allowance that can run out: the
@@ -682,9 +674,17 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
       if (input.unusableDecisions && thrown instanceof AutomationStudioLlmUnusableDecisionError) {
         unanswered.answered(); // A reply arrived, unusable or not.
         if (automationStudioLlmReplyUnreadable(thrown.issueCodes)) {
-          const asked = unreadableReply(iteration, thrown, offers());
+          const asked = unreadable.reply(iteration, thrown, offers());
           if (asked === "ask_again") return { kind: "continue" };
-          return { kind: "complete", result: asked };
+          if ("ended" in asked) return { kind: "complete", result: asked.ended };
+          const rung = asked.overdue; // Loop detection's last rung on a repeated unreadable reply (t1014), ended as every rung ends a round.
+          if (rung.kind === "end") return { kind: "complete", result: rung.result };
+          if (rung.kind === "recover") {
+            const recovered = await recover(iteration, rung.call);
+            return recovered ? { kind: "complete", result: recovered } : { kind: "continue" };
+          }
+          if (!input.propagateDecisionErrors) return { kind: "complete", result: failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting) };
+          throw rung.error;
         }
         unreadable.readable();
         const refused = refuseDecision(iteration, thrown.issueCodes, offers(), unusableUsage, thrown.reply?.case, thrown.fieldIssues);

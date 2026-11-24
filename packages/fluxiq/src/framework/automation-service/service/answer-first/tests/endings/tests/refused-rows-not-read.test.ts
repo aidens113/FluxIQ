@@ -55,9 +55,10 @@ describe("rows asked for, completed with no read", () => {
     expect(attempt.library.renewals).toEqual({ card: 1 });
   });
 
-  // The round stalls after four refused completions in a row (the loop's no-progress guard); the fifth
-  // decision is the fresh round's first, and here it reads.
-  it("refused until its round stalls, its next round reads and reaches the result: the refusal never ends the attempt", async () => {
+  // Four refused completions in a row once stalled the round on a count, and the fifth decision was a fresh round's
+  // first. No count ends a round now (t1014): the repeat is caught by loop detection and steered, and the read comes in
+  // the same round, with everything it held.
+  it("refused again and again, is caught as a repeat rather than ending its round, reads in the same round and reaches the result", async () => {
     const told: string[] = [];
     const tell = (then: JsonObject) => (request: AutomationStudioLlmTaskRequest): JsonObject => {
       told.push(JSON.stringify(request.context.evidenceLoop?.evidence));
@@ -80,11 +81,12 @@ describe("rows asked for, completed with no read", () => {
     // Refused each time, without a judge, until the guard stepped in.
     expect(told.slice(0, 3).every((evidence) => evidence.includes(NOT_READ))).toBe(true);
     expect(told[2]).toContain("llm_evidence_loop.no_progress");
-    // The read was the first decision of a fresh round: nothing refused is in front of it.
-    expect(told[3]).not.toContain(NOT_READ);
+    // The read came in the same round, after the repeat was caught and steered: the refusals are still in front of it.
+    expect(told[3]).toContain(NOT_READ);
+    expect(told[3]).toContain("\"toolIds\":[\"core.completion_check\"]");
     const lines = attempt.said.map((line) => line.split(" | ")[0]);
-    expect(lines.filter((line) => line === "Carrying on")).toHaveLength(1);
-    expect(lines.indexOf("Carrying on")).toBeLessThan(lines.indexOf("Reading from the page"));
+    expect(lines.filter((line) => line === "Carrying on")).toHaveLength(0);
+    expect(lines).toContain("Noticed it was repeating itself");
     expect(attempt.answered.attempt.status).toBe("achieved");
     expect(attempt.answered.result).toMatchObject({ kind: "rows", label: "confirmed", timesChecked: 1 });
     expect(attempt.answered.result?.rows?.totalRows).toBe(3);

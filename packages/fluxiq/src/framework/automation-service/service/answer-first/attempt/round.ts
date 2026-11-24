@@ -6,7 +6,9 @@
 // A round holds nothing the next one needs but what is on the attempt: its seed is the draft
 // the last one left, read off each decision (`draft.acts`), so a loop that threw loses at most
 // the step it was on, and its opening look goes where the page stands. Only the arrival's tools
-// go to the start location, until the page has got there.
+// go to the start location, until the page has got there. A round after the first is shown,
+// after its note, every call the earlier rounds made and what each found, from the attempt's
+// trail and with no page view (`../earlier-rounds/`, t1014): its window starts fresh, never empty.
 //
 // The completion check sits outside the observer, as a candidate's does: the observer's
 // completion note is a build's ("it still has to run cleanly"), and this says its own check.
@@ -26,6 +28,7 @@ import { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_SENT_AGAIN_KEY } from "../../
 import { AUTOMATION_STUDIO_ANSWER_FIRST_COMPLETION_SCHEMA, AUTOMATION_STUDIO_ANSWER_FIRST_NOT_JUDGED_CODE, AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS, AUTOMATION_STUDIO_ANSWER_FIRST_SAME_EVIDENCE_CODE, automationStudioAnswerFirstResultHolds } from "../completion/index.ts";
 import { automationStudioAnswerFirstAddLoopsCaught, automationStudioAnswerFirstCompletionRefusedAgain, automationStudioAnswerFirstLoopSignal } from "../loop-signal/index.ts";
 import { automationStudioAnswerFirstDecide } from "./decide.ts";
+import { automationStudioAnswerFirstEarlierRounds } from "../earlier-rounds/index.ts";
 import { automationStudioAnswerFirstKeep } from "./keep.ts";
 import { automationStudioAnswerFirstResultProcessingExecutor, automationStudioAnswerFirstResultProcessingTools } from "../result-processing/index.ts";
 import { automationStudioAnswerFirstUnboundedPort } from "../person-waits/index.ts";
@@ -66,6 +69,9 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
   const startLocation = run.arrived ? undefined : input.startLocation;
   const acts = automationStudioFlowBootstrapDraftActs({ instructionText: input.instructionText, startLocation: input.startLocation, arrival: binding.runsNodes?.arrival, registry: input.registry, resolution: input.resolution, route: input.authority.route, activeInstructions: input.activeInstructions });
   let lasting: Promise<ReadonlySet<string>> | undefined;
+  // What the earlier rounds did and found, built once as this one starts (`../earlier-rounds/`, t1014): a fresh round reframes the conversation, never empties it.
+  // A carried-on attempt's first round is a fresh round too: its trail holds what the earlier segments did, across the restart.
+  const earlier = round.ordinal > 1 || run.prior !== undefined ?automationStudioAnswerFirstEarlierRounds({ trail: run.trail, observedStateKeys: options.observedStateKeys, deniedEvidenceKeys: binding.deniedEvidenceKeys, tokenLimits: input.provider.tokenLimits }) : undefined;
   const loop: AutomationStudioLlmEvidenceLoopInput = {
     ...input.limits.loop,
     // The purse's cost is what is told, and the only cost ending; a person's or a silence's wait is not the round's time.
@@ -126,6 +132,7 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
     decide: automationStudioAnswerFirstDecide(run, {
       ordinal: round.ordinal,
       note: round.note,
+      ...(earlier ? { earlier } : {}),
       provider: automationStudioLlmProviderWithDomainInstructions(input.provider.provider, automationStudioAnswerFirstSystemInstructions(binding.systemInstructions)),
       startLocation
     }),
