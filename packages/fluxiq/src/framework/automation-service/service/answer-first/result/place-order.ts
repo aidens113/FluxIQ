@@ -4,13 +4,18 @@
 //   re-read and then a run's page of the same place had been appended one after the other).
 // - **A numbered place** (`name=N`, as the domain's pager says it) goes before the first page of the same name with a
 //   higher number, so pages read out of order still stand in the list's order.
-// - **Any other place, or none,** is the next after the version's last place. With no place said, nothing here can
+// - **The same spot** (`../result-feed/place-of.ts`: the page a read ran on and how often its list has moved) is the same page
+//   read again, unless the pager named two different places for it. This is how a read the pager named no place for is told from a next page.
+// - **Any other place, or none,** is the next after the version's last place. With no place and no spot said, nothing here can
 //   tell a re-read from a next page, and none is guessed from the rows.
 import type { AutomationStudioAnswerFirstResultPage } from "./types.ts";
 
 const NUMBERED_PLACE = /^(page|offset)=(\d+)$/u;
 
 export function automationStudioAnswerFirstResultPlacePage(pages: readonly AutomationStudioAnswerFirstResultPage[], page: AutomationStudioAnswerFirstResultPage): AutomationStudioAnswerFirstResultPage[] {
+  // The same spot is the same page read again, unless the pager named two places for it: it stands where that page stood, with the place that page had.
+  const again = page.spot === undefined ? -1 : pages.findIndex((each) => each.spot === page.spot && (each.place === undefined || page.place === undefined || each.place === page.place));
+  if (again >= 0) return pages.map((each, index) => (index === again ? { ...page, place: page.place ?? each.place } : each));
   if (page.place !== undefined) {
     const at = pages.findIndex((each) => each.place === page.place);
     if (at >= 0) return pages.map((each, index) => (index === at ? page : each));
