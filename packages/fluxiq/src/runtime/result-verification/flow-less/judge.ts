@@ -57,6 +57,7 @@ import { automationStudioResultRecordsYesRefuted } from "../cited-yes/index.ts";
 import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES, automationStudioResultVerdict } from "../verdict/index.ts";
 import { automationStudioFlowLessScreenedWords } from "./screened-words.ts";
 import { automationStudioFlowLessJudgedSummary } from "./judged-summary.ts";
+import { automationStudioFlowLessJudgedNoFound } from "./judged-no-found.ts";
 import { automationStudioFlowLessSummaryFitting } from "./window-fitting.ts";
 import { automationStudioLlmUnreadableReplySaid } from "../../models/failures/index.ts";
 import {
@@ -238,7 +239,9 @@ function reading(result: AutomationStudioLlmTaskResult, read: AutomationStudioRu
   if (verdict.verdict === "answers") return { judgement: { verdict: "yes", reason: "It was judged to be what was asked for.", checkedWhat: checked(summary) } };
   if (verdict.verdict === "does_not_answer") {
     const said = readingWords(verdict.repair?.judgement);
-    return { judgement: { verdict: "no", reason: said ?? "It was judged not to be what was asked for.", checkedWhat: failed(summary, said) } };
+    // What it found wrong goes on to the model beside its words (`./judged-no-found.ts`, t1011).
+    const found = automationStudioFlowLessJudgedNoFound(verdict.repair);
+    return { judgement: { verdict: "no", reason: said ?? "It was judged not to be what was asked for.", checkedWhat: failed(summary, said), ...(found ? { found } : {}) } };
   }
   if (verdict.code === AUTOMATION_STUDIO_RESULT_VERDICT_CODES.yesCitationRefuted) {
     const refuted = verdict.yesCitations?.refuted ?? [];
