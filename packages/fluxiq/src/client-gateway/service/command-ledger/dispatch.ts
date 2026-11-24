@@ -109,7 +109,14 @@ export class ClientGatewayDurableDispatch {
       await entry.completion;
       return this.suppressed(entry, "uncertain_status"); }
     entry.phase = "reserved";
-    if (!entry.observer) entry.timer?.cancel();
+    // The answer came within its window, so the window is met, for a required
+    // (observed) command too: its receipt COMMIT and observer still run, but a
+    // stale answer deadline firing during them must not call an answered act
+    // uncertain (t1028; the 11-24 sweep stopped a run so after its event loop
+    // stalled ~2 s). That work stays bounded by the caller's abort signal,
+    // gateway close, and the runtime's own deadline, whose stop blocks the run
+    // before the observer can accept the completion.
+    entry.timer?.cancel();
     const receipt: ClientGatewayCommandReceipt = { schemaVersion: "gateway_command_receipt.v1", commandId: entry.claim.binding.commandId, requestDigest: entry.claim.requestDigest, clientId: entry.clientId, sessionId: entry.sessionId, status: result.status, receivedAt: this.ports.config.now(), resultDigest, redaction: "receipt_only", ...(result.status === "failed" ? { failureClass: "action_failed" as const } : {}) };
     entry.resolve({ result, receipt });
     const completed = await entry.completion;
