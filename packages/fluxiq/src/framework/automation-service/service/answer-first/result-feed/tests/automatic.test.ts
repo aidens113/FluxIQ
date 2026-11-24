@@ -22,12 +22,13 @@ it("falls back to whole allowed originals when a declared identity is incomplete
   expect(p.feed.rows().totalRows).toBe(2);
 });
 
-it("withholds rows and names the original source/operator when required negative or sort evidence is missing", () => {
+it("reads a captured flag the item does not show as a definite no, and withholds rows naming the source/operator when sort evidence is unreadable", () => {
+  // Until t993 this flag withheld the answer as missing evidence. The read captured `promoted` and this item does not
+  // show it, so the item is not promoted; a field a read never captured still withholds (`not-shown.test.ts`).
   const p = automaticFeed({ where: [{ field: "promoted", equals: "true", not: true }], columns: ["title"] });
   p.read("one", [{ id: "a", title: "Unknown", price: "$2" }]);
-  expect(p.feed.rows()).toMatchObject({ totalRows: 0, rows: [] });
-  expect(p.feed.rows().datasetId).toBeUndefined();
-  expect(p.feed.readiness()).toMatchObject({ state: "missing-evidence", reason: expect.stringContaining("where[0] promoted (missing) at source one") });
+  expect(p.feed.readiness()).toEqual({ state: "ready" });
+  expect(p.feed.rows()).toMatchObject({ datasetId: "step.one.v1", totalRows: 1, rows: [{ id: "a", title: "Unknown", price: "$2" }] });
   const sort = automaticFeed({ sort: [{ field: "Price", order: "asc" }], columns: ["Title"] });
   sort.read("two", [{ title: "Unreadable", price: "unknown" }]);
   expect(sort.feed.readiness()).toMatchObject({ state: "missing-evidence", reason: expect.stringContaining("sort[0] price (unreadable)") });
@@ -79,8 +80,12 @@ it("holds an explicit evidenced amendment, refuses model stamps/blind changes, a
   expect(p.feed.processingDeclaration()?.revision).toBe(2);
   expect(call({ process: { where: [{ field: "Price", atMost: 20 }], columns: ["Title"] } }).evidence).toMatchObject({ ok: true, changed: false });
   expect(p.feed.processingDeclaration()?.revision).toBe(2);
+  // Since t984 (e2b1f2635) an automatic declaration is written only into a record output the step already has, so a
+  // plain read step stays assemblable; this fixture's read declares none until the step is given one (t993).
+  expect(automationStudioAnswerFirstStepsWithResultProcessing(run)[0]).toEqual(p.steps[0]);
+  p.steps[0] = { ...p.steps[0]!, settings: { recordOutput: { datasetId: "read.one" } } };
   const saved = automationStudioAnswerFirstStepsWithResultProcessing(run);
-  expect(saved[0]?.input.parameters).toMatchObject({ recordOutput: { process: p.feed.boundProcessing() } });
+  expect(saved[0]?.input.parameters).toMatchObject({ recordOutput: { datasetId: "read.one", process: p.feed.boundProcessing() } });
   expect(run.trail).toHaveLength(4);
 });
 

@@ -71,6 +71,22 @@ cells or runs a second evaluation at ambient time. New processing sets the
 marker atomically with answer rows and its account; invalidation resets it.
 Failed processing rolls all of them back. Old public views remain readable.
 
+**A captured cell the item does not show (t993).** The row validator omits a
+field a row does not state, so a field of a batch's own schema that a row lacks,
+or holds blank, is a value the item did not show. Each collected row may carry
+`captured`, its batch's own stored field ids (`automationStudioRecordCapturedFields`).
+Automatic processing then reads such a cell as saved processing reads an absent
+value: `is: present` is false and `is: absent` true, every text, number, date and
+field comparison is false (`not` inverts a condition as before; a date bound or
+comparison never keeps a row it cannot read), a derived column follows its
+source, and a sort key or output column is empty and sorts last. Missing evidence
+remains for a field the row's own read never captured (an earlier, narrower
+batch), for any absent cell of a row with no `captured`, and for a present value
+that cannot be read. The answer-first result feed supplies `captured` from each
+page's own retained schema. The run-dataset store keeps no per-batch schema, so
+its end-of-run automatic answer does not supply it and still withholds over such
+cells; carrying a batch's field list there needs a stored column.
+
 Provider-free regression coverage belongs beside contracts, answer-first row
 ingestion, dataset storage and its migration. Tests use synthetic values and
 throwaway databases, including additive pages, stale-batch retries, migration,

@@ -13,7 +13,9 @@ describe("the declared result and published dataset are the same records", () =>
     const answer = p.feed.rows();
     expect(answer).toMatchObject({ datasetId: "step.s1.v1", totalRows: 3, rows: [row("B", 9), row("A"), row("C")] });
     await p.sink.publish(answer);
-    expect(p.sink.summary(answer.datasetId)).toEqual(answer);
+    // Since t982 (3b85dd9d0, P1 retained schemas) the summary also carries the schema the publication stored; a
+    // legacy answer has none of its own, so the publication's is its columns as JSON (t993).
+    expect(p.sink.summary(answer.datasetId)).toEqual({ ...answer, schema: { schemaVersion: "0.1", fields: answer.columns.map(({ id, label }) => ({ id, label, valueType: "json" })) } });
     expect(p.batches.at(-1)).toMatchObject({ writeMode: "replace", datasetId: "step.s1.v1", process: { dedupe: false }, rows: answer.rows });
     expect(p.feed.evidence().pages.map((page) => [page.source, page.step, page.version, page.place])).toEqual([["s3", "s1", 1, "page=1"], ["s1", "s1", 1, "page=2"]]);
   });
@@ -24,7 +26,8 @@ describe("the declared result and published dataset are the same records", () =>
     expect(p.feed.rows().rows).toEqual([row("A"), row("A")]);
     await p.sink.publish(p.feed.rows());
     expect(p.batches.at(-1)?.rows).toEqual([row("A"), row("A")]);
-    expect(p.batches.at(-1)?.process).toEqual({ dedupe: false });
+    // A publication names its displayed columns since t982 (3b85dd9d0), so a reader projects them from the full row (t993).
+    expect(p.batches.at(-1)?.process).toEqual({ dedupe: false, columns: ["title", "price"] });
   });
 
   it.each([{ dedupe: { by: ["title"] }, expected: 1 }, { dedupe: false, expected: 3 }])("respects declared dedupe $dedupe before projecting", async ({ dedupe, expected }) => {

@@ -205,17 +205,19 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
       const acts = input.acts();
       state.held = { rows, acts: acts.length };
       const readiness = await input.processingReadiness?.();
+      // A ready declared empty dataset has real source/schema evidence and explicitly permits zero rows. Its normal caller/judge check still decides task success.
+      const readyData = readiness?.state === "ready" && rows.datasetId !== undefined;
+      // Rows a look kept are not the result: the model is told which, and the one call that makes one a draft step (lane t905, D1).
+      // A result whose own pages kept no row is refused for that first: no data declaration can be applied without a page,
+      // so its processing refusal ("no retained schema") would name a consequence and hide the take (t993).
+      const empty = !readyData && rows.totalRows === 0 && (asks.records || (acts.length === 0 && answerText === undefined)) ? input.emptyResult?.() : undefined;
       if (readiness?.state === "missing-evidence") {
         state.achieved = false;
         state.takenUnverified = undefined;
         state.onRecord = undefined;
         state.confirmedBy = undefined;
-        return refused(readiness.code, readiness.reason);
+        return empty !== undefined ? refused(EMPTY_RESULT, empty) : refused(readiness.code, readiness.reason);
       }
-      // A ready declared empty dataset has real source/schema evidence and explicitly permits zero rows. Its normal caller/judge check still decides task success.
-      const readyData = readiness?.state === "ready" && rows.datasetId !== undefined;
-      // Rows a look kept are not the result: the model is told which, and the one call that makes one a draft step (lane t905, D1).
-      const empty = !readyData && rows.totalRows === 0 && (asks.records || (acts.length === 0 && answerText === undefined)) ? input.emptyResult?.() : undefined;
       if (empty !== undefined) return refused(EMPTY_RESULT, empty);
       if (!readyData && rows.totalRows === 0 && acts.length === 0 && answerText === undefined) return refused(NOTHING, "You have nothing to check yet: no read has returned a row, no lasting act is on the record, and you gave no answer. Get the result first, and complete when you have it.");
       if (asks.records && rows.totalRows === 0 && !input.readsRan()) return refused(ROWS_NOT_READ,WORDS.rowsNotRead(asks.quote));

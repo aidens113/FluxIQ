@@ -35,7 +35,7 @@
 //
 // Lines said away from a call (a run's passes, the draft's own changes) are told once, with the header, in the next
 // request's fixed slot (`slot`). Nothing here caps or cuts: every page holds every row its read kept.
-import { parseAutomationStudioRecordProcessing, type AutomationStudioRecordProcessing, type AutomationStudioRecordProcessingAccount, type AutomationStudioRecordSchema } from "@fluxiq/contracts/automation";
+import { automationStudioRecordCapturedFields, parseAutomationStudioRecordProcessing, type AutomationStudioRecordProcessing, type AutomationStudioRecordProcessingAccount, type AutomationStudioRecordSchema } from "@fluxiq/contracts/automation";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { stableJson } from "../../stable-json.ts";
 import type { AutomationStudioRecordBatch } from "../../../../../engine/automation/contracts.ts";
@@ -206,7 +206,13 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
       if (stage.active()) {
         sourceState.validate(baseEvidence(false), datasets);
         if (sourceState.reason() !== undefined) return EMPTY;
-        const evaluated = stage.evaluate({ ...(schema.ok ? { schema: schema.schema } : { schemaIssues: schema.issues }), rows: group.flatMap((step) => step.pages.flatMap((page) => page.kept.map((values) => ({ values, nodeId: step.id, batchKey: page.source })))), columns, askedColumns: port.ledger().contract.sure ? port.ledger().contract.columns : undefined });
+        const evaluated = stage.evaluate({ ...(schema.ok ? { schema: schema.schema } : { schemaIssues: schema.issues }), rows: group.flatMap((step) => step.pages.flatMap((page) => {
+          // What this page's own read captured, from its own schema: a captured field the item does not show is a definite
+          // "not shown", never missing evidence (t993). A page with no schema of its own captured nothing knowable.
+          const own = schemas.get(page.source);
+          const captured = own === undefined ? undefined : automationStudioRecordCapturedFields(own);
+          return page.kept.map((values) => ({ values, nodeId: step.id, batchKey: page.source, ...(captured === undefined ? {} : { captured }) }));
+        })), columns, askedColumns: port.ledger().contract.sure ? port.ledger().contract.columns : undefined });
         if (evaluated.processing && evaluated.account) account = { declared: evaluated.processing, account: evaluated.account };
         return evaluated.summary ? { datasetId, totalRows: evaluated.summary.rows.length, truncated: sources.some((source) => truncated.has(source)), ...evaluated.summary } : EMPTY;
       }
