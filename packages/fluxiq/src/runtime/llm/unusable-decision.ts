@@ -85,20 +85,31 @@ function acceptedDecision(offers: AutomationStudioLlmUnusableDecisionOffers | un
   };
 }
 
-/** What a tool call named that the decision did not offer (`./evidence-loop/decision-refusal.ts`), and what it could have named. */
-export type AutomationStudioLlmUnusableDecisionUnknownTool = { toolId: string; offered: readonly string[]; nearest?: string };
+/**
+ * What a tool call named that the decision did not offer (`./evidence-loop/decision-refusal.ts`), and what it could have
+ * named. `takenBy` is where the named id is a value an offered tool's input lists, not a tool (`./unknown-tool/refusal-of.ts`).
+ */
+export type AutomationStudioLlmUnusableDecisionUnknownTool = { toolId: string; offered: readonly string[]; nearest?: string; takenBy?: { toolId: string; key: string } };
 
 /** The most offered ids and characters of the asked id the model is shown back; the full list is already in the decision schema. */
 const UNKNOWN_TOOL_MAX_IDS = 40;
 const UNKNOWN_TOOL_MAX_ID_LENGTH = 80;
+/** An input key said back is a schema's key with the shape of a name, never anything longer. */
+const INPUT_KEY = /^[A-Za-z_$][\w$-]{0,40}$/u;
 
 /** What the model is told after it named a tool that was not offered. Ids only, each bounded. */
 function unknownToolInstruction(unknown: AutomationStudioLlmUnusableDecisionUnknownTool): string {
   const clip = (id: string): string => id.slice(0, UNKNOWN_TOOL_MAX_ID_LENGTH);
   const offered = unknown.offered.slice(0, UNKNOWN_TOOL_MAX_IDS).map(clip);
+  // t1025: an id that is a value an offered tool's input lists (a node's id where the tool that runs nodes goes) needs more than
+  // "the same call with that toolId", whose input would be the wrong one: what goes where is said whole.
+  const takenBy = Object.hasOwn(unknown, "takenBy") && unknown.takenBy && INPUT_KEY.test(unknown.takenBy.key) && typeof unknown.takenBy.toolId === "string" ? unknown.takenBy : undefined;
+  const nearest = takenBy
+    ? `"${clip(unknown.toolId)}" is not a tool but a value that "${clip(takenBy.toolId)}" takes in input.${takenBy.key}: call "${clip(takenBy.toolId)}" with input.${takenBy.key} "${clip(unknown.toolId)}" and the rest of its input as its input schema in the decision schema declares it. `
+    : unknown.nearest ? `The nearest to the one you gave is "${clip(unknown.nearest)}"; if that is what you meant, send the same call with that toolId. ` : "";
   return `There is no tool "${clip(unknown.toolId)}" to call, and nothing ran. `
     + (offered.length ? `The toolIds offered for this decision are: ${offered.map((id) => `"${id}"`).join(", ")}${unknown.offered.length > offered.length ? ", and more in the decision schema" : ""}. ` : "")
-    + (unknown.nearest ? `The nearest to the one you gave is "${clip(unknown.nearest)}"; if that is what you meant, send the same call with that toolId. ` : "")
+    + nearest
     + "Use a toolId exactly as the decision schema lists it.";
 }
 
