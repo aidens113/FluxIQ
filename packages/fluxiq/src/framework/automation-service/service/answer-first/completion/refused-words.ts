@@ -28,16 +28,20 @@ const NOT_NEW ="The check reads what you hold, never the draft, your summary or 
 const SAID: Readonly<Record<"no" | "unsure", string>> = Object.freeze({ no: "said no to", unsure: "could not confirm" });
 
 export const AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS = Object.freeze({
-  /** A judge's no or unsure, as the model reads it: its reason whole, what each defect it listed is fixed by where it listed any (`found`), then what would change it. */
-  judged: (reason: string, found = false): string => `${reason} ${found ? `${FOUND} ` : ""}${NEW_EVIDENCE}`,
+  /**
+   * A judge's no or unsure, as the model reads it: its reason whole, what each defect it listed is fixed by where it listed
+   * any (`found`), which named columns the rows it read lack and how the asked table becomes the result where they lack
+   * any (`columns`, `./result-columns.ts`, t1032), then what would change it.
+   */
+  judged: (reason: string, found = false, columns?: string): string => `${reason} ${found ? `${FOUND} ` : ""}${columns ? `${columns} ` : ""}${NEW_EVIDENCE}`,
 
   /** A request that asks for rows back, completed before any read ran (`./check.ts`, `rows_not_read`). `asked` is the person's own sentence, where Core found one. */
   rowsNotRead: (asked: string | undefined): string =>
     `The request asks for rows back${asked ? ` ("${asked}")` : ""}, and no read has run in this attempt, so this completion was not checked. Rows come only from a read of the page: words in answer are not rows, however they are laid out. Go to the page that shows the rows asked for, run the read there, and complete once it has returned them. If that read finds none, complete then: an empty read is a result the check can judge.`,
 
   /** A completion over what the check last refused: what that was about, what would change it, and what repeating it leads to. */
-  sameEvidence: (verdict: "no" | "unsure", reason: string, found = false): string =>
-    `This completion was refused without being checked: what you hold is exactly what the check last ${SAID[verdict]}, so it would answer the same. What it said: ${reason} ${found ? `${FOUND} ` : ""}${NEW_EVIDENCE} So get something new before you complete again: ${found ? "work on a defect it listed, or " : ""}go to where what the check could not see is shown, and look, read or act there. First decide how to go on with core.loop_decision where it is offered: change_approach and name the way, or finish_with_best only with a different result; ask_person, with one plain question for something genuinely impossible, only once the decision offers it. Completing again with nothing new stops this round, and the next must take a different way.`,
+  sameEvidence: (verdict: "no" | "unsure", reason: string, found = false, columns?: string): string =>
+    `This completion was refused without being checked: what you hold is exactly what the check last ${SAID[verdict]}, so it would answer the same. What it said: ${reason} ${found ? `${FOUND} ` : ""}${columns ? `${columns} ` : ""}${NEW_EVIDENCE} So get something new before you complete again: ${found ? "work on a defect it listed, or " : ""}go to where what the check could not see is shown, and look, read or act there. First decide how to go on with core.loop_decision where it is offered: change_approach and name the way, or finish_with_best only with a different result; ask_person, with one plain question for something genuinely impossible, only once the decision offers it. Completing again with nothing new stops this round, and the next must take a different way.`,
 
   /** Said when any of these comes again over one draft, in place of the loop's words for a check that reads the draft (`../../../../../runtime/llm/decision-handlers/completion.ts`). */
   sentAgain: NOT_NEW,

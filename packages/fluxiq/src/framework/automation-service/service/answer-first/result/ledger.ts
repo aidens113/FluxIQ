@@ -37,6 +37,8 @@ export function automationStudioAnswerFirstResultApply(ledger: AutomationStudioA
       return { ...ledger, looks: [...ledger.looks.filter((look) => look.source !== event.read.source), event.read] };
     case "take":
       return automationStudioAnswerFirstResultTake(ledger, event.source, event.step);
+    case "pager":
+      return { ...ledger, pagers: { ...ledger.pagers, [event.listKey]: event.pages } };
   }
 }
 

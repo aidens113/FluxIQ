@@ -80,6 +80,22 @@
 // `runtime/result-verification/flow-less/judged-no-found.ts`) beside its words, and the words say
 // what each kind of defect is fixed by (`./refused-words.ts`). The same evidence again is shown
 // them again. A caller's own check and an unsure name no defects, so they read as before.
+//
+// **A no or an unsure says which columns the rows lack (t1032).** Run `run-mwv5m906-5e999159` (0081, 0094): the request
+// named the columns of a table, the result was a read of another list with other columns, and two refusals said only
+// the check's prose. Where the request's named columns (read sure) are not all held by the rows the check read, every
+// refusal of a judge or a caller's check, and a refusal of the same evidence again, says which ones the rows lack and
+// how a read of the asked table becomes the result (`./result-columns.ts`). These words refuse nothing themselves; the
+// judge's yes over such rows is refused where it is weighed (`runtime/result-verification/cited-yes/records-yes.ts`).
+//
+// **Why the 0.8 yes at 0094 was held unsure (t1032).** Not for those rows. The judge's yes, no defects, came back
+// through `runtime/result-verification/verdict/result-verdict.ts`, which holds any yes unsure while the summary's
+// `evidenceProjection` names a gap (`semanticEvidenceMissing`). Every judge of that run, and all seven of
+// run-mwuxd2v9-33928ea3, carried gaps the web domain's projector made for calls it did not recognise: each structure
+// detection, and Core's own `core.set_result_processing` and `core.recall_result`. No act or read could clear them, so
+// no yes could stand, and the model was told only "could not tell". Now the web projector reads a detection, Core never
+// hands its own calls to a host (`runtime/result-verification/judge-evidence/core-call.ts`), a held yes says why
+// (`flow-less/judge.ts`), and a yes over rows that are not the table the request names is refused, never taken (`records-yes.ts`).
 
 import type { AutomationStudioAttemptAct } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../../../core/index.ts";
@@ -98,6 +114,7 @@ import { automationStudioAnswerFirstReadShapeOf } from "./read-shape.ts";
 import type { AutomationStudioAnswerFirstReplayRecord } from "./replay-record.ts";
 import { automationStudioAnswerFirstReplayStands, type AutomationStudioAnswerFirstReplayDeviation } from "./replay-stands.ts";
 import { automationStudioAnswerFirstReplayVerdictNote } from "./replay-verdict.ts";
+import { automationStudioAnswerFirstResultColumnsWords } from "./result-columns.ts";
 import type { AutomationStudioAnswerFirstResultReadiness } from "../result-feed/index.ts";
 
 /** A check that gave no answer: nothing was refused, so its words when it comes again differ (`AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS`). */
@@ -232,11 +249,13 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
       if (asks.records && rows.totalRows === 0 && !input.readsRan()) return refused(ROWS_NOT_READ,WORDS.rowsNotRead(asks.quote));
       const summary = await summaryOf(input, rows, acts, answerText);
       const digest = automationStudioFlowLessSummaryDigest(summary);
+      // Which columns the request names that the rows the check reads lack, and how the asked table becomes the result (header, t1032).
+      const columns = automationStudioAnswerFirstResultColumnsWords(input.instructions, rows);
       const earlier = refusals.get(digest);
       if (earlier) {
         state.refused = earlier;
         state.refusedAgain += 1;
-        return refused(SAME, WORDS.sameEvidence(earlier.verdict, earlier.reason, earlier.found !== undefined), earlier.found);
+        return refused(SAME, WORDS.sameEvidence(earlier.verdict, earlier.reason, earlier.found !== undefined, columns), earlier.found);
       }
       state.refusedAgain = 0;
       const confirm = input.confirm;
@@ -247,7 +266,7 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
         if (!checked.pass) {
           refuse({ verdict: "no", digest, reason: checked.reason });
           input.say("Not there yet", "The check did not pass this yet, so I am carrying on.");
-          return refused(CHECKED_NO, WORDS.judged(checked.reason));
+          return refused(CHECKED_NO, WORDS.judged(checked.reason, false, columns));
         }
         if (confirm.judge !== "always") {
           state.achieved = true;
@@ -308,7 +327,7 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
       const found = judged.verdict === "no" ? judged.found : undefined;
       refuse({ verdict: judged.verdict, digest, reason: judged.reason, ...(found ? { found } : {}) });
       input.say(judged.verdict === "no" ? "Not there yet" : "Could not confirm it yet", "The check did not confirm this yet, so I am carrying on.");
-      return refused(judged.verdict === "no" ? JUDGED_NO : JUDGED_UNSURE, WORDS.judged(judged.reason, found !== undefined), found);
+      return refused(judged.verdict === "no" ? JUDGED_NO : JUDGED_UNSURE, WORDS.judged(judged.reason, found !== undefined, columns), found);
     }
   };
 }

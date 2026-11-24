@@ -1,5 +1,6 @@
 import type { JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioJudgeEvidenceProjector } from "../../llm/harness-options/index.ts";
+import { automationStudioJudgeEvidenceIsCoreCall } from "./core-call.ts";
 import { automationStudioJudgeEvidenceResponse } from "./response.ts";
 
 type Input = Parameters<AutomationStudioJudgeEvidenceProjector>[0];
@@ -11,8 +12,12 @@ export type AutomationStudioJudgeEvidenceProjection = {
   withheld: boolean;
 };
 
-/** Project only host-declared semantic facts; unavailable or malformed projection never falls back to raw evidence. */
+/**
+ * Project only host-declared semantic facts; unavailable or malformed projection never falls back to raw evidence.
+ * Core's own tools are never handed to the host: an observation of no host facts and no gap (`./core-call.ts`, t1032).
+ */
 export function automationStudioProjectJudgeEvidence(input: Input, projector: AutomationStudioJudgeEvidenceProjector | undefined, deniedKeys: readonly string[] | undefined): AutomationStudioJudgeEvidenceProjection {
+  if (automationStudioJudgeEvidenceIsCoreCall(input.definitionId)) return { role: "observation", evidence: {}, missing: [], withheld: false };
   if (projector === undefined) return missing("judge_evidence.projector_missing");
   if (deniedKeys === undefined) return missing("judge_evidence.denied_keys_missing");
   let response: unknown;

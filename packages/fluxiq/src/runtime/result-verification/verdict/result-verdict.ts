@@ -58,7 +58,7 @@ export function automationStudioResultVerdict(input: AutomationStudioResultVerdi
     const answeredReading = { ...(read?.expected ? { expected: read.expected } : {}), ...(read?.observed ? { observed: read.observed } : {}) };
     // What the yes cited it checked, held to Core's record of the stored rows (`../cited-yes/`, t810); nothing where it cited none.
     // And where the caller asks, the yes stands on the rows held: cited, and counted as the site shows the answer (`../cited-yes/records-yes.ts`, t875). Its sentences lead.
-    const onRows = input.yesOnRows ? automationStudioResultRecordsYesRefuted(input.summary, input.diagnosis, input.summaryText) : [];
+    const onRows = input.yesOnRows ? automationStudioResultRecordsYesRefuted(input.summary, input.diagnosis, input.summaryText, input.askedColumns) : [];
     const cited = automationStudioResultYesCitations(input.summary, input.diagnosis?.checked);
     const citations = onRows.length ? { cited: cited?.cited ?? 0, refuted: [...onRows, ...(cited?.refuted ?? [])] } : cited;
     const yesCitations = citations ? { yesCitations: citations } : {};

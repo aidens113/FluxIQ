@@ -13,6 +13,9 @@
 // - **A move of a list the model ran itself** (`called`, a call that read nothing): its answer's `listMove` names the
 //   list by its `listKey`, and every draft read step of that list gets the verdict on its latest page (`./list-move.ts`,
 //   t1013), so the header says a page follows, the list ended, or it is not yet checked.
+// - **A list the domain found** (`called`, a call that read nothing): its answer's `listPaging` says, per list by its
+//   `listKey`, whether the list shows a way to another page (`./list-pager.ts`, t1032), so the header says a list with
+//   no pager holds one page instead of its paging being not yet checked.
 // - **A saved Flow's run** (`batches`, `../flow-run/flow-run.ts`): each record batch is a page of its node's draft step.
 // - **The draft** (`draft`, before every decision and before the save): each kept read step as it now reads, a look the
 //   draft took (`take`, or `add` of a look's step), and a read step that left. A draft step's ledger id is the call that
@@ -65,6 +68,7 @@ import { automationStudioFlowBootstrapInstructionAsk } from "../../../../../runt
 import { automationStudioAnswerFirstResultReplacements } from "./replacements.ts";
 import { readAutomationStudioAnswerFirstResultEvidence } from "./read-evidence.ts";
 import { automationStudioAnswerFirstListMoveOf, automationStudioAnswerFirstListMovePaging } from "./list-move.ts";
+import { automationStudioAnswerFirstListPagerEvents } from "./list-pager.ts";
 import { automationStudioAnswerFirstReadPlaces } from "./place-of.ts";
 
 /** What the latest decision says its call is: a step the draft adds as it runs, or a rerun of a kept step. Absent: a look. */
@@ -267,9 +271,19 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
       ...(processed ? processingEvidence() : {})
     };
   };
+  /**
+   * The header with the answer's row count and, where it holds rows, the columns processing left it: the header then
+   * says which columns the request names that the rows do not hold (`../result/header.ts`, t1032). `answerRows` is the
+   * caller's count where it gives one, which is the same answer's.
+   */
+  const answerHeader = (answerRows?: number): string => {
+    const now = rows();
+    return port.header(answerRows ?? now.totalRows, now.totalRows > 0 && now.columns.length ? now.columns.map((column) => column.id) : undefined);
+  };
 
   return {
-    port,
+    // Every header said through the feed carries the answer's own columns, the refused completion's included (`../attempt/round.ts`).
+    port: { ...port, header: (answerRows, answerColumns) => (answerColumns === undefined ? answerHeader(answerRows) : port.header(answerRows, answerColumns)) },
     idOf,
     processingDeclaration: stage.declaration,
     sourceUnavailable(reason, originalEvidence) {
@@ -349,10 +363,11 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
         return undefined;
       }
       if (!read) {
-        // A move of a list on its own page settles that list's paging (`./list-move.ts`); any other call that read nothing changes nothing.
+        // A move of a list on its own page settles that list's paging (`./list-move.ts`), and a list the domain found says
+        // whether it shows a pager at all (`./list-pager.ts`); any other call that read nothing changes nothing.
         const move = automationStudioAnswerFirstListMoveOf(answer.evidence);
         if (move?.verdict === "moved") places.moved(move.listKey);
-        const paging = move ? automationStudioAnswerFirstListMovePaging(port.ledger(), move) : [];
+        const paging = [...(move ? automationStudioAnswerFirstListMovePaging(port.ledger(), move) : []), ...automationStudioAnswerFirstListPagerEvents(answer.evidence)];
         return paging.length ? record(paging, before) : undefined;
       }
       const now = intent;
@@ -368,7 +383,12 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
       const held = pass;
       pass = undefined;
       if (held?.read) {
-        const read = places.spotted({ ...held.read, version: automationStudioAnswerFirstResultVersionOf(step.input, held.read.version.listKey) }, idOf(step));
+        // A pass reads its step's list: where its answer names none (a replay's `readRows` carries no `listKey`), the list is
+        // the one the step reads, never another, so the replay of the step on the page it read is that page again
+        // (`./place-of.ts`). Run-mwv5m906-5e999159's replay of step 6 named no list, took another spot, and came back as
+        // a second page, "unplaced read 1", beside offset=0: one page of 8 rows counted as 2 pages of 16 (t1032).
+        const listKey = held.read.version.listKey ?? automationStudioAnswerFirstResultStepHolder(port.ledger(), idOf(step))?.reads.listKey;
+        const read = places.spotted({ ...held.read, version: automationStudioAnswerFirstResultVersionOf(step.input, listKey) }, idOf(step));
         refreshed(idOf(step), read);
         told(record([{ kind: "page", step: refOf(step), read }], undefined, held.call));
         return;
@@ -431,7 +451,7 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
     },
     slot() {
       const lines = said.splice(0);
-      const header = port.header(rows().totalRows);
+      const header = answerHeader();
       const sourceMissing = sourceState.reason();
       const readiness = input.publicationTrackingComplete === false ? { state: "missing-evidence", reason: PUBLICATION_TRACKING_MISSING } : sourceMissing ? { state: "missing-evidence", reason: sourceMissing } : legacyRefusal ? { state: "missing-evidence", reason: legacyRefusal } : stage.readiness();
       const missing = readiness.state === "missing-evidence" ? ` Data processing needs evidence: ${readiness.reason}` : "";

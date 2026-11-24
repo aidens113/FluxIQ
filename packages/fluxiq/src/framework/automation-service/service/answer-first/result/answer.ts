@@ -9,6 +9,7 @@
 // throw away a column that may be the named one under another name, which only the judge can weigh. An unsure or
 // empty contract narrows nothing.
 import type { JsonObject } from "../../../../../core/index.ts";
+import { automationStudioResultHeldColumn } from "../../../../../runtime/result-verification/index.ts";
 import { automationStudioAnswerFirstResultOutputGroup } from "./output-group.ts";
 import type { AutomationStudioAnswerFirstResultLedger } from "./types.ts";
 
@@ -21,7 +22,7 @@ export function automationStudioAnswerFirstResultAnswer(ledger: AutomationStudio
   const held = [...new Set([...group.flatMap((step) => Object.keys(step.reads.fields)), ...kept.flatMap((row) => Object.keys(row))])];
   const contract = ledger.contract;
   if (!contract.sure || !contract.columns.length) return { rows: [...kept], columns: held, unmatched: [] };
-  const matched = contract.columns.map((column) => held.find((key) => key === column) ?? held.find((key) => loose(key) === loose(column)));
+  const matched = contract.columns.map((column) => automationStudioResultHeldColumn(column, held));
   const unmatched = contract.columns.filter((_, index) => matched[index] === undefined);
   if (unmatched.length) return { rows: [...kept], columns: held, unmatched };
   const rows = kept.map((row) => {
@@ -33,8 +34,4 @@ export function automationStudioAnswerFirstResultAnswer(ledger: AutomationStudio
     return narrowed;
   });
   return { rows, columns: [...contract.columns], unmatched: [] };
-}
-
-function loose(name: string): string {
-  return name.toLowerCase().replace(/[\s_-]+/gu, "");
 }
