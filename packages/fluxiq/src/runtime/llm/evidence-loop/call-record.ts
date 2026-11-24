@@ -77,6 +77,6 @@ export function automationStudioLlmEvidenceCallRecord(
     ...(declared?.conditions === undefined ? {} : { conditions: declared.conditions.map((entry) => ({ kept: entry.kept, rejected: entry.rejected, keptValues: [...entry.keptValues] })) }),
     // The options that stood chosen as the press found it, already screened on the parse path; the checklist counts a
     // choice the act's step ran with standing as done by it (`../../flow-authoring/bootstrap/instructed-acts/standing-option.ts`, t1023).
-    ...(declared?.chosen === undefined ? {} : { chosen: declared.chosen.map((option) => ({ key: option.key, words: option.words })) })
+    ...(declared?.chosen === undefined ? {} : { chosen: declared.chosen.map((option) => ({ key: option.key, words: option.words, ...(option.at ? { at: structuredClone(option.at) } : {}) })) })
   };
 }

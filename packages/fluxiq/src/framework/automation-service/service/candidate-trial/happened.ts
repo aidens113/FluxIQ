@@ -10,6 +10,8 @@
 // (`record_output.*`) names `recordOutput`, and both point at the step's
 // `issues`, which list what its node refused (`./step-issues.ts`).
 
+import { AUTOMATION_STUDIO_OPTION_NOT_CHOSEN_CODE_END } from "../../../../runtime/flow-authoring/bootstrap/instructed-acts/index.ts";
+
 /** Core's plain sentence for each failure category (`@fluxiq/contracts` `AUTOMATION_STUDIO_ADAPTIVE_FAILURE_CLASSES`). */
 const HAPPENED: Readonly<Record<string, string>> = Object.freeze({
   action_failed: "The step ran and did not work.",
@@ -38,6 +40,13 @@ const RECORD_OUTPUT = /^record_output\./u;
 const RECORD_OUTPUT_SAID = "The step's recordOutput was refused as written, so no rows were saved; issues lists each part refused, with the field it names and the names it can use where known. Change the step's recordOutput or its read to match.";
 
 /**
+ * An act refused unrun because an option its Flow was saved with does not stand
+ * chosen on the page (`requiresChosen`, t1030): its category is a step that
+ * cannot run, so the run routes by page state, and "not found" would be untrue.
+ */
+const OPTION_NOT_CHOSEN_SAID = "The step did not run: an option it was saved with does not stand chosen on the page, so it would have acted with another. A step before it has to choose that option.";
+
+/**
  * What happened to a step that failed, in Core's words for the failure's
  * category, or for its code where the category alone would say something
  * untrue (header); an unknown category reads as a step that did not work.
@@ -47,5 +56,6 @@ export function automationStudioTrialFailureHappened(category: string, code?: st
     if (NODE_UNAVAILABLE.test(code)) return NODE_UNAVAILABLE_SAID;
     if (RECORD_OUTPUT.test(code)) return RECORD_OUTPUT_SAID;
   }
+  if (category === "target_not_found" && code?.split(".").at(-1) === AUTOMATION_STUDIO_OPTION_NOT_CHOSEN_CODE_END) return OPTION_NOT_CHOSEN_SAID;
   return HAPPENED[category] ?? HAPPENED.action_failed!;
 }
