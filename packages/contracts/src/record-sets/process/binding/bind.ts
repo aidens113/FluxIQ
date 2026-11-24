@@ -1,11 +1,14 @@
 import { isPlainRecord } from "../../is-plain-record.ts";
 import type { AutomationStudioRecordSchema } from "../../schema.ts";
-import { foldedText } from "../cell-text.ts";
 import { parseAutomationStudioRecordProcessing } from "../parse-processing.ts";
 import { AUTOMATION_STUDIO_RECORD_FIELD_COMPARISONS } from "../processing-vocabulary.ts";
+import { automationStudioRecordBindingNameKey } from "./name-key.ts";
 import type { AutomationStudioRecordProcessingBinding } from "./result.ts";
 
-/** Binds exact ids or unique normalized labels, then uses the existing strict processing parser. */
+/**
+ * Binds exact ids or unique normalized labels (case, spaces, `_` and `-` aside: `./name-key.ts`), then uses the
+ * existing strict processing parser.
+ */
 export function bindAutomationStudioRecordProcessing(value: unknown, schema: AutomationStudioRecordSchema): AutomationStudioRecordProcessingBinding {
   if (!isPlainRecord(value)) {
     const parsed = parseAutomationStudioRecordProcessing(value, schema);
@@ -21,7 +24,7 @@ export function bindAutomationStudioRecordProcessing(value: unknown, schema: Aut
     if (typeof written !== "string") return written;
     const exact = schema.fields.find((field) => field.id === written);
     if (!exact && allowDerived && derived.has(written)) return written;
-    const matches = exact ? [exact] : schema.fields.filter((field) => foldedText(field.label) === foldedText(written));
+    const matches = exact ? [exact] : schema.fields.filter((field) => automationStudioRecordBindingNameKey(field.label) === automationStudioRecordBindingNameKey(written));
     const field = matches.length === 1 ? matches[0] : undefined;
     const reason = matches.length === 0 ? "missing" : matches.length > 1 ? "ambiguous" : field?.handling === "exclude" ? "excluded" : undefined;
     if (reason) {
