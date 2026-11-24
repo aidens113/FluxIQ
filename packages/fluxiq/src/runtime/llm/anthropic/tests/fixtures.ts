@@ -22,12 +22,16 @@ export function decisionRequest(): AutomationStudioLlmTaskRequest {
   return { ...base, context: { ...base.context, taskKind: "evidence_tool_decision", promptVersion: base.promptVersion, evidenceLoop: { iteration: 1, tools, evidence: [], canComplete: false, completionSchema, decisionSchema: buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools, completionSchema, false) } } };
 }
 
+// The model the replies below claim to come from: the provider's unnamed default, Haiku (t1012). A file that pins another model on purpose names it here too.
+export let fixtureModel: "claude-haiku-5-5" | "claude-sonnet-5-5" = "claude-haiku-5-5";
+export function useFixtureModel(model: typeof fixtureModel): void { fixtureModel = model; }
+
 export function textFor(value: unknown, task = request()): string {
-  return JSON.stringify(automationStudioAnthropicRequest(task, "claude-sonnet-5-5").format.jsonText ? { result_json: JSON.stringify(value) } : value);
+  return JSON.stringify(automationStudioAnthropicRequest(task, fixtureModel).format.jsonText ? { result_json: JSON.stringify(value) } : value);
 }
 
 export function envelope(text = textFor(DIAGNOSIS), overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return { id: "msg_test", type: "message", role: "assistant", model: "claude-sonnet-5-5", content: [{ type: "text", text }], stop_reason: "end_turn", usage: USAGE, ...overrides };
+  return { id: "msg_test", type: "message", role: "assistant", model: fixtureModel, content: [{ type: "text", text }], stop_reason: "end_turn", usage: USAGE, ...overrides };
 }
 
 export function jsonReply(value = envelope(), status = 200): Response {
