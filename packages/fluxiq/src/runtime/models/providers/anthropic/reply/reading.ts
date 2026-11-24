@@ -25,6 +25,15 @@ export function automationStudioAnthropicReadReply(text: string, jsonText: boole
   if (typeof inner !== "string") return refuse(text, "envelope_shape");
   const decoded = automationStudioAnthropicReplyJson(inner);
   if (!decoded.ok) return refuse(inner);
+  // The envelope again inside the envelope (run-mwuxd2v9-33928ea3 step 74, t1025): the transport's own one key, around
+  // the same answer once more. No answer is that object, so it is opened once more, as an outer envelope is.
+  if (isRecord(decoded.value) && Object.keys(decoded.value).length === 1 && "result_json" in decoded.value) {
+    const nested = decoded.value.result_json;
+    if (isRecord(nested)) return nested;
+    if (typeof nested !== "string") return refuse(inner, "envelope_shape");
+    const again = automationStudioAnthropicReplyJson(nested);
+    return again.ok ? again.value : refuse(nested);
+  }
   // An answer encoded twice is decoded once more.
   if (typeof decoded.value === "string") {
     const again = automationStudioAnthropicReplyJson(decoded.value);
