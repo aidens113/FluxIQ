@@ -89,3 +89,23 @@ describe("the note after the person answered a stuck attempt", () => {
     expect(automationStudioAnswerFirstRoundNote(answered([]), {})?.personSaid).toBeUndefined();
   });
 });
+
+// t1011's follow-up, taken into t1008: a fresh round dropped the judge's defects and kept only its reason, so the
+// model was told the result was refused but not what in it was wrong.
+describe("the note on a completion the check refused", () => {
+  const refusedWith = (found: object | undefined) => ({
+    ...runThatFailed(undefined),
+    completion: { state: { refused: { verdict: "no", reason: "Two rows are not the asked kind.", ...(found ? { found } : {}) } } }
+  }) as unknown as AutomationStudioAnswerFirstAttemptRun;
+  const lastCheck = (run: AutomationStudioAnswerFirstAttemptRun) => automationStudioAnswerFirstRoundNote(run, undefined)?.lastCheck;
+
+  it("carries the check's defects beside its verdict and reason", () => {
+    const defects = [{ row: 2, field: "kind", said: "not the asked kind" }];
+    expect(lastCheck(refusedWith({ defects }))).toEqual({ verdict: "no", reason: "Two rows are not the asked kind.", defects });
+  });
+
+  it("says no defects where the check named none", () => {
+    expect(lastCheck(refusedWith({ defects: [] }))).toEqual({ verdict: "no", reason: "Two rows are not the asked kind." });
+    expect(lastCheck(refusedWith(undefined))).toEqual({ verdict: "no", reason: "Two rows are not the asked kind." });
+  });
+});

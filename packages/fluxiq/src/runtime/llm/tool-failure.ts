@@ -85,7 +85,7 @@ export function automationStudioLlmEvidenceToolFailure(input: {
     toolId: input.toolId,
     ...(input.step === undefined ? {} : { step: input.step }),
     stepsWithoutProgress: input.stepsWithoutProgress,
-    maxStepsWithoutProgress: input.maxStepsWithoutProgress,
+    ...(Number.isFinite(input.maxStepsWithoutProgress) ? { maxStepsWithoutProgress: input.maxStepsWithoutProgress } : {}), // None where no count ends the loop (t1008).
     instruction: input.step === undefined ? TOOL_FAILURE_INSTRUCTION : `${TOOL_FAILURE_INSTRUCTION} ${failedStep(input.step)}`
   };
 }

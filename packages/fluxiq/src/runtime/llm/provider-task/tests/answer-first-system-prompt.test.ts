@@ -20,6 +20,24 @@ describe("the answer-first system prompt", () => {
     expect(automationStudioLlmTaskSystemPrompt(request({ ...decision, domainInstructions: { domainId: "web", text: "Domain." } }))).toContain(GOAL);
   });
 
+  // t1008 (run-mwufisf0-5535f5f5): told to prefer looking and never to act only to see more, a live
+  // exploration described and searched for ninety calls and never pressed the control that opened what it needed.
+  it("leaves a build's restraint on acting out of the exploration's decisions, and only there", () => {
+    const restraint = ["prefer observation over mutation", "Use a mutating tool only when its state change is necessary", "Do not call a mutating tool merely to unlock another observation"];
+    const decision = { taskKind: "evidence_tool_decision" };
+    const exploration = automationStudioLlmTaskSystemPrompt(request({ ...decision, domainInstructions: { domainId: "fluxiq.answer-first", text: "Role." } }));
+    for (const words of restraint) {
+      expect(AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION).toContain(words);
+      expect(exploration).not.toContain(words);
+      expect(automationStudioLlmTaskSystemPrompt(request(decision))).toContain(words);
+      expect(automationStudioLlmTaskSystemPrompt(request({ ...decision, domainInstructions: { domainId: "web", text: "Domain." } }))).toContain(words);
+    }
+    // The rest of Core's rules still hold for the exploration.
+    expect(exploration).toContain("Do not select a tool merely because one remains available.");
+    expect(exploration).toContain("Never mutate merely to perform an eventual workflow step");
+    expect(exploration).toContain("Repeating an observation with different parameters is not progress.");
+  });
+
   it("conditions automatic processing guidance and preserves action filtering in emitted decisions", () => {
     for (const domainInstructions of [undefined, { domainId: "fluxiq.answer-first", text: "Role." }]) {
       const prompt = automationStudioLlmTaskSystemPrompt(request({ taskKind: "evidence_tool_decision", ...(domainInstructions ? { domainInstructions } : {}) }));

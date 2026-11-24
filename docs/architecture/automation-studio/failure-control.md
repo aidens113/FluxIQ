@@ -178,6 +178,20 @@ a validated temporary failure, a trial whose gate bounds its own re-tests, a rer
 (measured as its amendment), a check, a written step and a member of a prior-node
 batch are never counted as repeats, though what they bring still counts as progress.
 
+**No count ends a loop with a `loopSignal`** (user, 2026-11-24: "THERE SHOULDNT BE ANY
+ARBITRARY FUCKING CALL LIMIT THAT RANDOMLY JUST RESETS EVERYTHING"; t1008). The answer-first
+rounds are such loops, and a round that ended on a count started the next with an empty
+evidence window: run-mwufisf0-5535f5f5 ended four rounds in a row on its eighth look, and each
+fresh round looked at the same things again. So `resolveLimits` (`../../../packages/fluxiq/src/runtime/llm/loop-configuration.ts`,
+`uncounted`) lifts the turns, calls, edits, steps without progress and unusable replies in a
+row for such a loop, after checking them as given, and the no-progress redirect stops counting
+down. Eight looks in a row are no stall there: the run of looks is caught as a `no_progress`
+finding (`decision-handlers/searching.ts`), steered with the model's loop decision, and each
+further look that brings nothing climbs the ladder. Where the model chose `change_approach` on
+a stretch of looks alone, each further look that brings nothing, run or answered from memory,
+counts as a refusal does (`watch.ts`); an act or an edit is the different kind of step and ends
+that. Only the result, the purse, a person's Stop and loop detection's own last rung end a round.
+
 **With no `loopSignal`** a loop keeps steer and refuse, and no signal is raised. It
 ends only the ways it always could: a ladder refusal counts in the existing run of
 refused repeats, which stalls as it always has at three in a row. No lane adds a new

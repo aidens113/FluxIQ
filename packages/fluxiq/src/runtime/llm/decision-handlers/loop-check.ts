@@ -110,6 +110,12 @@ export function automationStudioLlmEvidenceLoopRan(context: AutomationStudioLlmE
   return before.steered === context.loops.tally().steered ? context.loopOverdue(iteration) : undefined;
 }
 
+/** A repeat the loop found from what it already counts, outside the detector (a run of looks, `./searching.ts`, t1008): steered as the detector's own are, or counted on the ladder where a steer already stands. */
+export function automationStudioLlmEvidenceLoopCaught(context: AutomationStudioLlmEvidenceDecisionHandlerContext, iteration: number, finding: AutomationStudioLlmLoopFinding): void {
+  const steered = context.loops.caught(finding);
+  if (steered) steer(context, iteration, steered);
+}
+
 /** An edit settled: the steer that follows from it, if any. */
 export function automationStudioLlmEvidenceLoopAmended(context: AutomationStudioLlmEvidenceDecisionHandlerContext, iteration: number, amendment: AutomationStudioLlmLoopAmendment): void {
   const finding = context.loops.amended(amendment);

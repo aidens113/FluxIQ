@@ -86,7 +86,7 @@ export function automationStudioLlmEvidenceAnsweredRequestNote(input: {
     ...(lastActionBefore ? { lastActionBefore: { ...lastActionBefore } } : {}),
     ...(pageUnchanged ? { pageUnchanged } : {}),
     stepsWithoutProgress: input.stepsWithoutProgress,
-    maxStepsWithoutProgress: input.maxStepsWithoutProgress,
+    ...(Number.isFinite(input.maxStepsWithoutProgress) ? { maxStepsWithoutProgress: input.maxStepsWithoutProgress } : {}), // None where no count ends the loop (t1008).
     ...(input.discoveryOnly && input.candidate ? { candidate: { ...input.candidate } } : {}),
     instruction: instruction(input)
   };

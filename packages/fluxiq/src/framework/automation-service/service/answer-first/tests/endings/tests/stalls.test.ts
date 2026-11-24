@@ -50,25 +50,27 @@ describe("a round that cannot go on is not an ending", () => {
     expect(kept?.tried.tried.some((entry) => entry.toolId === "core.run_node" && entry.outcome === "failed")).toBe(true);
   });
 
-  it("the iteration limit is a fresh round from the page as it stands, and reaches the result", async () => {
+  // t1008 (user, 2026-11-24: "THERE SHOULDNT BE ANY ARBITRARY FUCKING CALL LIMIT THAT RANDOMLY JUST RESETS EVERYTHING").
+  // A round once ran out of turns at the configured count and the next started with an empty evidence window.
+  it("no count of turns ends a round: work past the configured calls goes on in the same round, and reaches the result", async () => {
     const library = fakeLibrary();
     let moved = 0;
     const notes: string[] = [];
     const decide = (request: AutomationStudioLlmTaskRequest) => {
       const note = noteOf(request);
-      if (note) {
-        notes.push(JSON.stringify(note));
-        return notes.length === 1 ? runNode("read", READ_LOANS, {}, [], { add: true }) : complete("Listed.");
+      if (note) notes.push(JSON.stringify(note));
+      if (moved < 9) {
+        library.shelf = `shelf ${(moved += 1)}`;
+        return toolCall(`look.${moved}`, LOOK_TOOL, { shelf: moved });
       }
-      library.shelf = `shelf ${(moved += 1)}`;
-      return toolCall(`look.${moved}`, LOOK_TOOL, { shelf: moved });
+      return moved++ === 9 ? runNode("read", READ_LOANS, {}, [], { add: true }) : complete("Listed.");
     };
     const attempt = await scriptedAttempt({ taskProcessing: { process: {} }, library, resolver: { maxCallsPerRun: 5 }, before: noWaiting(), script: Array.from({ length: 80 }, () => decide) }, cleanups);
     const answer = expectReached(attempt);
     expect(answer.result?.rows?.totalRows).toBe(3);
-    expect(notes[0]).toContain("carriedOver");
-    expect(notes[0]).toContain("ran out of turns");
-    expect(attempt.said.some((line) => line.includes("Carrying on"))).toBe(true);
+    // One round: no fresh round's note was ever shown, and nothing said it carried on.
+    expect(notes).toEqual([]);
+    expect(attempt.said.some((line) => line.includes("Carrying on"))).toBe(false);
     expect(library.calls.filter((call) => call.value.replay === "reset")).toEqual([]);
   });
 
