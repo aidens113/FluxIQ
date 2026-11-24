@@ -44,7 +44,7 @@ const waitUntil = async (holds: () => boolean): Promise<void> => {
   for (let tries = 0; tries < 2_000 && !holds(); tries += 1) await new Promise((resolve) => setTimeout(resolve, 10));
   expect(holds()).toBe(true);
 };
-/** Core offers ask_person only as a last resort (t969): after the model changed approach, and the ladder climbed or had nothing to climb. */
+/** Core offers ask_person only as a last resort (t969, t1000): after the model changed approach and the repeat was caught again; there is no ladder (U1). */
 const askOffered = (shown: string): boolean => /"offered":\[[^\]]*"ask_person"/u.test(shown);
 /** The model's answers when asked to decide: change approach first, since asking the person is not offered yet; and, once it is, ask the person, naming what is impossible; nothing after. */
 const asksOnce = () => {

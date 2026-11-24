@@ -41,7 +41,10 @@
 // gave. A check whose reply arrived and could not be read is now asked again
 // while its replies stay unreadable (`./unreadable-asks/`): each such ask
 // carries a short note of what could not be read, last in what the judge is
-// shown so a cached prefix still holds. Every re-ask stays on the same model.
+// shown so a cached prefix still holds, and names where a reply off the schema
+// parted from it (t1000). The same unreadable reply again is a loop for the
+// judge role, caught and steered in that note as every role's loop is
+// (`./unreadable-asks/steer.ts`, t1000). Every re-ask stays on the same model.
 // The purse, the run's budget and the verification's
 // deadline end it, nothing else: the deadline now stops this loop too, through
 // the signal it hands its judge (`./deadline.ts`), so an abandoned check never
@@ -510,8 +513,10 @@ async function askOnce(
   // The forms of the judge's copy, whole first, and the first that fits the judging model's window by a conservative
   // measure; a refusal for size steps down one form, never read as no answer while one is left (`./run-trail/window.ts`, t965).
   // After an unreadable reply, every form carries the note on what could not be read, last (`./unreadable-asks/note.ts`, t979).
+  // The same unreadable reply again is a loop, steered in the same note (`./unreadable-asks/steer.ts`, t1000).
   const noted = unreadable.said;
-  const forms = [judged, ...automationStudioResultTrailFitting(judged)].map((each) => (noted === undefined ? each : automationStudioResultSummaryWithUnreadableNote(each, noted)));
+  const steer = unreadable.steer;
+  const forms = [judged, ...automationStudioResultTrailFitting(judged)].map((each) => (noted === undefined ? each : automationStudioResultSummaryWithUnreadableNote(each, noted, steer)));
   let form = automationStudioResultSummaryFormForWindow(forms, request.tokenLimits, Buffer.byteLength(request.instructions.map((instruction) => instruction.body).join(" "), "utf8"));
   const harnessed = () => runAutomationStudioLlmHarness({
     taskKind: "loop_verification",
@@ -570,7 +575,7 @@ async function askOnce(
   // A cut yes its whole fields do not carry was cut off, as an unreadable reply is (t653); any other unreadable reply says what it was (t979).
   const unread = aborted ? undefined : unreadYes ? automationStudioLlmUnreadableReplySaid({ issueCodes: [CUT_REPLY_CODE] }) : response || result.providerInvocation === "not_attempted" ? undefined : automationStudioResultUnreadableReplySaid(result.diagnostics);
   // An unreadable ask says so on its own intervention (`verificationUnreadable`), for a caller whose deadline ends the check (`./build-test/judge.ts`).
-  const intervention = { ...result.intervention, metadata: { ...(result.intervention.metadata ?? {}), source: VERIFICATION_SOURCE, verificationCheck: check, ...(ask > 1 ? { verificationAsk: ask } : {}), ...(reask ? { verificationReask: true } : {}), ...(evidenceRecheck ? { verificationEvidenceRecheck: true } : {}), ...(truncatedAfterVerdict ? { truncatedAfterVerdict: true } : {}), ...(unreadable.inARow > 0 ? { verificationAfterUnreadable: unreadable.inARow } : {}), ...(unread !== undefined ? { verificationUnreadable: true } : {}) } };
+  const intervention = { ...result.intervention, metadata: { ...(result.intervention.metadata ?? {}), source: VERIFICATION_SOURCE, verificationCheck: check, ...(ask > 1 ? { verificationAsk: ask } : {}), ...(reask ? { verificationReask: true } : {}), ...(evidenceRecheck ? { verificationEvidenceRecheck: true } : {}), ...(truncatedAfterVerdict ? { truncatedAfterVerdict: true } : {}), ...(unreadable.inARow > 0 ? { verificationAfterUnreadable: unreadable.inARow } : {}), ...(unreadable.repeat ? { verificationUnreadableRepeats: unreadable.repeat.repeats } : {}), ...(unread !== undefined ? { verificationUnreadable: true } : {}) } };
   if (aborted) return { verification, intervention, temporary: false };
   if (unread !== undefined) return { verification, intervention, temporary: false, unread };
   return { verification, intervention, temporary: !response && askAgainAfter(firstError(result.diagnostics)) };

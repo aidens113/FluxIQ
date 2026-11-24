@@ -220,12 +220,97 @@ describe("a judge continuing the decider's conversation whose reply could not be
       expect(text(retried)).toContain("unreadableReply");
       const notes = readdirSync(directory).filter((folder) => folder.endsWith("-note")).map((folder) => (JSON.parse(readFileSync(join(directory, folder, "meta.json"), "utf8")) as { line: string }).line);
       expect(notes.some((note) => note.includes("asked again on its own request, in its own answer format, on the same model"))).toBe(true);
-      expect(notes.some((note) => note.includes("asked again on the same model with a note"))).toBe(true);
+      // Both replies stopped part-way through the same way: the second is the same unreadable reply again, a loop for the
+      // judge, caught and steered on the same model (t1000; before t1000 it was only asked again with a note).
+      expect(notes.some((note) => note.includes("the same way as the reply before it, so it is caught as repeating itself and asked again on the same model"))).toBe(true);
+      expect(text(retried)).toContain("You have sent the same unreadable reply 2 times in a row");
       // Each judge's step meta says which way it went: the standalone asks say why they did not continue (t979).
       const judged = readdirSync(directory).filter((folder) => folder.endsWith("-judge")).sort().map((folder) => (JSON.parse(readFileSync(join(directory, folder, "meta.json"), "utf8")) as { continuation?: unknown }).continuation);
       expect(judged).toEqual([{ used: true, reason: "continues_the_decider" }, { used: false, reason: "standalone_after_unreadable" }, { used: false, reason: "standalone_after_unreadable" }]);
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
+  });
+});
+
+// t1000: the same unreadable reply again is a loop for the judge role. t994 (W1) saw a scripted judge whose yes lacked one
+// required field asked again 2,399 times in 90 s: each re-ask said only that the reply did not fit, so nothing could
+// change, and nothing noticed the repeat. Now each re-ask names where the reply parted from the schema, and the same
+// unreadable reply again is caught and steered as every role's loop is, on the same model, with no cap and no wait.
+describe("a judge that sends the same unreadable reply again", () => {
+  const MISSES = [{ path: "response.diagnosis.defects", rule: "is missing, and it must be there" }];
+  /** A reply that was sound JSON off the schema, by path and rule alone, as the Anthropic adapter reports it. */
+  const offShape = (): never => {
+    throw new AutomationStudioLlmProviderError("llm.provider_output_invalid", "Reply did not fit the schema.", false, 200, undefined, undefined, undefined, { case: "content_off_shape", misses: MISSES });
+  };
+  /** A provider answering off the schema `unreadable` times, then `answer`. */
+  const scripted = (unreadable: number, answer: Record<string, unknown> = NO_DIAGNOSIS) => {
+    const seen: AutomationStudioLlmTaskRequest[] = [];
+    const provider: AutomationStudioLlmProvider = {
+      metadata: { provider: "mock", model: "claude-haiku-5-5" },
+      estimateCostUsd: () => 0.001,
+      runTask: async (request) => {
+        seen.push(request);
+        if (seen.length <= unreadable) return offShape();
+        return { response: { kind: "diagnosis", summary: "Judged.", diagnosis: answer }, usage: USAGE } as Awaited<ReturnType<AutomationStudioLlmProvider["runTask"]>>;
+      }
+    };
+    return { provider, seen };
+  };
+  const note = (request: AutomationStudioLlmTaskRequest | undefined): string => String(request?.context.resultSummary?.unreadableReply ?? "");
+
+  it("names where the reply parted from the schema, so the next reply can change, and a re-ask that parses settles as a first answer would", async () => {
+    const { provider, seen } = scripted(1);
+    const plain = await judge(scripted(0).provider);
+    expect(await judge(provider)).toEqual(plain);
+    expect(seen).toHaveLength(2);
+    expect(note(seen[1])).toContain("it was JSON, but it did not fit the answer asked for: response.diagnosis.defects is missing, and it must be there.");
+    // One unreadable reply is no loop: nothing is steered.
+    expect(note(seen[1])).not.toContain("same unreadable reply");
+  });
+
+  it("is caught as repeating itself and steered: told what it repeated, how often, and the judge's decision, on the same model", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "t1000-judge-loop-"));
+    process.env.FLUXIQ_LLM_STEP_LOG_DIR = directory;
+    try {
+      const { provider, seen } = scripted(3);
+      expect(await judge(provider)).toMatchObject({ verdict: "no" });
+      expect(seen).toHaveLength(4);
+      expect(seen.every((request) => request.context.resultSummary !== undefined)).toBe(true);
+      // After the first: what could not be read, and no steer yet.
+      expect(note(seen[1])).not.toContain("same unreadable reply");
+      // After the second, the same way: a loop, steered with the count and the decisions the judge may make.
+      expect(note(seen[2])).toContain("response.diagnosis.defects is missing, and it must be there");
+      expect(note(seen[2])).toContain("You have sent the same unreadable reply 2 times in a row");
+      expect(note(seen[2])).toContain("change_approach");
+      expect(note(seen[2])).toContain("finish_with_best");
+      expect(note(seen[2])).not.toContain("ask_person");
+      expect(note(seen[3])).toContain("the same unreadable reply 3 times in a row");
+      // Recorded as every role's loop is: a `loop` step folder per steer, and the step log's note says so.
+      const loops = readdirSync(directory).filter((folder) => folder.endsWith("-loop")).map((folder) => JSON.parse(readFileSync(join(directory, folder, "meta.json"), "utf8")) as { rung: string; pattern: string; repeats: number; toolIds: string[] });
+      expect(loops).toEqual([expect.objectContaining({ rung: "steer", pattern: "exact_repeat", repeats: 2, toolIds: ["loop_verification"] }), expect.objectContaining({ rung: "steer", pattern: "exact_repeat", repeats: 3 })]);
+      const notes = readdirSync(directory).filter((folder) => folder.endsWith("-note")).map((folder) => (JSON.parse(readFileSync(join(directory, folder, "meta.json"), "utf8")) as { line: string }).line);
+      expect(notes.filter((line) => line.includes("caught as repeating itself"))).toHaveLength(2);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("a different unreadable reply in between is not the same reply again", async () => {
+    let calls = 0;
+    const seen: AutomationStudioLlmTaskRequest[] = [];
+    const provider: AutomationStudioLlmProvider = {
+      metadata: { provider: "mock", model: "claude-haiku-5-5" },
+      runTask: async (request) => {
+        seen.push(request);
+        calls += 1;
+        if (calls === 1) return offShape();
+        if (calls === 2) throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "Reply was not JSON.", false, 200, undefined, undefined, undefined, { case: "content_unclosed" });
+        return { response: { kind: "diagnosis", summary: "Judged.", diagnosis: NO_DIAGNOSIS }, usage: USAGE } as Awaited<ReturnType<AutomationStudioLlmProvider["runTask"]>>;
+      }
+    };
+    expect(await judge(provider)).toMatchObject({ verdict: "no" });
+    expect(note(seen[2])).toContain("the JSON object never closed");
+    expect(note(seen[2])).not.toContain("same unreadable reply");
   });
 });

@@ -270,9 +270,11 @@ describe("an attempt stuck in a loop", () => {
     let changed = false;
     const decide = (request: AutomationStudioLlmTaskRequest) => {
       if (decision && !decided && asksDecision(request)) {
-        // Where asking the person is not offered the model changes approach first. Since t983 (U1, 002650596,
-        // `runtime/llm/loop-decision/options.ts`) it is offered from the first catch, gated by its stated why, not by a
-        // changed approach or a climb.
+        // Asking the person is a last resort (t969; the user, 2026-11-19: "it seems to be asking the user too quickly for
+        // input", and "ONLY stop and ask user for feedback if its legit impossible"): offered only once the model changed
+        // approach and the repeat came back (`runtime/llm/loop-decision/options.ts`). Where it is not offered the model
+        // changes approach first, then keeps repeating so the loop persists. t983 (002650596) dropped this gate with the
+        // model ladder and t994 re-pinned this test to that; t1000 restored the gate without the ladder part.
         if (!/"offered":\[[^\]]*"ask_person"/u.test(JSON.stringify(request.context.evidenceLoop?.evidence))) {
           if (changed) return runNode("read.stuck", READ_LOANS, { from: "the wrong list" }, [], {});
           changed = true;
@@ -319,8 +321,8 @@ describe("an attempt stuck in a loop", () => {
     const kept = await keptAttempt(service, projectId, flowId);
     expect(kept?.attempt.status).toBe("working");
     expect(kept?.attempt).not.toHaveProperty("waitingFor");
-    // Changed by t983 (U1, 002650596): ask_person is offered at the first catch, so the model's own decision is the only one.
-    expect(kept?.tried.decisions?.map((each) => each.decision)).toEqual(["ask_person"]);
+    // The model changed approach before the person was offered (t1000 brief, restoring t969 after t983 and t994).
+    expect(kept?.tried.decisions?.map((each) => each.decision)).toEqual(["change_approach", "ask_person"]);
     await service.conversations.answerAsk({ projectId, askId: ask.askId, kind: "text", value: ANSWER });
     steer.release();
     const attempt = await generating;

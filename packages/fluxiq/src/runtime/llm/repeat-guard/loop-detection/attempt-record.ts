@@ -78,6 +78,12 @@ export type AutomationStudioLlmLoopAttemptRecord = {
   noted(finding: AutomationStudioLlmLoopFinding): void;
   /** The repeat caught last, in this attempt; not kept on its row. */
   readonly lastNoted: AutomationStudioLlmLoopFinding | undefined;
+  /**
+   * A repeat was caught (`noted`) after the latest change of approach, the model's `change_approach` or a fresh
+   * approach (`approachChanged`): the loop persists. What `ask_person` waits for (`../../loop-decision/options.ts`).
+   * Not kept on the row: a carried-on attempt has to be caught again before it may ask.
+   */
+  readonly persisting: boolean;
   /** The attempt's model ladder. */
   readonly ladder: AutomationStudioLlmModelLadder;
   data(): AutomationStudioLlmLoopAttemptRecordData;
@@ -89,6 +95,7 @@ export function automationStudioLlmLoopAttemptRecord(seed?: AutomationStudioLlmL
   let approaches = seed?.approaches ?? 0;
   let stoppedOn: AutomationStudioLlmLoopStoppedOn | undefined;
   let lastNoted: AutomationStudioLlmLoopFinding | undefined;
+  let persisting = false;
   const decisions: AutomationStudioLlmLoopDecided[] = (seed?.decisions ?? []).map((decided) => ({ ...decided }));
   const ladder = options?.ladder ?? automationStudioLlmModelLadder(seed?.ladder);
   return {
@@ -106,14 +113,20 @@ export function automationStudioLlmLoopAttemptRecord(seed?: AutomationStudioLlmL
       const entry = entries.get(key);
       if (entry) entries.set(key, { ...entry, pattern });
     },
-    approachChanged: () => (approaches += 1),
+    approachChanged: () => {
+      persisting = false;
+      return (approaches += 1);
+    },
     get approaches() { return approaches; },
     noted(finding) {
       lastNoted = { ...finding, toolIds: [...finding.toolIds], unchanged: [...finding.unchanged] };
+      persisting = true;
     },
     get lastNoted() { return lastNoted; },
+    get persisting() { return persisting; },
     decided(decided) {
       decisions.push({ ...decided });
+      if (decided.decision === "change_approach") persisting = false;
     },
     stopped(finding) {
       stoppedOn = { pattern: finding.pattern, repeats: finding.repeats, toolIds: [...finding.toolIds] };

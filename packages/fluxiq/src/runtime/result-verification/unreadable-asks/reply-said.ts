@@ -26,7 +26,12 @@ export function automationStudioResultUnreadableReplySaid(diagnostics: readonly 
   // A reply Core's checks refused was JSON that did not fit the answer asked for.
   if (provider.length === 0) return automationStudioLlmUnreadableReplySaid({ case: "content_off_shape" });
   const reply = errors.map((diagnostic) => providerReply(diagnostic.metadata)).find((account) => account !== undefined);
-  return automationStudioLlmUnreadableReplySaid({ case: reply?.case, issueCodes: provider });
+  const said = automationStudioLlmUnreadableReplySaid({ case: reply?.case, issueCodes: provider });
+  // Where the reply parts from the schema, by path and rule (t1000): "it did not fit" alone left the next reply nothing to
+  // change, and a scripted judge missing one required field was asked again 2,399 times in 90 s (t994, W1). The account
+  // carries only schema keys and schema rules, bounded where it was read (`automationStudioLlmProviderReplyAccount`).
+  const misses = reply?.misses ?? [];
+  return misses.length === 0 ? said : `${said}: ${misses.map((miss) => `${miss.path} ${miss.rule}`).join("; ")}`;
 }
 
 /** The reply account the harness carries on a provider failure's diagnostic (`../../llm/harness/run.ts`, `providerReply`). */
