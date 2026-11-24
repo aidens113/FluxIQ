@@ -103,13 +103,13 @@ describe("AutomationStudioProjectRunDatasetStore", () => {
     const triggers = await query<{ name: string }>(pool, "select name from sqlite_master where type = 'trigger' and tbl_name = 'run_datasets' order by name");
     expect(triggers.map((row) => row.name)).toEqual(["fk_run_datasets_run_id_insert", "fk_run_datasets_run_id_update"]);
     const batchColumns = await query<{ name: string }>(pool, "pragma table_info(run_dataset_batches)");
-    expect(batchColumns.map((column) => column.name)).toEqual(["run_id", "dataset_id", "batch_key", "attempt_id", "node_id", "row_count", "invalid_count", "truncated", "created_at_ms", "updated_at_ms", "evidence_json", "receipt_digest"]);
+    expect(batchColumns.map((column) => column.name)).toEqual(["run_id", "dataset_id", "batch_key", "attempt_id", "node_id", "row_count", "invalid_count", "truncated", "created_at_ms", "updated_at_ms", "evidence_json", "receipt_digest", "captured_fields_json"]);
     const rowColumns = await query<{ name: string }>(pool, "pragma table_info(run_dataset_rows)");
     expect(rowColumns.map((column) => column.name)).toEqual(["run_id", "dataset_id", "ordinal", "attempt_id", "batch_key", "row_json"]);
 
     const legacyPool = new AutomationStudioProjectDatabasePool({ rootDir: path.join(rootDir, "legacy") });
     const lease = await legacyPool.acquire("project.legacy");
-    await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations: AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS.filter((migration) => migration.id !== "0019_run_datasets" && migration.id !== "0024_run_dataset_answers" && migration.id !== "0036_run_dataset_evidence" && migration.id !== "0040_run_dataset_exclusions") }).migrate();
+    await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations: AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS.filter((migration) => migration.id !== "0019_run_datasets" && migration.id !== "0024_run_dataset_answers" && migration.id !== "0036_run_dataset_evidence" && migration.id !== "0040_run_dataset_exclusions" && migration.id !== "0041_run_dataset_captured_fields") }).migrate();
     await expect(lease.database.get("select name from sqlite_master where name = 'run_datasets'")).resolves.toBeUndefined();
     const legacyStore = await AutomationStudioProjectRunDatasetStore.open({ pool: legacyPool, projectId: "project.legacy" });
     await expect(lease.database.get("select migration_id from automation_schema_migrations where migration_id = '0019_run_datasets'")).resolves.toEqual({ migration_id: "0019_run_datasets" });

@@ -25,7 +25,7 @@ import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatab
 import { automationStudioFilterHash, automationStudioPageLimit, decodeAutomationStudioPageCursor, encodeAutomationStudioPageCursor } from "../paging.ts";
 import { AutomationStudioSchemaMigrationRunner } from "../schema-migrations.ts";
 import { automationStudioRecordSchemaOfColumns, automationStudioRunDatasetAnswer, automationStudioRunDatasetProcessingReference, automationStudioRunDatasetRowOfColumns, type AutomationStudioRunDatasetCollectedRow, type AutomationStudioRunDatasetRowInsert } from "./run-dataset-answer/index.ts";
-import { automationStudioRunDatasetBatchReceipt, readAutomationStudioRunDatasetSchema as storedSchema, reconcileAutomationStudioRunDatasetSchema, serializedAutomationStudioRunDatasetRows as serializedRows } from "./run-dataset-schema/index.ts";
+import { automationStudioRunDatasetBatchReceipt, automationStudioRunDatasetCapturedFieldsJson, readAutomationStudioRunDatasetSchema as storedSchema, reconcileAutomationStudioRunDatasetSchema, serializedAutomationStudioRunDatasetRows as serializedRows } from "./run-dataset-schema/index.ts";
 
 /** One stored row: a JSON object keyed by the stored schema's field ids. */
 export type AutomationStudioRunDatasetRow = AutomationStudioRunDatasetPage["rows"][number];
@@ -238,11 +238,11 @@ export class AutomationStudioProjectRunDatasetStore {
       const firstOrdinal = (highest?.ordinal ?? 0) + 1;
       await insertRows(sql, "run_dataset_rows", runId, datasetId, kept.map((rowJson, index) => ({ ordinal: firstOrdinal + index, attemptId, batchKey, rowJson })));
       await sql.run(
-        `insert into run_dataset_batches (run_id, dataset_id, batch_key, attempt_id, node_id, row_count, invalid_count, truncated, created_at_ms, updated_at_ms, evidence_json, receipt_digest)
-         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `insert into run_dataset_batches (run_id, dataset_id, batch_key, attempt_id, node_id, row_count, invalid_count, truncated, created_at_ms, updated_at_ms, evidence_json, receipt_digest, captured_fields_json)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          on conflict(run_id, dataset_id, batch_key) do update set attempt_id = excluded.attempt_id, node_id = excluded.node_id, row_count = excluded.row_count,
-           invalid_count = excluded.invalid_count, truncated = excluded.truncated, updated_at_ms = excluded.updated_at_ms, evidence_json = excluded.evidence_json, receipt_digest = excluded.receipt_digest`,
-        [runId, datasetId, batchKey, attemptId, nodeId, kept.length, invalidCount, batchTruncated ? 1 : 0, now, now, input.evidence === undefined ? null : JSON.stringify(input.evidence), receipt]
+           invalid_count = excluded.invalid_count, truncated = excluded.truncated, updated_at_ms = excluded.updated_at_ms, evidence_json = excluded.evidence_json, receipt_digest = excluded.receipt_digest, captured_fields_json = excluded.captured_fields_json`,
+        [runId, datasetId, batchKey, attemptId, nodeId, kept.length, invalidCount, batchTruncated ? 1 : 0, now, now, input.evidence === undefined ? null : JSON.stringify(input.evidence), receipt, automationStudioRunDatasetCapturedFieldsJson(schema)]
       );
       recordCount += kept.length;
       invalidTotal += invalidCount;
@@ -558,9 +558,9 @@ async function insertRows(sql: AutomationStudioSqlExecutor, table: RowsTable, ru
 async function processDataset(sql: AutomationStudioSqlExecutor, runId: string, datasetId: string, now: number, nowGiven: boolean): Promise<void> {
   const dataset = await sql.get<RunDatasetDetailRow>(`select ${DETAIL_COLUMNS} from run_datasets where run_id = ? and dataset_id = ?`, [runId, datasetId]);
   if (!dataset) return;
-  // Every row has its batch; the left join keeps a row whose batch is missing rather than drop it from the answer.
+  // Every row has its batch; the left join keeps a row whose batch is missing (no captured fields, as before 0041, t998).
   const collected = await sql.all<AutomationStudioRunDatasetCollectedRow>(
-    `select r.attempt_id, r.batch_key, coalesce(b.node_id, r.attempt_id) as node_id, r.row_json
+    `select r.attempt_id, r.batch_key, coalesce(b.node_id, r.attempt_id) as node_id, r.row_json, b.captured_fields_json
      from run_dataset_rows r left join run_dataset_batches b on b.run_id = r.run_id and b.dataset_id = r.dataset_id and b.batch_key = r.batch_key
      where r.run_id = ? and r.dataset_id = ? order by r.ordinal`,
     [runId, datasetId]

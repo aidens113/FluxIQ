@@ -83,9 +83,13 @@ source, and a sort key or output column is empty and sorts last. Missing evidenc
 remains for a field the row's own read never captured (an earlier, narrower
 batch), for any absent cell of a row with no `captured`, and for a present value
 that cannot be read. The answer-first result feed supplies `captured` from each
-page's own retained schema. The run-dataset store keeps no per-batch schema, so
-its end-of-run automatic answer does not supply it and still withholds over such
-cells; carrying a batch's field list there needs a stored column.
+page's own retained schema. The run-dataset store does the same at the end of a
+run (t998): migration 0041 adds `run_dataset_batches.captured_fields_json`, which
+`appendBatch` writes from that batch's own stored schema, never the dataset's
+reconciled one, and the end-of-run answer passes it to each of the batch's rows.
+So a saved Flow's later attempt reads the cells as the feed did. A batch written
+before 0041 holds null, and its rows keep missing-evidence semantics; no list is
+inferred from another batch or from values.
 
 Provider-free regression coverage belongs beside contracts, answer-first row
 ingestion, dataset storage and its migration. Tests use synthetic values and
