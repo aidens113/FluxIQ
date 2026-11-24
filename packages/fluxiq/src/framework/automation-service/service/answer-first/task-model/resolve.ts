@@ -7,7 +7,7 @@ import { automationStudioAnswerFirstTaskWords } from "../attempt/index.ts";
 import { automationStudioAnswerFirstCarryOnScope } from "../carry-on/index.ts";
 import { automationStudioAnswerFirstRunAgainScope } from "../run-again/index.ts";
 import { automationStudioAnswerFirstTaskKey } from "../task-key/index.ts";
-import { AutomationStudioAnswerFirstTaskMemoryIntegrityError, automationStudioAnswerFirstTaskMemoryOf, type AutomationStudioAnswerFirstTaskMemoryPorts } from "../task-memory/index.ts";
+import { AutomationStudioAnswerFirstTaskMemoryStoreError, automationStudioAnswerFirstTaskMemoryOf, type AutomationStudioAnswerFirstTaskMemoryPorts } from "../task-memory/index.ts";
 
 type Resolved = AutomationStudioLlmProviderResolution | AutomationStudioLlmProvider | undefined;
 const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/u;
@@ -33,14 +33,14 @@ export async function automationStudioAnswerFirstModelResolution<Result extends 
   const taskId = held?.taskId ?? automationStudioAnswerFirstTaskKey({ instructionText: automationStudioAnswerFirstTaskWords(input), startLocation: input.startLocation, callerKey: input.callerKey });
   const memory = automationStudioAnswerFirstTaskMemoryOf(input.owner, input.stores);
   const options = { scoped: input.scoped === true };
-  // Unscoped task memory is best effort, as the attempt's opening reads it: a store that cannot be read or
-  // written costs no result. A stored value Core refuses is not a failed store and still stops the task.
-  // Scoped execution state stays strict, since forgetting it could repeat a lasting act.
+  // Unscoped task memory is best effort: a store that could not be read or written (the typed store error)
+  // costs no result. Every other error, a stored value Core refuses or a programming error, still stops the
+  // task. Scoped execution state stays strict, since forgetting it could repeat a lasting act.
   const tolerated = async <T>(work: () => Promise<T>): Promise<{ ok: true; value: T } | { ok: false }> => {
     try {
       return { ok: true, value: await work() };
     } catch (error) {
-      if (options.scoped || error instanceof AutomationStudioAnswerFirstTaskMemoryIntegrityError) throw error;
+      if (options.scoped || !(error instanceof AutomationStudioAnswerFirstTaskMemoryStoreError)) throw error;
       return { ok: false };
     }
   };

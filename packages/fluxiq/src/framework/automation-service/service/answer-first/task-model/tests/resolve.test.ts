@@ -8,7 +8,7 @@ import { runWithAutomationStudioRunOverrides } from "../../../../../../runtime/r
 import { AutomationStudioProjectPaths } from "../../../paths/index.ts";
 import { automationStudioAnswerFirstTaskKey } from "../../task-key/index.ts";
 import { automationStudioAnswerFirstRunAgainScope } from "../../run-again/index.ts";
-import { automationStudioAnswerFirstTaskMemoryOf, type AutomationStudioAnswerFirstTaskMemoryPorts } from "../../task-memory/index.ts";
+import { AutomationStudioAnswerFirstTaskMemoryIntegrityError, AutomationStudioAnswerFirstTaskMemoryStoreError, automationStudioAnswerFirstTaskMemoryOf, type AutomationStudioAnswerFirstTaskMemoryPorts } from "../../task-memory/index.ts";
 import { automationStudioAnswerFirstModelResolution } from "../index.ts";
 
 const directories: string[] = [];
@@ -102,23 +102,56 @@ describe("a task's persisted starting model", () => {
     expect(await readdir(folder)).not.toContain(`${taskId}.json.unreadable`);
   });
 
-  it("costs no result when unscoped memory cannot be read or written, and stays strict for scoped execution", async () => {
+  async function withBrokenStore(failure: () => Error, run: (stores: AutomationStudioAnswerFirstTaskMemoryPorts, owner: object) => Promise<void>) {
     const owner = {};
     const stores = ports();
     const memory = automationStudioAnswerFirstTaskMemoryOf(owner, stores);
     await automationStudioAnswerFirstModelResolution({ owner, stores, request, resolver: resolver([]), ...task });
     const { get, update } = memory;
-    memory.get = async () => { throw new Error("disk"); };
-    memory.update = async () => { throw new Error("disk"); };
-    const asked: string[] = [];
-    const resolved = await automationStudioAnswerFirstModelResolution({ owner, stores, request, resolver: resolver(asked), ...task });
-    // The store is unreadable, so the task's own model is unknown: the request's routed choice resolves and nothing is written.
-    expect(asked).toEqual(["claude-sonnet-5-5"]);
-    expect(resolved?.provider.metadata.model).toBe("claude-sonnet-5-5");
-    await expect(automationStudioAnswerFirstModelResolution({ owner, stores, request, resolver: resolver([]), ...task, scoped: true })).rejects.toThrow("disk");
-    memory.get = get;
-    memory.update = update;
+    memory.get = async () => {
+      throw failure();
+    };
+    memory.update = async () => {
+      throw failure();
+    };
+    try {
+      await run(stores, owner);
+    } finally {
+      memory.get = get;
+      memory.update = update;
+    }
     expect((await memory.get("p", taskId))?.startingModel).toBe("claude-sonnet-5-5");
+  }
+  const storeFailure = () => new AutomationStudioAnswerFirstTaskMemoryStoreError("disk", { cause: Object.assign(new Error("busy"), { code: "EBUSY" }) });
+
+  it("costs no result when unscoped memory cannot be read or written (a store failure)", async () => {
+    await withBrokenStore(storeFailure, async (stores, owner) => {
+      const asked: string[] = [];
+      const resolved = await automationStudioAnswerFirstModelResolution({ owner, stores, request, resolver: resolver(asked), ...task });
+      // The store is unreadable, so the task's own model is unknown: the request's routed choice resolves and nothing is written.
+      expect(asked).toEqual(["claude-sonnet-5-5"]);
+      expect(resolved?.provider.metadata.model).toBe("claude-sonnet-5-5");
+    });
+  });
+
+  it("stays strict for scoped execution when the store fails", async () => {
+    await withBrokenStore(storeFailure, async (stores, owner) => {
+      await expect(automationStudioAnswerFirstModelResolution({ owner, stores, request, resolver: resolver([]), ...task, scoped: true })).rejects.toBeInstanceOf(AutomationStudioAnswerFirstTaskMemoryStoreError);
+    });
+  });
+
+  it("lets a programming error from the store through instead of reading it as no memory", async () => {
+    await withBrokenStore(() => new TypeError("undefined is not a function"), async (stores, owner) => {
+      const asked: string[] = [];
+      await expect(automationStudioAnswerFirstModelResolution({ owner, stores, request, resolver: resolver(asked), ...task })).rejects.toBeInstanceOf(TypeError);
+      expect(asked).toEqual([]);
+    });
+  });
+
+  it("lets an integrity error from the store through", async () => {
+    await withBrokenStore(() => new AutomationStudioAnswerFirstTaskMemoryIntegrityError("repair it"), async (stores, owner) => {
+      await expect(automationStudioAnswerFirstModelResolution({ owner, stores, request, resolver: resolver([]), ...task })).rejects.toBeInstanceOf(AutomationStudioAnswerFirstTaskMemoryIntegrityError);
+    });
   });
 
   it("delegates other authoring modes without creating task memory", async () => {

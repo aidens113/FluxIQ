@@ -7,6 +7,7 @@ import { parseAutomationStudioSavedState, parseAutomationStudioTaskAttempt, pars
 import { AutomationStudioLlmProviderError } from "../../../../../runtime/models/failures/index.ts";
 import { AUTOMATION_STUDIO_ANSWER_FIRST_ON_RECORD_WORDS } from "../completion/index.ts";
 import { automationStudioAnswerFirstSavedStateOf, automationStudioAnswerFirstStepsDigest } from "../index.ts";
+import { AutomationStudioAnswerFirstTaskMemoryStoreError } from "../task-memory/index.ts";
 import { savedStep } from "./fake-library-engine.ts";
 import { complete, LOOK_TOOL, RENEW_CARD, RENEW_LOAN, runNode, toolCall } from "./fake-library.ts";
 import { judgedNo, pendingAsk } from "./endings/support.ts";
@@ -373,8 +374,9 @@ describe("a memory that fails", () => {
     const lane = await laterAttempts(cleanups);
     await lane.attempt(firstAttempt);
     const { get, update } = lane.memory;
-    lane.memory.get = async () => { throw new Error("disk"); };
-    lane.memory.update = async () => { throw new Error("disk"); };
+    // A store that could not be read or written, as the store boundary types it (t1016): any other error stops the task.
+    lane.memory.get = async () => { throw new AutomationStudioAnswerFirstTaskMemoryStoreError("disk", { cause: Object.assign(new Error("disk"), { code: "EIO" }) }); };
+    lane.memory.update = async () => { throw new AutomationStudioAnswerFirstTaskMemoryStoreError("disk", { cause: Object.assign(new Error("disk"), { code: "EIO" }) }); };
     const second = await lane.attempt({ taskProcessing: firstAttempt.taskProcessing, script: [readLoans("again"), complete("Listed.")] });
     lane.memory.get = get;
     lane.memory.update = update;

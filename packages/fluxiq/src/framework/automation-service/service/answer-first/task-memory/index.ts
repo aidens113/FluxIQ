@@ -2,6 +2,8 @@
 export { automationStudioAnswerFirstBetterFlow } from "./better-flow.ts";
 export type { AutomationStudioAnswerFirstFlowBase } from "./flow-base.ts";
 export { AutomationStudioAnswerFirstTaskMemoryIntegrityError } from "./integrity-error.ts";
+export { AutomationStudioAnswerFirstTaskMemoryStoreError } from "./store-error.ts";
+export { automationStudioAnswerFirstTaskMemoryIo } from "./store-io.ts";
 export { automationStudioAnswerFirstProjectTasks, type AutomationStudioAnswerFirstProjectTasksPorts } from "./project-tasks.ts";
 export type { AutomationStudioAnswerFirstTaskMemory } from "./memory.ts";
 export type { AutomationStudioAnswerFirstAttemptProvenance } from "./provenance.ts";
