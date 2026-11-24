@@ -73,8 +73,15 @@
 // so the model is told where to move the claim. Nothing is refused here
 // (t195); a claim is refused as it is made (`./claim-verdict.ts`).
 //
+// **A choice the page already had made (paid run `run-mwuxd2v9-33928ea3`,
+// t1023).** A variant no step named for it makes is done by its act's own step
+// when the host says that step ran with the option standing chosen, by the
+// page's typed state (`./standing-option.ts`), and carries the option as
+// `stood`. That run owed "for pickup" for 190 steps while the site had Pickup
+// chosen all along.
+//
 // Nothing here calls a provider or reads a page; it is the draft and the claims.
-import { automationStudioFlowDraftStepMovedTarget, type AutomationStudioFlowDraftStep } from "../../draft/index.ts";
+import { automationStudioFlowDraftStepMovedTarget, type AutomationStudioFlowDraftStep, type AutomationStudioFlowDraftStepChosen } from "../../draft/index.ts";
 import {
   automationStudioInstructedActChangeShows,
   automationStudioInstructedActIsEvidenceFault,
@@ -87,6 +94,7 @@ import type { AutomationStudioInstructedAct, AutomationStudioInstructedActMissin
 import { automationStudioInstructedActStepActsOn } from "./object-binding.ts";
 import { automationStudioInstructedQuantityStanding } from "./quantity-fault.ts";
 import { automationStudioInstructedActSpanStopsShort } from "./span.ts";
+import { automationStudioInstructedChoiceStoodChosen } from "./standing-option.ts";
 import { automationStudioInstructedActStepFault } from "./step-fault.ts";
 
 type Step = AutomationStudioFlowDraftStep;
@@ -104,8 +112,11 @@ type Judged = { fault: Fault; actsOn?: string; presses?: number[]; chooses?: str
  * `./act-evidence.ts` words, where the draft has one.
  */
 export type AutomationStudioInstructedStanding =
-  /** `afterAct`: for a choice, the step that does its act when that step comes before this one (`./choice-order.ts`). */
-  | { done: Step; afterAct?: Step }
+  /**
+   * `afterAct`: for a choice, the step that does its act when that step comes before this one (`./choice-order.ts`).
+   * `stood`: for a choice done by its act's own step because the page had it chosen already when that step ran (`./standing-option.ts`).
+   */
+  | { done: Step; afterAct?: Step; stood?: AutomationStudioFlowDraftStepChosen }
   | { fault: Fault; step: Step; after?: number; reads?: number[]; actsOn?: string; presses?: number[]; chooses?: string; instead?: number };
 
 /**
@@ -202,6 +213,9 @@ export function automationStudioInstructedActsStanding(input: {
     // A choice made after the step that does its act: information, never a fault (`./choice-order.ts`).
     const actStep = actSteps.get(choice.of);
     if (made && actStep && made.position > actStep.position) standing.set(choice.id, { done: made, afterAct: actStep });
+    // No step named for it makes it, and the act's step ran with it standing chosen: that step does it too (`./standing-option.ts`, t1023).
+    const stood = !made && actStep ? automationStudioInstructedChoiceStoodChosen(actStep, choice) : undefined;
+    if (actStep && stood) standing.set(choice.id, { done: actStep, stood });
   }
   return standing;
 }

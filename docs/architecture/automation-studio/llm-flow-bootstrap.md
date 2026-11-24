@@ -2838,6 +2838,23 @@ the act claim or a legitimate change after the act rather than prescribing a
 reorder ahead of the place containing the choice's target. Places are compared
 opaquely; absent place evidence preserves existing advice. Whole-Flow testing
 and judgement still decide completion.
+A variant (size, colour, version, fulfilment, time) that no step named for it
+makes is done by its act's own step when the host's statement on that step,
+`draft.chosen`, says the option stood chosen on the page as the step found it,
+by the page's own typed state (checked, selected, pressed, current or drawn
+apart), or on an earlier look at that page not shown otherwise since
+(t1023, paid run `run-mwuxd2v9-33928ea3`, which owed "for pickup" for 190
+steps while the site had Pickup chosen all along). Never from the step's words,
+a line of page text or the model's reply; never for a quantity. The choice
+carries `stoodChosen` (the option's words) and `stoodChosenSaid`: no step of
+the Flow chooses it, so a run whose page arrives with another option chosen
+does the act without it, and a step that sets it chosen (which changes nothing
+where it already is), named for the choice, makes the Flow right however the
+page arrives. Information, never a todo
+(`runtime/flow-authoring/bootstrap/instructed-acts/standing-option.ts`). Core
+reads `chosen` only on a mutating statement, at most sixteen `{ key, words }`,
+each kept only when its key is a code and its words were shown in the call's own
+evidence.
 
 **Progress means the Flow advanced** (audit A1, cause 2). A call that applied
 an effect is no longer progress by itself: one that leaves a state the build

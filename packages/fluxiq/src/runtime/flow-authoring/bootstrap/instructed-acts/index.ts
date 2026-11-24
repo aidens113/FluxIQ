@@ -8,7 +8,9 @@
 // `instruction-choices.ts` and `choice-evidence.ts` are deliberately absent:
 // an act's choices travel on the act (`requires`), and whether a step's input
 // makes one is how the check reaches its verdict, not what it offers. So is
-// `act-consequence.ts`: the class an act's verb names travels on the act.
+// `act-consequence.ts`: the class an act's verb names travels on the act. And
+// `standing-option.ts` (t1023): a choice its act's step ran with standing
+// chosen is how the loop reaches `done`, and the checklist says it.
 //
 // `span.ts` is published because the amendment that answers `span_stops_short`
 // (`../../llm/harness-options/repeat-suggestion.ts`) finds the span the same way.

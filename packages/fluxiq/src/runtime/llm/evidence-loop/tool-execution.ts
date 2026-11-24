@@ -7,7 +7,7 @@
 
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioFailureRecord, AutomationStudioTargetActionabilityRecord, AutomationStudioRecordSchema } from "@fluxiq/contracts/automation";
-import type { AutomationStudioFlowDraftStepChange, AutomationStudioFlowDraftStepCondition, AutomationStudioFlowDraftStepReplay, AutomationStudioFlowDraftStepToggle } from "../../flow-authoring/draft/index.ts";
+import type { AutomationStudioFlowDraftStepChange, AutomationStudioFlowDraftStepChosen, AutomationStudioFlowDraftStepCondition, AutomationStudioFlowDraftStepReplay, AutomationStudioFlowDraftStepToggle } from "../../flow-authoring/draft/index.ts";
 
 export type AutomationStudioLlmEvidenceToolExecutionResult = {
   kind: "llm_evidence_tool_execution";
@@ -243,5 +243,22 @@ export type AutomationStudioLlmEvidenceToolExecutionResult = {
      * caller sends it**: the key list of a statement is exact.
      */
     conditions?: AutomationStudioFlowDraftStepCondition[];
+    /**
+     * The caller's word for the options that stood chosen on the page as the
+     * call found it, by the page's own typed state (checked, selected,
+     * pressed, current or drawn apart), including one an earlier look at the
+     * same page showed chosen and none has shown otherwise since: at most
+     * sixteen, each exactly `key` (an opaque code naming the control for the
+     * whole build) and `words`. Carried only on a statement whose `effect` is
+     * `mutate`; each entry only when its key is a code and its words were shown
+     * in the call's own evidence and are plain
+     * (`../../flow-draft/control-words.ts`). A bad entry is withheld, never
+     * refused, and a list with none left, or past sixteen, is absent. The
+     * checklist counts a choice the act's step ran with standing chosen as done
+     * by that step (`../../flow-authoring/bootstrap/instructed-acts/standing-option.ts`,
+     * t1023). **Learned here before any caller sends it**: the key list of a
+     * statement is exact.
+     */
+    chosen?: AutomationStudioFlowDraftStepChosen[];
   };
 };
