@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../../../runtime/llm/index.ts";
 import { createAutomationStudioAnthropicProvider } from "../../../../../../runtime/llm/anthropic/index.ts";
+import { automationStudioLlmRequestDecisionTools } from "../../../../../../runtime/llm/provider-task/index.ts";
 import { complete, judgedYes, READ_LOANS, runNode, scriptedAttempt } from "../../tests/fake-library.ts";
 
 vi.setConfig({ testTimeout: 180_000 });
@@ -21,7 +22,7 @@ const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
 
 const MODEL = "claude-haiku-5-5";
-type Wire = { messages: { role: string; content: unknown }[]; output_config: { format: { schema: { properties?: Record<string, unknown> } } } };
+type Wire = { messages: { role: string; content: unknown }[]; output_config?: { format?: { schema?: { properties?: Record<string, unknown> } } } };
 
 /**
  * The real Anthropic adapter in place of the scripted model: each request the harness sends it goes on to Anthropic's
@@ -34,8 +35,13 @@ function throughTheAdapter(scripted: AutomationStudioLlmProvider, bodies: Wire[]
     bodies.push(body);
     const reply = await scripted.runTask(asked!);
     const value = (reply as { response: unknown }).response;
-    const text = body.output_config.format.schema.properties?.result_json ? JSON.stringify({ result_json: JSON.stringify(value) }) : JSON.stringify(value);
-    const envelope = { id: `msg_${bodies.length}`, type: "message", role: "assistant", model: MODEL, content: [{ type: "text", text }], stop_reason: "end_turn", usage: { input_tokens: 100, output_tokens: 30, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } };
+    // A decision sent as tools (D12, t1038) is answered with the one tool call it stands for; anything else in the format the wire asked for.
+    const offer = (body as { tools?: unknown }).tools ? automationStudioLlmRequestDecisionTools(asked!) : undefined;
+    const decided = offer ? (value as { summary?: unknown; decision: { kind: string; toolId?: string } & Record<string, unknown> }) : undefined;
+    const tool = decided ? offer!.tools.find((candidate) => candidate.variant.kind === decided.decision.kind && candidate.variant.toolId === decided.decision.toolId) : undefined;
+    const call = decided && tool ? (({ kind: _kind, toolId: _toolId, ...rest }) => ({ type: "tool_use", id: "toolu_1", name: tool.name, input: { summary: decided.summary, ...rest } }))(decided.decision) : undefined;
+    const text = body.output_config?.format?.schema?.properties?.result_json ? JSON.stringify({ result_json: JSON.stringify(value) }) : JSON.stringify(value);
+    const envelope = { id: `msg_${bodies.length}`, type: "message", role: "assistant", model: MODEL, content: call ? [call] : [{ type: "text", text }], stop_reason: call ? "tool_use" : "end_turn", usage: { input_tokens: 100, output_tokens: 30, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } };
     return new Response(JSON.stringify(envelope), { status: 200, headers: { "content-type": "application/json" } });
   });
   const adapter = createAutomationStudioAnthropicProvider({ secretReference: { kind: "secret_reference", id: "secret:claude" }, resolveSecret: async () => "dummy-provider-key", fetchImpl: fetchImpl as unknown as typeof fetch, model: MODEL });
