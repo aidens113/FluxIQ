@@ -410,7 +410,11 @@ describe("route-state captures per recorded build", () => {
       "after, no call reports": { decisions: unreported.decisions, captures: total(unreported) }
     });
     expect(traceOf(after).map((row) => [row.iteration, row.resultCode])).toEqual(traceOf(before).map((row) => [row.iteration, row.resultCode]));
-    expect([total(before), total(after), total(unreported)]).toEqual([12, 0, 9]);
+    // The scripted build now ends at 15 decisions, not 18 (t1036, e9bf3fa31: no look is withdrawn, the looks asked for again
+    // are answered from memory, and the repeat stop ends it, as `state-digest-cost.test.ts` records). The old rule's captures
+    // fell from 12 to 11 with the three decisions that no longer run; the new routing's 0 and 9 are unchanged.
+    expect(before.decisions).toBe(15);
+    expect([total(before), total(after), total(unreported)]).toEqual([11, 0, 9]);
     expect(total(unreported)).toBe(1 + [...unreported.shown.keys()].filter((decision) => decision > 1 && unreported.afterCalls.has(decision)).length);
     for (const decision of before.contexts.keys()) expect(isSubsequence(statesOf(before.contexts.get(decision))!, statesOf(after.contexts.get(decision))!), `decision ${decision}`).toBe(true);
   });
