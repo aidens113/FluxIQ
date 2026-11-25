@@ -1,6 +1,6 @@
 import type { AutomationStudioLlmDiagnosisFields } from "../../llm/index.ts";
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
-import { automationStudioResultHeldColumn } from "../asked-words/index.ts";
+import { automationStudioResultAskedTableLacks } from "../asked-words/index.ts";
 import { automationStudioResultReadWorkingSets } from "../read-account/index.ts";
 import { automationStudioResultYesSaysUnjudged } from "./unjudged-words.ts";
 
@@ -70,17 +70,11 @@ export function automationStudioResultRecordsYesRefuted(
   return said;
 }
 
-/** The named columns the result's answer rows hold nothing for (header); none where no table is named. */
+/** The named columns the result's answer rows hold nothing for (header, `../asked-words/table-lacks.ts`); none where no table is named. */
 function askedTable(summary: Pick<AutomationStudioRunResultSummary, "reads" | "recordSets">, askedColumns: readonly string[] | undefined): string[] {
   if (!askedColumns?.length) return [];
   const working = automationStudioResultReadWorkingSets(summary);
-  const columns = [...new Set(summary.recordSets.filter((set) => !working.has(set.datasetId)).flatMap((set) => set.columns))];
-  const heldWords = new Set(columns.flatMap(wordsOf));
-  return askedColumns.filter((column) => automationStudioResultHeldColumn(column, columns) === undefined && !wordsOf(column).some((word) => heldWords.has(word)));
-}
-
-function wordsOf(name: string): string[] {
-  return name.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  return automationStudioResultAskedTableLacks(askedColumns, [...new Set(summary.recordSets.filter((set) => !working.has(set.datasetId)).flatMap((set) => set.columns))]);
 }
 
 /** How many rows the result's answer holds: every answer set's record count, never a working set's (`../read-account/working-sets.ts`). */

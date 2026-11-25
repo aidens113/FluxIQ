@@ -9,4 +9,5 @@ export type AutomationStudioLlmDecisionReading =
   | { code: "flat_tool_call"; toolId: string; callIdFilled: boolean }
   | { code: "kind_inferred"; kindWritten: "absent" | "unknown" | "not_a_string"; callIdFilled: boolean }
   | { code: "value_tool_id"; toolId: string; key: string }
-  | { code: "keys_folded"; toolId: string; movedKeys: string[] };
+  | { code: "keys_folded"; toolId: string; movedKeys: string[] }
+  | { code: "own_keys_lifted"; keys: string[] };

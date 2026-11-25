@@ -10,6 +10,8 @@
 //   judge `off` and no check           taken as it is, unverified: the rounds end, nothing confirmed
 //   a replay that ran as saved         accepted on its own record, no model call (`./replay-stands.ts`):
 //                                      counted as one check, of the record; nothing is judged again
+//   rows that cannot be the table      refused, no model call (`./asked-table.ts`, t1034): the request
+//     the request names                names columns the rows hold nothing for, so no yes could stand
 //   one judge call
 //     yes                              accepted, and the attempt is achieved
 //     no, unsure                       refused with the screened reason; the digest is kept
@@ -96,6 +98,9 @@
 // no yes could stand, and the model was told only "could not tell". Now the web projector reads a detection, Core never
 // hands its own calls to a host (`runtime/result-verification/judge-evidence/core-call.ts`), a held yes says why
 // (`flow-less/judge.ts`), and a yes over rows that are not the table the request names is refused, never taken (`records-yes.ts`).
+//
+// **Rows that cannot be the table asked for are refused before a judge (t1034,** `./asked-table.ts`): run-mwveg5ls-0266dfe0
+// paid 11 judges over such rows, where a yes is refused anyway. A refusal of that evidence, so the same rows again are.
 
 import type { AutomationStudioAttemptAct } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../../../core/index.ts";
@@ -115,6 +120,7 @@ import type { AutomationStudioAnswerFirstReplayRecord } from "./replay-record.ts
 import { automationStudioAnswerFirstReplayStands, type AutomationStudioAnswerFirstReplayDeviation } from "./replay-stands.ts";
 import { automationStudioAnswerFirstReplayVerdictNote } from "./replay-verdict.ts";
 import { automationStudioAnswerFirstResultColumnsWords } from "./result-columns.ts";
+import { automationStudioAnswerFirstNotAskedTable } from "./asked-table.ts";
 import type { AutomationStudioAnswerFirstResultReadiness } from "../result-feed/index.ts";
 
 /** A check that gave no answer: nothing was refused, so its words when it comes again differ (`AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS`). */
@@ -130,6 +136,8 @@ const SAME = AUTOMATION_STUDIO_ANSWER_FIRST_SAME_EVIDENCE_CODE;
 const JUDGED_NO = "answer_first.judged_no";
 const JUDGED_UNSURE = "answer_first.judged_unsure";
 const NOT_JUDGED = AUTOMATION_STUDIO_ANSWER_FIRST_NOT_JUDGED_CODE;
+/** Rows that cannot be the table the request names, refused before any judge (header, `./asked-table.ts`). */
+const NOT_ASKED_TABLE = "answer_first.not_asked_table";
 /** The caller's own check said no (header). */
 const CHECKED_NO = "answer_first.check_no";
 /** What a result the caller's check passed was checked by, in a person's words. */
@@ -300,6 +308,14 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
         }
         state.deviation = read.deviation;
         automationStudioLlmStepLogNote(automationStudioAnswerFirstReplayVerdictNote({ stood: false, deviation: read.deviation }));
+      }
+      // Rows that cannot be the table the request names are refused before a judge is paid for (`./asked-table.ts`, t1034).
+      const notTable = automationStudioAnswerFirstNotAskedTable(input.instructions, rows);
+      if (notTable) {
+        const reason = WORDS.notAskedTable(notTable.asked, notTable.lacking, columns);
+        refuse({ verdict: "no", digest, reason });
+        input.say("Not there yet", "What I hold is not yet the table you asked for, so I am carrying on.");
+        return refused(NOT_ASKED_TABLE, reason);
       }
       automationStudioAnswerFirstKeepBackJudge(input.purse, { summaryInputTokens: Math.ceil(JSON.stringify(summary).length / CHARS_PER_TOKEN) });
       input.say("Checking the result", "Checking what I have against what you asked for.");

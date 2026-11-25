@@ -17,7 +17,7 @@ function made(input: { instructions: string; rows?: JsonObject[]; readsRan?: boo
   const rows = input.rows ?? [];
   const check = automationStudioAnswerFirstCompletionCheck({
     instructions: input.instructions,
-    rows: async () => (rows.length ? { datasetId: "dataset.1", totalRows: rows.length, truncated: false, columns: [{ id: "title", label: "Title" }], rows } : { totalRows: 0, truncated: false, columns: [], rows: [] }),
+    rows: async () => (rows.length ? { datasetId: "dataset.1", totalRows: rows.length, truncated: false, columns: Object.keys(rows[0]!).map((id) => ({ id, label: id })), rows } : { totalRows: 0, truncated: false, columns: [], rows: [] }),
     acts: () => input.acts ?? [ACT],
     readsRan: () => input.readsRan ?? false,
     endView: async () => undefined,
@@ -54,8 +54,8 @@ describe("a request that asks for rows, completed with no read", () => {
     expect(judged()).toBe(1);
   });
 
-  it("is judged when it holds rows", async () => {
-    const { check, judged } = made({ instructions: TABLE, rows: [{ title: "Atlas of Rivers" }], readsRan: true });
+  it("is judged when it holds rows of the table it names (rows lacking one of its columns are refused first, `./asked-table.test.ts`)", async () => {
+    const { check, judged } = made({ instructions: TABLE, rows: [{ title: "Atlas of Rivers", due: "2030-01-01" }], readsRan: true });
     expect(await check.check({ summary: "Listed." })).toEqual({ ok: true });
     expect(judged()).toBe(1);
   });

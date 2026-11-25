@@ -305,6 +305,8 @@ function readingDiagnostic(reading: AutomationStudioLlmDecisionReading): Automat
       return { severity: "warning", code: "llm_output.tool_id_read_from_input", message: "The decision's toolId was a value an offered tool's input takes, and its input named that value there, so it was read as a call of that tool.", path: "response.decision.toolId", metadata: { toolId: reading.toolId, key: reading.key } };
     case "keys_folded":
       return { severity: "info", code: "llm_output.key_moved_into_input", message: "A key the tool's input schema declares was written beside the tool call's input and was moved into it.", path: "response.decision", metadata: { toolId: reading.toolId, movedKeys: reading.movedKeys } };
+    case "own_keys_lifted":
+      return { severity: "info", code: "llm_output.own_key_lifted_from_input", message: "A tool call's own key was written inside its input, which does not take it, and was read beside the input.", path: "response.decision.input", metadata: { keys: reading.keys } };
   }
 }
 
