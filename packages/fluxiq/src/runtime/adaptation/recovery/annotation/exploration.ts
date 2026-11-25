@@ -49,6 +49,13 @@ import type { AutomationStudioLlmStepLogPageReader } from "../../../llm/step-log
 // could not be named in the repair. The packets the bound domain's own options
 // returned, and the loop accepted, come back beside the exploration, each
 // labelled so a handle taken from it can say which packet it came from.
+//
+// **It carries the page channel, as a build does (page-diff D1, D5; t1042).**
+// The bound domain's channel reaches the registry and the loop, so each result's
+// page is shown whole the first time the exploration meets that page and as
+// what changed after, and `core.full_page` is offered when the domain can
+// capture a page whole. There is no look to ask for: the domain's opening
+// observation is Core's own first call, and every result carries the page.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type {
@@ -224,6 +231,10 @@ export async function runAutomationStudioRecoveryExploration(
   const clearedLooks = new Map<string, string>();
   const loop: AutomationStudioHarnessOptionLoopBinding = {
     tools: registryLoop.tools,
+    // The page channel, as a build has it (header): each result's page whole the
+    // first time this exploration meets its page, then only what changed, and
+    // `core.full_page` among the tools when the domain can capture a page whole.
+    ...(registryLoop.pageChannel ? { pageChannel: registryLoop.pageChannel } : {}),
     executeTool: async (call) => {
       const execution = await registryLoop.executeTool(call);
       if (automationStudioToolResultNeedsPerson(execution)) {
@@ -354,7 +365,9 @@ function reduced(
  * an object whose `executeTool` is a prototype method, and a spread would hand
  * the registry a copy without it. Only the fields the registry reads are
  * carried; the exploration reads `classifyRefusal` and `deniedEvidenceKeys`
- * from the binding the caller passed, never from this view.
+ * from the binding the caller passed, never from this view. The page channel
+ * is one of them (page-diff D1, D5): without it the registry declares none, and
+ * a recovery was shown every page whole and had to be given a look to see one.
  */
 function explorationRegistryBinding(binding: AutomationStudioLlmEvidenceRuntimeBinding): AutomationStudioLlmEvidenceRuntimeBinding {
   if (!binding.harnessOptions?.options.length) return binding;
@@ -363,6 +376,7 @@ function explorationRegistryBinding(binding: AutomationStudioLlmEvidenceRuntimeB
     deniedEvidenceKeys: binding.deniedEvidenceKeys,
     tools: [],
     harnessOptions: binding.harnessOptions,
+    ...(binding.pageChannel ? { pageChannel: binding.pageChannel } : {}),
     executeTool: (call) => binding.executeTool(call)
   };
 }
