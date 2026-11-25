@@ -187,7 +187,9 @@ function provider(fetchImpl: typeof fetch) {
   return createAutomationStudioDeepSeekProvider({
     secretReference: { kind: "secret_reference", id: "secret:deepseek" },
     resolveSecret: async () => SECRET,
-    fetchImpl
+    fetchImpl,
+    // These replies are JSON text; a decision sent as tools is tested in `../../deepseek/tests/decision-tools.test.ts`.
+    decisionTools: false
   });
 }
 

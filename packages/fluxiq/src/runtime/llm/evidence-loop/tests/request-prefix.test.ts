@@ -213,7 +213,7 @@ async function build(reply: (call: number) => JsonObject, observedStateKeys?: re
   // A host that can observe its route state, so the build's routing context
   // gains a situation as each call reaches a new page.
   service.bindHostRuntime({ capabilities: [], observeRouteState: () => ({ page: { path: "/" } }) });
-  const resolveForCaller = createAutomationStudioSessionKeyProviderResolver({
+  const resolveForCaller = createAutomationStudioSessionKeyProviderResolver({ decisionTools: false,
     ports: sessionKeyPorts(),
     fetchImpl: (async (_url: unknown, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body)) as { messages: Array<{ role: string; content: string }> };

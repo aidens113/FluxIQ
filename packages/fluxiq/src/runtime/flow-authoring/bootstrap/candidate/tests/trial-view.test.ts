@@ -130,7 +130,7 @@ function packedRequest(iteration: number, gathered: Window, describedNodeIds: re
 /** The user message one request would put on the wire, read from the outbound body itself. */
 async function userMessage(request: AutomationStudioLlmTaskRequest): Promise<string> {
   let outbound = "";
-  const provider = createAutomationStudioDeepSeekProvider({
+  const provider = createAutomationStudioDeepSeekProvider({ decisionTools: false,
     now: () => Date.UTC(2026, 8, 30, 2),
     secretReference: { kind: "secret_reference", id: "secret:deepseek" },
     resolveSecret: async (input) => {

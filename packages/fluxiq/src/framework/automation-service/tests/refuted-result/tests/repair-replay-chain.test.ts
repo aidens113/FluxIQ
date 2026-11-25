@@ -158,7 +158,7 @@ async function createHarness() {
   let decisions = 0;
   const key = { id: KEY_ID, name: "DeepSeek", kind: "llm", provider: "deepseek", scope: "global", enabled: true, createdAtMs: 1, updatedAtMs: 1, lastRotatedAtMs: 1, metadata: { model: "deepseek-flash" } };
 
-  const resolveProvider = createAutomationStudioSessionKeyProviderResolver({
+  const resolveProvider = createAutomationStudioSessionKeyProviderResolver({ decisionTools: false,
     ports: {
       snapshot: async () => ({ keys: [{ ...key }] }),
       createUseAuthorization: async () => ({ authorizationId: `reveal-t176-${++revealCount}`, keyId: key.id, keyUpdatedAtMs: key.updatedAtMs }),

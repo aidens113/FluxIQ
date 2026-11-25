@@ -22,7 +22,8 @@ const STEP_74 = {
 };
 const USAGE = { inputTokens: 100, outputTokens: 30, totalTokens: 130 };
 
-const provider = (text: string) => createAutomationStudioAnthropicProvider({ secretReference: { kind: "secret_reference", id: "secret:claude" }, resolveSecret: async () => "dummy-provider-key", fetchImpl: vi.fn(async () => streamReply(text, "end_turn")) });
+// The JSON-text transport a decision is sent in where it does not go as tools (`decisionTools: false`; D12, t1038).
+const provider = (text: string) => createAutomationStudioAnthropicProvider({ secretReference: { kind: "secret_reference", id: "secret:claude" }, resolveSecret: async () => "dummy-provider-key", decisionTools: false, fetchImpl: vi.fn(async () => streamReply(text, "end_turn")) });
 const envelope = (value: unknown) => JSON.stringify({ result_json: JSON.stringify(value) });
 
 /** A decision the loop could amend on, as paid step 67's was offered. */

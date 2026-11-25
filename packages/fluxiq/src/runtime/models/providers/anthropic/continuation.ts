@@ -19,6 +19,15 @@
 // JSON-text transport (`./schema.ts`, `result_json`), whose instruction says to put the object the user message's
 // outputSchema asks for into `result_json`: the judge's message carries its own outputSchema, and its answer is read
 // from `result_json` against it as any JSON-text answer is.
+//
+// **A decider sent as tools (D12, t1038).** Its request has `tools` and `tool_choice` and no output format
+// (`./decision-tools-wire.ts`), and the judge sends all three exactly so: the tools render first in the prefix, so a
+// changed tool list misses everything, and a changed `tool_choice` or an added `output_config.format` misses the cached
+// messages, which are nearly all of what the judge reads (the prompt-caching page, "What invalidates the cache"; the
+// structured-outputs page: changing the format invalidates the conversation's cache). So the judge's answer cannot be a
+// native grammar of its own here: it answers with the JSON object as plain text, calling no tool (the tool choice is
+// `auto`), and Core reads it against the judge's own outputSchema and checks it as every answer is. A judge of its own
+// (`standalone_after_unreadable`, or no decider held) still gets its native format.
 
 type TextBlock = { type: "text"; text: string; cache_control?: { type: "ephemeral" } };
 type Message = { role: "user" | "system"; content: string | TextBlock[] };
@@ -31,10 +40,14 @@ export type AutomationStudioAnthropicDeciderPrefix = {
   blocks: TextBlock[];
   /** The ids of the calls whose evidence entries those blocks hold. */
   callIds: string[];
+  /** Set where the decider was sent as tools: the judge then answers in plain text. Otherwise it answers in the decider's `result_json`. */
+  afterTools?: true;
 };
 
 /** Said to the judge before its instructions: what the conversation above is, and what it does now. Generic: no site or task. */
 const JUDGE_TURN = "The conversation above is the attempt's own record of deciding, up to its latest decision: the request, every call it made and what each call answered. Its decisions are over. You are now the check of what it got: answer the question the judge's message below asks, by the judge's instructions here, and put the JSON object the judge's outputSchema asks for into result_json.";
+/** The same after a decider that answered with tool calls: the judge's answer is the object itself, and no tool is its answer. */
+const JUDGE_TURN_AFTER_TOOLS = "The conversation above is the attempt's own record of deciding, up to its latest decision: the request, every call it made and what each call answered. Its decisions are over, and its tools are not for this answer: call none. You are now the check of what it got: answer the question the judge's message below asks, by the judge's instructions here, with only the JSON object the judge's outputSchema asks for, as your reply's text.";
 
 /** The prefix of a decider's request (`wire`, as it was sent), or none where it has no marked user blocks to share. */
 export function automationStudioAnthropicDeciderPrefix(wire: Record<string, unknown>): AutomationStudioAnthropicDeciderPrefix | undefined {
@@ -53,7 +66,7 @@ export function automationStudioAnthropicDeciderPrefix(wire: Record<string, unkn
       throw error;
     }
   });
-  return { wire: { ...wire, messages: undefined }, blocks, callIds };
+  return { wire: { ...wire, messages: undefined }, blocks, callIds, ...(Array.isArray(wire.tools) ? { afterTools: true as const } : {}) };
 }
 
 /**
@@ -78,7 +91,7 @@ export function automationStudioAnthropicJudgeContinuation(prefix: AutomationStu
   }
   const messages: Message[] = [
     { role: "user", content: [...prefix.blocks, { type: "text", text: `\n\n${JSON.stringify(payload)}` }] },
-    { role: "system", content: `${JUDGE_TURN}\n\n${judgeSystem}` }
+    { role: "system", content: `${prefix.afterTools ? JUDGE_TURN_AFTER_TOOLS : JUDGE_TURN}\n\n${judgeSystem}` }
   ];
   return { ...prefix.wire, messages };
 }

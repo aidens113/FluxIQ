@@ -368,6 +368,56 @@ framing preserves every nested parameter; the unchanged original schema is
 validated locally and Core's harness applies its usual semantic checks. No
 scenario-specific model guidance is introduced.
 
+**An evidence decision goes to Anthropic as one native tool call** (D12, t1038).
+Its schema (`decision.oneOf`: `complete`, `amend_draft`, a `tool_call` per offered
+tool) has no native grammar, and inside `result_json` the model wrote the whole
+decision escaped; 25 of 463 recorded decisions could not be read. So the
+provider-neutral `runtime/llm/provider-task/decision-tools/` turns each variant
+into a tool: its name is the tool's id or the kind with every character outside
+`[a-zA-Z0-9_-]` written `_` (numbered on a clash, at most 64 characters, so the
+same names fit DeepSeek), its input the variant without its constant `kind` and
+`toolId`, with the wrapper's `summary` first and a tool call's `input` nested as
+before; built from the schema alone, so the same offer is the same bytes. A call
+is read back by looking its name up in that offer, into exactly the wrapper the
+loop read before, and goes through the same reading and checks
+(`llm/anthropic/task-answer.ts`) against the unchanged schema. The request sends
+those tools (`models/providers/anthropic/decision-tools-wire.ts`) with
+`tool_choice: {type: "auto", disable_parallel_tool_use: true}`, no output format,
+and a user message without `outputSchema`, its `context` byte for byte the same;
+the system prompt asks for exactly one call. A tool whose input schema is wholly
+closed is sent `strict` in its grammar form while the request's grammar limits
+(20 strict tools, 24 optional and 16 union parameters, across all of them) hold,
+in offer order; every other tool goes as its schema is. Forced tool choice is a
+400 on Sonnet and Opus 5.5, and on Haiku it would stop a continuing judge from
+answering in text, so no model gets it: a reply with no call, two calls, an
+unknown name or an unreadable input is a paid `llm.provider_output_invalid` whose
+account says which (`tool_call_missing`, `tool_call_several`, `tool_call_unknown`,
+`content_invalid`). A judge that continues such a decider sends the decider's
+tools, tool choice and system unchanged -- a changed tool choice or an added
+output format would miss the cached messages -- and answers with its JSON object
+as plain text, read and checked against its own schema; a tool call there is
+`tool_call_unexpected`. A provider built with `decisionTools: false`, or a
+decision schema the tools cannot express, keeps the JSON-text transport.
+
+**An evidence decision goes to DeepSeek as one native function call too** (D12, t1038), from the same
+`provider-task/decision-tools/`. The request (`llm/deepseek/request-body.ts`) sends `tools` as
+`{type: "function", function: {name, description, parameters}}` and `tool_choice: "required"`
+(`models/providers/deepseek/decision-tools-wire.ts`), in place of `response_format: json_object`; the tools come
+before the messages so the unchanging part leads the prompt, and the user message has no `outputSchema`, its `context`
+byte for byte the same. DeepSeek's API reference allows `required` ("the model must call one or more tools") only
+outside thinking mode, and every request is sent with thinking disabled, so both configured models take it; a named
+tool would be no use, since the decision is which tool. There is no documented switch against several calls, so more
+than one is refused. Strict mode is a beta (the `/beta` base URL, every object closed and every property required),
+so tools are sent non-strict and the call is checked against the unchanged schema. The reply's
+`choices[0].message.tool_calls[0].function` is read (`models/providers/deepseek/response-envelope.ts`: its
+`arguments` is a JSON string) and mapped back by the same lookup into the wrapper a JSON decision is, then takes the
+same normalization (`llm/deepseek/response-envelope.ts`) and the harness's reading. A reply with no call, two calls,
+an unknown name or arguments that are not a JSON object is a paid `llm.provider_output_invalid` whose account says
+which (`tool_call_missing`, `tool_call_several`, `tool_call_unknown`, `content_invalid`, `content_not_object`); a
+reply cut off (`length`) is `llm.provider_output_truncated`. Every other task (judge, diagnosis, bootstrap, patch, the
+chat's panel command) keeps the JSON-object transport, as does a provider built with `decisionTools: false` or a
+schema the tools cannot express. The step log's `response.txt` shows the call by name with its arguments laid out.
+
 Anthropic's `input_tokens` excludes cache creation and cache reads: Core adds
 both to its normalized input count, and prices uncached input, five-minute
 writes, one-hour writes, cache hits and output separately. Haiku's above-100k

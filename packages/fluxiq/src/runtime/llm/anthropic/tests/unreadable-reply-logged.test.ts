@@ -11,8 +11,9 @@ const KEY = ["dummy", "provider", "key"].join("-");
 const MARK = "the-words-the-model-really-sent";
 let directory: string | undefined;
 
+// The JSON-text transport a decision is sent in where it does not go as tools (`decisionTools: false`; D12, t1038).
 function provider(text: string) {
-  return createAutomationStudioAnthropicProvider({ secretReference: { kind: "secret_reference", id: "secret:claude" }, resolveSecret: async () => KEY, fetchImpl: vi.fn(async () => streamReply(text, "end_turn")) as typeof fetch });
+  return createAutomationStudioAnthropicProvider({ secretReference: { kind: "secret_reference", id: "secret:claude" }, resolveSecret: async () => KEY, decisionTools: false, fetchImpl: vi.fn(async () => streamReply(text, "end_turn")) as typeof fetch });
 }
 
 /** Every file the step log wrote, as one text. */
