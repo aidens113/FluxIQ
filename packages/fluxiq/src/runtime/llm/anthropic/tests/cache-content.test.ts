@@ -149,7 +149,7 @@ describe("the marked prefix of a decision's request", () => {
   });
 
   it("sends the draft's guide in the marked head and its steps after the marker", () => {
-    const draft = automationStudioFlowDraftEntry({ steps: [{ position: 1, iteration: 1, callId: "call.1", actionId: "press", input: { target: "t1" }, effect: "mutate", effectApplied: true, disposition: "kept" }], authored: true })!;
+    const draft = automationStudioFlowDraftEntry({ steps: [{ position: 1, iteration: 1, callId: "call.1", actionId: "press", input: { target: "t1" }, effect: "mutate", effectApplied: true, disposition: "kept" }] })!;
     const [head, settled, moving] = wireOf(requestWith([{ callId: "call.1", toolId: "core.run_node", value: { ok: true } }, draft])).messages[0]!.content;
     expect(head!.text).toContain("flowDraftGuide");
     expect(head).toHaveProperty("cache_control");

@@ -193,6 +193,27 @@ describe("drafting the Flow from the calls that worked", () => {
       expect(words(out)).toEqual(["in", "in", "in"]);
     });
 
+    // t1037 phase 2: a renewal after the list's read declared its lasting effect and changed nothing on its page.
+    it("keeps a press after the result's last read whose call declared a lasting effect, as the dry run reads it", () => {
+      const out = automationStudioFlowDraftCompose({
+        steps: [
+          read(1, { reads: "L" }),
+          step(2, { input: { target: "renew", consequences: ["modify_existing"] } }),
+          step(3, { input: { target: "other" }, ranWith: { target: "#other", consequences: [] } })
+        ]
+      });
+      expect(words(out)).toEqual(["in", "in", "dead_end"]);
+    });
+
+    // t1037 phase 2: answer-first says which reads its answer is made of (every read not marked a working read).
+    it("takes every read the caller says is the answer's as a result read, and leaves out only the others", () => {
+      const out = automationStudioFlowDraftCompose({
+        steps: [read(1, { input: { output: "one" } }), read(2, { input: { output: "working" } }), read(3, { input: { output: "two" } })],
+        isResult: (each) => each.input.output !== "working"
+      });
+      expect(words(out)).toEqual(["in", "not_the_result", "in"]);
+    });
+
     it("leaves a Flow with no read alone, its last press in it", () => {
       const out = automationStudioFlowDraftCompose({ steps: [step(1), step(2, { input: { target: "last" } })] });
       expect(words(out)).toEqual(["in", "in"]);
@@ -240,5 +261,19 @@ describe("drafting the Flow from the calls that worked", () => {
     ];
     const once = automationStudioFlowDraftCompose({ steps });
     expect(automationStudioFlowDraftCompose({ steps: once })).toEqual(once);
+  });
+});
+
+// t1037 phase 2: a step carried from a saved Flow or an earlier attempt is the model's word, whatever the saved draft
+// wrote on it: the read a saved run broke at is not taken out as a copy of the read the model then made by hand.
+describe("a step the caller says is the model's word", () => {
+  it("is never decided again, in or out", () => {
+    const steps = [
+      read(1, { reads: "L", drafted: "in", disposition: "kept" }),
+      step(2, { drafted: "dead_end", disposition: "taken" }),
+      read(3, { reads: "L" })
+    ];
+    const out = automationStudioFlowDraftCompose({ steps, isRuled: (each) => each.position < 3 });
+    expect(out.map((each) => [each.drafted, each.disposition])).toEqual([["in", "kept"], ["dead_end", "taken"], ["repeat", "taken"]]);
   });
 });

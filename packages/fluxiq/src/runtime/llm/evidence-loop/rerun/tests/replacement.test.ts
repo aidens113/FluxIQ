@@ -6,15 +6,15 @@
 // start location, the Flow could no longer reach its first page, and the build
 // was refused `bootstrap.cannot_reach_start_location` for it.
 //
-// Where the model authors its draft (the default since 2026-09-30), a rerun
+// The framework drafts the Flow (2026-11-25), and a rerun
 // that worked takes the replaced step's place: its position, its being in the
 // Flow, its acts and its routing, and every statement naming the old step names
 // it (audit A1, cause 5a; `run-muog33va-96469cb2` orphaned a repeat nine times).
 
 import { describe, expect, it, vi } from "vitest";
-import { runAutomationStudioLlmEvidenceLoop } from "../../index.ts";
-import { automationStudioLlmEvidenceRerunReplaced } from "../rerun/index.ts";
-import type { AutomationStudioFlowDraftStep } from "../../../flow-authoring/draft/index.ts";
+import { runAutomationStudioLlmEvidenceLoop } from "../../../index.ts";
+import { automationStudioLlmEvidenceRerunReplaced } from "../index.ts";
+import type { AutomationStudioFlowDraftStep } from "../../../../flow-authoring/draft/index.ts";
 
 const go = { toolId: "go", description: "Go somewhere.", inputSchema: { type: "object" }, effect: "mutate" as const };
 const completed = { kind: "complete", result: { flow: "ready" } };
@@ -54,16 +54,9 @@ describe("a rerun and the step it replaces", () => {
     const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide: decisions(), executeTool, maxIterations: 6, maxToolCalls: 6, unusableDecisions: { stalled } });
 
     // In the Flow as the original was, and at its position; the original stays listed at the end, withdrawn, as the rerun's receipt.
-    expect(result.steps.map((step) => [step.id, step.disposition, step.position, step.replacedBy])).toEqual([["d2", "kept", 1, undefined], ["d1", "dropped", 2, "d2"]]);
+    // Where the framework drafts the Flow (t1037) the original is out as replaced, in its word.
+    expect(result.steps.map((step) => [step.id, step.disposition, step.position, step.replacedBy, step.drafted])).toEqual([["d2", "kept", 1, undefined, "in"], ["d1", "taken", 2, "d2", "replaced"]]);
     expect(result.steps[0]?.input).toMatchObject({ url: "https://shop.test/audio" });
-  });
-
-  it("under the transcript rule, appends the rerun kept and drops the original, as recorded builds did", async () => {
-    const executeTool = vi.fn().mockResolvedValueOnce(ran(true)).mockResolvedValueOnce(ran(true));
-
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide: decisions(), executeTool, maxIterations: 6, maxToolCalls: 6, draftAuthoring: "transcript", unusableDecisions: { stalled } });
-
-    expect(result.steps.map((step) => [step.id, step.disposition, step.replacedBy])).toEqual([["d1", "dropped", undefined], ["d2", "kept", undefined]]);
   });
 });
 
@@ -77,7 +70,7 @@ describe("a rerun taking the replaced step's place", () => {
       step("old", 2, { routing: { kind: "repeat", over: "source", through: "old" } }),
       step("fresh", 3, { disposition: "taken" })
     ];
-    automationStudioLlmEvidenceRerunReplaced(steps, steps[1], { takesItsPlace: true });
+    automationStudioLlmEvidenceRerunReplaced(steps, steps[1]);
     expect(steps.map((entry) => [entry.id, entry.disposition])).toEqual([["source", "kept"], ["fresh", "kept"], ["old", "dropped"]]);
     expect(steps[1]!.routing).toEqual({ kind: "repeat", over: "source", through: "fresh" });
     expect(steps[2]!.routing).toBeUndefined();
@@ -91,7 +84,7 @@ describe("a rerun taking the replaced step's place", () => {
       step("duplicate", 4, { input: { target: "next" } }),
       step("fresh", 5, { input: { target: "next" }, disposition: "taken" })
     ];
-    automationStudioLlmEvidenceRerunReplaced(steps, steps[2], { takesItsPlace: true });
+    automationStudioLlmEvidenceRerunReplaced(steps, steps[2]);
     expect(steps.map((entry) => [entry.id, entry.disposition])).toEqual([
       ["start", "kept"], ["read", "kept"], ["fresh", "kept"], ["duplicate", "dropped"], ["next", "dropped"]
     ]);
@@ -110,7 +103,7 @@ describe("a rerun taking the replaced step's place", () => {
       step("d2", 2, { effect: "observe", ...at("list") }),
       step("d3", 3, { disposition: "taken", ...at("home") })
     ];
-    automationStudioLlmEvidenceRerunReplaced(steps, steps[0], { takesItsPlace: true });
+    automationStudioLlmEvidenceRerunReplaced(steps, steps[0]);
     expect(steps.map((entry) => [entry.id, entry.position, entry.disposition, entry.replacedBy])).toEqual([
       ["d3", 1, "kept", undefined], ["d2", 2, "kept", undefined], ["d1", 3, "dropped", "d3"]
     ]);
@@ -123,7 +116,7 @@ describe("a rerun taking the replaced step's place", () => {
       step("d16", 2, { routing: { kind: "repeat", through: "d16", over: "d15" } }),
       step("d17", 3, { effect: "observe", disposition: "taken" })
     ];
-    automationStudioLlmEvidenceRerunReplaced(steps, steps[0], { takesItsPlace: true });
+    automationStudioLlmEvidenceRerunReplaced(steps, steps[0]);
     expect(steps.map((entry) => [entry.id, entry.position, entry.disposition])).toEqual([["d17", 1, "kept"], ["d16", 2, "kept"], ["d15", 3, "dropped"]]);
     expect(steps[1]!.routing).toEqual({ kind: "repeat", through: "d16", over: "d17" });
   });
@@ -137,7 +130,7 @@ describe("a rerun taking the replaced step's place", () => {
       step("d2", 2),
       step("d3", 3, { disposition: "taken" })
     ];
-    automationStudioLlmEvidenceRerunReplaced(steps, steps[1], { takesItsPlace: true });
+    automationStudioLlmEvidenceRerunReplaced(steps, steps[1]);
     expect(steps.map((entry) => entry.id)).toEqual(["d1", "d3", "d2"]);
     expect(steps[0]!.routing).toEqual({ kind: "repeat", through: "d3", while: "d3", most: 9 });
   });
@@ -155,7 +148,7 @@ describe("a rerun taking the replaced step's place", () => {
       step("d7", 3, { routing: { kind: "repeat", through: "d7", over: "d6" } }),
       step("d18", 4, { effect: "observe", disposition: "taken" })
     ];
-    automationStudioLlmEvidenceRerunReplaced(steps, steps[1], { takesItsPlace: true });
+    automationStudioLlmEvidenceRerunReplaced(steps, steps[1]);
     expect(steps.map((entry) => [entry.id, entry.position, entry.disposition, entry.replacedBy])).toEqual([
       ["d5", 1, "kept", undefined],
       ["d18", 2, "kept", undefined],
@@ -172,19 +165,19 @@ describe("a rerun taking the replaced step's place", () => {
   it("stands for the step it replaced, and for what that step stood for", () => {
     const signatures = { before: { page: "p1" }, after: { page: "p2" } };
     const steps = [step("f1", 1, { routeSignatures: signatures }), step("d1", 2, { disposition: "taken" })];
-    automationStudioLlmEvidenceRerunReplaced(steps, steps[0], { takesItsPlace: true });
+    automationStudioLlmEvidenceRerunReplaced(steps, steps[0]);
     expect(steps.map((entry) => [entry.id, entry.disposition, entry.standsFor])).toEqual([["d1", "kept", "f1"], ["f1", "dropped", undefined]]);
     expect(steps[0]!.routeSignatures).toEqual(signatures);
     // Rerun again: the newest still stands for the node the first was carried from.
     steps.push(step("d2", 3, { disposition: "taken" }));
-    automationStudioLlmEvidenceRerunReplaced(steps, steps[0], { takesItsPlace: true });
+    automationStudioLlmEvidenceRerunReplaced(steps, steps[0]);
     expect(steps.find((entry) => entry.id === "d2")).toMatchObject({ disposition: "kept", standsFor: "f1", routeSignatures: signatures });
   });
 
   it("keeps a rerun's own route signatures over the ones it replaced", () => {
     const own = { before: { page: "fresh" } };
     const steps = [step("f1", 1, { routeSignatures: { before: { page: "old" } } }), step("d1", 2, { disposition: "taken", routeSignatures: own })];
-    automationStudioLlmEvidenceRerunReplaced(steps, steps[0], { takesItsPlace: true });
+    automationStudioLlmEvidenceRerunReplaced(steps, steps[0]);
     expect(steps[0]!.routeSignatures).toEqual(own);
   });
 
@@ -192,16 +185,16 @@ describe("a rerun taking the replaced step's place", () => {
   // `paceMs`; a repair that reruns that step must keep it, and a rerun given its own pace keeps its own.
   it("carries the replaced step's pace onto the rerun, and keeps a rerun's own", () => {
     const steps = [step("f1", 1, { paceMs: 6000 }), step("d1", 2, { disposition: "taken" })];
-    automationStudioLlmEvidenceRerunReplaced(steps, steps[0], { takesItsPlace: true });
+    automationStudioLlmEvidenceRerunReplaced(steps, steps[0]);
     expect(steps[0]).toMatchObject({ id: "d1", disposition: "kept", paceMs: 6000 });
     const own = [step("f2", 1, { paceMs: 6000 }), step("d2", 2, { disposition: "taken", paceMs: 9000 })];
-    automationStudioLlmEvidenceRerunReplaced(own, own[0], { takesItsPlace: true });
+    automationStudioLlmEvidenceRerunReplaced(own, own[0]);
     expect(own[0]).toMatchObject({ id: "d2", paceMs: 9000 });
   });
 
   it("carries the acts onto a rerun that changes something", () => {
     const steps = [step("d1", 1, { acts: ["a1"] }), step("d2", 2, { disposition: "taken" })];
-    automationStudioLlmEvidenceRerunReplaced(steps, steps[0], { takesItsPlace: true });
+    automationStudioLlmEvidenceRerunReplaced(steps, steps[0]);
     expect(steps.map((entry) => [entry.id, entry.disposition, entry.acts])).toEqual([["d2", "kept", ["a1"]], ["d1", "dropped", undefined]]);
   });
 
@@ -209,11 +202,11 @@ describe("a rerun taking the replaced step's place", () => {
   // and the completion check judged the listing as the act 24 times running.
   it("does not carry an act onto a rerun that only reads, and leaves it on neither step", () => {
     const steps = [step("d10", 1, { effect: "observe", acts: ["a1"] }), step("d11", 2, { effect: "observe", disposition: "taken" })];
-    automationStudioLlmEvidenceRerunReplaced(steps, steps[0], { takesItsPlace: true });
+    automationStudioLlmEvidenceRerunReplaced(steps, steps[0]);
     expect(steps.map((entry) => [entry.id, entry.disposition, entry.acts])).toEqual([["d11", "kept", undefined], ["d10", "dropped", undefined]]);
   });
 
-  // The same rule where the act is named on the call itself (`../../evidence-loop.ts`):
+  // The same rule where the act is named on the call itself (`../../../evidence-loop.ts`):
   // a read run with act is added, and names no act.
   it("records no act on a read run with act, and records it on a press", async () => {
     const list = { toolId: "list", description: "List rows.", inputSchema: { type: "object" }, effect: "observe" as const };
@@ -230,7 +223,7 @@ describe("a rerun taking the replaced step's place", () => {
 
   it("leaves a rerun of a step that was not in the Flow out of it too", () => {
     const steps = [step("d1", 1, { disposition: "taken" }), step("d2", 2, { disposition: "taken" })];
-    automationStudioLlmEvidenceRerunReplaced(steps, steps[0], { takesItsPlace: true });
+    automationStudioLlmEvidenceRerunReplaced(steps, steps[0]);
     expect(steps.map((entry) => [entry.id, entry.disposition])).toEqual([["d2", "taken"], ["d1", "dropped"]]);
   });
 
@@ -241,7 +234,7 @@ describe("a rerun taking the replaced step's place", () => {
   // counted on the route.
   it.each(["mutate", "observe"] as const)("carries the places onto a rerun that %s, and leaves none on the attempt", (effect) => {
     const steps = [step("d1", 1, { effect, places: ["r1", "r2"] }), step("d2", 2, { effect, disposition: "taken" })];
-    automationStudioLlmEvidenceRerunReplaced(steps, steps[0], { takesItsPlace: true });
+    automationStudioLlmEvidenceRerunReplaced(steps, steps[0]);
     expect(steps.map((entry) => [entry.id, entry.disposition, entry.places])).toEqual([["d2", "kept", ["r1", "r2"]], ["d1", "dropped", undefined]]);
   });
 });

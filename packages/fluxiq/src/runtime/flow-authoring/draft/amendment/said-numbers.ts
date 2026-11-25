@@ -2,11 +2,12 @@
 //
 // **Why (t285 gap 2).** The act judge words its refusal of a claim from the
 // draft as it stands when the claim is made (`act_not_done_there`, `said`:
-// "Step 3 chose ..., name a1 there with amend_draft add on step 5"). Every
+// "Step 3 chose ..., name a1 there with amend_draft keep on step 5"). Every
 // number an amendment carries names a step as the draft entry the model read
-// numbered it (`./shown-numbering.ts`), and a `reorder` earlier in the same
-// decision renumbers the draft before the claim is judged, so the sentence
-// named the model's step 2 as "Step 3". `instead` was already put back in the
+// numbered it (`./shown-numbering.ts`), and a claim held for a rerun is judged
+// after the rerun has taken its step's place and the draft has been numbered
+// again (`../../../llm/evidence-loop/held-amendments.ts`), so the sentence could
+// name the model's step 2 as "Step 3". `instead` was already put back in the
 // model's numbers; the sentence now is too.
 //
 // Only a step number the judge writes is changed -- `Step N` or `step N` --

@@ -14,12 +14,12 @@
 // made -- which only the test and its judge can see, so the sentence says
 // that too. Positions are the draft's own order, the numbers the model is shown.
 //
-// **It names the amendment that moves the choice (live run
-// `run-murzln6g-11debe1d`, C3).** Told eight times to "make the choice before
-// the step that does a2", the model never moved step 16: the sentence said
-// what to do and not how. `reorder` with `to` (`../../flow-draft/amendment/move.ts`)
-// moves a step to a position, and the act's own position puts the choice just
-// before it.
+// **It names how (live run `run-murzln6g-11debe1d`, C3).** Told eight times to
+// "make the choice before the step that does a2", the model never moved step
+// 16: the sentence said what to do and not how. The framework drafts the Flow
+// in the order its steps ran and no edit moves a step
+// (`../../draft/amendment/`), so the way is to do the act again after the
+// choice, name that step for it, and drop the act's earlier step.
 
 import { automationStudioFlowDraftStepMovedTarget, type AutomationStudioFlowDraftStep } from "../../draft/index.ts";
 
@@ -54,8 +54,7 @@ export function automationStudioInstructedChoiceAfterAct(input: { id: string; of
     step,
     actStep,
     said: `${input.id} is made by step ${step}, after step ${actStep} does ${input.of}: the act runs before its choice, so the choice does nothing for it `
-      + `unless step ${step} changes what the act already did (such as the line it put in a cart). Make the choice before the step that does ${input.of}: `
-      + `amend_draft reorder on step ${step} with to ${actStep} moves step ${step} to position ${actStep}, just before that step. `
-      + `Or do ${input.of} again after it and name that step for ${input.of}.`
+      + `unless step ${step} changes what the act already did (such as the line it put in a cart). The Flow runs its steps in the order they ran, `
+      + `so do ${input.of} again after step ${step}, name that step for ${input.of}, and drop step ${actStep}.`
   };
 }

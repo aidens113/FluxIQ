@@ -50,7 +50,7 @@ describe("a claim asked as it is made", () => {
     const notNow = press(5, "item", "Not now", { disposition: "taken", changed: [{ words: "Protect your purchase", how: "went" }] });
     const refused = automationStudioInstructedActClaimVerdict({ instructionText: HUB, steps: [add, notNow], step: notNow, act: "a1" });
     expect(refused).toMatchObject({ act: "a1", instead: 4 });
-    expect(refused?.said).toBe('Step 5 ("Not now") changed nothing that shows a1, and does not do a1. Step 4 ("Add to cart") shows it: name a1 there with amend_draft add on step 4 with act a1.');
+    expect(refused?.said).toBe('Step 5 ("Not now") changed nothing that shows a1, and does not do a1. Step 4 ("Add to cart") shows it: name a1 there with {"step": 4, "change": "keep", "act": "a1"}.');
     expect(automationStudioInstructedActClaimVerdict({ instructionText: HUB, steps: [add, notNow], step: add, act: "a1" })).toBeUndefined();
   });
 });
@@ -84,7 +84,7 @@ describe("a plural act claimed on a press that only cleared the way, before its 
     const refused = automationStudioInstructedActClaimVerdict({ instructionText: FRIENDS, steps, step: close, act: "a1" });
     expect(refused).toEqual({
       act: "a1",
-      said: 'Step 14 ("Close chat") only closed something in front of the page, and does not do a1. No step in the draft names it yet: on the page where a1 is done, run the press whose words name it with add true and act a1.'
+      said: 'Step 14 ("Close chat") only closed something in front of the page, and does not do a1. No step in the draft names it yet: on the page where a1 is done, run the press whose words name it with act a1; a call that works is in the draft.'
     });
   });
 
@@ -101,7 +101,7 @@ describe("a plural act claimed on a press that only cleared the way, before its 
     const steps = [listing, close];
     const claimRefused = (all: readonly AutomationStudioFlowDraftStep[], step: AutomationStudioFlowDraftStep, act: string) =>
       automationStudioInstructedActClaimVerdict({ instructionText: FRIENDS, steps: all, step, act });
-    const report = applyAutomationStudioFlowDraftAmendments(steps, [{ step: 14, change: "add", act: "a1" }, { step: 14, change: "repeat", over: 12 }], { claimRefused });
+    const report = applyAutomationStudioFlowDraftAmendments(steps, [{ step: 14, change: "keep", act: "a1" }, { step: 14, change: "repeat", over: 12 }], { claimRefused });
     expect(report.refused).toEqual([expect.objectContaining({ step: 14, reason: "act_not_done_there", act: "a1", said: expect.stringContaining("only closed something in front of the page") as unknown as string })]);
     expect(close.acts).toBeUndefined();
     const item = automationStudioInstructedActsChecklist({ instructionText: FRIENDS, draftSteps: steps })?.find((each) => each.id === "a1");

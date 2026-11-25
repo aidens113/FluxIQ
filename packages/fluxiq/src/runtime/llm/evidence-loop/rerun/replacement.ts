@@ -9,17 +9,15 @@
 // refused `bootstrap.cannot_reach_start_location` for a step the build had run
 // (both bigbox builds, `run-mulx76vv-a882551e` and `run-mum0ke7z-940cbd27`).
 //
-// **Where the model authors its draft, the rerun takes the replaced step's
-// place** (audit A1, cause 5a). A rerun is the same step corrected, so it goes
-// where that step stood, is in the Flow exactly when that step was, does the
-// acts that step did when it changes something, is on the places on the named
-// route that step said it was on, runs the way that step ran, and every
-// statement that named that step names it instead. Appended at the end with the old step
-// merely dropped, a rerun under an authored draft would fall out of the Flow
-// (it was never added), land after the steps that need it, and orphan any
-// `repeat` naming the old step: `run-muog33va-96469cb2` was refused
-// `repeat_span_unknown` nine times for exactly that. A build replayed under the
-// older transcript rule keeps the old behaviour, which is what it recorded.
+// **The rerun takes the replaced step's place** (audit A1, cause 5a). A rerun
+// is the same step corrected, so it goes where that step stood, is in the Flow
+// exactly when that step was, does the acts that step did when it changes
+// something, is on the places on the named route that step said it was on,
+// runs the way that step ran, and every statement that named that step names
+// it instead. Appended at the end with the old step merely dropped, a rerun
+// would land after the steps that need it and orphan any `repeat` naming the
+// old step: `run-muog33va-96469cb2` was refused `repeat_span_unknown` nine
+// times for exactly that.
 //
 // **No other step's number changes.** The withdrawn attempt stays listed as the
 // receipt of what was replaced, and it used to be listed just after the rerun,
@@ -43,21 +41,26 @@ import {
  * Withdraw `replaced` when the newest step -- the rerun, just appended -- is
  * one the Flow could contain. A rerun that did not take effect leaves the
  * original where it was, so the Flow still has the step that worked.
- * `takesItsPlace` is whether the model authors the draft (see the header).
  */
 export function automationStudioLlmEvidenceRerunReplaced(
   steps: AutomationStudioFlowDraftStep[],
-  replaced: AutomationStudioFlowDraftStep | undefined,
-  options: { takesItsPlace?: boolean } = {}
+  replaced: AutomationStudioFlowDraftStep | undefined
 ): void {
   const rerun = steps[steps.length - 1];
   if (!replaced || !rerun || rerun === replaced || !automationStudioFlowDraftStepIsProposable(rerun)) return;
   const wasInFlow = replaced.disposition === "kept";
-  if (!options.takesItsPlace) {
-    applyAutomationStudioFlowDraftAmendments(steps, [{ step: replaced.position, change: "drop" }]);
-    return;
+  // The framework drafts the Flow (`../../../flow-authoring/draft/compose/`), so whose word the step was passes to the
+  // rerun with its place: a step the model ruled in -- one carried from a saved Flow among them -- stays the model's, and
+  // a step the framework drafted is drafted again by it, on the rerun, when the loop composes next.
+  if (wasInFlow) {
+    rerun.disposition = "kept";
+    if (replaced.drafted === undefined) delete rerun.drafted;
   }
-  if (wasInFlow) rerun.disposition = "kept";
+  // The model's own pick of the result's read is the rerun's now.
+  if (replaced.result === true) {
+    if (rerun.effect === "observe") rerun.result = true;
+    delete replaced.result;
+  }
   // Only a step that changes something does an act (`../../flow-draft/amendment/`,
   // `act_on_a_read`). An act a read carried -- live run 36 named a1 on a rerun
   // listing -- is not passed on to the next rerun of that listing, where it

@@ -32,10 +32,10 @@ export function rowAct(listing: number, steps: readonly AutomationStudioDraftAme
   const press = steps.find((step) => step.position > listing && step.effect === "mutate" && step.effectApplied !== false && step.interruption !== true);
   const repeat = (act: string): string => `{"step": ${act}, "change": "repeat", "over": ${listing}}`;
   if (!press) {
-    return `No step after step ${listing} does anything to a row yet, so there is nothing to repeat. A loop over rows needs the act done once first: do it to one row step ${listing} kept -- press that row's own control, never one on a row it left out -- with add true and its act, then send ${repeat("<that press>")}.`;
+    return `No step after step ${listing} does anything to a row yet, so there is nothing to repeat. A loop over rows needs the act done once first: do it to one row step ${listing} kept -- press that row's own control, never one on a row it left out -- with its act, then send ${repeat("<that press>")}.`;
   }
-  const add = press.disposition === "kept" ? "" : `add step ${press.position} with its act, then `;
-  return `Step ${press.position} is the first step after step ${listing} that changes something. If it is the act done to one row step ${listing} kept, the repeat goes on it: ${add}send ${repeat(String(press.position))}. If it moves the list on to its next page instead, it is no row's act: the page loop goes on the read, ${press.disposition === "kept" ? "" : `add step ${press.position}, then `}send {"step": ${listing}, "change": "repeat", "while": ${press.position}}.`;
+  const add = press.disposition === "kept" ? "" : `put step ${press.position} back with its act, {"step": ${press.position}, "change": "keep", "act": <the act>}, then `;
+  return `Step ${press.position} is the first step after step ${listing} that changes something. If it is the act done to one row step ${listing} kept, the repeat goes on it: ${add}send ${repeat(String(press.position))}. If it moves the list on to its next page instead, it is no row's act: the page loop goes on the read: send {"step": ${listing}, "change": "repeat", "while": ${press.position}}.`;
 }
 
 /**

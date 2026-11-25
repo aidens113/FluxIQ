@@ -355,6 +355,20 @@ export type AutomationStudioLlmEvidenceLoopInput = {
      * amendment naming a step names one step.
      */
     seed?: readonly AutomationStudioFlowDraftStep[];
+    /**
+     * The ids of the seeded steps carried from a saved Flow or an earlier attempt, as opposed to an earlier round of
+     * this one (t1037 phase 2). They are the model's word: the framework drafts around them and never decides them
+     * again, so a saved step a run broke at stays in the Flow until the model edits it, and a later read of its list
+     * does not take its place. A seeded step named `f<n>` (`../flow-authoring/draft/carried-step/`) is carried
+     * whether or not it is listed.
+     */
+    carried?: readonly string[] | undefined;
+    /**
+     * Which reads the caller's answer is made of, where the caller decides it (answer-first: every read not marked a
+     * working read, t1037 phase 2). Absent, the framework takes the asked table's last read, or the last read, as the
+     * result (`../flow-authoring/draft/compose/result-reads.ts`); every other read is left out as not the result.
+     */
+    resultRead?: ((step: AutomationStudioFlowDraftStep) => boolean) | undefined;
     /** Where each seeded step's node started in the run being repaired, by step id (`node-tools/draft-from-flow.ts`): a rerun of it, or
      * of the step that took its place, with no start page of its own is put back there first (`node-tools/step-place.ts`; t194 C-D). */
     seedStartedOn?: Readonly<Record<string, JsonObject>>;
@@ -404,13 +418,6 @@ export type AutomationStudioLlmEvidenceLoopInput = {
      */
     routeCheck?: (steps: readonly AutomationStudioFlowDraftStep[]) => Promise<Extract<AutomationStudioLlmEvidenceCompletionCheck, { ok: false }> | undefined>;
   };
-  /**
-   * Who decides which steps are in the Flow. Absent, the model: a step that
-   * runs is `taken` until the model adds it (`../flow-draft/step.ts`; user,
-   * 2026-09-30). `"transcript"` keeps every step that ran unless withdrawn, and
-   * is only for replaying a build recorded under that rule.
-   */
-  draftAuthoring?: "transcript";
   /**
    * Whether a completed result must first have its draft replayed clean
    * (`runtime/flow-draft/dry-run.ts`) -- the test of the Flow, asked only once

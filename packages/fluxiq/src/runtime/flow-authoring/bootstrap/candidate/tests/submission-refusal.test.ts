@@ -71,7 +71,7 @@ describe("a refused candidate submission", () => {
     expect(issues.filter((issue) => issue.path === "plan.subflows.0.nodes.1.parameters").every((issue) => JSON.stringify(issue.handles) === JSON.stringify([{ handle: "t478" }]))).toBe(true);
     expect(issues.filter((issue) => issue.path === "plan.subflows.0.nodes.2.parameters").every((issue) => JSON.stringify(issue.handles) === JSON.stringify([{ handle: "t488" }]))).toBe(true);
     expect(String(answer?.next)).toContain("t478, t488");
-    expect(String(answer?.next)).toMatch(/look at that page/);
+    expect(String(answer?.next)).toMatch(/call core.full_page|full_page/);
     expect(String(answer?.next)).toMatch(/drop it/);
   });
 
@@ -131,8 +131,8 @@ const ADVICE_WORDS = {
   not_a_handle: "names a control by something other than a handle",
   not_a_control: "not a control a press acts on",
   wrong_control: "does not prove it is the control the instruction needs",
-  unknown_field: "neither one the list's detection printed nor a key this same step keeps",
-  columns_changed: "have changed since it was detected"
+  unknown_field: "neither one the list's read printed nor a key this same step keeps",
+  columns_changed: "have changed since it was read"
 } as const;
 
 describe("the advice a refused handle is given", () => {
@@ -192,11 +192,11 @@ describe("the advice a refused handle is given", () => {
     expect(next).not.toContain("will not help");
     expect(next).not.toContain("is right");
     expect(next).toContain(`"${after}"`);
-    expect(next).toContain("Detect the list again on the page as it is when the step runs");
+    expect(next).toContain("Read the list again on the page as it is when the step runs");
     expect(next).toContain("extraction.6");
     // The old detection's columns are still said, as what that handle reads.
     expect(next).toContain('"li_card_h3_title", "li_card_div_action_label"');
-    expect(next.indexOf("Detect the list again")).toBeLessThan(next.indexOf("submit the whole candidate again"));
+    expect(next.indexOf("Read the list again")).toBeLessThan(next.indexOf("submit the whole candidate again"));
   });
 
   it("reaches the model from a domain's refused answer through Core's own issue feedback, names and evidence intact", async () => {
@@ -216,7 +216,7 @@ describe("the advice a refused handle is given", () => {
     if (refused.ok) return;
     const next = String(automationStudioCandidateSubmissionRefusal(refused).evidence.next);
     expect(next).toContain(`The name "${after}" is one of the list t925's own columns`);
-    expect(next).toContain("Detect the list again");
+    expect(next).toContain("Read the list again");
     expect(next).toContain('"li_card_h3_title", "li_card_div_action_label"');
     expect(next).not.toContain("will not help");
   });

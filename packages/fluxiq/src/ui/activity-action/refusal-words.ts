@@ -22,7 +22,7 @@ export const ACTIVITY_ACTION_REFUSAL_WORDS = Object.freeze({
     already_out: "that step is already out of the Flow",
     changes_nothing: "that step was already tried exactly this way on this same page, and trying it again would end the same way",
     no_such_step: "the Flow has no such step",
-    no_such_position: "the Flow has no such place to move it to",
+    no_such_position: "a repeat must end on a step at or after the one it starts on",
     not_a_kept_step: "the step it named is not in the Flow",
     did_not_work: "that step did not work, so it is not in the Flow",
     // "a repeat goes on what is done to each item, after the list it repeats
@@ -36,9 +36,6 @@ export const ACTIVITY_ACTION_REFUSAL_WORDS = Object.freeze({
     bind_row_outside_loop: "that step is not repeated for each item, so there is no item to take the value from",
     bind_malformed: "the placeholder for that value was not written correctly",
     rerun_holds_binding: "that step takes a value that varies, which is known only when the Flow runs",
-    // Only beside an edit that moved a step, which changed the Flow, so a card
-    // shows it as partly done at most; here because the reasons are exhaustive by type.
-    repeat_taken_off: "moving a step left a repeat unable to run, so it was taken off",
     // A drop put back: it was the only step that brings the page to where a
     // step still in the Flow acted (`flow-draft/amendment/strand-check.ts`).
     strands_a_step: "that step is the only one that gets to the page a later step needs",
@@ -53,7 +50,6 @@ export const ACTIVITY_ACTION_REFUSAL_WORDS = Object.freeze({
     repeat_never_ends: "that repeat could never end on its own: its last step cannot tell when there is nothing more",
     holds_a_repeat: "a repeat still needs that step as its source or its last step",
     span_holds_routing: "a step inside that repeat also says when it runs",
-    not_an_edit: "that is not one of the changes the draft takes",
     not_a_read: "that step does not read, so it cannot be the result",
   } as const),
   repeated: Object.freeze({

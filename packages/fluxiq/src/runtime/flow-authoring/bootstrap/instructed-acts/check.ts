@@ -140,8 +140,8 @@ const MIN_DISTINCTIVE_WORD = 4;
 /** What a refusal over the acts is told first; `./permission.ts` says it too. */
 export const AUTOMATION_STUDIO_INSTRUCTED_ACTS_INSTRUCTION = "Nothing was created and this build is still open. "
   + "missingActs.acts are things the person's instruction asks to be done -- each quote is their own words -- that no step in your Flow is named as doing, and reason says why. "
-  + "For each one: if a step in your Flow already does it, say so with amend_draft add on that step and act set to the act's id; if none does, run the node that does it (press the control, set the option, open the page) with add and act on the call. "
-  + "Then complete again. A step you added with act already counts for that act; acts in the result, e.g. [{\"action\": \"a1\", \"step\": \"7\"}], names a step by its number and an act by its id, and a claim that names no act answers none. "
+  + "For each one: if a step in your Flow already does it, say so by keeping that step with the act, {\"step\": <that step>, \"change\": \"keep\", \"act\": \"<the act's id>\"}; if none does, run the node that does it (press the control, set the option, open the page) with act on the call; a call that works is in the draft. "
+  + "Then complete again. A step named with act already counts for that act; acts in the result, e.g. [{\"action\": \"a1\", \"step\": \"7\"}], names a step by its number and an act by its id, and a claim that names no act answers none. "
   + "Each act needs a step of its own, and it must be one that changed something.";
 
 /** Said only when a claim named a step that only arrived, so the plain refusal stays as it was. */

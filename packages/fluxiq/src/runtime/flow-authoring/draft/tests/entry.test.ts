@@ -112,23 +112,9 @@ describe("the draft entry a decision is shown", () => {
   it("tells the model how to correct the draft and how to repeat an act per listed item", () => {
     const { instruction } = value([step(1, "press", { target: "t" })]);
     expect(instruction).toContain("amend_draft");
-    expect(instruction).toMatch(/every item of a list[^.]*repeat/u);
+    expect(instruction).toMatch(/repeat for steps done again for each item or page/u);
     // Every result is shown: nothing tells the model a result may have left.
     expect(instruction).not.toMatch(/still shown|no longer shown|evicted|omitted/u);
-  });
-
-  // Live run 37 (`run-muq5v4zg-39182b58`) read "then amend_draft repeat over
-  // the listing step" as a repeat on the listing, `13 repeat over 13`, with no
-  // press in the draft.
-  it("says the three steps of a loop in order, and that the repeat goes on the press, never on the listing", () => {
-    const authored = (automationStudioFlowDraftEntry({ steps: [step(1, "press", { target: "t" })], authored: true })!.value as Entry).instruction;
-    expect(authored).toContain("three steps in this order");
-    expect(authored).toContain(`{"step": <that press>, "change": "repeat", "over": <the listing>}`);
-    expect(authored).toContain("A repeat over a listing goes on the press, never on it");
-    expect(authored).toContain("a listing that already keeps the right rows is not run again");
-    const transcript = value([step(1, "press", { target: "t" })]).instruction;
-    expect(transcript).toContain("a repeat over a listing goes on the act, never on the listing");
-    expect(transcript).toContain("A listing that already keeps the right rows is not run again.");
   });
 
   it("preserves every non-default value on a step line", () => {
@@ -224,11 +210,6 @@ describe("the draft entry a decision is shown", () => {
     expect(shown.steps[0]).not.toHaveProperty("control");
   });
 
-  it("tells an authoring model never to act itself on the items its listing left out", () => {
-    const { instruction } = automationStudioFlowDraftEntry({ steps: [step(1, "press", { target: "t" })], authored: true })!.value as Entry;
-    expect(instruction).toMatch(/every item of a list[^.]*repeat[^.]*never act yourself on the items your listing left out/u);
-  });
-
   it("is nothing at all when the loop only looked", () => {
     expect(automationStudioFlowDraftEntry({ steps: [step(1, "inspect", {}, { effect: "observe" })] })).toBeUndefined();
     expect(automationStudioFlowDraftEntry({ steps: [] })).toBeUndefined();
@@ -247,9 +228,6 @@ describe("the draft entry a decision is shown", () => {
     expect(lines.map((line) => line.does)).toEqual([{ target: "12 Double Rolls" }, { target: "×" }, { target: "Search", text: "paper towels" }, undefined]);
     expect(lines[1]?.input).toEqual({ handle: "t1091" });
     expect(lines[3]).not.toHaveProperty("does");
-    // The authored telling says what does is for.
-    const authored = automationStudioFlowDraftEntry({ steps, authored: true })!.value as Entry;
-    expect(authored.instruction).toContain("does, beside a step, names the control it acted on and the words it typed: name an act only on a step whose does is that act.");
   });
 
   // t174's control and t193's does name the same control; a line says it once.
@@ -311,29 +289,6 @@ describe("written steps, bindings and inputs in the draft entry", () => {
     expect(lines[0]).toMatchObject({ replayed: "replayed", passes: 3 });
     expect(lines[1]).not.toHaveProperty("passes");
   });
-
-  it("tells an authoring model it may write a step, bind a value, and that repetitive work is a loop", () => {
-    const { instruction } = automationStudioFlowDraftEntry({ steps: [step(1, "press", { target: "t" })], authored: true })!.value as Entry;
-    expect(instruction).toContain("write true");
-    expect(instruction).toContain("written true");
-    expect(instruction).toContain("{\"$input\": <name>, \"test\": <value>}");
-    expect(instruction).toContain("{\"$row\": <field>}");
-    expect(instruction).toContain("amend_draft bind");
-    expect(instruction).toContain("inputs");
-    expect(instruction).toContain("passes");
-    expect(instruction).toMatch(/never do it to every item yourself/u);
-  });
-
-  // Live run `run-mustzxhi-2e2cda87` bound a press's target about 12 times on
-  // "a value that changes between runs or rows is bound".
-  it("narrows binding to a value a step typed, or a read's condition, and says a press's control or option is never bound", () => {
-    const { instruction } = automationStudioFlowDraftEntry({ steps: [step(1, "press", { target: "t" })], authored: true })!.value as Entry;
-    expect(instruction).not.toContain("A value that changes between runs or rows is bound");
-    expect(instruction).toContain("a value a step typed, or a read's condition");
-    expect(instruction).toContain("press's control or option is never bound");
-    expect(instruction).toContain("a repeat finds each row's own control in that row");
-    expect(instruction).toContain("a single item's option is pressed as the page offers it");
-  });
 });
 
 // Live run `run-musp474o-e0ed7432`: the attempt a rerun replaced was listed
@@ -350,7 +305,7 @@ describe("the attempt a rerun replaced", () => {
       step(2, "press", { target: "t1" }, { id: "d7" }),
       receipt(3, "d6", "d18")
     ];
-    const shown = automationStudioFlowDraftEntry({ steps, authored: true })!.value as Entry;
+    const shown = automationStudioFlowDraftEntry({ steps })!.value as Entry;
     expect(shown.steps[2]).toEqual({ step: 3, actionId: "list", replacedBy: 1, inResult: false, callId: "call.3" });
     expect(shown.steps[0]).toMatchObject({ step: 1, input: { where: "fixed" }, inResult: true });
     expect(shown.instruction).toContain("A step showing replacedBy is the attempt a rerun replaced");
@@ -366,18 +321,6 @@ describe("the attempt a rerun replaced", () => {
     ];
     const shown = value(steps);
     expect(shown.steps.slice(1).map((line) => (line as Record<string, unknown>).replacedBy)).toEqual([1, 1]);
-  });
-});
-
-// Live run `run-musr9pv3-f4bf6256` (t195 w45): a stray repeat from a decision
-// whose numbers Core read one amendment at a time.
-describe("what both tellings say about numbering", () => {
-  it("says every number in one decision is the number the draft shows, in both tellings", () => {
-    const authored = (automationStudioFlowDraftEntry({ steps: [step(1, "press", { target: "t" })], authored: true })!.value as Entry).instruction;
-    const transcript = value([step(1, "press", { target: "t" })]).instruction;
-    for (const instruction of [authored, transcript]) {
-      expect(instruction).toContain("Every number in one amend_draft is this draft's; it is renumbered after the decision.");
-    }
   });
 });
 
@@ -436,7 +379,7 @@ describe("the route the person named", () => {
     step(3, "press", { target: "remove" })
   ];
   const shown = (route?: Parameters<typeof automationStudioFlowDraftEntry>[0]["route"]): Entry & { route?: unknown } =>
-    automationStudioFlowDraftEntry({ steps: steps(), authored: true, ...(route ? { route } : {}) })!.value as Entry & { route?: unknown };
+    automationStudioFlowDraftEntry({ steps: steps(), ...(route ? { route } : {}) })!.value as Entry & { route?: unknown };
 
   it("shows a named route in the person's words, each place by id, and how to say which steps are on each", () => {
     const value = shown({ state: "named", quote: "go to my profile, then Friends", places: ["my profile", "Friends"] });
@@ -466,13 +409,12 @@ describe("the route the person named", () => {
   it("adds nothing when no route has been read", () => {
     const value = shown();
     expect(value).not.toHaveProperty("route");
-    expect(value.instruction).toBe((automationStudioFlowDraftEntry({ steps: [step(1, "press", { target: "t" })], authored: true })!.value as Entry).instruction);
+    expect(value.instruction).toBe((automationStudioFlowDraftEntry({ steps: [step(1, "press", { target: "t" })] })!.value as Entry).instruction);
   });
 });
 
 // Read-list redesign S2 (contract C1): a do-while's line names its last step
-// and, when carried, its most passes; both tellings name the continuing list's
-// form, and say that a repeat goes on the act only over a listing.
+// and, when carried, its most passes.
 describe("a repeat that runs while its last step succeeds, in the draft entry", () => {
   const read = (): AutomationStudioFlowDraftStep[] => [
     step(1, "read", { list: "l1" }, { id: "d1", effect: "observe", routing: { kind: "repeat", through: "d2", while: "d2" } }),
@@ -484,16 +426,6 @@ describe("a repeat that runs while its last step succeeds, in the draft entry", 
     const most = read();
     most[0]!.routing = { kind: "repeat", through: "d2", while: "d2", most: 3 };
     expect(value(most).steps[0]?.runs).toBe("repeats through step 2 while it succeeds, at most 3 passes");
-  });
-
-  it("names the continuing list's form in both tellings", () => {
-    const authored = (automationStudioFlowDraftEntry({ steps: read(), authored: true })!.value as Entry).instruction;
-    const transcript = value(read()).instruction;
-    for (const instruction of [authored, transcript]) {
-      expect(instruction).toContain("list that continues");
-      expect(instruction).toContain("repeat on the read with while");
-      expect(instruction).toContain("the Flow keeps each row once");
-    }
   });
 });
 
@@ -521,21 +453,21 @@ describe("the call identity a draft step line shows", () => {
 });
 
 describe("the framework's draft", () => {
-  const framework = (steps: readonly AutomationStudioFlowDraftStep[]) => automationStudioFlowDraftEntry({ steps, authored: "framework" })!.value as Entry;
+  const framework = (steps: readonly AutomationStudioFlowDraftStep[]) => automationStudioFlowDraftEntry({ steps })!.value as Entry;
 
-  it("tells the framework drafting and the six edits, shorter than the authored telling, and says nothing of adding", () => {
+  it("tells the framework drafting and the seven edits, and says nothing of adding, reordering or marking a step", () => {
     const steps = [step(1, "press", { target: "t" })];
     const told = framework(steps).instruction;
-    const authored = (automationStudioFlowDraftEntry({ steps, authored: true })!.value as Entry).instruction;
-    expect(told.length).toBeLessThan(authored.length);
     expect(told).toContain("Core drafts the Flow from the calls that worked");
-    for (const edit of ["repeat", "bind", "result", "drop", "keep"]) expect(told).toContain(edit);
+    for (const edit of ["repeat", "bind", "result", "drop", "keep", "rerun"]) expect(told).toContain(edit);
+    for (const old of ["exploratory", "reorder", "optional", "only_if", "on_failed", "take"]) expect(told).not.toContain(old);
     expect(told).toContain("each line left out says why under out");
     expect(told).toContain("A step joins the Flow by running it");
     expect(told).toContain("never done again for a draft edit");
     expect(told).toContain("tested whole from its start");
     expect(told).not.toContain("add");
-    expect(AUTOMATION_STUDIO_FLOW_DRAFT_GUIDES).toContain(told);
+    // The one telling there is, which the wire lifts to the head (`../../../llm/provider-task/draft-guide.ts`).
+    expect(AUTOMATION_STUDIO_FLOW_DRAFT_GUIDES).toEqual([told]);
   });
 
   it("shows out: the reason on a step the framework left out, and an existing out wins", () => {
@@ -545,11 +477,5 @@ describe("the framework's draft", () => {
     expect(lines[0]).not.toHaveProperty("out");
     expect(lines[1]!.out).toBe("repeat");
     expect(lines[2]!.out).toContain("taken out by Core");
-  });
-
-  it("leaves the old tellings and lines unchanged", () => {
-    const left = step(2, "press", { target: "u" }, { disposition: "taken", drafted: "repeat" });
-    expect(value([left]).steps[0]).not.toHaveProperty("out");
-    expect((automationStudioFlowDraftEntry({ steps: [left], authored: true })!.value as Entry).steps[0]).not.toHaveProperty("out");
   });
 });

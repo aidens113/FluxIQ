@@ -3,7 +3,7 @@
 // replies of lane C's live runs came from (`../rerun-input.ts`).
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
-import { AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA, type AutomationStudioFlowDraftStep } from "../../../flow-authoring/draft/index.ts";
+import { AUTOMATION_STUDIO_FLOW_DRAFT_EDIT_SCHEMA, type AutomationStudioFlowDraftStep } from "../../../flow-authoring/draft/index.ts";
 import { automationStudioLlmEvidenceRerunInput } from "../rerun/index.ts";
 import { automationStudioLlmEvidenceRerunRequest } from "../rerun/index.ts";
 
@@ -55,11 +55,11 @@ describe("the argument a rerun runs with", () => {
   });
 
   it("is what the model is told to write: only the keys that change", () => {
-    const input = (AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA.properties as Record<string, { description: string }>).input!;
+    const input = (AUTOMATION_STUDIO_FLOW_DRAFT_EDIT_SCHEMA.properties as Record<string, { description: string }>).input!;
     expect(input.description).toContain("JSON merge patch over the argument the step ran with");
     expect(input.description).toContain("Only the keys that change");
     expect(input.description).toContain("null removes a key");
-    // The schema's own words (`flow-draft/amendment/schema.ts`) say what the
+    // The schema's own words (`flow-authoring/draft/amendment/edits/schema.ts`) say what the
     // merge does (`../rerun-input.ts`): a left-out key is kept, except in an
     // object the model writes out again, which drops what it was shown and left
     // out and keeps what was withheld from it (t287, W10).

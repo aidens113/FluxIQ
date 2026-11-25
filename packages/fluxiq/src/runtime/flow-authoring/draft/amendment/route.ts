@@ -5,23 +5,21 @@ import type { AutomationStudioFlowDraftShownNumbering } from "./shown-numbering.
 import type { AutomationStudioFlowDraftAmendment, AutomationStudioFlowDraftAmendmentRefusal } from "./types.ts";
 
 /**
- * Write one routing statement onto the step it is about, or say why it could
- * not be written (`../routing.ts`).
+ * Write a `repeat` onto the step it is about, or say why it could not be
+ * written (`../routing.ts`). It is the one edit that says when a step runs.
  *
  * The three things this does and nothing else. Whatever the model left out is
- * filled in from the draft -- a check is the step before, a span is this step
- * alone, a list is the step before, and a repeat `while` its last step
- * succeeds runs through that step -- so the commonest statement is one word.
- * Whatever it wrote as a position is turned into the named step's own id, once,
- * here, so a later reorder cannot make the statement mean a different step. And
- * a statement about a step that is not in the Flow is refused, because routing
- * describes the Flow and a withdrawn step is not in it.
+ * filled in from the draft -- a span is this step alone, a list is the step
+ * before, and a repeat `while` its last step succeeds runs through that step --
+ * so the commonest statement is one word. Whatever it wrote as a position is
+ * turned into the named step's own id, once, here. And a repeat naming a step
+ * that is not in the Flow is refused, because routing describes the Flow and a
+ * withdrawn step is not in it.
  *
  * Positions are read as the draft was shown (`shown`, `./shown-numbering.ts`).
- * Whether a repeat's steps stand in an order it can run in is not checked here:
- * a later move of the same decision can settle it, so the decision checks it
- * once its moves are done (`./repeat-revalidation.ts`). A repeat that says what
- * the step already says is checked now, since nothing is written for it.
+ * Whether a repeat's steps stand in an order it can run in is checked once the
+ * decision's last amendment is read (`./repeat-revalidation.ts`). A repeat that
+ * says what the step already says is checked now, since nothing is written for it.
  */
 export function automationStudioFlowDraftAmendmentRoute(
   steps: readonly AutomationStudioFlowDraftStep[],
@@ -30,21 +28,8 @@ export function automationStudioFlowDraftAmendmentRoute(
   shown: AutomationStudioFlowDraftShownNumbering
 ): { ok: true } | { ok: false; reason: AutomationStudioFlowDraftAmendmentRefusal["reason"]; over?: number; through?: number } {
   const named = shown.step;
-  const before = (): AutomationStudioFlowDraftStep | undefined => automationStudioFlowDraftPrecedingProposedStep(steps, step);
   let routing: AutomationStudioFlowDraftStepRouting;
-  if (amendment.change === "optional") routing = { kind: "optional" };
-  else if (amendment.change === "only_if") {
-    const check = named(amendment.check) ?? before();
-    if (!check) return { ok: false, reason: amendment.check === undefined ? "no_step_before_it" : "no_such_step" };
-    if (!automationStudioFlowDraftStepIsProposed(check)) return { ok: false, reason: "not_a_kept_step" };
-    routing = { kind: "only_if", check: automationStudioFlowDraftStepId(check) };
-  } else if (amendment.change === "on_failed") {
-    const to = named(amendment.to);
-    if (!to) return { ok: false, reason: "no_such_step" };
-    if (!automationStudioFlowDraftStepIsProposed(to)) return { ok: false, reason: "not_a_kept_step" };
-    if (to === step) return { ok: false, reason: "already_so" };
-    routing = { kind: "on_failed", to: automationStudioFlowDraftStepId(to) };
-  } else if (amendment.while !== undefined) {
+  if (amendment.while !== undefined) {
     // Run the span, then again while its last step succeeds: that step is the
     // span's `through` and its `while` both, and nothing before it is named.
     const last = named(amendment.while);
@@ -54,7 +39,7 @@ export function automationStudioFlowDraftAmendmentRoute(
     routing = { kind: "repeat", through: id, while: id, ...(amendment.most === undefined ? {} : { most: amendment.most }) };
   } else {
     const through = named(amendment.through) ?? step;
-    const over = named(amendment.over) ?? before();
+    const over = named(amendment.over) ?? automationStudioFlowDraftPrecedingProposedStep(steps, step);
     if (!over) return { ok: false, reason: amendment.over === undefined ? "no_step_before_it" : "no_such_step" };
     if (!automationStudioFlowDraftStepIsProposed(through) || !automationStudioFlowDraftStepIsProposed(over)) return { ok: false, reason: "not_a_kept_step" };
     // Over a listing, `most` takes only its first rows (F5); over a check the assembler refuses it.
@@ -62,7 +47,7 @@ export function automationStudioFlowDraftAmendmentRoute(
   }
   if (same(step.routing, routing) && amendment.settings === undefined) {
     // The same repeat sent again where it cannot run is told why, not "already so".
-    const refusal = routing.kind === "repeat" ? automationStudioFlowDraftRepeatRefusal(steps, step, routing, amendment, shown) : undefined;
+    const refusal = automationStudioFlowDraftRepeatRefusal(steps, step, routing, amendment, shown);
     if (!refusal) return { ok: false, reason: "already_so" };
     return { ok: false, reason: refusal.reason, ...(refusal.over === undefined ? {} : { over: refusal.over }), ...(refusal.through === undefined ? {} : { through: refusal.through }) };
   }

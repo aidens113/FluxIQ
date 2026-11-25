@@ -1,6 +1,7 @@
 // @fluxiq-test-group real-sql
 // The attempt's one result, wired (lane t905, design (d) phase 2): through the real service, a scripted model and real
-// SQL for the rows, the draft's read steps are the result and a read outside the draft is a look (lead decision D1).
+// SQL for the rows, the draft's read steps are the result. Since t1037 the framework drafts every call that worked, so
+// a read made without `add` is a draft step too: there is no read outside the draft, and no look among the reads.
 // The target is a lending library's list of loans read in pages, a kind of site none of the Lab's realistic scenarios
 // is. Its read answers as the web domain's does: the list's key and the page the pager said, beside the rows.
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -68,18 +69,18 @@ function noteOn(request: AutomationStudioLlmTaskRequest | undefined, callId: str
 const decisions = (attempt: { requests: AutomationStudioLlmTaskRequest[] }) => attempt.requests.filter((request) => request.taskKind === "evidence_tool_decision");
 const resultTitles = (attempt: Awaited<ReturnType<typeof scriptedAttempt>>) => attempt.answered.status === "answered" ? (attempt.answered.result?.rows?.previewRows ?? []).map((row) => row.title) : [];
 
-describe("the draft's read steps are the result, and a read outside the draft is a look", () => {
-  it("a page-2 read by hand without add says it is a look, and the result stays the draft step's page", async () => {
+describe("the draft's read steps are the result, and every read that worked is a draft step", () => {
+  it("a page-2 read by hand without add joins the draft: the same list read the same way is the step's next page", async () => {
     const attempt = await scriptedAttempt({
       library: fakeLibrary(), taskProcessing: LIST_EVERY_LOAN,
       fault: pagedReads({ 1: { 1: loans(1, 3), 2: loans(4, 2) } }),
       script: [read("page-one", { where: [OVERDUE], page: 1 }, ADD), read("page-two", { where: [OVERDUE], page: 2 }), complete("Listed.")],
     }, cleanups);
     const last = decisions(attempt).at(-1);
-    expect(noteOn(last, "page-two")).toMatch(/^a look: the result is unchanged \(step \d+, 3 rows\)/u);
-    expect(headerOf(last)).toContain("3 rows over 1 page: page=1 (3)");
-    expect(headerOf(last)).toContain("Looks not in it: call page-two (2 rows)");
-    expect(resultTitles(attempt)).toEqual(["Loan 1", "Loan 2", "Loan 3"]);
+    expect(noteOn(last, "page-two") ?? "").not.toMatch(/a look/u);
+    expect(headerOf(last)).toContain("5 rows over 2 pages: page=1 (3), page=2 (2)");
+    expect(headerOf(last)).not.toContain("Looks not in it");
+    expect(resultTitles(attempt)).toEqual(["Loan 1", "Loan 2", "Loan 3", "Loan 4", "Loan 5"]);
   });
 
   it("a step's second version run from its step gives a header of 16 rows over 2 pages", async () => {
@@ -116,17 +117,14 @@ describe("the draft's read steps are the result, and a read outside the draft is
     expect(resultTitles(attempt)).toEqual(["Loan 1", "Loan 2", "Loan 3", "Loan 4", "Loan 5"]);
   });
 
-  it("a completion on looks alone is refused naming take, and taking the look makes its rows the result", async () => {
+  // Before t1037 a read without add was a look, a completion on looks alone was refused, and `take` made the look a step.
+  it("a completion on a read made without add holds its rows: the read is a draft step, and nothing has to be taken", async () => {
     const attempt = await scriptedAttempt({
       library: fakeLibrary(), taskProcessing: LIST_EVERY_LOAN,
       fault: pagedReads({ 0: { 1: loans(1, 3) } }),
-      script: [read("by-hand", { page: 1 }), complete("Listed."), { kind: "amend_draft", amendments: [{ change: "take", call: "by-hand" }] }, complete("Listed.")],
+      script: [read("by-hand", { page: 1 }), complete("Listed.")],
     }, cleanups);
-    const afterRefusal = decisions(attempt)[2];
-    const refusal = JSON.stringify(afterRefusal?.context.evidenceLoop?.evidence ?? []);
-    expect(refusal).toContain("answer_first.result_empty");
-    expect(refusal).toContain('change \\"take\\"');
-    expect(refusal).toContain("by-hand");
+    expect(JSON.stringify(decisions(attempt).flatMap((request) => request.context.evidenceLoop?.evidence ?? []))).not.toContain("answer_first.result_empty");
     expect(headerOf(decisions(attempt).at(-1))).toContain("3 rows over 1 page");
     expect(resultTitles(attempt)).toEqual(["Loan 1", "Loan 2", "Loan 3"]);
   });

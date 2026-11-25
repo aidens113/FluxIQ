@@ -99,14 +99,16 @@ export const RECORDS_INSTRUCTION = "Find every catalog item and give me rows wit
 /**
  * The measured run's decisions, by the build's own count: six looks, each added
  * to the Flow as it ran (t244: only a Flow of steps that ran is tested and judged), a rerun,
- * two amendments, and at decision 10 a completion whose Flow reads no record.
+ * two amendments refused as already so, and at decision 10 a completion whose Flow reads no record.
  * Then looks, a rerun at 25 and the same completion at 26 -- or, with
  * `convergesAt`, the corrected completion that keeps the record producer.
  */
 export function repeatedBuildReply(call: number, convergesAt?: number): Reply {
   if (call <= 6) return lookAdded(call);
   if (call === 7) return { kind: "amend_draft", amendments: [{ step: 1, change: "rerun", input: { area: "area.rerun.7" } }] };
-  if (call === 8 || call === 9) return { kind: "amend_draft", amendments: [{ step: 2, change: "optional" }] };
+  // The measured run sent `optional` twice, applied and then refused already so; the framework's edits (t1037) have no
+  // optional, and an unrepeat of a step with no repeat is refused already so both times.
+  if (call === 8 || call === 9) return { kind: "amend_draft", amendments: [{ step: 2, change: "unrepeat" }] };
   if (call === 10) return cannotAnswerCompletion();
   if (call === convergesAt) return answeringCompletion();
   if (call <= 24) return look(call);

@@ -143,7 +143,7 @@ function readsBeforeLastActSentence(
   const full = reads.filter((read) => read.step !== undefined && !authoringInstructionRecordColumns({ named, fieldKeys: read.fieldKeys }).unmatched.length);
   if (!full.length || full.some((read) => read.step! >= lastActStep)) return undefined;
   const names = named.map((name) => `"${name}"`).join(", ");
-  return `Every read in the draft that gives ${names} runs before step ${lastActStep}, the last step that does what the instruction asks, so it shows the page as it was before that act. If the instruction asks for what the page shows after it, run a new read after step ${lastActStep} and add it; ${lastActRepeats ? `the listing step ${lastActStep} repeats over stays where it is, before step ${lastActStep}` : `leave every read before step ${lastActStep} where it is`}.`;
+  return `Every read in the draft that gives ${names} runs before step ${lastActStep}, the last step that does what the instruction asks, so it shows the page as it was before that act. If the instruction asks for what the page shows after it, run a new read after step ${lastActStep}: running it puts it in the draft there; ${lastActRepeats ? `the listing step ${lastActStep} repeats over stays where it is, before step ${lastActStep}` : `leave every read before step ${lastActStep} where it is`}.`;
 }
 
 /** The columns the instruction names that none of `fieldKeys` reads. */

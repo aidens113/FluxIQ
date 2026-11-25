@@ -28,8 +28,13 @@ const NEW_CARD_NAME = "Renew library card";
 const LENGTHEN = "Extend";
 const writeCardStep = (control: string) => writeStep(RENEW_CARD, { control });
 const writeLoanStep = (control: string) => writeStep(RENEW_LOAN, { title: ATLAS, control });
-/** The opening look of the attempt's first round takes the next number, so a step written after it comes after that. */
-const putInPlaceOf = (old: number, shown: number) => ({ kind: "amend_draft", amendments: [{ step: old, change: "drop" }, { step: shown, change: "reorder", to: old }] });
+/**
+ * The opening look of the attempt's first round takes the next number, so a step written after it comes after that.
+ * The framework's edits move no step (t1037): the written step stays where it was written, and the old one is dropped.
+ */
+const putInPlaceOf = (old: number, _shown: number) => ({ kind: "amend_draft", amendments: [{ step: old, change: "drop" }] });
+/** Where a step written in an attempt's first round stands: after the saved steps and the opening look. */
+const WRITTEN_STEP = 5;
 
 describe("the Flow holds", () => {
   it("the saved draft is really a row-bound repeat, the engine's For Each drives it, and attempts 2 and 3 cost the same small amount", async () => {
@@ -122,7 +127,7 @@ describe("the Flow breaks", () => {
     site.loanControl = LENGTHEN;
     const second = await lane.attempt({
       ...pressedAgain,
-      script: [writeLoanStep(LENGTHEN), { kind: "amend_draft", amendments: [{ step: LOAN_STEP, change: "drop" }, { step: 5, change: "reorder", to: LOAN_STEP }] }, repeatOverRows(LOAN_STEP, READ_STEP), forwardFrom(READ_STEP), complete("Renewed every loan.")]
+      script: [writeLoanStep(LENGTHEN), { kind: "amend_draft", amendments: [{ step: LOAN_STEP, change: "drop" }] }, repeatOverRows(WRITTEN_STEP, READ_STEP), forwardFrom(READ_STEP), complete("Renewed every loan.")]
     });
     expect(toldTo(second.decisions[0])?.flowRun).toMatchObject({ stoppedAt: LOAN_STEP });
     expect(second.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow_then_repair" });
@@ -143,8 +148,8 @@ describe("the Flow breaks", () => {
       ...pressedAgain,
       script: [
         writeLoanStep("Prolong"),
-        { kind: "amend_draft", amendments: [{ step: LOAN_STEP, change: "drop" }, { step: 5, change: "reorder", to: LOAN_STEP }] },
-        repeatOverRows(LOAN_STEP, READ_STEP),
+        { kind: "amend_draft", amendments: [{ step: LOAN_STEP, change: "drop" }] },
+        repeatOverRows(WRITTEN_STEP, READ_STEP),
         forwardFrom(READ_STEP),
         ...TITLES.map((title, at) => pressLoanByHand(`hand.${at}`, title, LENGTHEN, {})),
         complete("Renewed every loan by hand.")

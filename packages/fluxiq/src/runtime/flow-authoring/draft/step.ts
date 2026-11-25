@@ -42,21 +42,17 @@ import type { AutomationStudioFlowDraftStepRouting } from "./routing.ts";
 export type AutomationStudioFlowDraftStepEffect = "observe" | "mutate";
 
 /**
- * What the model has since said about a step it took.
+ * Whether a step is in the Flow, and on whose word.
  *
- * `taken` is where every step the model runs starts when the model authors the
- * draft (user, 2026-09-30: "IT SHOULD NOT JUST BLINDLY ADD EACH STEP THAT IT
- * TOOK ONE BY ONE IN ORDER"): the step ran and is evidence, and it is not in
- * the Flow until the model adds it -- `add` on the call itself, or an `add`
- * amendment naming it (`./amendment/`). `kept` is a step the model put in the
- * Flow; it is also where every step started under the older transcript rule,
- * which a loop can still be run under to replay a build recorded before
- * (`../llm/loop-configuration.ts`, `draftAuthoring`). The other two are the
- * model's own withdrawals: `dropped` is "this should not be in the result at
- * all", and `exploratory` is "I did this to look around". They are held apart
- * because they are different statements about one step, and a reader of the
- * draft can tell a step that was a mistake from one that was a detour, and
- * both from one the model has simply not added.
+ * `taken` is where every step the loop appends starts: the step ran and is
+ * evidence, and the framework then drafts the Flow over every step
+ * (`./compose/`), leaving it `kept` when it is in and `taken` when it is out,
+ * with why under `drafted`. The model edits that draft (`./amendment/edits/`):
+ * `keep` makes a step `kept`, and `drop` makes it `dropped`, "this should not
+ * be in the result at all". `exploratory`, "I did this to look around", is no
+ * edit any more; it is still read on steps carried from a draft saved before
+ * the framework drafted, and on a restored withdrawal
+ * (`../../llm/evidence-loop-decision.ts`, `withdrawnAs`).
  */
 export type AutomationStudioFlowDraftStepDisposition = "kept" | "taken" | "dropped" | "exploratory";
 
@@ -361,8 +357,8 @@ export type AutomationStudioFlowDraftStep = {
    * the steps afterwards.
    *
    * It is about the step as the test ran it: after the steps before it then,
-   * with the argument it had then. So a move clears it on every step from
-   * where the move begins (`./amendment/move.ts`), and a checked rerun that gives
+   * with the argument it had then. So a repeat taken off clears it on every
+   * step from that step on (`./amendment/apply.ts`), and a checked rerun that gives
    * the step a new argument clears it (`../llm/node-tools/rerun-check.ts`):
    * absent, the step has not been tested as it now stands (live run
    * `run-musq0b1m-0472cfa0`, Cause 6).

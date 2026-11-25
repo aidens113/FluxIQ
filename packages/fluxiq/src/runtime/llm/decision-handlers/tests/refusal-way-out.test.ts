@@ -16,28 +16,28 @@ import { automationStudioLlmUnusableDecisionFeedback } from "../../unusable-deci
 // in the draft the model sent `{step 14, add, act a1}` for an Add to cart press
 // it had not run yet. It was told `no_such_step` and the positions, but no
 // `next`: a step enters the draft by running, so the number after the last is
-// the one a run with add true would take.
+// the one the next call that runs would take.
 describe("a refusal naming the next free number says to run the step first", () => {
   const steps = [{ position: 1 }, { position: 2 }, { position: 3 }];
   const told = (step: number, on = steps) => automationStudioLlmEvidenceDraftAmendmentFeedback({
     refusals: [{ step, reason: "no_such_step" }], applied: 0, steps: on, stepsWithoutProgress: 1, maxStepsWithoutProgress: 8
   });
 
-  it("says step 4 of three is not there until it runs, and to run it with add true", () => {
+  it("says step 4 of three is not there until it runs, and to run it", () => {
     const feedback = told(4);
     const next = (feedback.refused as { next?: string }[])[0]?.next;
-    expect(next).toBe("There is no step 4 yet: a step enters the draft only by running. Run that action first as a call with add true (and its act, if it does one), and it becomes step 4; do not amend it before it has run.");
+    expect(next).toBe("There is no step 4 yet: a step enters the draft only by running. Run that action first as a call (with its act, if it does one): running it puts it in the draft as step 4; do not amend it before it has run.");
     expect(feedback.positions).toEqual([1, 2, 3]);
     expect(feedback.instruction).toContain("next, beside a refusal, is what to do instead");
-    expect((told(1, []).refused as { next?: string }[])[0]?.next).toContain("it becomes step 1");
+    expect((told(1, []).refused as { next?: string }[])[0]?.next).toContain("puts it in the draft as step 1");
   });
 
   // W2: a number past the next free one, or a gap inside the draft, used to get no next.
   it("names the positions to choose from for a number past the next free one, or one inside the draft", () => {
-    expect((told(9).refused as { next?: string }[])[0]?.next).toBe("There is no step 9 in the draft: name a step listed under positions, as the draft shows it, or run the step you meant as a new call with add true.");
+    expect((told(9).refused as { next?: string }[])[0]?.next).toBe("There is no step 9 in the draft: name a step listed under positions, as the draft shows it, or run the call you meant; running it puts it in the draft.");
     expect((told(2, [{ position: 1 }, { position: 3 }]).refused as { next?: string }[])[0]?.next).toContain("There is no step 2 in the draft");
     // The step named exists: the missing number was its check, to or over.
-    expect((told(2).refused as { next?: string }[])[0]?.next).toContain("Step 2 is in the draft, but the step its check, to or over named is not");
+    expect((told(2).refused as { next?: string }[])[0]?.next).toContain("Step 2 is in the draft, but the step its over, while or through named is not");
   });
 
   // Merged with run musp4h2f's rule that every refusal names the acts still to
@@ -46,8 +46,8 @@ describe("a refusal naming the next free number says to run the step first", () 
     const withChecklist = (step: number) => (automationStudioLlmEvidenceDraftAmendmentFeedback({
       refusals: [{ step, reason: "no_such_step" }], applied: 0, steps, stepsWithoutProgress: 1, maxStepsWithoutProgress: 8, actsNotDone: ["a1"]
     }).refused as { next?: string }[])[0]?.next;
-    expect(withChecklist(4)).toBe("There is no step 4 yet: a step enters the draft only by running. Run that action first as a call with add true (and its act, if it does one), and it becomes step 4; do not amend it before it has run. Still not done on the checklist: a1. Go on with those.");
-    expect(withChecklist(9)).toBe("There is no step 9 in the draft: name a step listed under positions, as the draft shows it, or run the step you meant as a new call with add true. Still not done on the checklist: a1. Go on with those.");
+    expect(withChecklist(4)).toBe("There is no step 4 yet: a step enters the draft only by running. Run that action first as a call (with its act, if it does one): running it puts it in the draft as step 4; do not amend it before it has run. Still not done on the checklist: a1. Go on with those.");
+    expect(withChecklist(9)).toBe("There is no step 9 in the draft: name a step listed under positions, as the draft shows it, or run the call you meant; running it puts it in the draft. Still not done on the checklist: a1. Go on with those.");
   });
 });
 
@@ -131,11 +131,11 @@ describe("W2: every amendment refusal names its way out, in the draft's numbers"
     no_such_step: {}, already_so: {}, no_such_position: {}, run_by_the_loop: {}, no_step_before_it: {}, over_not_before: { over: 2 }, not_a_kept_step: {},
     did_not_work: {}, already_in_flow: {}, already_out: {}, changes_nothing: {}, act_on_a_read: {}, act_already_named: { act: "a1" },
     bind_not_a_binding: { parameter: "query" }, bind_new_key: { parameter: "query", bindable: ["text"] }, bind_row_outside_loop: { parameter: "query" }, bind_malformed: { parameter: "query" },
-    rerun_holds_binding: {}, repeat_taken_off: { over: 3, takenOff: "over_after" }, strands_a_step: { strands: 3 }, settings_rewrite_run: {}, second_copy: { copyOf: 1 },
+    rerun_holds_binding: {}, strands_a_step: { strands: 3 }, settings_rewrite_run: {}, second_copy: { copyOf: 1 },
     act_not_done_there: { act: "a1", said: "Step 2 chose \"Spain\", one of a1's options (a1.origin), and does not do a1. Step 3 (\"Add to cart\") names it: name a1 there with amend_draft add on step 3 with act a1.", instead: 3 },
     repeat_never_ends: { said: "Step 2 repeats while step 2 succeeds, and step 2 cannot answer \"ended\": end the repeat on a step that answers \"ended\" when there is nothing more." },
     holds_a_repeat: { repeat: 3, holds: "over" },
-    span_holds_routing: { repeat: 1, through: 3, routed: 2 }, not_an_edit: {}, not_a_read: {}
+    span_holds_routing: { repeat: 1, through: 3, routed: 2 }, not_a_read: {}
   };
 
   it("gives every reason a next naming the step, without a checklist and with one", () => {
@@ -151,11 +151,11 @@ describe("W2: every amendment refusal names its way out, in the draft's numbers"
 
   it("names the amendment or call to send instead", () => {
     expect(told({ step: 2, reason: "run_by_the_loop" })).toContain(`{"step": 2, "change": "rerun", "input": {`);
-    expect(told({ step: 2, reason: "no_such_position" })).toContain(`{"step": 2, "change": "reorder", "to": <a step from 1 to 5>}`);
-    expect(told({ step: 2, reason: "no_step_before_it" })).toContain(`{"step": 2, "change": "only_if", "check": <that step>}`);
+    expect(told({ step: 2, reason: "no_such_position" })).toContain(`{"step": 2, "change": "repeat", "over": <the listing>, "through": <the span's last step>}`);
+    expect(told({ step: 2, reason: "no_step_before_it" })).toContain(`{"step": 2, "change": "repeat", "over": <the listing>}`);
     expect(told({ step: 2, reason: "already_so" })).toContain("Step 2 already says that");
-    expect(told({ step: 3, reason: "already_in_flow" })).toContain("Run what the Flow still lacks as a new call with add true, or complete");
-    expect(told({ step: 5, reason: "already_out" })).toContain(`{"step": 5, "change": "add"}`);
+    expect(told({ step: 3, reason: "already_in_flow" })).toContain("Run what the Flow still lacks, or complete");
+    expect(told({ step: 5, reason: "already_out" })).toContain(`{"step": 5, "change": "keep"}`);
     expect(told({ step: 3, reason: "did_not_work" })).toContain(`{"step": 3, "change": "rerun", "input": {`);
     expect(told({ step: 3, reason: "did_not_work" }, undefined, [{ position: 3, effect: "mutate", effectApplied: false, disposition: "kept", callId: "call.3" }])).toContain("its result under call call.3");
     expect(told({ step: 2, reason: "rerun_holds_binding" })).toContain("write true");
@@ -163,7 +163,6 @@ describe("W2: every amendment refusal names its way out, in the draft's numbers"
     expect(told({ step: 2, reason: "bind_new_key", parameter: "query" })).toContain("Step 2 has no value to bind at query");
     expect(told({ step: 2, reason: "bind_not_a_binding", parameter: "query" })).toContain(`query set to {"$input": <name>, "test": <its value>}`);
     expect(told({ step: 2, reason: "bind_row_outside_loop", parameter: "query" })).toContain(`{"step": 2, "change": "repeat", "over": <the listing>}`);
-    expect(told({ step: 2, reason: "repeat_taken_off" })).toContain(`{"step": 2, "change": "repeat", "over": <the listing>}`);
     expect(told({ step: 2, reason: "strands_a_step" })).toContain("Step 2 stays in the Flow");
     expect(told({ step: 2, reason: "settings_rewrite_run" })).toContain("Step 2 keeps what it ran with");
     expect(told({ step: 2, reason: "settings_rewrite_run" })).toContain(`{"step": 2, "change": "rerun", "input": {`);
@@ -173,20 +172,20 @@ describe("W2: every amendment refusal names its way out, in the draft's numbers"
   it("says what the step did and where to name the act, from the judge's sentence or by number alone", () => {
     const said = "Step 2 chose \"Spain\", one of a1's options (a1.origin), and does not do a1. Step 3 (\"Add to cart\") names it: name a1 there with amend_draft add on step 3 with act a1.";
     expect(told({ step: 2, reason: "act_not_done_there", act: "a1", said, instead: 3 })).toBe(`${said} So a1 was not recorded on step 2: do not name it there again.`);
-    expect(told({ step: 2, reason: "act_not_done_there", act: "a1", instead: 3 })).toContain(`{"step": 3, "change": "add", "act": "a1"}`);
-    expect(told({ step: 2, reason: "act_not_done_there", act: "a1" })).toContain("run the press whose words name it as a new call with add true and act a1");
+    expect(told({ step: 2, reason: "act_not_done_there", act: "a1", instead: 3 })).toContain(`{"step": 3, "change": "keep", "act": "a1"}`);
+    expect(told({ step: 2, reason: "act_not_done_there", act: "a1" })).toContain("run the press whose words name it as a new call with act a1");
   });
 
   it("tells a step that is not in the Flow apart from a look, and from a routed step that is not", () => {
     expect(told({ step: 4, reason: "not_a_kept_step" })).toContain("Step 4 only looked");
-    expect(told({ step: 5, reason: "not_a_kept_step" })).toContain(`{"step": 5, "change": "add"}`);
-    expect(told({ step: 3, reason: "not_a_kept_step" })).toContain("Step 3 is in the Flow, but the step its check, to, over or through named is not");
+    expect(told({ step: 5, reason: "not_a_kept_step" })).toContain(`{"step": 5, "change": "keep"}`);
+    expect(told({ step: 3, reason: "not_a_kept_step" })).toContain("Step 3 is in the Flow, but the step its over, while or through named is not");
   });
 
   it("names the press after a read an act was put on, or says to run one", () => {
     expect(told({ step: 2, reason: "act_on_a_read" })).toContain(`{"step": 3, "change": "keep", "act": <the act>}`);
     const taken = [steps[0]!, steps[1]!, { position: 3, effect: "mutate", effectApplied: true, disposition: "taken" }];
-    expect(told({ step: 2, reason: "act_on_a_read" }, undefined, taken)).toContain(`{"step": 3, "change": "add", "act": <the act>}`);
+    expect(told({ step: 2, reason: "act_on_a_read" }, undefined, taken)).toContain(`{"step": 3, "change": "keep", "act": <the act>}`);
     expect(told({ step: 2, reason: "act_on_a_read" }, undefined, steps.slice(0, 2))).toContain("No step after step 2 does an act yet");
   });
 });
@@ -197,6 +196,6 @@ describe("an amend_draft that was not offered", () => {
   it("says why editing was not offered and which decision to send instead", () => {
     const feedback = JSON.stringify(automationStudioLlmUnusableDecisionFeedback({ issueCodes: ["llm_evidence_loop.amend_not_offered"], stepsWithoutProgress: 1, maxStepsWithoutProgress: 8 }));
     expect(feedback).toContain("there is no step in the draft to edit yet");
-    expect(feedback).toContain("Run a tool call instead, with add true to put its step in the Flow");
+    expect(feedback).toContain("Run a tool call instead -- a step that works joins the Flow");
   });
 });

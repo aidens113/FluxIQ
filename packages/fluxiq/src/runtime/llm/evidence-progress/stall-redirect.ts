@@ -275,10 +275,10 @@ function instruction(input: AutomationStudioLlmEvidenceStallRedirectInput, steps
     const next = named?.said !== undefined
       ? ` Step ${named.step} names ${id}, and the checklist says it is not done (${named.todo}): ${named.said}`
       : named?.todo === "step_only_opens_its_choices"
-      ? ` Step ${named.step} only opened the page where ${id}'s choices are made and does not do ${id}: on that page, after its choices, run the step that does ${id} and add it with act ${id}.`
+      ? ` Step ${named.step} only opened the page where ${id}'s choices are made and does not do ${id}: on that page, after its choices, run the step that does ${id} with act ${id}.`
       : named
         ? ` Step ${named.step} already names ${id}, and the checklist says it is not done because ${named.todo}: correct step ${named.step} for that reason. Do not run another step for ${id}, and never act yourself on an item your listing left out.`
-        : ` Your next step is the one that does ${id}: run it and add it with act ${id}.`;
+        : ` Your next step is the one that does ${id}: run it with act ${id}.`;
     said.push(`The acts checklist still has ${owed.join(", ")} not done by any step in your Flow (actsMissing). Going back to a page you have already been on, or pressing what you already pressed, does not do them.`
       + `${next} Complete only once no act is missing.`);
   }

@@ -150,10 +150,10 @@ function unknownFieldAdvice(handles: readonly string[], said: ReasonEvidence): s
   const opening = changed ? "A column the step names"
     : `${handles.length ? `The list ${handles.join(", ")} is right, so changing its handle will not help` : "The list's handle is right"}: a column the step names`;
   const names = !said.valid.length ? ""
-    : changed ? `The columns the list had when it was detected are ${quoted(said.valid)}. `
+    : changed ? `The columns the list had when it was read are ${quoted(said.valid)}. `
     : `The names this step can use there are ${quoted(said.valid)}. `;
-  return `${opening}, in its fields or in a condition (where), is neither one the list's detection printed nor a key this same step keeps in its own fields. ${names}`
-    + (changed ? "" : "A condition reads only its own step's row, so a key another step keeps is not one of its columns. Name the column by a key the detection printed for this list, or by a key this step's fields keep -- adding the column to this step's fields first if it is not there -- or drop the condition. ");
+  return `${opening}, in its fields or in a condition (where), is neither one the list's read printed nor a key this same step keeps in its own fields. ${names}`
+    + (changed ? "" : "A condition reads only its own step's row, so a key another step keeps is not one of its columns. Name the column by a key the read printed for this list, or by a key this step's fields keep -- adding the column to this step's fields first if it is not there -- or drop the condition. ");
 }
 
 /**
@@ -164,26 +164,26 @@ function unknownFieldAdvice(handles: readonly string[], said: ReasonEvidence): s
 const HANDLE_ADVICE: Readonly<Record<string, (handles: readonly string[], said: ReasonEvidence) => string>> = Object.freeze({
   unknown: (handles) => `${named(handles, "A handle the step names")} ${handles.length > 1 ? "do" : "does"} not name one control in any view this build was shown, so copying ${handles.length > 1 ? "them" : "it"} again will be refused again. `
     + "A step may name a control from any view this build printed, on any page it visited, copied exactly as that view printed it; a handle no view printed, or written from memory, cannot be a step's target. "
-    + "To act on a control on the page this step runs on, look at that page (go there, then capture it) and copy the handle that view prints for the control; "
+    + "To act on a control on the page this step runs on, go to that page and copy the handle its changes or core.full_page print for the control; "
     + "if the Flow does not need the step -- the control is not on the page when the Flow gets there -- drop it. ",
-  renumbered_by_reload: (handles) => `${named(handles, "A handle the step names")} came from a view taken before the page was reloaded, and the reload numbered its controls anew, so it names nothing now. Look at the page again and copy the control's current handle from that view. `,
-  stale: (handles) => `${named(handles, "A handle the step names")} came from a view of a page this build no longer holds (it keeps only the pages it saw most recently), so it cannot be resolved. Look at the page the step runs on again and copy the handle that new view prints for the control. `,
-  not_unique: (handles) => `${named(handles, "A handle the step names")} names a control whose page gave the same address to more than one element, so acting on it would be a guess. Look at the page again and choose a handle that names one element. `,
+  renumbered_by_reload: (handles) => `${named(handles, "A handle the step names")} came from a view taken before the page was reloaded, and the reload numbered its controls anew, so it names nothing now. Call core.full_page and copy the control's current handle from it. `,
+  stale: (handles) => `${named(handles, "A handle the step names")} came from a view of a page this build no longer holds (it keeps only the pages it saw most recently), so it cannot be resolved. Call core.full_page on the page the step runs on and copy the handle it prints for the control. `,
+  not_unique: (handles) => `${named(handles, "A handle the step names")} names a control whose page gave the same address to more than one element, so acting on it would be a guess. Call core.full_page and choose a handle that names one element. `,
   ambiguous: (handles) => `What the step names${handles.length ? ` (with ${handles.join(", ")})` : ""} reads more than one way: one handle naming different controls on different pages (write the location its view reported beside it), two of the step's parameters naming different controls, or a column name that fits two columns exactly (use the exact key). Make each name one thing. `,
   misplaced: (handles) => `${named(handles, "A handle the step names")} is written in a parameter that takes no handle of its kind -- a list's handle where a control belongs, a control's where a list belongs, or a handle where a plain value goes. Move it to the parameter the node's description names for it (accepted, where given). `,
   malformed: () => "Something the step wrote where a handle, or a list's column or condition, belongs is not in a shape it takes. Write it as accepted shows, where given, with each handle copied exactly as a view printed it. ",
   frame_mismatch: () => "The step names a frame other than the one its control is in, or controls in two frames. Remove the step's own frame setting and name controls of one frame. ",
-  extraction_required: () => "A list is read only through its handle, so a read written out by hand is refused: detect the list, then name it by the handle its view printed, with fields naming that list's columns. ",
+  extraction_required: () => "A list is read only through its handle, so a read written out by hand is refused: name it by the handle its view printed, or by its words, with fields naming that list's columns. ",
   // A control named by anything but a handle (t432): an address, an identity or a description of the model's own.
-  not_a_handle: () => "A step names a control by something other than a handle. Name every control only by the handle the page view printed for it, copied exactly -- `target: t5` -- and write nothing else about it: no address, no description of the element, no identity of your own. If no view printed the control, look at the page the step runs on first. ",
+  not_a_handle: () => "A step names a control by something other than a handle. Name every control only by the handle the page view printed for it, copied exactly -- `target: t5` -- and write nothing else about it: no address, no description of the element, no identity of your own. If no view printed the control, call core.full_page on the page the step runs on first. ",
   not_a_control: (handles) => `${named(handles, "A handle the step names")} names text the view printed, not a control a press acts on. Copy the handle the view prints for the control itself, or drop the step if the Flow does not need it. `,
   wrong_control: (handles) => `${named(handles, "A handle the step names")} names a known control that this node cannot act on; that does not prove it is the control the instruction needs. `
     + "If this is the intended control, use the node that can act on its kind (an issue names one where known). "
     + "If it is a different control, keep the intended action and copy the observed handle for the control that action needs. Recheck the step's purpose against the control's words and kind before changing either. ",
   unknown_field: unknownFieldAdvice,
   // The domain's evidence that the detection is out of date (header, t502): the name is one of the list's columns with a part changed.
-  columns_changed: (handles, said) => `${said.fields.length ? `The name ${quoted(said.fields)} is` : "The column the step names is"} one of ${handles.length ? `the list ${handles.join(", ")}'s` : "the list's"} own columns with a part changed, and that list's detection has no such column: the list's items have changed since it was detected (a press or other act on the page often adds or replaces a column), so another of its old columns would read something else. `
-    + "Detect the list again on the page as it is when the step runs, then name the list by the handle that detection prints and the column by a key it prints. "
+  columns_changed: (handles, said) => `${said.fields.length ? `The name ${quoted(said.fields)} is` : "The column the step names is"} one of ${handles.length ? `the list ${handles.join(", ")}'s` : "the list's"} own columns with a part changed, and the read of that list has no such column: the list's items have changed since it was read (a press or other act on the page often adds or replaces a column), so another of its old columns would read something else. `
+    + "Read the list again on the page as it is when the step runs, naming the list (the read finds its own list), and name the column by a key that read prints. "
 });
 
 /** The reasons whose refused handle may be text an act removed, or a control only a replaced view printed (header). */

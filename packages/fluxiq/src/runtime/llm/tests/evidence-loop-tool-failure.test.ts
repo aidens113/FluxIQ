@@ -131,8 +131,8 @@ describe("a tool call that fails, in a loop that observes failures", () => {
         return { look: looks };
       }
     });
-    expect(decide.mock.calls[0]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["press"]);
-    expect(decide.mock.calls[1]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["inspect", "press"]);
+    expect(decide.mock.calls[0]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["press", "core.run_flow"]); // `core.run_flow` is offered from the first decision (page-diff D11), refused by name until a step can run again.
+    expect(decide.mock.calls[1]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["inspect", "press", "core.run_flow"]);
     expect(result).toMatchObject({ ok: true, accounting: { toolCalls: 3 } });
     expect(looks).toBe(2);
   });
@@ -188,7 +188,7 @@ describe("a tool call that fails, in a loop that observes failures", () => {
     });
     expect(result.trace[0]).toMatchObject({ iteration: 0, callId: "initial.inspect", toolId: "inspect", resultCode: "llm_evidence_loop.tool_failed" });
     expect(decide.mock.calls[0]?.[0]).toMatchObject({ canComplete: false });
-    expect(decide.mock.calls[0]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["inspect", "press"]);
+    expect(decide.mock.calls[0]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["inspect", "press", "core.run_flow"]); // `core.run_flow` is offered from the first decision (page-diff D11), refused by name until a step can run again.
     expect(decide.mock.calls[1]?.[0]).toMatchObject({ canComplete: true });
     expect(result).toMatchObject({ ok: true, accounting: { toolCalls: 2 } });
   });

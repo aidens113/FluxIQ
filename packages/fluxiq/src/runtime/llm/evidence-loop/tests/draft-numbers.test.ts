@@ -24,7 +24,7 @@ describe("the draft each decision reads", () => {
     const decide = vi.fn()
       .mockResolvedValueOnce({ kind: "tool_call", callId: "c1", toolId: "press", input: { target: "#a" }, add: true })
       .mockResolvedValueOnce({ kind: "tool_call", callId: "c2", toolId: "look", input: {} })
-      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 2, change: "add", act: "a1" }] })
+      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 2, change: "keep", act: "a1" }] })
       .mockResolvedValueOnce({ kind: "complete", result: { flow: "ready" } });
     const executeTool = vi.fn().mockResolvedValueOnce(worked).mockResolvedValueOnce(looked);
     const result = await runAutomationStudioLlmEvidenceLoop({ tools: [press, lookTool], decide, executeTool, maxIterations: 6, maxToolCalls: 6, dryRun: false, unusableDecisions: { stalled } });
@@ -32,7 +32,7 @@ describe("the draft each decision reads", () => {
     // Decision 3 reads the look as step 2, the number its amendment resolves to.
     expect(draftAt(decide, 2)).toMatchObject([{ step: 1 }, { step: 2, disposition: "look" }]);
     expect(result.steps.map((step) => step.position)).toEqual([1, 2]);
-    // And `2 add a1` on it is refused, not recorded as the look doing a1.
+    // And `2 keep a1` on it is refused, not recorded as the look doing a1.
     expect(result.steps[1]?.acts).toBeUndefined();
     expect(result.trace.find((row) => row.decision === "amend_draft")?.amendmentsRefused).toMatchObject([{ step: 2, reason: "not_a_kept_step" }]);
   });

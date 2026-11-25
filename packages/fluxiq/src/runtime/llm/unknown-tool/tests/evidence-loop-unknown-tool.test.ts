@@ -27,7 +27,7 @@ describe("a tool call naming a tool that was not offered", () => {
     expect(result).toMatchObject({ ok: true, result: { done: true } });
     const feedback = feedbackOf(decide, 1);
     expect(feedback).toMatchObject({ ok: false, code: "llm_evidence_loop.decision_unusable", issueCodes: ["llm_evidence_loop.unknown_tool_refused"] });
-    expect(feedback.instruction).toContain('offered for this decision are: "page.press".'); // The look was already answered, so only the press is offered.
+    expect(feedback.instruction).toContain('offered for this decision are: "page.press", "core.run_flow".'); // The look was already answered, so the press is offered, and core.run_flow from the first decision (page-diff D11).
     expect(feedback.instruction).toContain('nearest to the one you gave is "page.press"');
     expect(executeTool).toHaveBeenCalledWith(expect.objectContaining({ toolId: "page.press" }));
     expect(executeTool).not.toHaveBeenCalledWith(expect.objectContaining({ toolId: "page.pres" }));

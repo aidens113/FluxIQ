@@ -46,9 +46,28 @@ export function automationStudioFlowDraftCompose(input: {
   steps: readonly Step[];
   /** Whether a read reads the table the person asked for; absent, or accepting none, the last read is the result. */
   isAskedTable?: (step: Step) => boolean;
+  /**
+   * Whether a step that observes read a list, and so is a candidate for the result. Absent, every step that observes
+   * is. One that observes and read no list -- opening a page by its address, a wait, a check -- is in the Flow when
+   * it worked, as a press is, never left out as not the result (t1037 phase 2).
+   */
+  isRead?: (step: Step) => boolean;
+  /**
+   * Whether a step is the model's word whatever it carries: a step carried from a saved Flow or an earlier attempt
+   * (t1037 phase 2). Such a step is never decided again, in or out; absent, only `drafted` and `taken` say whose a
+   * step is (`./framework-step.ts`).
+   */
+  isRuled?: (step: Step) => boolean;
+  /**
+   * Whether a read is one the caller's answer is made of, where the caller says which (answer-first: every read not
+   * marked a working read, whose named outputs then make the answer, t1037 phase 2). Given, every read it accepts is
+   * a result read and every other read is `not_the_result`, in place of the choice of one read and its list.
+   */
+  isResult?: (step: Step) => boolean;
 }): Step[] {
   const working = input.steps.map((step) => ({ ...step }));
-  const framework = new Set(working.filter(automationStudioFlowDraftIsFrameworkStep));
+  const ruled = input.isRuled;
+  const framework = new Set(working.filter((step) => automationStudioFlowDraftIsFrameworkStep(step) && !(ruled?.(step) ?? false)));
   const ordered = [...working].sort((a, b) => a.position - b.position);
   for (const step of framework) {
     // A step that comes back in is not left holding the pairing an `undone` step carried.
@@ -56,7 +75,7 @@ export function automationStudioFlowDraftCompose(input: {
     const reason = leftOutBeforeReads(step);
     automationStudioFlowDraftMark(step, reason ?? "in");
   }
-  const resultReads = markReads(ordered, framework, input.isAskedTable);
+  const resultReads = markReads(ordered, framework, input);
   automationStudioFlowDraftComposeUndone(ordered, framework);
   automationStudioFlowDraftMarkDeadEnds(ordered, framework, resultReads);
   automationStudioFlowDraftMarkAfterResult(ordered, framework, resultReads);
@@ -73,11 +92,13 @@ function leftOutBeforeReads(step: Step): "replaced" | "look" | "did_not_work" | 
 }
 
 /** Rule 2: marks the framework's reads that are not the result's, and returns the reads that are. */
-function markReads(ordered: readonly Step[], framework: ReadonlySet<Step>, isAskedTable: ((step: Step) => boolean) | undefined): Set<Step> {
-  const reads = ordered.filter((step) => framework.has(step) && step.disposition === "kept" && step.effect === "observe");
+function markReads(ordered: readonly Step[], framework: ReadonlySet<Step>, tests: Pick<Parameters<typeof automationStudioFlowDraftCompose>[0], "isAskedTable" | "isRead" | "isResult">): Set<Step> {
+  const { isAskedTable, isRead, isResult } = tests;
+  const reads = ordered.filter((step) => framework.has(step) && step.disposition === "kept" && step.effect === "observe" && (isRead?.(step) ?? true));
   // The model's own pick, even on a step it ruled on, outranks the framework's choice.
   const named = ordered.filter((step) => !framework.has(step) && step.result === true && step.disposition === "kept");
-  const results = new Set(named.length > 0 ? reads.filter((step) => step.result === true) : automationStudioFlowDraftResultReads(reads, isAskedTable));
+  const chosen = isResult ? reads.filter((step) => step.result === true || isResult(step)) : automationStudioFlowDraftResultReads(reads, isAskedTable);
+  const results = new Set(named.length > 0 ? reads.filter((step) => step.result === true) : chosen);
   for (const step of named) results.add(step);
   for (const step of reads) {
     if (!results.has(step)) automationStudioFlowDraftMark(step, "not_the_result");

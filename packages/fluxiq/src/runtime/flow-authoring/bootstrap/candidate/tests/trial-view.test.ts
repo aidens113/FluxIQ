@@ -45,7 +45,7 @@ describe("the page a trial left", () => {
   it("says to look again when the look failed or was refused, and lets the build's stop through", async () => {
     const threw = await automationStudioCandidateTrialView({ answer: trial(true), tools: [look], executeTool: async () => { throw new Error("capture failed"); }, callId: "test.4" });
     expect(threw.evidence).not.toHaveProperty("pageAfterTrial");
-    expect(String((threw.evidence as { pageAfterTrialNote: string }).pageAfterTrialNote)).toContain("look at it again");
+    expect(String((threw.evidence as { pageAfterTrialNote: string }).pageAfterTrialNote)).toContain("call core.full_page");
     const refused = await automationStudioCandidateTrialView({ answer: trial(true), tools: [look], executeTool: async () => ({ ok: false, code: "page_unreadable" }), callId: "test.5" });
     expect(refused.evidence).not.toHaveProperty("pageAfterTrial");
 
@@ -165,7 +165,7 @@ describe("a refused test and the page its checks left", () => {
   it("says to look again, in a refusal's words, when that look failed", async () => {
     const answered = await automationStudioCandidateTrialView({ answer: refusal(true), tools: [look], executeTool: async () => { throw new Error("capture failed"); }, callId: "test.10" });
     expect(answered.evidence).not.toHaveProperty("pageAfterTrial");
-    expect(String((answered.evidence as { pageAfterTrialNote: string }).pageAfterTrialNote)).toMatch(/No trial ran.*look at it again/u);
+    expect(String((answered.evidence as { pageAfterTrialNote: string }).pageAfterTrialNote)).toMatch(/No trial ran.*call core.full_page/u);
   });
 
   it("is left as it was when nothing moved", async () => {

@@ -33,6 +33,7 @@ import { automationStudioAnswerFirstKeep } from "./keep.ts";
 import { automationStudioAnswerFirstResultProcessingExecutor, automationStudioAnswerFirstResultProcessingTools } from "../result-processing/index.ts";
 import { automationStudioAnswerFirstUnboundedPort } from "../person-waits/index.ts";
 import { automationStudioAnswerFirstSay } from "./say.ts";
+import { automationStudioAnswerFirstResultIntermediate } from "../result-feed/index.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
 
 /** The loop's guard stopped the round: it holds the rows the round wrote, as a failure would. */
@@ -122,6 +123,10 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
     draft: {
       maxAmendments: input.limits.loop.maxIterations,
       ...(run.steps.length ? { seed: run.steps } : {}),
+      // The steps the attempt started with, from the saved Flow or an earlier attempt: the model's word, never drafted again (t1037).
+      carried: run.startedWith.map(automationStudioFlowDraftStepId),
+      // Every read not marked a working read is the answer's, as its named output says (`../result/output-group.ts`): the framework keeps them all in the Flow.
+      resultRead: (step) => !automationStudioAnswerFirstResultIntermediate(step.input),
       acts: (steps) => {
         run.steps = steps.map((step) => automationStudioFlowDraftStepCopy(step));
         return acts.acts(steps);

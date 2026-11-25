@@ -3,8 +3,8 @@
 // The model edits the draft with amendments: one step number and one word
 // (`../flow-draft/amendment/`). The module that applies them already computes
 // a precise refusal for every amendment that changed nothing -- there is no
-// step at that number, the step already says that, there is no position to move
-// it to, a routing word named a step the Flow does not contain -- and until
+// step at that number, the step already says that, a repeat named a step the
+// Flow does not contain -- and until
 // 2026-09-26 the loop read only how many had landed and dropped every reason on
 // the floor.
 //
@@ -40,31 +40,13 @@
 // row it kept comes first, with the repeat to send then. Nothing is changed on
 // the model's behalf; `next` is information, in the draft's own numbers.
 //
-// **A listing after its act is moved first.** Live run `run-murz83zy-5030820f`
+// **A listing after its act is not moved.** Live run `run-murz83zy-5030820f`
 // (R8) pressed Amara's Confirm as step 9 and ran the filtered listing only at
-// step 18, then sent `9 repeat over 18` five decisions running and once more in
-// round 1. Each refusal told it to send `{step: <act>, change: repeat, over:
-// <listing>}` -- exactly what it had sent -- and `next` looked for a press
-// *after* the listing and said there was none. Nothing pointed to `reorder`.
-// So when the repeat was put on a working act and `over` names a listing after
-// it, `next` says to move the listing to the act's place and then repeat the
-// act. Every number in one decision names the step as the draft shown numbered
-// it, and the draft is renumbered once, after the whole decision
-// (`../flow-draft/amendment/shown-numbering.ts`, t195 w45), so `18 reorder to 9`
-// goes with `9 repeat over 18`, and a `through` keeps the number shown. Until
-// then a reorder renumbered at once and the telling said `10 repeat over 9`:
-// live run `run-musr9pv3-f4bf6256` wrote its numbers that way and once the
-// other, and a repeat landed on its listing (`15 reorder to 14, 15 repeat over 14`).
-//
-// **A repeat a decision's moves broke is said, not left.** That stray repeat,
-// over the Confirm after the listing, stood from decision 0056 to the end of
-// the round, and the model was never told. A decision that moves a step now
-// takes off every repeat that can no longer run (`repeat_taken_off`,
-// `../flow-draft/amendment/repeat-revalidation.ts`), and the answer says which
-// step's repeat over which step was taken off, and why, in the numbers the
-// model wrote and, where they changed, the ones it reads next. It is not an
-// amendment of the model's that changed nothing, so it is never marked
-// repeated and the answer does not call it one.
+// step 18, then sent `9 repeat over 18` five decisions running. The Flow runs
+// its steps in the order they ran and no edit moves a step (the framework
+// drafts it, `../../flow-authoring/draft/amendment/`), so `next` says to do the
+// act again after the listing, on one row it kept, put the repeat on that new
+// step, and drop the act before the listing (`./next-step.ts`).
 //
 // **The attempt a rerun replaced names its replacement.** Live run
 // `run-musp474o-e0ed7432` reran its listing at step 6 with a fixed where, was
@@ -87,8 +69,8 @@
 // vary.
 //
 // **A step not run yet is run first (t174-w108, Cause 6).** A `no_such_step`
-// for the number right after the draft's last step is the number a run with
-// add true would take, so its `next` says to run it first.
+// for the number right after the draft's last step is the number the next call
+// that runs would take, so its `next` says to run it first.
 //
 // **A moved act names the step it left.** Round 2 moved a3 off the 3-Pack's Add
 // to cart; that press stayed in the Flow with no act and was pressed again in

@@ -173,7 +173,7 @@ export function routeAutomationStudioFlowDraftSteps(input: {
     if (routing.kind === "only_if") {
       const guard = emitted[emitted.length - 1];
       if (!guard || guard.label !== label(routing.check)) {
-        refuse(entry.step, "flow_draft.check_not_before_step", `Step ${entry.step.position} runs only if another step succeeded, but that step is not the one before it. Move it there with an amend_draft reorder, or say only_if with no check to mean the step before this one.`);
+        refuse(entry.step, "flow_draft.check_not_before_step", `Step ${entry.step.position} runs only if another step succeeded, but that step is not the one before it. Send amend_draft keep on this step to make it run whatever came before, or drop it.`);
         continue;
       }
       const join = nextDerived("join");
@@ -451,7 +451,7 @@ function repeat(input: {
   // nine refusals when it was `over` that named a step no longer in the Flow.
   if (!over) return { code: "flow_draft.repeat_span_unknown", message: `Step ${entry.step.position} repeats over a step that is not in the Flow: it was dropped or never added. Send amend_draft repeat on step ${entry.step.position} again with over naming the kept step just before it whose rows it walks.` };
   if (!through) return { code: "flow_draft.repeat_span_unknown", message: `Step ${entry.step.position} repeats through a step that is not in the Flow: it was dropped or never added. Send amend_draft repeat on step ${entry.step.position} again with through naming the last kept step of the span.` };
-  if (throughAt < input.index) return { code: "flow_draft.repeat_span_unknown", message: `Step ${entry.step.position} repeats through step ${through.step.position}, which comes before it. through names the last step of the span, at or after step ${entry.step.position}; put steps in order with an amend_draft reorder first.` };
+  if (throughAt < input.index) return { code: "flow_draft.repeat_span_unknown", message: `Step ${entry.step.position} repeats through step ${through.step.position}, which comes before it. through names the last step of the span, at or after step ${entry.step.position}: send the repeat again with such a through, or take it off with amend_draft {"step": ${entry.step.position}, "change": "unrepeat"}.` };
   // `over` has to come before the span, and nothing more. Steps between the
   // list and the span -- a "Not now" that appeared while the list was being
   // tuned, a rerun put back at its old place, an optional step's join -- run
@@ -482,7 +482,7 @@ function repeat(input: {
   const first = input.label(automationStudioFlowDraftStepId(body[0]!.step));
   // A check is asked again on every pass, so it is lifted into the loop
   // (below); lifting it over steps written after it would run them before it.
-  if (!rows && source !== head) return { code: "flow_draft.repeat_not_after_its_source", message: `Step ${entry.step.position} repeats while step ${over.step.position} succeeds, and that check is asked again on every pass, so it has to be the step immediately before the span. Move step ${over.step.position} there with an amend_draft reorder.` };
+  if (!rows && source !== head) return { code: "flow_draft.repeat_not_after_its_source", message: `Step ${entry.step.position} repeats while step ${over.step.position} succeeds, and that check is asked again on every pass, so it has to be the step immediately before the span: take this repeat off with amend_draft {"step": ${entry.step.position}, "change": "unrepeat"}, or repeat with while naming the span's last step instead.` };
   if (!rows && routing.most !== undefined) return { code: "flow_draft.repeat_not_after_its_source", message: `Step ${entry.step.position} repeats at most ${routing.most} times over step ${over.step.position}, which reads no rows to take the first of. Repeat over the listing, or take most off.` };
   for (const member of body) input.consumed.add(automationStudioFlowDraftStepId(member.step));
   emitRepeatOver({
@@ -592,7 +592,7 @@ function repeatWhile(input: {
   const through = input.byId.get(routing.through);
   const throughAt = input.positionOf.get(routing.through) ?? -1;
   if (!through) return { code: "flow_draft.repeat_span_unknown", message: `Step ${at} repeats while a step that is not in the Flow succeeds: it was dropped or never added. Send amend_draft repeat on step ${at} again with while naming the last kept step of the span.` };
-  if (throughAt < input.index) return { code: "flow_draft.repeat_span_unknown", message: `Step ${at} repeats while step ${through.step.position} succeeds, which comes before it. while names the last step of the span, at or after step ${at}; put steps in order with an amend_draft reorder first.` };
+  if (throughAt < input.index) return { code: "flow_draft.repeat_span_unknown", message: `Step ${at} repeats while step ${through.step.position} succeeds, which comes before it. while names the last step of the span, at or after step ${at}: send the repeat again with such a while, or take it off with amend_draft {"step": ${at}, "change": "unrepeat"}.` };
   if (routing.while !== routing.through) return { code: "flow_draft.repeat_span_unknown", message: `Step ${at} repeats through one step while another succeeds; the span ends at the step whose success repeats it. Send amend_draft repeat on step ${at} again with while naming the last step of the span, and no through.` };
   const body = [...input.byId.values()].slice(input.index, throughAt + 1);
   if (body.some((candidate, offset) => offset > 0 && candidate.step.routing !== undefined)) {
@@ -601,7 +601,7 @@ function repeatWhile(input: {
   const last = body[body.length - 1]!;
   const endings = repeatEndings(last.written, input.registry, input.resolution);
   if (!endings.length && routing.most === undefined) {
-    return { code: "flow_draft.repeat_while_never_ends", message: `Step ${at} repeats while step ${last.step.position} succeeds, and step ${last.step.position} has no way to say the loop is done, so it would end only by failing or ${repeatDefaultPasses(input.registry, input.resolution)}. A loop ends when its last step answers ended because there is nothing more: run the step that answers ended${endingNodesSaid(input.registry, input.resolution)} with add true as the span's last step, then send amend_draft repeat on step ${at} again with while naming it; or take this repeat off with amend_draft unrepeat on step ${at}.` };
+    return { code: "flow_draft.repeat_while_never_ends", message: `Step ${at} repeats while step ${last.step.position} succeeds, and step ${last.step.position} has no way to say the loop is done, so it would end only by failing or ${repeatDefaultPasses(input.registry, input.resolution)}. A loop ends when its last step answers ended because there is nothing more: run the step that answers ended${endingNodesSaid(input.registry, input.resolution)} so that it is the span's last step in the draft, then send amend_draft repeat on step ${at} again with while naming it; or take this repeat off with amend_draft unrepeat on step ${at}.` };
   }
   // A Flow that starts with the loop would have no node without a way in --
   // the head Merge has the back edge -- so no run could begin.
@@ -711,9 +711,9 @@ function overAfterSpan(
     return `${said}, and step ${at} is a listing. ${once} ${takeRepeatOff(at)}, and repeat the act over it instead: {"step": <the act>, "change": "repeat", "over": ${at}}.`;
   }
   if (listPort(over.written, input.registry, input.resolution)) {
-    return `${said}. The listing a span walks runs before the span: move it ahead of the act with amend_draft {"step": ${to}, "change": "reorder", "to": ${at}}; the act is then step ${at + 1} and keeps its repeat over the listing.`;
+    return `${said}. The listing a span walks runs before the span, and the Flow runs its steps in the order they ran: do the act again after step ${to}, on one row it kept, put the repeat over step ${to} on that new step, and ${takeRepeatOff(at).charAt(0).toLowerCase()}${takeRepeatOff(at).slice(1)}.`;
   }
-  return `${said}, and a span repeats over a step that runs before it. If step ${at} should run once, take the repeat off with amend_draft {"step": ${at}, "change": "unrepeat"}; if it should run while step ${to} succeeds, move step ${to} just ahead of it with amend_draft {"step": ${to}, "change": "reorder", "to": ${at}}.`;
+  return `${said}, and a span repeats over a step that runs before it. If step ${at} should run once, take the repeat off with amend_draft {"step": ${at}, "change": "unrepeat"}; if it should run again while a step succeeds, repeat it with while naming the span's last step.`;
 }
 
 /** The amendment that takes the repeat, and nothing else, off a step (`unrepeat`), as a sentence. */

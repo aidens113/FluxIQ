@@ -361,7 +361,7 @@ describe("a trial act with no witness is never adopted onto other lists (t751 R6
     const { looked, checks } = looking((read) => ledger.observed(read), () => ({ "loc:box": boxPage() }));
     const refused = await ledger.beforeTrial(checks);
     expect(refused).toMatchObject({ kind: "admit", startedWith: { acts: [{ act: "act-2" }] } });
-    expect(settleOf(ledger, "act-2")).toContain("name that list's ref as resetDestination on a look that names this act under undoes");
+    expect(settleOf(ledger, "act-2")).toContain("name that list's ref as resetDestination on a read that names this act under undoes");
     expect(looked).toEqual(["loc:box"]);
     expect([ledger.standing("act-1"), ledger.standing("act-2")]).toEqual(["unchanged", "in_place"]);
   });

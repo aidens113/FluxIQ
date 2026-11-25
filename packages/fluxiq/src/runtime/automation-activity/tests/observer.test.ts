@@ -452,10 +452,10 @@ describe("an edit to the draft", () => {
     const observed = observeAutomationStudioEvidenceLoop(loopInput({ decide: async () => next }));
     await inScope(async () => {
       await observed.decide(request(2, [draft]));
-      next = automationStudioActivityDecisionReason.attach({ kind: "amend_draft", amendments: [{ step: 10, change: "add" }, { step: 11, change: "reorder", to: 8 }, { step: 8, change: "keep" }] }, "Adding the coupon step.");
+      next = automationStudioActivityDecisionReason.attach({ kind: "amend_draft", amendments: [{ step: 10, change: "keep" }, { step: 11, change: "repeat", over: 8, through: 9 }, { step: 8, change: "keep" }] }, "Adding the coupon step.");
       await observed.decide(request(3, [draft]));
       next = { kind: "complete", result: {} } as never;
-      // Of the second edit, the move was refused: only the add landed.
+      // Of the second edit, the repeat was refused: only the keep that put the coupon press back landed.
       await observed.decide(request(4, [draft, { callId: "core.amendment_check.3", toolId: "core.amendment_check", value: { ok: false, refused: [{ step: 11, reason: "no_such_position" }], applied: 1 } as never }]));
     });
     expect(cards().map((card) => activityActionOf(card)?.result)).toEqual(["removed \"Add to cart\"", "added \"Get coupon\""]);

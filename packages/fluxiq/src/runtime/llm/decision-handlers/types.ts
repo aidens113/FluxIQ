@@ -66,8 +66,8 @@ export type AutomationStudioLlmEvidenceDecisionHandlerContext = {
   accounting: AutomationStudioLlmEvidenceLoopAccounting;
   /** The draft, kept whether or not it is shown. */
   draftSteps: AutomationStudioFlowDraftStep[];
-  /** `"framework"`: the framework drafts the Flow and the model edits it with the six edits (`../../flow-authoring/draft/amendment/edits/`). Absent, the old grammar. */
-  draftEdits?: "framework" | undefined;
+  /** Composes the framework's draft again over `draftSteps`, in place (`../../flow-authoring/draft/compose/in-place.ts`); the loop always gives it, and a handler tested alone may not. Called after every edit that applied. */
+  composeDraft?: (() => void) | undefined;
   amendmentMemory: AutomationStudioLlmEvidenceAmendmentMemory;
   noProgress: AutomationStudioLlmEvidenceNoProgress;
   /** Decisions in a row refused for one reason (`./refusal-run.ts`). */

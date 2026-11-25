@@ -121,10 +121,12 @@ const RUN_NODE_TOOL_ID = "core.run_node";
 const UNLOGGED_CHECK_CODE = "recorded.unlogged_completion_refusal";
 /** Why a logged completion that the check refused no longer runs its dry run. */
 const A_RERUN_RUNS_FROM_ITS_PLACE = "a rerun runs from the page its step started on, put back first when the page has moved since (lane C, t194 runs 11 and 12)";
+/** Why a rerun the log made of a step a rerun had replaced no longer runs: the framework drafts the Flow (t1037), so a rerun takes the place of the step it replaced and the attempt moves to the end, where the logged number now names it. */
+const A_RERUN_STANDS_IN_ITS_PLACE = "the rerun before it took its step's place and the replaced attempt moved to the end, so the number this rerun named is that attempt, refused not_a_kept_step (t1037: the framework drafts the Flow; the transcript rule is gone)";
 const NOT_TESTED_WHILE_THE_CHECK_REFUSES = "a completion the check refuses is still live work and is not tested; the draft is replayed only once the check accepts it";
 
 /** A settings-only edit of one kept step: the stand-in for an amendment whose content was not logged. */
-const unlogged = (step: number, iteration: number, as: "keep" | "exploratory" = "keep"): AutomationStudioFlowDraftAmendment[] =>
+const unlogged = (step: number, iteration: number, as: "keep" | "drop" = "keep"): AutomationStudioFlowDraftAmendment[] =>
   [{ step, change: as, settings: { unloggedAmendment: iteration } }];
 
 type CheckScript = "ok" | { codes: string[]; feedback: JsonObject };
@@ -342,9 +344,9 @@ D22 tool_call | act1 web.action.rejected.target_not_found
     // that says how to replay it always runs one (`../../node-tools/dry-run-gate.ts`),
     // so at 12 nothing was proposed: every navigation (2, 5-8) and the read (9)
     // was withdrawn -- which is also what `bootstrap.invalid_subflows` says.
-    8: [2, 5, 6, 7, 8].map((step) => ({ step, change: "exploratory" as const })),
-    10: [{ step: 9, change: "exploratory" }],
-    11: unlogged(9, 11, "exploratory"),
+    8: [2, 5, 6, 7, 8].map((step) => ({ step, change: "drop" as const })),
+    10: [{ step: 9, change: "drop" }],
+    11: unlogged(9, 11, "drop"),
     // Dry run 1 at 19 replayed 9 and 10, so 9 was put back.
     15: [{ step: 9, change: "keep" }],
     16: unlogged(10, 16), 17: unlogged(10, 17), 18: unlogged(10, 18),
@@ -423,8 +425,8 @@ D47 complete
   amendments: {
     // Dry run 1 at 29 replayed 2-6, 14, 18 and 20: the reads before it (11, 12,
     // 15, 17) were withdrawn. When is a choice: the first amendment after each.
-    15: [{ step: 11, change: "exploratory" }, { step: 12, change: "exploratory" }],
-    20: [{ step: 15, change: "exploratory" }, { step: 17, change: "exploratory" }],
+    15: [{ step: 11, change: "drop" }, { step: 12, change: "drop" }],
+    20: [{ step: 15, change: "drop" }, { step: 17, change: "drop" }],
     // Until `cartview1` (20, decision 24) the newest kept step is `search2` (18).
     21: unlogged(18, 21), 22: unlogged(18, 22), 23: unlogged(18, 23), 26: unlogged(20, 26), 28: unlogged(20, 28),
     31: unlogged(20, 31),
@@ -464,11 +466,11 @@ D47 complete
     // The second decides it: none of the five runs a dry run. 47 traces as
     // logged again.
     29: { line: "D29 complete", why: NOT_TESTED_WHILE_THE_CHECK_REFUSES },
-    // Each rerun of the list read (32, 38, 42) now first puts the page back
+    // Each rerun of the list read (32, 42) now first puts the page back
     // where the read started, as a replay's reset does: the page had moved
-    // since (`../../node-tools/step-place.ts`).
+    // since (`../../node-tools/step-place.ts`). The one at 38 named the attempt the rerun at 32 replaced.
     32: { line: "D32 amend_draft | rerun.23.place core.replay.replayed | rerun.23 web.inspect.succeeded", why: A_RERUN_RUNS_FROM_ITS_PLACE },
-    38: { line: "D38 amend_draft | rerun.24.place core.replay.replayed | rerun.24 web.inspect.succeeded", why: A_RERUN_RUNS_FROM_ITS_PLACE },
+    38: { line: "D38 amend_draft", why: A_RERUN_STANDS_IN_ITS_PLACE },
     40: { line: "D40 complete", why: NOT_TESTED_WHILE_THE_CHECK_REFUSES },
     42: { line: "D42 amend_draft | rerun.26.place core.replay.replayed | rerun.26 web.inspect.succeeded", why: A_RERUN_RUNS_FROM_ITS_PLACE },
     44: { line: "D44 complete", why: NOT_TESTED_WHILE_THE_CHECK_REFUSES },
@@ -726,8 +728,6 @@ export async function replayRecordedRun(name: RecordedRunName, options: Recorded
     // it out: no state digests, so every repeat is answered from memory as it
     // was. `../../decision-handlers/tests/state-digest-cost.test.ts` replays a
     // recorded build with it.
-    // And every step that ran was kept unless withdrawn: the model did not author these drafts (`../../loop-configuration.ts`, `draftAuthoring`).
-    draftAuthoring: "transcript",
     ...limits.loop,
     budget: { ...limits.loop.budget, now: () => fixedClock },
     decide,

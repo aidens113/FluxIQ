@@ -46,11 +46,11 @@ function rowLoop(): AutomationStudioFlowDraftStep[] {
 }
 
 describe("withdrawals that would orphan a repeat", () => {
-  it("refuses the campaign's exploratory listing and restores its settings (mwp1jqze, decision 0113)", () => {
+  it("refuses the campaign's withdrawn listing and restores its settings (mwp1jqze, decision 0113)", () => {
     const steps = rowLoop();
     steps[1]!.settings = { attempts: 2 };
     const original = structuredClone(steps[1]);
-    expect(applyAutomationStudioFlowDraftAmendments(steps, [{ step: 2, change: "exploratory", settings: { attempts: 4 } }])).toEqual({
+    expect(applyAutomationStudioFlowDraftAmendments(steps, [{ step: 2, change: "drop", settings: { attempts: 4 } }])).toEqual({
       applied: 0, refused: [{ step: 2, reason: "holds_a_repeat", repeat: 3, holds: "over" }]
     });
     expect(steps[1]).toEqual(original);
@@ -90,14 +90,6 @@ describe("withdrawals that would orphan a repeat", () => {
     expect(applyAutomationStudioFlowDraftAmendments(steps, [{ step: 2, change: "drop" }, { step: 3, change: "drop" }])).toEqual({ applied: 2, refused: [] });
     assembles(steps);
   });
-
-  it("uses the shown numbers when this decision also reorders the source", () => {
-    const steps = rowLoop();
-    const report = applyAutomationStudioFlowDraftAmendments(steps, [{ step: 2, change: "reorder", to: 1 }, { step: 2, change: "drop" }]);
-    expect(report).toEqual({ applied: 1, refused: [{ step: 2, reason: "holds_a_repeat", repeat: 3, holds: "over" }] });
-    expect(steps[0]!.id).toBe("d2");
-    assembles(steps);
-  });
 });
 
 describe("routing that would leave an illegal repeat body", () => {
@@ -122,56 +114,14 @@ describe("routing that would leave an illegal repeat body", () => {
     assembles(steps);
   });
 
-  it.each(["optional", "only_if", "on_failed"] as const)("refuses %s inside a kept repeat and restores settings", (change) => {
-    const steps = [...rowLoop(), step(5)];
-    const before = structuredClone(steps[3]);
-    expect(applyAutomationStudioFlowDraftAmendments(steps, [{ step: 4, change, to: 5, settings: { attempts: 2 } }])).toEqual({
-      applied: 0, refused: [{ step: 4, reason: "span_holds_routing", repeat: 3, through: 4, routed: 4 }]
-    });
-    expect(steps[3]).toEqual(before);
-    assembles(steps);
-  });
 
-  it("refuses moving a newly routed member inside a span while keeping its routing outside", () => {
-    const steps = [...rowLoop(), step(5)];
-    expect(applyAutomationStudioFlowDraftAmendments(steps, [{ step: 5, change: "optional" }, { step: 5, change: "reorder", to: 4 }])).toEqual({
-      applied: 1, refused: [{ step: 5, reason: "span_holds_routing", repeat: 3, through: 4, routed: 5 }]
-    });
-    expect(steps.map((entry) => entry.id)).toEqual(["d1", "d2", "d3", "d4", "d5"]);
-    expect(steps[4]!.routing).toEqual({ kind: "optional" });
-    assembles(steps);
-  });
-
-  it("refuses moving a previously routed member into a kept span without changing order, settings or test marks", () => {
-    const steps = [...rowLoop(), step(5)];
-    steps[4]!.routing = { kind: "optional" };
-    for (const entry of steps) entry.replayed = { step: entry.position, actionId: entry.actionId, status: "replayed" };
-    const before = structuredClone(steps);
-    expect(applyAutomationStudioFlowDraftAmendments(steps, [{ step: 5, change: "reorder", to: 4, settings: { attempts: 3 } }])).toEqual({
-      applied: 0, refused: [{ step: 5, reason: "span_holds_routing", repeat: 3, through: 4, routed: 5 }]
-    });
-    expect(steps).toEqual(before);
-    assembles(steps);
-  });
-
-  it("refuses moving a span endpoint past an already routed step", () => {
-    const steps = [...rowLoop(), step(5)];
-    steps[4]!.routing = { kind: "optional" };
-    const before = structuredClone(steps);
-    expect(applyAutomationStudioFlowDraftAmendments(steps, [{ step: 4, change: "reorder", to: 5 }])).toEqual({
-      applied: 0, refused: [{ step: 4, reason: "span_holds_routing", repeat: 3, through: 4, routed: 5 }]
-    });
-    expect(steps).toEqual(before);
-    assembles(steps);
-  });
-
-  it.each(["add", "keep"] as const)("refuses %s of a previously routed member inside a span before recording claims or settings", (change) => {
+  it("refuses keep of a previously routed member inside a span before recording claims or settings", () => {
     const steps = [step(1), step(2, "read"), step(3), step(4), step(5)];
     steps[2]!.routing = { kind: "repeat", over: "d2", through: "d5" };
     steps[3]!.routing = { kind: "repeat", over: "d1", through: "d4" };
     steps[3]!.disposition = "dropped";
     const before = structuredClone(steps);
-    expect(applyAutomationStudioFlowDraftAmendments(steps, [{ step: 4, change, act: "a1", settings: { attempts: 3 } }])).toEqual({
+    expect(applyAutomationStudioFlowDraftAmendments(steps, [{ step: 4, change: "keep", act: "a1", settings: { attempts: 3 } }])).toEqual({
       applied: 0, refused: [{ step: 4, reason: "span_holds_routing", repeat: 3, through: 5, routed: 4 }]
     });
     expect(steps).toEqual(before);
@@ -185,21 +135,6 @@ describe("routing that would leave an illegal repeat body", () => {
     steps[3]!.disposition = "dropped";
     expect(applyAutomationStudioFlowDraftAmendments(steps, [{ step: 4, change: "keep" }])).toEqual({ applied: 1, refused: [] });
     expect(steps[3]!.routing).toBeUndefined();
-    assembles(steps);
-  });
-
-  it("rolls back successive rewrites of one inner step and counts each refused amendment", () => {
-    const steps = rowLoop();
-    steps[3]!.settings = { attempts: 2 };
-    const before = structuredClone(steps[3]);
-    expect(applyAutomationStudioFlowDraftAmendments(steps, [
-      { step: 4, change: "optional", settings: { attempts: 3 } },
-      { step: 4, change: "only_if", settings: { attempts: 4 } }
-    ])).toEqual({ applied: 0, refused: [
-      { step: 4, reason: "span_holds_routing", repeat: 3, through: 4, routed: 4 },
-      { step: 4, reason: "span_holds_routing", repeat: 3, through: 4, routed: 4 }
-    ] });
-    expect(steps[3]).toEqual(before);
     assembles(steps);
   });
 

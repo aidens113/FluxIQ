@@ -215,7 +215,7 @@ describe("forwardRun in an evidence loop", () => {
       dryRun: false, forwardRun: { rowDone: () => false, stepDone: () => false }
     });
     expect(result).toMatchObject({ ok: true });
-    expect(offeredAt(decide, 0)).toEqual(["press"]);
+    expect(offeredAt(decide, 0)).toEqual(["press", "core.run_flow"]); // From the first decision (page-diff D11).
     expect(offeredAt(decide, 1)).toEqual(["press", "core.run_flow"]);
     // The forward pass ran, and no dry run (no reset, no whole-Flow replay) followed the completion.
     expect(executeTool.mock.calls.map(([call]) => call.callId)).toEqual(["add.1", "fw.1.1"]);

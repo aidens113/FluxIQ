@@ -520,7 +520,7 @@ function unchangedLine(steps: readonly AutomationStudioFlowDraftStep[], verdict:
   if (!failing.length) return `${head} Change the Flow before you say it is ready.`;
   const one = failing.length === 1;
   const named = one ? failing[0] : `${failing.slice(0, -1).join(", ")} and ${failing[failing.length - 1]}`;
-  return `${head} Change ${named} before you say the Flow is ready: rerun ${one ? "it" : "each"} with a corrected argument (amend_draft rerun), mark it optional, or drop it.`;
+  return `${head} Change ${named} before you say the Flow is ready: rerun ${one ? "it" : "each"} with a corrected argument (amend_draft rerun), or drop it.`;
 }
 
 /** Whether two refused replays of one Flow failed on the same steps with the same answers. */

@@ -246,7 +246,7 @@ describe("a span that repeats", () => {
 
     expect(span({ kind: "repeat", through: "d3", over: "d9" })).toBe("Step 3 repeats over a step that is not in the Flow: it was dropped or never added. Send amend_draft repeat on step 3 again with over naming the kept step just before it whose rows it walks.");
     expect(span({ kind: "repeat", through: "d9", over: "d2" })).toBe("Step 3 repeats through a step that is not in the Flow: it was dropped or never added. Send amend_draft repeat on step 3 again with through naming the last kept step of the span.");
-    expect(span({ kind: "repeat", through: "d1", over: "d2" })).toBe("Step 3 repeats through step 1, which comes before it. through names the last step of the span, at or after step 3; put steps in order with an amend_draft reorder first.");
+    expect(span({ kind: "repeat", through: "d1", over: "d2" })).toBe("Step 3 repeats through step 1, which comes before it. through names the last step of the span, at or after step 3: send the repeat again with such a through, or take it off with amend_draft {\"step\": 3, \"change\": \"unrepeat\"}.");
   });
 
   it("produces a plan the validator accepts, cycle and all", () => {
@@ -318,24 +318,24 @@ describe("a span whose over comes after it", () => {
     expect(message).toBe("Step 2 repeats over step 3, which comes after it, and step 2 is a listing. A listing runs once, before the act that walks its rows; it never repeats. Take the repeat off step 2 with amend_draft {\"step\": 2, \"change\": \"unrepeat\"}, and repeat the act over it instead: {\"step\": <the act>, \"change\": \"repeat\", \"over\": 2}.");
   });
 
-  it("tells an act whose listing merely comes after it to move the listing ahead of it", () => {
+  it("tells an act whose listing merely comes after it to do the act again after the listing, never to move a step", () => {
     const message = refusalAt(assemble([
       step(1, "press", { target: "#friends" }),
       step(2, "press", { target: ".request-confirm" }, { kind: "repeat", through: "d2", over: "d3" }),
       step(3, "read", { target: ".request" })
     ]), "draft.steps.2");
 
-    expect(message).toBe("Step 2 repeats over step 3, which comes after it. The listing a span walks runs before the span: move it ahead of the act with amend_draft {\"step\": 3, \"change\": \"reorder\", \"to\": 2}; the act is then step 3 and keeps its repeat over the listing.");
+    expect(message).toBe("Step 2 repeats over step 3, which comes after it. The listing a span walks runs before the span, and the Flow runs its steps in the order they ran: do the act again after step 3, on one row it kept, put the repeat over step 3 on that new step, and take the repeat off step 2 with amend_draft {\"step\": 2, \"change\": \"unrepeat\"}.");
   });
 
-  it("tells a step repeating over a later check to take the repeat off, or to move the check just ahead of it", () => {
+  it("tells a step repeating over a later check to take the repeat off, or to repeat while its span's last step succeeds", () => {
     const message = refusalAt(assemble([
       step(1, "press", { target: "#friends" }),
       step(2, "press", { target: ".next-page" }, { kind: "repeat", through: "d2", over: "d3" }),
       step(3, "look", { target: ".next-page" })
     ]), "draft.steps.2");
 
-    expect(message).toBe("Step 2 repeats over step 3, which comes after it, and a span repeats over a step that runs before it. If step 2 should run once, take the repeat off with amend_draft {\"step\": 2, \"change\": \"unrepeat\"}; if it should run while step 3 succeeds, move step 3 just ahead of it with amend_draft {\"step\": 3, \"change\": \"reorder\", \"to\": 2}.");
+    expect(message).toBe("Step 2 repeats over step 3, which comes after it, and a span repeats over a step that runs before it. If step 2 should run once, take the repeat off with amend_draft {\"step\": 2, \"change\": \"unrepeat\"}; if it should run again while a step succeeds, repeat it with while naming the span's last step.");
   });
 });
 

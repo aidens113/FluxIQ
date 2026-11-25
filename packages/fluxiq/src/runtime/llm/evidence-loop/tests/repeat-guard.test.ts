@@ -150,10 +150,12 @@ describe("a call already tried on this same page", () => {
     const executeTool = site();
 
     await expect(loop(decide, executeTool)).rejects.toBe(stalledError);
+    // Where the framework drafts the Flow (t1037) the first keep makes the framework's step the model's, and is applied
+    // (`../../../flow-authoring/draft/amendment/apply.ts`, `pins`); every keep after it is refused.
     // Three decisions in a row refused `act_already_named` end the round (W2, `../../decision-handlers/refusal-run.ts`):
     // the refusal and two repeats of it, one sooner than the third repeat did.
-    expect(decide).toHaveBeenCalledTimes(4);
-    const feedback = shownAt(decide, 2).find((entry) => entry.toolId === "core.amendment_check")?.value;
+    expect(decide).toHaveBeenCalledTimes(5);
+    const feedback = shownAt(decide, 3).find((entry) => entry.toolId === "core.amendment_check")?.value;
     expect(feedback).toMatchObject({ refused: [{ step: 1, reason: "act_already_named" }] });
   });
 });
@@ -180,9 +182,11 @@ function requests(pressing = false) {
 /** The completion check refuses the plan every time, as `flow_bootstrap.completion_refused` did from 0071 to 0182. */
 const refusingPlan = () => ({ ok: false as const, issueCodes: ["flow_draft.repeat_not_after_its_source"], feedback: { code: "flow_bootstrap.completion_refused" } });
 const partRun = (index: number) => ({ kind: "tool_call", callId: `part.${index}`, toolId: "core.run_flow", input: { from: 1, to: 2 } });
+// The press names the act it does: after the Flow's only read, a press that changed nothing the host stated would be
+// left out by the framework as leading nowhere (`../../../flow-authoring/draft/compose/after-result.ts`, t1037).
 const builtDraft = [
   { kind: "tool_call", callId: "read.1", toolId: "read", input: { list: "requests" }, add: true },
-  { kind: "tool_call", callId: "press.1", toolId: "press", input: { target: "Confirm" }, add: true }
+  { kind: "tool_call", callId: "press.1", toolId: "press", input: { target: "Confirm" }, add: true, act: "a1" }
 ];
 const partLoop = (decide: ReturnType<typeof vi.fn>, executeTool: ReturnType<typeof requests>) => runAutomationStudioLlmEvidenceLoop({
   tools, decide, executeTool, maxIterations: 40, maxToolCalls: 40, propagateDecisionErrors: true, checkCompletion: refusingPlan,
@@ -213,7 +217,7 @@ describe("an identical call on an unchanged draft and page (run-musr9pv3-f4bf625
 
   it("runs the same part again once the draft has changed, and when the run pressed something", async () => {
     const decide = vi.fn();
-    for (const decision of [...builtDraft, partRun(1), { kind: "amend_draft", amendments: [{ step: 2, change: "optional" }] }, partRun(2), complete]) decide.mockResolvedValueOnce(decision);
+    for (const decision of [...builtDraft, partRun(1), { kind: "amend_draft", amendments: [{ step: 2, change: "repeat", over: 1 }] }, partRun(2), complete]) decide.mockResolvedValueOnce(decision);
     decide.mockResolvedValue(complete);
     const executeTool = requests();
     await expect(partLoop(decide, executeTool)).rejects.toBe(stalledError);
@@ -257,9 +261,11 @@ const nodeTools = [
 ];
 const quantity = { node: "web.output.dom-type", parameters: { target: { handle: "t964" }, text: "3", submit: false }, consequences: [] };
 const spain = { node: "web.output.dom-click", parameters: { target: { handle: "t958" } }, consequences: [] };
-// Decision A (0052, 0060, 0084) and decision B (0068, 0076, 0092).
-const decisionA = { kind: "amend_draft", amendments: [{ step: 1, change: "rerun", input: spain }, { step: 1, change: "add", act: "a1.origin" }] };
-const decisionB = { kind: "amend_draft", amendments: [{ step: 1, change: "rerun", input: spain }, { step: 1, change: "keep", act: "a1.origin" }] };
+// Decision A (0052, 0060, 0084) and decision B (0068, 0076, 0092). Live, they differed by `add` and `keep`; where the
+// framework drafts the Flow (t1037) `add` is no edit, so B is the same edits written in the other order: two decisions,
+// one effect, as live.
+const decisionA = { kind: "amend_draft", amendments: [{ step: 1, change: "rerun", input: spain }, { step: 1, change: "keep", act: "a1.origin" }] };
+const decisionB = { kind: "amend_draft", amendments: [{ step: 1, change: "keep", act: "a1.origin" }, { step: 1, change: "rerun", input: spain }] };
 
 /** The item page: every call finds and leaves a page digested afresh, as a reload moved the live run's digest. */
 function itemPage() {
@@ -317,7 +323,7 @@ describe("a rerun that changed nothing, sent again", () => {
     expect(first[6]).toBe("yes");
     expect(JSON.stringify(first[7])).toContain("\"rerun\":1");
     // 3 (as 19): the same decision again. The press replaced an identical press with the same result, and its held
-    // `add act a1.origin` was refused: the row says so and reads as no change, not "applied".
+    // `keep act a1.origin` was refused: the row says so and reads as no change, not "applied".
     const second = amendmentRow(rows, 3)!;
     expect(second[5]).toBe("act_already_named");
     expect(second[6]).toBe("no");

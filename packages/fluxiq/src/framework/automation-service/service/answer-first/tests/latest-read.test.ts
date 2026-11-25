@@ -85,7 +85,13 @@ function resultRows(attempt: Awaited<ReturnType<typeof attemptOf>>): JsonObject[
 
 /** The list's key the web domain's read says, for the tests whose pages are one list. */
 const LIST_KEY = "list.loans";
-/** As `after`, with the read made as a look: no `add`. */
+/** The `result` edit on the draft's first read step, by the number the draft shows it. */
+const resultOnFirstRead = (request: AutomationStudioLlmTaskRequest): JsonObject => {
+  const draft = request.context.evidenceLoop?.evidence.find((entry) => entry.toolId === "core.flow_draft")?.value as { steps?: Array<{ step: number; actionId?: string }> } | undefined;
+  const first = (draft?.steps ?? []).find((line) => line.actionId === READ_LOANS);
+  return { kind: "amend_draft", amendments: [{ step: first?.step ?? 0, change: "result" }] };
+};
+/** As `after`, with the read made without `add` (a look before t1037). */
 const afterLook = (library: FakeLibrary, change: () => void, id: string): Step[] => [after(library, change, id)[0]!, runNode(id, READ_LOANS, {})];
 
 const titles = (rows: readonly JsonObject[]) => rows.map((row) => row.title);
@@ -235,10 +241,11 @@ describe("the latest read of a list is the result", () => {
     expect(titles(resultRows(attempt))).toEqual(asked.map((each) => each.title));
   });
 
-  // Changed by lane t905: a read outside the draft (a look) never changes the result, empty or not.
-  it("a look that came back empty does not wipe a good one", async () => {
+  // Changed by lane t905: a read outside the draft (a look) never changed the result, empty or not. Since t1037 every read
+  // that worked is a draft step, so the model keeps the good read as the result with the `result` edit.
+  it("a read that came back empty does not wipe a good one the model named the result", async () => {
     const library = fakeLibrary();
-    const attempt = await attemptOf(library, [read("first"), afterLook(library, () => { library.loans = []; }, "empty")]);
+    const attempt = await attemptOf(library, [read("first"), afterLook(library, () => { library.loans = []; }, "empty"), resultOnFirstRead]);
     expect(titles(resultRows(attempt))).toEqual(NAMES);
   });
 

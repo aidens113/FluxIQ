@@ -50,7 +50,9 @@ function repairEntry(request: AutomationStudioLlmTaskRequest): JsonObject | unde
 /**
  * A model that adds one step to its Flow, then says it is ready with a result
  * the check refuses, until the build stops; in a repair, it finishes properly
- * only when `repairs` says so.
+ * only when `repairs` says so. Since t1037 the framework drafts every call that
+ * worked into the Flow, so the repair's act is one that changes nothing
+ * (`lands` absent): it acts without adding a step, as before.
  */
 async function build(repairs: "finish" | "refuse") {
   const requests: AutomationStudioLlmTaskRequest[] = [];
@@ -67,7 +69,7 @@ async function build(repairs: "finish" | "refuse") {
     // A round must act before it may finish: the exploration adds a step, the repair first acts again without adding one.
     const first = requests.length === 1 || repairCalls === 1;
     const decision: JsonObject = first
-      ? { kind: "tool_call", callId: `call.${requests.length}`, toolId: "example.act", input: { press: requests.length }, ...(repairing ? {} : { add: true }) }
+      ? { kind: "tool_call", callId: `call.${requests.length}`, toolId: "example.act", input: { press: requests.length, ...(repairing ? {} : { lands: true }) }, ...(repairing ? {} : { add: true }) }
       : repairing && repairs === "finish"
         ? { kind: "complete", result: { summary: "Built.", plan: plan() } }
         // A plan with no Subflow: refused every time, the same way, until the loop stops.
@@ -81,7 +83,8 @@ async function build(repairs: "finish" | "refuse") {
       domainId: "example",
       deniedEvidenceKeys: [],
       tools: [{ toolId: "example.act", description: "Change the target.", inputSchema: { type: "object" }, effect: "mutate" }],
-      executeTool: async (input) => ({ kind: "llm_evidence_tool_execution", evidence: { changed: input.callId }, effectApplied: true, resultCode: "example.acted" })
+      // An act changes the target only where the model's call says it lands (above).
+      executeTool: async (input) => ({ kind: "llm_evidence_tool_execution", evidence: { changed: input.value.lands === true ? input.callId : null }, effectApplied: input.value.lands === true, resultCode: "example.acted" })
     })
   });
   services.add(instance);
@@ -93,6 +96,8 @@ async function build(repairs: "finish" | "refuse") {
  * A model that acts but adds nothing to its Flow, then says it is ready with a
  * result the check refuses, until the round stops. Told to explore again, it
  * adds the step and finishes when `again` says so, or goes on the same way.
+ * Since t1037 the framework drafts every call that worked, so an act that adds
+ * nothing is one that changed nothing (`lands` absent).
  */
 async function buildEmpty(again: "finish" | "same", maxCallsPerRun?: number) {
   const requests: AutomationStudioLlmTaskRequest[] = [];
@@ -109,7 +114,7 @@ async function buildEmpty(again: "finish" | "same", maxCallsPerRun?: number) {
     // Every round acts before it may finish: this domain gives no free first look.
     const acts = request.context.evidenceLoop?.iteration === 1;
     const decision: JsonObject = acts
-      ? { kind: "tool_call", callId: `call.${requests.length}`, toolId: "example.act", input: { press: requests.length }, ...(finishing ? { add: true } : {}) }
+      ? { kind: "tool_call", callId: `call.${requests.length}`, toolId: "example.act", input: { press: requests.length, ...(finishing ? { lands: true } : {}) }, ...(finishing ? { add: true } : {}) }
       : finishing
         ? { kind: "complete", result: { summary: "Built.", plan: plan() } }
         : { kind: "complete", result: { summary: "Done.", plan: { ...plan(), subflows: [] } } };
@@ -122,7 +127,8 @@ async function buildEmpty(again: "finish" | "same", maxCallsPerRun?: number) {
       domainId: "example",
       deniedEvidenceKeys: [],
       tools: [{ toolId: "example.act", description: "Change the target.", inputSchema: { type: "object" }, effect: "mutate" }],
-      executeTool: async (input) => ({ kind: "llm_evidence_tool_execution", evidence: { changed: input.callId }, effectApplied: true, resultCode: "example.acted" })
+      // An act changes the target only where the model's call says it lands (above).
+      executeTool: async (input) => ({ kind: "llm_evidence_tool_execution", evidence: { changed: input.value.lands === true ? input.callId : null }, effectApplied: input.value.lands === true, resultCode: "example.acted" })
     })
   });
   services.add(instance);

@@ -26,7 +26,7 @@ export function nextStep(refusal: AutomationStudioFlowDraftAmendmentRefusal, ste
   if (refusal.reason === "over_not_before") {
     const act = at(refusal.step);
     const named = at(refusal.over);
-    if (act?.effect === "mutate" && act.effectApplied !== false && reads(named) && named.position > act.position) return listingFirst(act, named.position, refusal.through);
+    if (act?.effect === "mutate" && act.effectApplied !== false && reads(named) && named.position > act.position) return listingFirst(act, named.position);
     const listing = [at(refusal.over), at(refusal.step)].find(reads);
     return listing ? `Step ${listing.position} is the listing, so the repeat cannot go on it. ${rowAct(listing.position, steps)}` : undefined;
   }
@@ -55,27 +55,22 @@ export function repeatOver(listing: AutomationStudioDraftAmendmentFeedbackStep, 
  * What an unchanged rerun of a listing an act already repeats over needs
  * instead (live run `run-mux6nxst-c9bca37c`, D3-2): the loop is in place, a
  * rerun only replaces the listing, and a read of the rows after the act is a
- * new step, run where the act left the page and added after it. Nineteen
- * decisions of that run reran step 6 unchanged, each told to put the repeat on
- * step 7, which already carried it.
+ * new step, run where the act left the page, which puts it in the draft after
+ * it. Nineteen decisions of that run reran step 6 unchanged, each told to put
+ * the repeat on step 7, which already carried it.
  */
 export function readAfterAct(listing: number, act: number): string {
-  return `Step ${act} already repeats over step ${listing}, so the loop is in place: rerunning step ${listing} only replaces it and never adds a step after step ${act}. A read of the rows after the act is a new step: with the act done on the page, run the read there as a new call ("core.run_node" with add true) so it is added after step ${act}, with a where keeping the rows the instruction asks for -- or write it with write true.`;
+  return `Step ${act} already repeats over step ${listing}, so the loop is in place: rerunning step ${listing} only replaces it and never adds a step after step ${act}. A read of the rows after the act is a new step: with the act done on the page, run the read there as a new call ("core.run_node"), which puts it in the draft after step ${act}, with a where keeping the rows the instruction asks for -- or write it with write true.`;
 }
 
 /**
  * What a repeat on the act at `act.position` over the listing at `listing`,
- * after it, needs instead: the listing moved to the act's place, and the
- * repeat beside it, both in the numbers the draft shows. Every number in one
- * decision names the step as the draft shown numbered it, and the draft is
- * renumbered once, after the whole decision
- * (`../flow-draft/amendment/shown-numbering.ts`), so the act, the listing and
- * a `through` keep the numbers shown.
+ * after it, needs instead. The Flow runs its steps in the order they ran and no
+ * edit moves a step (`../../flow-authoring/draft/amendment/`), so the act is
+ * done again after the listing, on one row it kept, and the repeat goes on that
+ * new step; the act before the listing is then dropped.
  */
-export function listingFirst(act: AutomationStudioDraftAmendmentFeedbackStep, listing: number, through: number | undefined): string {
+export function listingFirst(act: AutomationStudioDraftAmendmentFeedbackStep, listing: number): string {
   const at = act.position;
-  const span = through === undefined || through === listing ? undefined : through;
-  const add = act.disposition === "kept" ? "" : `add step ${at} with its act, then `;
-  const repeat = `{"step": ${at}, "change": "repeat", "over": ${listing}${span === undefined ? "" : `, "through": ${span}`}}`;
-  return `Step ${listing} is the listing, and it comes after step ${at}, the act the repeat was put on: over must come before the act, so the same repeat is refused however often it is sent. Move the listing before the act: ${add}send {"step": ${listing}, "change": "reorder", "to": ${at}} and ${repeat} in one decision. Every number in one decision names the step as this draft numbers it, and the draft is renumbered once, after the whole decision.`;
+  return `Step ${listing} is the listing, and it ran after step ${at}, the act the repeat was put on: over must come before the act, and the Flow runs its steps in the order they ran, so the same repeat is refused however often it is sent. Do the act after the listing: on the page step ${listing} left, run the act on one row it kept -- that row's own control -- with its act, then send {"step": <that new step>, "change": "repeat", "over": ${listing}}, and drop step ${at}.`;
 }

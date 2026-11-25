@@ -8,7 +8,7 @@ const lasting = (position: number, over: Partial<AutomationStudioFlowDraftStep> 
 const plain = (position: number, over: Partial<AutomationStudioFlowDraftStep> = {}): AutomationStudioFlowDraftStep => lasting(position, { input: { node: "press", consequences: [] }, ...over });
 
 type Line = { step: number; landed?: boolean; inResult: boolean };
-const entry = (steps: AutomationStudioFlowDraftStep[]) => automationStudioFlowDraftEntry({ steps, authored: true })!.value as { steps: Line[]; instruction: string };
+const entry = (steps: AutomationStudioFlowDraftStep[]) => automationStudioFlowDraftEntry({ steps })!.value as { steps: Line[]; instruction: string };
 
 describe("a step that landed and is out of the Flow", () => {
   it("is one that declared a lasting effect, or names an act, and worked", () => {
@@ -39,7 +39,7 @@ describe("the draft entry", () => {
     expect(value.steps.filter((line) => line.landed).map((line) => line.step)).toEqual([4]);
     expect(value.instruction.match(/A step showing landed/gu)).toHaveLength(1);
     expect(value.instruction).toContain("Leaving it out undoes nothing");
-    expect(value.instruction).toContain("put the step back with amend_draft add or keep, naming its act: that runs nothing");
+    expect(value.instruction).toContain("put the step back with amend_draft keep, naming its act: that runs nothing");
 
     const none = entry([plain(1), lasting(2)]);
     expect(none.steps.some((line) => Object.hasOwn(line, "landed"))).toBe(false);

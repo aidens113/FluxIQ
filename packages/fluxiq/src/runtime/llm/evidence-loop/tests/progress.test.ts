@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { runAutomationStudioLlmEvidenceLoop } from "../../index.ts";
 
 const press = { toolId: "press", description: "Press a control.", inputSchema: { type: "object" }, effect: "mutate" as const };
-// Presses the Flow needs, added to it as they run (`../../../flow-draft/step.ts`, `taken`).
+// Presses the Flow needs: the framework drafts them in as they work (t1037); `add` changes nothing.
 const pressed = (index: number) => ({ kind: "tool_call", callId: `call.${index}`, toolId: "press", input: { target: `target.${index}` }, add: true });
 const completed = { kind: "complete", result: { flow: "ready" } };
 const stalled = () => new Error("stalled");
@@ -16,9 +16,9 @@ describe("evidence-loop draft progress", () => {
     const decide = vi.fn()
       .mockResolvedValueOnce(pressed(1))
       .mockResolvedValueOnce(pressed(2))
-      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "keep" }] })
-      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "reorder", to: 2 }] })
+      // A drop applies; an unrepeat of a step with no repeat changes nothing.
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "drop" }] })
+      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 2, change: "unrepeat" }] })
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 2, change: "rerun", input: { target: "target.2b" } }] })
       .mockResolvedValueOnce(completed);
     const executeTool = vi.fn().mockResolvedValue({
@@ -33,38 +33,33 @@ describe("evidence-loop draft progress", () => {
 
     expect(result.ok).toBe(true);
     expect(result.trace.map((row) => [row.progress?.draftRevisionBefore, row.progress?.draftRevisionAfter])).toEqual([
-      [0, 1], [1, 2], [2, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 6]
+      [0, 1], [1, 2], [2, 3], [3, 3], [3, 4], [4, 5], [5, 5]
     ]);
     expect(result.trace.map((row) => row.progress?.draftState)).toEqual([
-      "changed", "changed", "unchanged", "changed", "changed", "changed", "changed", "unchanged"
+      "changed", "changed", "changed", "unchanged", "changed", "changed", "unchanged"
     ]);
     expect(result.trace[2]).toMatchObject({
-      resultCode: "llm_evidence_loop.draft_unchanged",
-      draftChange: { targetedStepIds: ["d1"], appliedCount: 0, refusedCount: 1, keptStepCount: 2 }
+      resultCode: "llm_evidence_loop.draft_amended",
+      draftChange: { targetedStepIds: ["d1"], appliedCount: 1, refusedCount: 0, keptStepCount: 1 }
     });
     expect(result.trace[3]).toMatchObject({
-      resultCode: "llm_evidence_loop.draft_amended",
-      draftChange: { targetedStepIds: ["d1"], appliedCount: 1, refusedCount: 0, keptStepCount: 2 }
-    });
-    expect(result.trace[4]).toMatchObject({
-      resultCode: "llm_evidence_loop.draft_amended",
-      draftChange: { targetedStepIds: ["d2"], appliedCount: 1, refusedCount: 0, keptStepCount: 1 }
+      resultCode: "llm_evidence_loop.draft_unchanged",
+      draftChange: { targetedStepIds: ["d2"], appliedCount: 0, refusedCount: 1, keptStepCount: 1 }
     });
     // The step a rerun replaces is still kept when the amendment is recorded:
     // it is withdrawn only once the rerun has worked, which the final draft shows.
-    expect(result.trace[5]).toMatchObject({
+    expect(result.trace[4]).toMatchObject({
       resultCode: "llm_evidence_loop.draft_rerun",
-      draftChange: { targetedStepIds: ["d1"], appliedCount: 1, refusedCount: 0, keptStepCount: 1, rerunStepId: "d1" }
+      draftChange: { targetedStepIds: ["d2"], appliedCount: 1, refusedCount: 0, keptStepCount: 1, rerunStepId: "d2" }
     });
     expect(result.steps.map((step) => [step.id, step.disposition])).toEqual([
-      // Reordering changes position, never identity.
-      // A rerun that worked takes the replaced step's place, which stays listed behind it, withdrawn.
-      ["d2", "dropped"], ["d3", "kept"], ["d1", "dropped"]
+      // A rerun that worked takes the replaced step's place, which stays listed behind it, out as replaced.
+      ["d1", "dropped"], ["d3", "kept"], ["d2", "taken"]
     ]);
     // A row says what its decision was shown before that row changed the
     // draft. The count includes withdrawn steps, whose dispositions and ids
     // remain visible so later positions can be understood.
-    expect(result.trace.map((row) => row.draft?.steps)).toEqual([undefined, 1, 2, 2, 2, 2, 2, 3]);
+    expect(result.trace.map((row) => row.draft?.steps)).toEqual([undefined, 1, 2, 2, 2, 2, 3]);
   });
 
   it("counts a refused action that the next decision can see as one draft revision", async () => {

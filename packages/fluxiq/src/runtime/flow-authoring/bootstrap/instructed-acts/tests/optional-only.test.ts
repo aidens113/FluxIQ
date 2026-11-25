@@ -39,7 +39,7 @@ describe("an act whose only step may be skipped", () => {
     expect(verdict.missingActs.acts).toEqual([expect.objectContaining({ id: "a1.version", reason: "step_is_optional", step: "3" })]);
     expect(verdict.missingActs.acts[0]?.said).toContain("step 3 passing in one test is not evidence");
     expect(verdict.instruction).toMatch(/^Nothing was created and this build is still open\. /u);
-    expect(verdict.instruction).toContain("only_if");
+    expect(verdict.instruction).toContain("amend_draft keep");
   });
 
   it("is not answered for a step that always runs, or runs only when a check says it is needed", () => {

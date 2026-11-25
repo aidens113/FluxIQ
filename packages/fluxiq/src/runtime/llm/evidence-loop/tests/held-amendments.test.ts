@@ -1,15 +1,14 @@
 // An amendment naming the step the same decision reruns is about the step that
 // replaces it, so it waits for the rerun (`../held-amendments.ts`).
 //
-// Live run `run-mup2i28c-6c7fc209`, decision 5, sent `4 rerun` beside `4 add
-// act a1`. The add was applied before the rerun ran, was judged on the failed
+// Live run `run-mup2i28c-6c7fc209`, decision 5, sent `4 rerun` beside an act
+// claimed on step 4. The claim was applied before the rerun ran, was judged on the failed
 // press the rerun was replacing, and was refused `did_not_work` -- so a rerun's
 // success could never carry its act in the same decision.
 import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
 import { runAutomationStudioLlmEvidenceLoop } from "../../index.ts";
 import type { AutomationStudioFlowDraftClaimRefused, AutomationStudioFlowDraftStep } from "../../../flow-authoring/draft/index.ts";
-import { applyAutomationStudioFlowDraftAmendments } from "../../../flow-authoring/draft/index.ts";
 import { automationStudioLlmEvidenceHeldAmendments } from "../held-amendments.ts";
 import { automationStudioLlmEvidenceRerunReplaced } from "../rerun/index.ts";
 
@@ -21,8 +20,11 @@ const refused = { kind: "llm_evidence_tool_execution", evidence: { ok: false, co
 const call = (index: number, over: JsonObject = {}) => ({ kind: "tool_call", callId: `call.${index}`, toolId: "go", input: { target: `#t${index}` }, ...over });
 type Shown = ReadonlyArray<{ toolId: string; value: JsonObject }>;
 const shownAt = (decide: { mock: { calls: unknown[][] } }, index: number): Shown => (decide.mock.calls[index]![0] as { evidence: Shown }).evidence;
+const pressStep = (id: string, position: number, over: Partial<AutomationStudioFlowDraftStep> = {}): AutomationStudioFlowDraftStep =>
+  ({ position, id, iteration: position, actionId: "web.dom.click", toolId: "go", input: { target: `#${id}` }, effect: "mutate", effectApplied: true, disposition: "kept", ...over });
 
-// Step 1 added, step 2 refused, step 3 worked and not yet added; then one decision reruns step 2 and adds both.
+// Step 1 worked, step 2 refused, step 3 worked; then one decision reruns step 2 and names an act on both (`keep` with
+// `act`, the framework's edit: every step that worked is in the Flow already, t1037).
 const run = async (rerunOutcome: "worked" | "refused" | "threw", amendments: JsonObject[], draft?: { claimRefused: AutomationStudioFlowDraftClaimRefused }) => {
   const decide = vi.fn()
     .mockResolvedValueOnce(call(1, { add: true }))
@@ -39,12 +41,12 @@ const run = async (rerunOutcome: "worked" | "refused" | "threw", amendments: Jso
 
 const decision5 = [
   { step: 2, change: "rerun", input: { target: "#fixed" } },
-  { step: 2, change: "add", act: "a1" },
-  { step: 3, change: "add", act: "a2" }
+  { step: 2, change: "keep", act: "a1" },
+  { step: 3, change: "keep", act: "a2" }
 ];
 
 describe("an amendment naming the step its decision reruns", () => {
-  it.each(["drop", "optional"] as const)("renumbers a held %s refusal's repeat references after another step moved", (change) => {
+  it.each(["drop", "repeat"] as const)("says a held %s refusal's repeat references in the numbers the model wrote, once the rerun took its step's place", (change) => {
     const entry = (id: string, position: number): AutomationStudioFlowDraftStep => ({
       id, position, iteration: position, actionId: "node", input: { id }, effect: "mutate", proposes: true, effectApplied: true, disposition: "kept"
     });
@@ -54,11 +56,10 @@ describe("an amendment naming the step its decision reruns", () => {
     const position = change === "drop" ? 2 : 4;
     const replaced = steps[position - 1]!;
     const held = automationStudioLlmEvidenceHeldAmendments([{ step: position, change: "rerun" }, { step: position, change }], steps, position);
-    applyAutomationStudioFlowDraftAmendments(steps, [{ step: 5, change: "reorder", to: 1 }]);
     const rerun = { ...entry("fresh", 6), effect: replaced.effect };
     steps.push(rerun);
-    automationStudioLlmEvidenceRerunReplaced(steps, replaced, { takesItsPlace: true });
-    expect(steps.find((step) => step.id === "head")!.position).toBe(4);
+    automationStudioLlmEvidenceRerunReplaced(steps, replaced);
+    expect(steps.find((step) => step.id === "head")!.position).toBe(3);
     expect(held.settle(steps, rerun)).toEqual({
       applied: 0, refused: [change === "drop"
         ? { step: 2, reason: "holds_a_repeat", repeat: 3, holds: "over" }
@@ -101,15 +102,6 @@ describe("an amendment naming the step its decision reruns", () => {
     expect(feedback).toMatchObject({ refused: [{ step: 2, reason: "did_not_work" }] });
   });
 
-  it("keeps the position it named for another step, read in the numbering the model wrote it in", async () => {
-    // Move the rerun to where step 3 stood when the model wrote it.
-    const { result } = await run("worked", [{ step: 2, change: "rerun", input: { target: "#fixed" } }, { step: 2, change: "add", to: 3, act: "a1" }]);
-    // Position 3 is where d3 stood, so the rerun goes after d3, not before it; the replaced
-    // attempt d2 stays at the end, where a rerun's receipt goes (`run-musp474o-e0ed7432`).
-    expect(result.steps.map((step) => [step.id, step.position])).toEqual([["d1", 1], ["d3", 2], ["d4", 3], ["d2", 4]]);
-    expect(result.steps.find((step) => step.id === "d4")).toMatchObject({ disposition: "kept", acts: ["a1"] });
-  });
-
   // t285 gap 1: a held claim was applied without the act judge, so an act held for a rerun was claimed unasked.
   it("asks the act judge before a held act is claimed on the rerun, as an amendment applied at once is", async () => {
     const judge = vi.fn<AutomationStudioFlowDraftClaimRefused>((_steps, step, act) => act === "a1" ? { act, said: `Step ${step.position} only opened the page, and does not do a1.` } : undefined);
@@ -122,36 +114,5 @@ describe("an amendment naming the step its decision reruns", () => {
     expect(rerunRow?.amendmentsRefused).toEqual([expect.objectContaining({ step: 2, reason: "act_not_done_there", act: "a1", said: "Step 2 only opened the page, and does not do a1." })]);
     const feedback = shownAt(decide, 4).find((entry) => entry.toolId === "core.amendment_check")?.value;
     expect(feedback).toMatchObject({ refused: [{ step: 2, reason: "act_not_done_there", act: "a1" }] });
-  });
-
-  // t285 gap 2: the judge's sentence is worded on the draft as it stands, which the decision's own move renumbered.
-  it("says a held claim's refusal in the numbers the model wrote, after a move in the same decision", async () => {
-    const judge = vi.fn<AutomationStudioFlowDraftClaimRefused>((steps, step, act) => act === "a1"
-      ? { act, said: `Step ${step.position} only opened the page, and does not do a1. Step ${steps.find((each) => each.id === "d1")!.position} names it: amend_draft add on step ${steps.find((each) => each.id === "d1")!.position}.`, instead: steps.find((each) => each.id === "d1")!.position }
-      : undefined);
-    // Step 3 moves to 1 now, so d1 is 2 and the rerun of step 2 stands at 3 when its held add is applied.
-    const { result } = await run("worked", [{ step: 2, change: "rerun", input: { target: "#fixed" } }, { step: 3, change: "reorder", to: 1 }, { step: 2, change: "add", act: "a1" }], { claimRefused: judge });
-    expect(result.steps.map((step) => [step.id, step.position])).toEqual([["d3", 1], ["d1", 2], ["d4", 3], ["d2", 4]]);
-    const rerunRow = result.trace.find((row) => row.callId === "rerun.2");
-    expect(rerunRow?.amendmentsRefused).toEqual([expect.objectContaining({
-      step: 2, reason: "act_not_done_there", said: "Step 2 only opened the page, and does not do a1. Step 1 names it: amend_draft add on step 1.", instead: 1
-    })]);
-  });
-
-  it("says a repeat its move took off in the numbers the model wrote, not the held amendment's", () => {
-    // Step 2 repeats over the listing at 1 through step 3; the decision reruns step 3 and moves the
-    // rerun to where step 2 stood, so step 2's span would end before it starts and is taken off.
-    const press = (id: string, position: number): AutomationStudioFlowDraftStep => ({ position, id, iteration: position, actionId: "web.dom.click", input: { target: `#${id}` }, effect: "mutate", effectApplied: true, disposition: "kept" });
-    const steps = [press("d1", 1), press("d2", 2), press("d3", 3)];
-    steps[1]!.routing = { kind: "repeat", through: "d3", over: "d1" };
-    const held = automationStudioLlmEvidenceHeldAmendments([{ step: 3, change: "rerun" }, { step: 3, change: "reorder", to: 2 }], steps, 3);
-    const rerun = press("d4", 4);
-    steps.push(rerun);
-    automationStudioLlmEvidenceRerunReplaced(steps, steps[2], { takesItsPlace: true });
-    const settled = held.settle(steps, rerun);
-    expect(steps.map((step) => step.id)).toEqual(["d1", "d4", "d2", "d3"]);
-    // The repeat was step 2's as the model wrote it, through step 3 (the number the rerun stands at);
-    // step 2 is now 3 and the rerun 2.
-    expect(settled).toEqual({ applied: 1, refused: [{ step: 2, reason: "repeat_taken_off", over: 1, through: 3, takenOff: "span_broken", now: 3, throughNow: 2 }] });
   });
 });

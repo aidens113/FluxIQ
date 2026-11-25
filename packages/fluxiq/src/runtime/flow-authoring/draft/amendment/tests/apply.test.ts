@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyAutomationStudioFlowDraftAmendments, AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA } from "../index.ts";
+import { applyAutomationStudioFlowDraftAmendments, AUTOMATION_STUDIO_FLOW_DRAFT_EDIT_SCHEMA } from "../index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../step.ts";
 import { automationStudioFlowDraftStepIsProposed } from "../../step.ts";
 
@@ -11,36 +11,13 @@ function steps(): AutomationStudioFlowDraftStep[] {
 }
 
 describe("amending the draft", () => {
-  it("adopts the executed read named by its call and preserves that read's declared input", () => {
-    const draft: AutomationStudioFlowDraftStep[] = [1, 2].map((position) => ({
-      position, id: `read.${position}`, iteration: position, callId: `call.${position}`, actionId: "read", effect: "observe", proposes: true,
-      input: { fields: [{ name: "title" }], where: [{ field: "available", is: position === 2 }] }, effectApplied: true, disposition: "taken"
-    }));
-    const before = structuredClone(draft);
-    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 1, change: "take", call: "call.2" }])).toEqual({ applied: 1, refused: [] });
-    expect(draft[0]).toEqual(before[0]);
-    expect(draft[1]).toEqual({ ...before[1], disposition: "kept" });
-  });
-
-  it("never substitutes a numbered step for a missing or superseded call", () => {
-    const draft: AutomationStudioFlowDraftStep[] = [
-      { position: 1, id: "old", iteration: 1, callId: "old.call", replacedBy: "fresh", actionId: "read", input: {}, effect: "observe", proposes: true, effectApplied: true, disposition: "taken" },
-      { position: 2, id: "fresh", iteration: 2, callId: "fresh.call", actionId: "read", input: {}, effect: "observe", proposes: true, effectApplied: true, disposition: "taken" }
-    ];
-    const before = structuredClone(draft);
-    for (const call of ["missing.call", "old.call"]) {
-      expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "take", call }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "no_such_step" }] });
-      expect(draft).toEqual(before);
-    }
-  });
-
   it("can route and bind a checked candidate without inventing executed instance proof", () => {
     const draft = steps();
     const original = structuredClone(draft[1]!);
     draft[1]!.priorExecution = { ...original, lasting: true };
     draft[1]!.checkedCandidate = { callId: "check", code: "core.replay.verified" };
     draft[1]!.effectApplied = false;
-    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "optional" }])).toEqual({ applied: 1, refused: [] });
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "repeat", over: 1 }])).toEqual({ applied: 1, refused: [] });
     expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "bind", input: { target: { $input: "target", test: "other" } } }])).toEqual({ applied: 1, refused: [] });
     expect(draft[1]!.instance).toBeUndefined();
     expect(draft[1]!.priorExecution?.input).toEqual(original.input);
@@ -75,15 +52,15 @@ describe("amending the draft", () => {
     expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "unrepeat" }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "already_so" }] });
   });
 
-  it("drops, marks exploratory and puts back, and carries settings alongside", () => {
+  it("drops and keeps, and carries settings alongside", () => {
     const draft = steps();
     const report = applyAutomationStudioFlowDraftAmendments(draft, [
       { step: 1, change: "drop" },
-      { step: 2, change: "exploratory" },
+      { step: 2, change: "drop" },
       { step: 3, change: "keep", settings: { waitFor: "results" } }
     ]);
     expect(report).toEqual({ applied: 3, refused: [] });
-    expect(draft.map((step) => step.disposition)).toEqual(["dropped", "exploratory", "kept"]);
+    expect(draft.map((step) => step.disposition)).toEqual(["dropped", "dropped", "kept"]);
     expect(draft.map(automationStudioFlowDraftStepIsProposed)).toEqual([false, false, true]);
     expect(draft[2]?.settings).toEqual({ waitFor: "results" });
   });
@@ -115,11 +92,11 @@ describe("amending the draft", () => {
   it("refuses every edit but rerun about a step that did not work, and changes nothing about it", () => {
     const draft = steps();
     draft[1] = { ...draft[1]!, effectApplied: false, resultCode: "action.refused" };
-    const changes = ["drop", "exploratory", "keep", "optional"] as const;
+    const changes = ["drop", "keep", "repeat", "result"] as const;
     for (const change of changes) {
       expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "did_not_work" }] });
     }
-    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "reorder", to: 1 }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "did_not_work" }] });
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "bind", input: { target: { $input: "target" } } }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "did_not_work" }] });
     expect(draft.map((step) => [step.position, step.disposition, step.routing])).toEqual([[1, "kept", undefined], [2, "kept", undefined], [3, "kept", undefined]]);
     // A rerun is still the loop's to carry out, and the one edit not refused for this.
     expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "rerun", input: {} }]).refused).toEqual([{ step: 2, reason: "run_by_the_loop" }]);
@@ -139,9 +116,9 @@ describe("acts on the draft", () => {
 
   // Information, not a refusal (user, 2026-10-01): the step goes into the Flow
   // as asked, the act is not recorded on a read, and the model is told why.
-  it("applies an add or keep that names an act on a read, records no act there, and says why", () => {
+  it("applies a keep that names an act on a read, records no act there, and says why", () => {
     const draft = listingAndConfirm();
-    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 1, change: "add", act: "a1" }])).toEqual({ applied: 1, refused: [{ step: 1, reason: "act_on_a_read" }] });
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 1, change: "keep", act: "a1" }])).toEqual({ applied: 1, refused: [{ step: 1, reason: "act_on_a_read" }] });
     expect(draft[0]).toMatchObject({ disposition: "kept" });
     expect(draft[0]?.acts).toBeUndefined();
     // Said again about the listing now in the Flow: only the act was news, and it is told once.
@@ -155,9 +132,7 @@ describe("acts on the draft", () => {
     const draft = listingAndConfirm();
     // The act rides on the refusal, so the telling can read the checklist for it
     // (run-muqiojz4-04a7a8fc named a done act five times running).
-    for (const change of ["add", "keep"] as const) {
-      expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change, act: "a1" }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "act_already_named", act: "a1" }] });
-    }
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "keep", act: "a1" }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "act_already_named", act: "a1" }] });
     expect(draft[1]?.acts).toEqual(["a1"]);
   });
 
@@ -195,14 +170,6 @@ describe("a repeat on a listing, run 37", () => {
     expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "repeat", over: 2, through: 2 }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "over_not_before", over: 2 }] });
     expect(draft[1]?.routing).toBeUndefined();
   });
-
-  it("the schema puts the repeat on the act, never the listing, and never reruns a listing as it stands", () => {
-    const change = (AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA.properties as Record<string, { description: string }>).change!.description;
-    expect(change).not.toContain("first rerun the listing");
-    expect(change).toContain("never to run it again as it stands");
-    expect(change).toContain("A repeat over a listing goes on the act, never on the listing itself");
-    expect(change).toContain("that row's own control");
-  });
 });
 
 // `bind` generalizes a step that worked: a concrete argument is lifted into a
@@ -235,13 +202,13 @@ describe("binding a step's arguments", () => {
   }
 
   it("is a change the schema offers", () => {
-    const change = (AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA.properties as Record<string, { enum: string[]; description: string }>).change!;
+    const change = (AUTOMATION_STUDIO_FLOW_DRAFT_EDIT_SCHEMA.properties as Record<string, { enum: string[]; description: string }>).change!;
     expect(change.enum).toContain("bind");
     expect(change.description).toContain("bind:");
-    const input = (AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA.properties as Record<string, { description: string }>).input!.description;
+    expect(change.description).toContain("$input");
+    expect(change.description).toContain("$row");
+    const input = (AUTOMATION_STUDIO_FLOW_DRAFT_EDIT_SCHEMA.properties as Record<string, { description: string }>).input!.description;
     expect(input).toContain("bind");
-    expect(input).toContain("$input");
-    expect(input).toContain("$row");
   });
 
   it("lifts a value into a Flow input, keeps the run that worked as instance, and takes the replaced value as the test value", () => {
@@ -314,16 +281,6 @@ describe("binding a step's arguments", () => {
     expect(draft[1]?.instance?.parameters).toMatchObject({ query: "blue towels" });
   });
 
-  // Every number in one decision is the draft as shown (`../shown-numbering.ts`):
-  // a `$step` beside a reorder names the step shown at n, never the one a move
-  // put there, which could be another earlier step with the same output.
-  it("reads an earlier-output bind's step number as the draft was shown, after a move in the same decision", () => {
-    const draft = loopDraft();
-    const result = applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "reorder", to: 1 }, { step: 3, change: "bind", input: { note: { $step: 1, output: "records" } } }]);
-    expect(result.refused).toEqual([]);
-    expect(draft.find((step) => step.id === "d3")?.ranWith?.parameters).toMatchObject({ note: { $state: { path: "$step.d1.records" } } });
-  });
-
   it("refuses an earlier-output bind on the step itself, a later step, a missing or a withdrawn step, changing nothing", () => {
     for (const [position, withdraw] of [[2, false], [3, false], [9, false], [1, true]] as const) {
       const draft = loopDraft();
@@ -370,17 +327,16 @@ describe("binding a step's arguments", () => {
     Object.assign(draft[2]!, { written: true, effectApplied: false, resultCode: "core.run_node.written" });
     expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 3, change: "bind", input: { note: { $row: "name" } } }])).toEqual({ applied: 1, refused: [] });
     expect(draft[2]?.instance).toBeUndefined();
-    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 3, change: "optional" }])).toEqual({ applied: 1, refused: [] });
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 3, change: "keep", settings: { waitFor: "results" } }])).toEqual({ applied: 1, refused: [] });
   });
 });
 
 // Live run `run-murz83zy-5030820f` (R8): the model pressed Amara's Confirm as
 // step 9 and ran the filtered request listing only at step 18, then sent
 // `9 repeat over 18` six times, each refused `over_not_before` with words that
-// asked for exactly that amendment. The listing has to be moved before the act
-// first; these pin that a refusal says where the act was, and that one
-// decision sending the reorder and the repeat applies, every number in it
-// naming the step as the draft shown numbered it (run musr9pv3, below).
+// asked for exactly that amendment. No edit moves a step (the Flow runs in the
+// order its steps ran), so the act is done again after the listing; this pins
+// that the refusal says where the act was.
 describe("a repeat on an act that sits before its listing, run murz83zy", () => {
   function pressedBeforeListing(): AutomationStudioFlowDraftStep[] {
     return [
@@ -398,62 +354,6 @@ describe("a repeat on an act that sits before its listing, run murz83zy", () => 
     expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "repeat", over: 5, through: 3 }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "over_not_before", over: 5, through: 3 }] });
     expect(draft[1]?.routing).toBeUndefined();
   });
-
-  it("applies the reorder and the repeat in one decision, both numbered as the draft was shown", () => {
-    const draft = pressedBeforeListing();
-    // What the refusal tells it to send (`../../../llm/draft-amendment-feedback/index.ts`):
-    // the listing moves to the act's place, and the repeat names the act, its
-    // confirmation and the listing by the numbers shown; the draft is
-    // renumbered once, after the decision.
-    const report = applyAutomationStudioFlowDraftAmendments(draft, [
-      { step: 5, change: "reorder", to: 2 },
-      { step: 2, change: "repeat", over: 5, through: 3 }
-    ]);
-    expect(report).toEqual({ applied: 2, refused: [] });
-    expect(draft.map((step) => [step.position, step.id])).toEqual([[1, "d1"], [2, "d5"], [3, "d2"], [4, "d3"], [5, "d4"]]);
-    expect(draft.find((step) => step.id === "d2")?.routing).toEqual({ kind: "repeat", through: "d3", over: "d5" });
-  });
-
-  it("the schema says a listing after the act is moved before it first", () => {
-    const change = (AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA.properties as Record<string, { description: string }>).change!.description;
-    expect(change).toContain("When the listing comes after the act, reorder the listing to the act's position first");
-  });
-});
-
-// Live run `run-musq0b1m-0472cfa0`, Cause 6 (steps 0052-0058): test 1 marked
-// the Space Grey step `replayed: unreproducible`; the model reordered it after
-// the listing click, which fixed it, and the draft still showed it
-// unreproducible -- the model reordered four times. A step's mark is how it
-// answered with the steps before it as they stood then, so a move that changes
-// what comes before a step leaves it untested in the new order.
-describe("a move leaves the steps it reorders untested", () => {
-  const marked = (): AutomationStudioFlowDraftStep[] => [1, 2, 3, 4].map((position) => ({
-    position, iteration: position, actionId: "press", input: { target: `target.${position}` }, effect: "mutate" as const, effectApplied: true, disposition: "kept" as const,
-    replayed: { step: position, actionId: "press", status: position === 3 ? "unreproducible" as const : "replayed" as const }
-  }));
-
-  it("clears the moved step's mark, and every mark from where the move begins", () => {
-    const draft = marked();
-    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 3, change: "reorder", to: 2 }])).toEqual({ applied: 1, refused: [] });
-    expect(draft.map((step) => step.input.target)).toEqual(["target.1", "target.3", "target.2", "target.4"]);
-    expect(draft.map((step) => step.replayed?.status)).toEqual(["replayed", undefined, undefined, undefined]);
-  });
-
-  it("does the same for a step moved later, and for an add that places it", () => {
-    const later = marked();
-    applyAutomationStudioFlowDraftAmendments(later, [{ step: 2, change: "reorder", to: 3 }]);
-    expect(later.map((step) => step.replayed?.status)).toEqual(["replayed", undefined, undefined, undefined]);
-    const placed = marked();
-    placed[2]!.disposition = "taken";
-    applyAutomationStudioFlowDraftAmendments(placed, [{ step: 3, change: "add", to: 4 }]);
-    expect(placed.map((step) => step.replayed?.status)).toEqual(["replayed", "replayed", undefined, undefined]);
-  });
-
-  it("keeps every mark when nothing moved", () => {
-    const draft = marked();
-    applyAutomationStudioFlowDraftAmendments(draft, [{ step: 3, change: "reorder", to: 3, settings: { waitFor: "results" } }]);
-    expect(draft.map((step) => step.replayed?.status)).toEqual(["replayed", "replayed", "unreproducible", "replayed"]);
-  });
 });
 
 // Run mustzxhi bound a press's target about 12 times, told that "a value the
@@ -461,7 +361,7 @@ describe("a move leaves the steps it reorders untested", () => {
 // step typed, or a read's condition; a press's control or option never.
 describe("what bind is said to be for", () => {
   it("names a typed value or a read's condition, and says a press's control or option is never bound", () => {
-    const properties = AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA.properties as Record<string, { description: string }>;
+    const properties = AUTOMATION_STUDIO_FLOW_DRAFT_EDIT_SCHEMA.properties as Record<string, { description: string }>;
     for (const description of [properties.change!.description, properties.input!.description]) {
       expect(description).toContain("a value a step typed, or a read's condition");
       expect(description).toContain("a press's control or option is never bound");
@@ -484,9 +384,9 @@ describe("an amendment naming the attempt a rerun replaced", () => {
   it("is refused naming the step that replaced it, and leaves the attempt out of the Flow", () => {
     const draft = receiptDraft();
     const report = applyAutomationStudioFlowDraftAmendments(draft, [
-      { step: 3, change: "add" },
+      { step: 3, change: "keep" },
       { step: 3, change: "keep", act: "a1" },
-      { step: 3, change: "reorder", to: 1 },
+      { step: 3, change: "result" },
       { step: 3, change: "bind", input: { where: { $input: "where" } } },
       { step: 3, change: "unrepeat" }
     ]);
@@ -511,8 +411,8 @@ describe("an amendment naming the attempt a rerun replaced", () => {
 // sending a reorder and a repeat in one amend_draft: Core renumbered between
 // the two, so the repeat landed on the listing, and a later reorder moved the
 // listing ahead of the press with nothing revalidating its repeat. `unrepeat`
-// (t262) takes such a repeat off; the revalidation and the shown numbering
-// are what keep it from being made.
+// (t262) takes such a repeat off; no edit moves a step any more, so none can be
+// made that way.
 describe("a stray repeat on a listing, run musr9pv3", () => {
   const filler = (position: number): AutomationStudioFlowDraftStep => ({
     position, id: `s${position}`, iteration: position, actionId: "web.output.dom-click", input: { target: `t${position}` },
@@ -541,114 +441,6 @@ describe("a stray repeat on a listing, run musr9pv3", () => {
     expect(byId(draft, "s16").routing).toEqual({ kind: "repeat", through: "s16", over: "s15" });
     expect(applyAutomationStudioFlowDraftAmendments(shownAt0072(), [{ step: 13, change: "unrepeat" }])).toEqual({ applied: 0, refused: [{ step: 13, reason: "not_a_kept_step", replacedBy: 15 }] });
   });
-
-  describe("a move revalidates every repeat after the decision", () => {
-    it("takes off a repeat whose over runs after it once the decision has moved a step, and says which and why", () => {
-      const draft = shownAt0072();
-      const report = applyAutomationStudioFlowDraftAmendments(draft, [{ step: 14, change: "reorder", to: 13 }]);
-      expect(report).toEqual({ applied: 1, refused: [{ step: 15, reason: "repeat_taken_off", over: 16, takenOff: "over_after" }] });
-      expect(byId(draft, "s15").routing).toBeUndefined();
-      expect(byId(draft, "s16").routing).toEqual({ kind: "repeat", through: "s16", over: "s15" });
-    });
-
-    it("takes off the Confirm's repeat when the listing it repeats over is moved after it, and gives the new numbers", () => {
-      const draft = shownAt0072();
-      const report = applyAutomationStudioFlowDraftAmendments(draft, [{ step: 15, change: "unrepeat" }, { step: 15, change: "reorder", to: 16 }]);
-      expect(report).toEqual({ applied: 2, refused: [{ step: 16, reason: "repeat_taken_off", over: 15, takenOff: "over_after", now: 15, overNow: 16 }] });
-      expect(draft.map((step) => step.id).slice(14)).toEqual(["s16", "s15"]);
-      expect(draft.every((step) => step.routing === undefined)).toBe(true);
-    });
-
-    it("takes off a repeat whose span no longer holds together, and an add with to revalidates too", () => {
-      const draft = shownAt0072();
-      // The Confirm repeats through the step after it; that step is then added ahead of the Confirm.
-      draft.push({ position: 17, id: "s17", iteration: 17, actionId: "web.output.dom-click", input: { target: "OK" }, effect: "mutate", effectApplied: true, disposition: "taken" });
-      delete byId(draft, "s15").routing;
-      byId(draft, "s16").routing = { kind: "repeat", through: "s17", over: "s15" };
-      const report = applyAutomationStudioFlowDraftAmendments(draft, [{ step: 17, change: "add", to: 16 }]);
-      expect(report).toEqual({ applied: 1, refused: [{ step: 16, reason: "repeat_taken_off", over: 15, through: 17, takenOff: "span_broken", now: 17, throughNow: 16 }] });
-      expect(byId(draft, "s16").routing).toBeUndefined();
-    });
-
-    it("leaves every repeat standing that still holds", () => {
-      const draft = shownAt0072();
-      delete byId(draft, "s15").routing;
-      expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 14, change: "reorder", to: 13 }])).toEqual({ applied: 1, refused: [] });
-      expect(byId(draft, "s16").routing).toEqual({ kind: "repeat", through: "s16", over: "s15" });
-    });
-
-    it("leaves the test marks before the move, and clears those of the step whose repeat it took off", () => {
-      const draft = shownAt0072();
-      for (const step of draft) step.replayed = { step: step.position, actionId: step.actionId, status: "replayed" };
-      applyAutomationStudioFlowDraftAmendments(draft, [{ step: 12, change: "reorder", to: 11 }]);
-      // The move cleared every mark from step 11 on, and the stray repeat on s15 was taken off with it.
-      expect(draft.slice(0, 10).every((step) => step.replayed !== undefined)).toBe(true);
-      expect(draft.slice(10).every((step) => step.replayed === undefined)).toBe(true);
-      expect(byId(draft, "s15").routing).toBeUndefined();
-    });
-  });
-
-  describe("every number in one decision names the step as the draft shown numbered it", () => {
-    it("reads the second amendment against the draft shown, not the one the first left", () => {
-      const draft = shownAt0072();
-      // Step 14 moves to the end, then step 15 -- the listing, as shown -- has its stray repeat taken off.
-      const report = applyAutomationStudioFlowDraftAmendments(draft, [{ step: 14, change: "reorder", to: 16 }, { step: 15, change: "unrepeat" }]);
-      expect(report).toEqual({ applied: 2, refused: [] });
-      expect(draft.map((step) => [step.id, step.position]).slice(12)).toEqual([["s13", 13], ["s15", 14], ["s16", 15], ["s14", 16]]);
-      expect(byId(draft, "s15").routing).toBeUndefined();
-      expect(byId(draft, "s16").routing).toEqual({ kind: "repeat", through: "s16", over: "s15" });
-    });
-
-    it("puts the listing before the press and the repeat on the press when both go in one decision, in either order", () => {
-      for (const order of ["reorder first", "repeat first"] as const) {
-        const draft = shownAt0072();
-        // The press shown at 15 and the listing at 16, as decision 0060 read them.
-        const press: AutomationStudioFlowDraftStep = { ...byId(draft, "s16"), position: 15 };
-        const rows: AutomationStudioFlowDraftStep = { ...byId(draft, "s15"), position: 16 };
-        delete press.routing;
-        delete rows.routing;
-        draft.splice(14, 2, press, rows);
-        const reorder = { step: 16, change: "reorder" as const, to: 15 };
-        const repeat = { step: 15, change: "repeat" as const, over: 16 };
-        const report = applyAutomationStudioFlowDraftAmendments(draft, order === "reorder first" ? [reorder, repeat] : [repeat, reorder]);
-        expect(report, order).toEqual({ applied: 2, refused: [] });
-        expect(draft.slice(14).map((step) => [step.id, step.position, step.routing]), order).toEqual([
-          ["s15", 15, undefined],
-          ["s16", 16, { kind: "repeat", through: "s16", over: "s15" }]
-        ]);
-      }
-    });
-
-    it("no longer leaves a repeat on the listing from the decision that made the stray, 0056", () => {
-      // 0056: 13 the replaced attempt, 14 the listing, 15 the Confirm repeating over 14, 16 a second listing.
-      const draft = shownAt0072();
-      const confirm: AutomationStudioFlowDraftStep = { ...byId(draft, "s16"), position: 15, id: "c", routing: { kind: "repeat", through: "c", over: "s14" } };
-      draft.splice(13, 3, listing(14, "kept"), confirm, { ...listing(16, "kept"), id: "l2" });
-      draft[12]!.replacedBy = "s14";
-      const report = applyAutomationStudioFlowDraftAmendments(draft, [
-        { step: 15, change: "reorder", to: 14 },
-        { step: 15, change: "repeat", over: 14 },
-        { step: 16, change: "reorder", to: 15 }
-      ]);
-      expect(draft.find((step) => step.id === "s14")?.routing).toBeUndefined();
-      expect(draft.find((step) => step.id === "l2")?.routing).toBeUndefined();
-      // Whatever repeat stands afterwards runs over a step before it.
-      for (const step of draft) {
-        if (step.routing?.kind !== "repeat") continue;
-        const over = step.routing.over;
-        expect(draft.findIndex((candidate) => candidate.id === over)).toBeLessThan(draft.indexOf(step));
-      }
-      // The Confirm's repeat could not stand once the listing it named ran after it, and the answer says so.
-      expect(report.refused).toContainEqual(expect.objectContaining({ step: 15, reason: "repeat_taken_off", over: 14, takenOff: "over_after" }));
-    });
-  });
-
-  it("the schema says how one decision's numbers are read and that a move can take a repeat off", () => {
-    const properties = AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA.properties as Record<string, { description: string }>;
-    expect(properties.change!.description).toContain("Every step number in one decision names the step as the draft shows it; the draft is renumbered once, after the whole decision.");
-    expect(properties.change!.description).toContain("is taken off, and you are told which");
-    expect(properties.to!.description).toContain("the place the step shown at that number holds");
-  });
 });
 
 // D phase 2 (t273 S2): the model says which places on the route the person
@@ -664,9 +456,9 @@ describe("places on the named route", () => {
     ];
   }
 
-  it("records the places an add names, in route order and once each", () => {
+  it("records the places a keep names, in route order and once each", () => {
     const draft = listingAndPresses();
-    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "add", place: "r2,r1,r2" }])).toEqual({ applied: 1, refused: [] });
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "keep", place: "r2,r1,r2" }])).toEqual({ applied: 1, refused: [] });
     expect(draft[1]).toMatchObject({ disposition: "kept", places: ["r1", "r2"] });
     // A claim never moves off another step: step 3 is still on r1.
     expect(draft[2]?.places).toEqual(["r1"]);
@@ -694,7 +486,7 @@ describe("places on the named route", () => {
 
   it("takes a place on a read step, which does no act but may be on the way", () => {
     const draft = listingAndPresses();
-    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 1, change: "add", place: "r1" }])).toEqual({ applied: 1, refused: [] });
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 1, change: "keep", place: "r1" }])).toEqual({ applied: 1, refused: [] });
     expect(draft[0]).toMatchObject({ disposition: "kept", places: ["r1"] });
     expect(draft[0]?.acts).toBeUndefined();
   });
@@ -709,39 +501,32 @@ describe("places on the named route", () => {
   });
 
   it("is a field the schema offers, held to the place grammar", () => {
-    const place = (AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA.properties as Record<string, { pattern?: string; description?: string }>).place;
+    const place = (AUTOMATION_STUDIO_FLOW_DRAFT_EDIT_SCHEMA.properties as Record<string, { pattern?: string; description?: string }>).place;
     expect(place?.pattern).toBe("^(none|r[1-9][0-9]?(,r[1-9][0-9]?){0,19})$");
-    expect(place?.description).toMatch(/r1,r2/u);
-    expect(place?.description).toMatch(/none/u);
+    expect(place?.description).toMatch(/route/u);
   });
 });
 
 // Read-list redesign S2 (contract C2): a list that continues is gone through
 // by a repeat on its read that runs again until the step that moves it on
-// answers ended. The model is shown `while` and `most` with their bounds, and the
-// rule that a repeat goes on the act is said of a repeat over a listing only.
+// answers ended. The model is shown `while` and `most` with their bounds.
 // Run `run-mwblz4aq-0baa810a`: the schema called `most` a default of 50, and a
 // model capped a press at 20 passes; `most` is now only a count the person gave.
 describe("the do-while repeat the schema teaches", () => {
-  const properties = AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA.properties as Record<string, { type?: string; minimum?: number; maximum?: number; description: string }>;
+  const properties = AUTOMATION_STUDIO_FLOW_DRAFT_EDIT_SCHEMA.properties as Record<string, { type?: string; minimum?: number; maximum?: number; description: string }>;
 
   it("declares while and most with their bounds", () => {
     expect(properties.while).toMatchObject({ type: "integer", minimum: 1 });
     expect(properties.while!.maximum).toBeUndefined();
     expect(properties.while!.description).toContain("never with over");
-    expect(properties.while!.description).toContain("through defaults to it");
-    // F5: most also bounds a repeat over a listing to its first rows, up to For Each's 10,000; with while it is still 1 to 500.
+    // F5: most also bounds a repeat over a listing to its first rows, up to For Each's 10,000; with while the parser holds it to 500.
     expect(properties.most).toMatchObject({ type: "integer", minimum: 1, maximum: 10_000 });
-    expect(properties.most!.description).toContain("only when the person's instruction itself gives a number");
-    expect(properties.most!.description).toContain("with while, that many passes at most, 1 to 500");
-    expect(properties.most!.description).toContain("over a listing, only its first this many rows, in their order");
+    expect(properties.most!.description).toContain("only when the instruction itself gives a number");
   });
 
-  it("says the continuing list's form beside the list form, in generic words", () => {
+  it("says the continuing list's form in generic words", () => {
     const change = properties.change!.description;
-    expect(change).toContain("A repeat over a listing goes on the act, never on the listing itself");
-    expect(change).toContain("To go through a list that continues -- the step that reads it, then the step that moves it on, which answers ended when there is no more -- repeat on the read with while naming that step");
-    expect(change).toContain("each pass reads once, and the Flow keeps each row once");
+    expect(change).toContain("or while the step given by while keeps succeeding");
     for (const description of [change, properties.while!.description, properties.most!.description]) {
       // Pagination words only: "as the page offers it" (an option's press) is not one. The check never ran before t673
       // (`\b` in a template literal is a backspace).
@@ -755,19 +540,15 @@ describe("the do-while repeat the schema teaches", () => {
 // press, and the schema's "default 50" and the refusal's "most set to the
 // passes" led the next attempt to cap it at 20.
 describe("what the schema says ends a while-loop", () => {
-  const properties = AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA.properties as Record<string, { description: string }>;
+  const properties = AUTOMATION_STUDIO_FLOW_DRAFT_EDIT_SCHEMA.properties as Record<string, { description: string }>;
 
-  it("says a while-loop ends when its last step answers ended, and that a step which cannot is refused", () => {
-    expect(properties.change!.description).toContain("again until its last step answers ended");
-    expect(properties.change!.description).toContain("a step that cannot, such as a plain press, would end the loop only by failing, and that repeat is refused");
-    expect(properties.while!.description).toContain("must be a step that answers ended when there is nothing more");
-    expect(properties.while!.description).toContain("again until that step answers ended");
+  it("says a while-loop's last step must answer ended when there is nothing more", () => {
+    expect(properties.while!.description).toContain("must answer ended when there is nothing more");
   });
 
   it("never offers most as a default or as the way to end a loop", () => {
     for (const description of Object.values(properties).map((property) => property.description)) {
       expect(description).not.toMatch(/default 50|\bdefault\b[^.]*\bpasses\b|most set to|to bound it/u);
     }
-    expect(properties.most!.description).toContain("Leave it out otherwise: a while-loop ends when its last step answers ended");
   });
 });

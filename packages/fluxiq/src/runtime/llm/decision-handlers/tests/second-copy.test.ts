@@ -6,6 +6,10 @@
 // repeated step 18's press from the same results page and became step 21, a
 // second copy in the Flow. Live run `run-muq4oaof-464f5bce` (cause 3) kept two
 // reads of one list, which the host names by `reads`.
+//
+// Where the framework drafts the Flow (t1037) a call's `add` changes nothing: the framework keeps one copy of a step
+// and leaves the other out as `repeat`, or the detour it came back from as `dead_end`, and the draft entry says so
+// on the step left out (`../../../flow-authoring/draft/compose/`), so no separate refusal is told beside the call.
 import { describe, expect, it, vi } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { runAutomationStudioLlmEvidenceLoop } from "../../index.ts";
@@ -48,7 +52,7 @@ describe("a call's statement of the list a read reads", () => {
 });
 
 describe("a call with add that copies a step already in the Flow", () => {
-  it("run murwdp4f C9: the 3-Pack press again from the same results page stays taken, and the model is told step 1 already does it", async () => {
+  it("run murwdp4f C9: the press again from the same results page is the one copy in the Flow, after a detour that came back", async () => {
     const decide = vi.fn()
       .mockResolvedValueOnce(press("c1", "t1212", { add: true }))
       .mockResolvedValueOnce(press("c2", "t1378"))
@@ -60,18 +64,17 @@ describe("a call with add that copies a step already in the Flow", () => {
       .mockResolvedValueOnce(ran("s-results", "s-product"));
     const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, maxIterations: 6, maxToolCalls: 6, dryRun: false, unusableDecisions: { stalled } });
     expect(executeTool).toHaveBeenCalledTimes(3);
-    // No act claim, no openers (step 2 left step 3's page as it found it), no reversal.
-    expect(result.steps.map((step) => [step.id, step.disposition, step.acts])).toEqual([["d1", "kept", undefined], ["d2", "taken", undefined], ["d3", "taken", undefined]]);
-    const told = shownAt(decide, 3).find((entry) => entry.toolId === "core.amendment_check")?.value;
-    expect(told).toMatchObject({ refused: [{ step: 3, reason: "second_copy", copyOf: 1 }] });
-    const [entry] = (told as { refused: { next?: string }[] }).refused;
-    expect(entry?.next).toBe("Step 3 was not added to the Flow: step 1 already does this (the same press on the same page); the Flow does each step once.");
-    // Said after the call's own answer, in the same call's feedback.
-    const shown = shownAt(decide, 3).map((item) => item.toolId);
-    expect(shown.indexOf("core.amendment_check")).toBeGreaterThan(shown.lastIndexOf("go"));
+    // Steps 1 and 2 went to the product page and back with nothing lasting: a dead end. Step 3 does the press once,
+    // and its act is claimed on it.
+    expect(result.steps.map((step) => [step.id, step.disposition, step.drafted, step.acts])).toEqual([
+      ["d1", "taken", "dead_end", undefined], ["d2", "taken", "dead_end", undefined], ["d3", "kept", "in", ["a3"]]
+    ]);
+    const draft = shownAt(decide, 3).find((entry) => entry.toolId === "core.flow_draft")?.value as { steps: Array<Record<string, unknown>> };
+    expect(draft.steps.map((step) => step.out)).toEqual(["dead_end", "dead_end", undefined]);
+    expect(shownAt(decide, 3).some((entry) => entry.toolId === "core.amendment_check")).toBe(false);
   });
 
-  it("a second read of the same list with nothing kept changed between stays taken; after a kept press it joins", async () => {
+  it("of two reads of the same list with nothing kept changed between, the later stays; after a kept press a read joins", async () => {
     const decide = vi.fn()
       .mockResolvedValueOnce(press("c1", "list", { add: true }))
       .mockResolvedValueOnce(press("c2", "list where 2", { add: true }))
@@ -84,9 +87,9 @@ describe("a call with add that copies a step already in the Flow", () => {
       .mockResolvedValueOnce(ran("s1", "s2"))
       .mockResolvedValueOnce(read("s2", "list-requests"));
     const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, maxIterations: 8, maxToolCalls: 8, dryRun: false, unusableDecisions: { stalled } });
-    expect(result.steps.map((step) => [step.id, step.disposition])).toEqual([["d1", "kept"], ["d2", "taken"], ["d3", "kept"], ["d4", "kept"]]);
-    const told = shownAt(decide, 2).find((entry) => entry.toolId === "core.amendment_check")?.value as { refused: { next?: string }[] };
-    expect(told.refused[0]?.next).toBe("Step 2 was not added to the Flow: step 1 already does this (a read of the same list with nothing changed in between); the Flow does each step once.");
+    expect(result.steps.map((step) => [step.id, step.disposition, step.drafted])).toEqual([["d1", "taken", "repeat"], ["d2", "kept", "in"], ["d3", "kept", "in"], ["d4", "kept", "in"]]);
+    const draft = shownAt(decide, 2).find((entry) => entry.toolId === "core.flow_draft")?.value as { steps: Array<Record<string, unknown>> };
+    expect(draft.steps[0]?.out).toBe("repeat");
   });
 
   it("a press from another page joins the Flow as before", async () => {
@@ -113,13 +116,13 @@ describe("the feedback a step not added as a second copy is told", () => {
     const feedback = feedbackOf([{ step: 3, reason: "second_copy", copyOf: 1 }], ["a3"]);
     const [entry] = refusedOf(feedback);
     expect(entry).toMatchObject({ step: 3, reason: "second_copy", copyOf: 1 });
-    expect(entry?.next).toBe("Step 3 was not added to the Flow: step 1 already does this (the same press on the same page); the Flow does each step once. Still not done on the checklist: a3. Go on with those.");
+    expect(entry?.next).toBe("Step 3 was not put back in the Flow: step 1 already does this (the same press on the same page); the Flow does each step once. Still not done on the checklist: a3. Go on with those.");
     expect((feedback.reasons as Record<string, string>).second_copy).toContain("copyOf names the step");
   });
 
   it("says a read of the same list for a read, and both kinds where the draft does not say", () => {
     expect(refusedOf(feedbackOf([{ step: 4, reason: "second_copy", copyOf: 2 }]))[0]?.next)
-      .toBe("Step 4 was not added to the Flow: step 2 already does this (a read of the same list with nothing changed in between); the Flow does each step once.");
+      .toBe("Step 4 was not put back in the Flow: step 2 already does this (a read of the same list with nothing changed in between); the Flow does each step once.");
     expect(refusedOf(feedbackOf([{ step: 4, reason: "second_copy", copyOf: 9 }]))[0]?.next)
       .toContain("(the same press on the same page, or a read of the same list with nothing changed in between)");
   });

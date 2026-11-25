@@ -10,7 +10,7 @@
 // **The rules, read once the decision's last amendment is done**
 // (`./reach.ts` says how a page is known):
 //
-//   - a `drop` or `exploratory` of the step that moved the target to the page a
+//   - a `drop` of the step that moved the target to the page a
 //     kept step acted on, when no other step of the Flow moves it there any
 //     more, is refused and the step put back as it was: the refusal names the
 //     step it would have stranded (`strands`). Read again after each one put
@@ -18,12 +18,11 @@
 //     navigation to the friends page that the navigation to the requests page
 //     acted on;
 //   - a step of the Flow the decision left after a step that does not leave the
-//     page it acted on -- one it added there, moved there, or whose step before
-//     it it moved or dropped -- is said beside the applied decision
-//     (`unreached`), with the step before it now (`after`) and the steps that
-//     moved the target to its page while exploring (`reachedBy`). Information,
-//     not a refusal: a move cannot be taken back cleanly once the rest of the
-//     decision is applied, and the model is the one to put the step right.
+//     page it acted on -- one it put back there, or whose step before it it
+//     dropped -- is said beside the applied decision (`unreached`), with the
+//     step before it now (`after`) and the steps that moved the target to its
+//     page while exploring (`reachedBy`). Information, not a refusal: the model
+//     is the one to put the step right.
 //
 // **Newly only.** A step that already had no way to its page before the
 // decision is not said again, so a draft that stood so never starts refusing.

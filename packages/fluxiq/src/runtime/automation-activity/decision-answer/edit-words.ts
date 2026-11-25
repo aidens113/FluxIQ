@@ -13,19 +13,19 @@
 // summary, which said "adding the Add to cart press" of an edit that took it
 // out.
 //
-// **What it says.** A change to what the Flow does: a step added to it or
-// put back, removed from it, moved, made optional or conditional, repeated or
-// no longer repeated, or given a value that varies. A step asked to run again
-// says nothing here, since its own rows say how it went, and neither does an
-// amendment that only restated what the draft shows (a `keep` of a step in the
-// Flow, an `add` of one already there).
+// **What it says.** A change to what the Flow does: a step put back in it,
+// removed from it, repeated or no longer repeated, or given a value that
+// varies -- the edits of `../../flow-authoring/draft/amendment/edits/`. A step
+// asked to run again says nothing here, since its own rows say how it went, and
+// neither does an amendment that only restated what the draft shows (a `keep`
+// of a step in the Flow).
 
 import { automationStudioActivityAction, automationStudioActivityHumanLabel } from "../wording/index.ts";
 
 type Evidence = ReadonlyArray<{ callId: string; toolId: string; value: unknown }>;
 
-/** One amendment as the decision carries it (`../../flow-draft/amendment/types.ts`), read by shape. */
-type Amendment = { step: number; change: string; to?: number; check?: number; through?: number; over?: number; while?: number; most?: number };
+/** One amendment as the decision carries it (`../../flow-authoring/draft/amendment/types.ts`), read by shape. */
+type Amendment = { step: number; change: string; through?: number; over?: number; while?: number; most?: number };
 
 /** The draft's entry, read as a plain string so this module does not reach into the draft. */
 const DRAFT_ENTRY = "core.flow_draft";
@@ -46,7 +46,7 @@ function amendmentsOf(value: unknown): Amendment[] {
     const step = position(entry?.step);
     if (!entry || step === undefined || typeof entry.change !== "string") return [];
     const at = (key: string): { [key: string]: number } => { const found = position(entry[key]); return found === undefined ? {} : { [key]: found }; };
-    return [{ step, change: entry.change, ...at("to"), ...at("check"), ...at("through"), ...at("over"), ...at("while"), ...at("most") }];
+    return [{ step, change: entry.change, ...at("through"), ...at("over"), ...at("while"), ...at("most") }];
   });
 }
 
@@ -96,20 +96,10 @@ function sentence(amendment: Amendment, lines: Map<number, Record<string, unknow
   const step = called(amendment.step, lines);
   const inFlow = line?.inResult !== false;
   switch (amendment.change) {
-    case "add":
     case "keep":
       return inFlow ? undefined : `added ${step}`;
     case "drop":
-    case "exploratory":
       return inFlow ? `removed ${step}` : undefined;
-    case "reorder":
-      return amendment.to !== undefined ? `moved ${step} to step ${amendment.to}` : `moved ${step}`;
-    case "optional":
-      return `made ${step} optional`;
-    case "only_if":
-      return `made ${step} run only when ${called(amendment.check ?? amendment.step - 1, lines)} works`;
-    case "on_failed":
-      return amendment.to !== undefined ? `made ${called(amendment.to, lines)} run when ${step} fails` : undefined;
     case "repeat": {
       // A do-while (`while`, never `over`): the span runs again while its last
       // step works, so it repeats over no step before it (read-list S3).

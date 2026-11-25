@@ -61,7 +61,7 @@ export type AutomationStudioAnswerFirstResultEvent =
   | { kind: "dropped"; stepId: string }
   /** A read that is not a draft step. It never changes the result. */
   | { kind: "look"; read: AutomationStudioAnswerFirstResultRead }
-  /** `amend_draft {change: "take"}`: the draft took the look `source` as this step. */
+  /** The draft now holds the look `source` as this step (`./take.ts`). */
   | { kind: "take"; source: string; step: AutomationStudioAnswerFirstResultStepRef }
   /** What the domain declared of the list `listKey` from the site's structure: whether it shows a way to another page (t1032). */
   | { kind: "pager"; listKey: string; pages: boolean };

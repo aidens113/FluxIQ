@@ -61,51 +61,35 @@ import type { AutomationStudioFlowDraftRoute } from "./route-places/index.ts";
 import { automationStudioFlowDraftRepeatIsWhile, automationStudioFlowDraftStepById, automationStudioFlowDraftStepId } from "./routing.ts";
 import { automationStudioFlowDraftReplayOutcomeWord } from "./verify-only.ts";
 
-// The per-item sentence in both tellings names the three steps in order and
-// where the repeat goes. Live run 37 (`run-muq5v4zg-39182b58`) read "add the
-// act done to one item, then amend_draft repeat over the listing step" as a
-// repeat on the listing, sent `13 repeat over 13` with no press in the draft,
-// and never pressed a Confirm.
-//
-// Both tellings say every number in one amend_draft is read against the draft
-// shown, which is renumbered once after the decision (`./amendment/`): live
-// run `run-musr9pv3-f4bf6256` carried a stray repeat on its listing, made by a
-// decision whose numbers Core read one amendment at a time (t195 w45). The
-// sentence about a replaced attempt is said only where one is listed, like the
-// checked candidate's: the whole draft of a seven-step build is held to 5,000
-// bytes by `../tests/deepseek-bootstrap/tests/answerability.test.ts`.
+// The sentence about a replaced attempt is said only where one is listed, like
+// the checked candidate's, so a draft that has none pays nothing for it.
 
 /** The entry the draft is shown under. */
 export const AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID = "core.flow_draft";
 
 const DRAFT_CODE = "llm_evidence_loop.draft";
-const DRAFT_INSTRUCTION = "The Flow you are building, in the order you built it: every step here is something you actually ran, with the argument it ran with. Every step whose inResult is true is a step of the finished Flow, so there is nothing to write down at the end and nothing to confirm. A did_not_work step is already out: only rerun changes it. A step whose disposition is look only looked: it is listed so its number shows, and it is never in the Flow and does no act. Correct the draft with amend_draft: drop a step that should not be there, exploratory for one you ran only to look, reorder to move one, rerun to do one again with a corrected argument. Every number in one amend_draft is this draft's; it is renumbered after the decision. To do one act to every item of a list, run the step listing the items with a where that keeps only those to act on, do the act to one item it kept -- that row's own control -- then put repeat on that act with over the listing: a repeat over a listing goes on the act, never on the listing, and the Flow does the rest, so never act on the others yourself. A list that continues: repeat on the read with while naming the step that moves it on; the Flow keeps each row once. A listing that already keeps the right rows is not run again. A step you want and have not run yet is run, not written. Getting to the page is part of the work: going somewhere, dismissing what covers it, typing a search and pressing it are never exploratory; only a page you opened to read and moved on from is.";
 
-// The same draft where the model authors it (user, 2026-09-30: "IT SHOULD
-// ONLY ADD STEPS IN A WAY THAT MAKE AN INTELLIGENT FLOW!"): a step that ran is
-// evidence, marked `taken`, and is in the Flow only once the model adds it
-// (`./step.ts`). The acts checklist beside it (`acts`) is what "ready" means
-// (audit A1, cause 1), so the telling names it.
-const AUTHORED_INSTRUCTION = "The Flow you are authoring. Every step you run is listed here as evidence (disposition taken) and is not in the Flow until you add it: add true on the call that runs it, or amend_draft add naming its step. Run any node configuration to see what it does; what you add is your choice. You may also write a step without running it -- core.run_node with write true, which adds it -- once what you have seen is enough to know its node and parameters: it is listed with written true, it was checked and not done, and the test runs it. inResult true marks a step of the Flow. Add only what the finished Flow needs, in the order it needs it: getting to the page, dismissing what covers it, and the acts themselves. Getting to a control includes the press that opened the chooser, drawer or menu it is inside: adding the control's step adds that press with it if you have not. Never add a look, a failed try, a detour, or a second copy of a step already added. acts lists what the person asked to be done, in their words: say which act a step does with act (a1, a2 ...) when you add it, and done then names that step. For a preparatory setting, claim its listed child choice ID when one exists. If none is listed, add the necessary setting step without act; never invent a child ID or claim the parent act for preparation. Claim the parent only on its own act step. does, beside a step, names the control it acted on and the words it typed: name an act only on a step whose does is that act. Repetitive work is a loop, not a sequence: never do it to every item yourself. To do one act to every item of a list, three steps in this order: add the step listing them, with a where keeping only those to act on; do or write the act on one row it kept -- that row's own control -- and add that press with its act; then send amend_draft {\"step\": <that press>, \"change\": \"repeat\", \"over\": <the listing>}, and never act yourself on the items your listing left out. A repeat over a listing goes on the press, never on it, and a listing that already keeps the right rows is not run again. A list that continues: repeat on the read with while the step that moves it on; the Flow keeps each row once. For an act with a lasting effect on the items a loop keeps, write it rather than doing it to one real item. Only a value a step typed, or a read's condition, is bound, and one that changes between runs or rows is bound, never typed in: {\"$input\": <name>, \"test\": <value>} for one the person gave (test is that value, and the Flow takes it as an input), {\"$row\": <field>} for a field of the row a repeat is on. A press's control or option is never bound: a repeat finds each row's own control in that row, and a single item's option is pressed as the page offers it. Write a step with them, or send amend_draft bind on a step you ran to lift its value into one: parameters show bindings in these forms, and inputs lists the Flow's inputs with their test values and the steps using them. For something only sometimes there, add it and mark it optional: a cookie banner, a sign-up popup or anything else that covers the page may not be there the next time the Flow runs, so its dismissal is optional. reorder moves a step, drop takes one out, rerun does one again with a corrected argument in its place. Every number in one amend_draft is this draft's; it is renumbered after the decision. Complete when the Flow does what the person asked: it is then tested from its start and judged on what it does, and acts done is your own reading, not the bar. The test runs a repeated step once for each row its listing returned, and passes beside it says how many times it ran. A did_not_work step can only be rerun. A step whose disposition is look only looked: it is listed so its number shows, and it can never be added or do an act.";
-
-// The same draft where the framework writes it (`./amendment/edits/`): Core drafts the Flow from
-// the calls that worked and the model only edits it, so what it is told is the draft's own
-// rules and the six edits, and nothing about adding.
-const FRAMEWORK_INSTRUCTION = "Core drafts the Flow from the calls that worked, in the order they ran, leaving out looks, failures, repeats, undone presses and dead ends: each line left out says why under out. Make it lean with amend_draft: repeat for steps done again for each item or page, bind for typed values that change between runs, result for the read that holds the answer, drop for waste, keep to put back a step that was left out. A step joins the Flow by running it. What did something lasting is never done again for a draft edit. The Flow is tested whole from its start.";
+// The draft's telling (user, 2026-11-25: the framework drafts the Flow and the model edits it,
+// `./amendment/edits/`): Core drafts the Flow from the calls that worked and the model only edits
+// it, so what it is told is the draft's own rules and the seven edits, and nothing about adding.
+// The two loop shapes are said in full, as the authored telling said them before t1037 deleted it:
+// live run 37 (`run-muq5v4zg-39182b58`) put a repeat on its listing when told the shape loosely, and
+// repetitive work done by hand to every item is what a loop exists to replace.
+const FRAMEWORK_INSTRUCTION ="Core drafts the Flow from the calls that worked, in the order they ran, leaving out looks, failures, repeats, undone presses and dead ends: each line left out says why under out. Make it lean with amend_draft: repeat for steps done again for each item or page, bind for typed values that change between runs, result for the read that holds the answer, drop for waste, keep to put back a step that was left out, rerun to do a step again in its place with a corrected argument (a step that failed is repaired so, then checked by running the Flow from it). A step joins the Flow by running it. What did something lasting is never done again for a draft edit. Repetitive work is a loop, never done by hand to every item. One act to every item of a list: read the list with a where keeping only the items to act on, do the act to one item it kept with that row's own control, then {\"step\": <the act>, \"change\": \"repeat\", \"over\": <the read>}; never act yourself on items the read left out. A list that continues: read it, move it on once, then {\"step\": <the read>, \"change\": \"repeat\", \"while\": <the step that moves it on>}. The Flow is tested whole from its start.";
 
 /** The part of a draft's instruction every entry of a loop says alike, which the wire sends once in the head (`../../llm/provider-task/draft-guide.ts`). */
-export const AUTOMATION_STUDIO_FLOW_DRAFT_GUIDES: readonly string[] = Object.freeze([AUTHORED_INSTRUCTION, DRAFT_INSTRUCTION, FRAMEWORK_INSTRUCTION]);
+export const AUTOMATION_STUDIO_FLOW_DRAFT_GUIDES: readonly string[] = Object.freeze([FRAMEWORK_INSTRUCTION]);
 
 /** Said only where a step in the Flow lists what it offers bind (`shownBindable`). */
 const BINDABLE_INSTRUCTION = " bindable, beside a step, lists the only values of its input it ran with as shown, the only ones bind can lift on it; a step without bindable ran with all of them.";
 
 /**
  * Said only where the draft shows a route the person named (`shownRoute`), in
- * the grammar the model sends: `place` beside `add` on the call, or on an
- * amend_draft `add` or `keep` (`./amendment/schema.ts`). The completion holds
+ * the grammar the model sends: `place` on the call that runs the step, or on an
+ * amend_draft `keep` (`./amendment/edits/schema.ts`). The completion holds
  * the Flow to it (`./route-places/coverage.ts`).
  */
-const NAMED_ROUTE_INSTRUCTION = " route is the way the person named to go, in their words, and its places give each place on it an id, r1 first: the Flow goes through every place on it in order, and its first step never goes deeper than r1. Say which steps are on each with place, beside add on the call that adds a step or on amend_draft add or keep: \"r1\", \"r1,r2\" for a step on two, none to clear it. Completion is refused while a place has no step in the Flow on it, or while the places are reached out of order.";
+const NAMED_ROUTE_INSTRUCTION = " route is the way the person named to go, in their words, and its places give each place on it an id, r1 first: the Flow goes through every place on it in order, and its first step never goes deeper than r1. Say which steps are on each with place, on the call that runs a step or on amend_draft keep: \"r1\", \"r1,r2\" for a step on two, none to clear it. Completion is refused while a place has no step in the Flow on it, or while the places are reached out of order.";
 
 /** Said only where the draft shows that the person named no route (`shownRoute`). */
 const OPEN_ROUTE_INSTRUCTION = " route \"open\": the person named no route to follow, so the Flow's first step may go straight to where the work begins.";
@@ -114,7 +98,7 @@ const OPEN_ROUTE_INSTRUCTION = " route \"open\": the person named no route to fo
 const REPLACED_INSTRUCTION = " A step showing replacedBy is the attempt a rerun replaced, listed only as the record of it: nothing changes it, so amend or rerun the step replacedBy names.";
 
 /** Said only where the draft shows a step that did something lasting and is out of the Flow (`./amendment/landed-out.ts`). */
-const LANDED_INSTRUCTION = " A step showing landed did something lasting that took effect, and it is not in the Flow. Leaving it out undoes nothing: what it did still stands and stays on the task's record, so it is not done again for this. The Flow is what runs next time: unless another step of the Flow does the same, a later run will not do it, and an act that only this step named shows as not done for that reason alone. If the Flow should do it, put the step back with amend_draft add or keep, naming its act: that runs nothing. If it should not have been done, leave it out and say so in your answer.";
+const LANDED_INSTRUCTION = " A step showing landed did something lasting that took effect, and it is not in the Flow. Leaving it out undoes nothing: what it did still stands and stays on the task's record, so it is not done again for this. The Flow is what runs next time: unless another step of the Flow does the same, a later run will not do it, and an act that only this step named shows as not done for that reason alone. If the Flow should do it, put the step back with amend_draft keep, naming its act: that runs nothing. If it should not have been done, leave it out and say so in your answer.";
 
 /**
  * The draft as one entry, or nothing when the draft holds no step a result
@@ -123,8 +107,6 @@ const LANDED_INSTRUCTION = " A step showing landed did something lasting that to
  */
 export function automationStudioFlowDraftEntry(input: {
   steps: readonly AutomationStudioFlowDraftStep[];
-  /** Whether the model authors the draft; absent, the transcript telling (`./step.ts`, `taken`). */
-  authored?: boolean | "framework" | undefined;
   /** The acts checklist, carried whole on every entry. */
   acts?: JsonValue | undefined;
   /** The route the person named, or that they named none, once the build's read of it has settled (`./route-places/route.ts`). */
@@ -143,7 +125,7 @@ export function automationStudioFlowDraftEntry(input: {
   // from the first decision. Looks alone and no checklist are still nothing
   // to show: nothing in them is an edit the model could make.
   if (!listed.some(automationStudioFlowDraftStepIsAction) && acts === undefined) return undefined;
-  const steps = listed.map((step) => stepLine(step, listed, input.authored === "framework"));
+  const steps = listed.map((step) => stepLine(step, listed));
   const route = input.route;
   const value: JsonObject = {
     code: DRAFT_CODE,
@@ -154,7 +136,7 @@ export function automationStudioFlowDraftEntry(input: {
     steps,
     // The Flow's inputs, declared by the bindings its steps carry (`./flow-inputs.ts`).
     ...(inputs.length ? { inputs: inputs.map((entry) => ({ name: entry.name, test: entry.test, steps: entry.steps })) } : {}),
-    instruction: (input.authored === "framework" ? FRAMEWORK_INSTRUCTION : input.authored ? AUTHORED_INSTRUCTION : DRAFT_INSTRUCTION)
+    instruction: FRAMEWORK_INSTRUCTION
       + (steps.some((line) => Object.hasOwn(line, "bindable")) ? BINDABLE_INSTRUCTION : "")
       + (route === undefined ? "" : route.state === "named" ? NAMED_ROUTE_INSTRUCTION : OPEN_ROUTE_INSTRUCTION)
       + (listed.some((step) => automationStudioFlowDraftReplacingStep(listed, step) !== undefined) ? REPLACED_INSTRUCTION : "")
@@ -187,7 +169,7 @@ function shownBindable(step: AutomationStudioFlowDraftStep): string[] | undefine
   return offered.length === automationStudioFlowDraftBindablePaths({ input: step.input }).length ? undefined : offered;
 }
 
-function stepLine(step: AutomationStudioFlowDraftStep, all: readonly AutomationStudioFlowDraftStep[], framework = false): JsonObject {
+function stepLine(step: AutomationStudioFlowDraftStep, all: readonly AutomationStudioFlowDraftStep[]): JsonObject {
   // Stable call bookkeeping only; a check or prior execution never supplies this step's identity.
   const call = Object.hasOwn(step, "callId") && typeof step.callId === "string" && step.callId ? { callId: step.callId } : {};
   // The attempt a rerun replaced: which step stands in its place now, and not the argument it ran with (header).
@@ -228,7 +210,7 @@ function stepLine(step: AutomationStudioFlowDraftStep, all: readonly AutomationS
     // Why Core took the step out because a loop already does its act (`./loop-covered/`, t975).
     ...(step.coveredBy !== undefined && step.disposition !== "kept" && step.cancels === undefined ? { out: coveredLine(step, all) } : {}),
     // Why the framework left the step out of the Flow it drafted, where nothing above said (`./step.ts`, `drafted`).
-    ...(framework && step.drafted !== undefined && step.drafted !== "in" && step.disposition !== "kept" && step.cancels === undefined && step.coveredBy === undefined ? { out: step.drafted } : {}),
+    ...(step.drafted !== undefined && step.drafted !== "in" && step.disposition !== "kept" && step.cancels === undefined && step.coveredBy === undefined ? { out: step.drafted } : {}),
     // The act the step says it does, under the word the amendment took. Not
     // shown until live run 36, whose model could not see that its listing on
     // step 11 named a1 and spent 24 decisions naming a1 on the Confirm.

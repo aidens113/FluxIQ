@@ -2,8 +2,8 @@
 //
 // run-mwveg5ls-0266dfe0 step 73 (t1034) closed a press's input after `add` and
 // `act`: `{kind: "tool_call", callId, toolId: "core.run_node", input: {node,
-// parameters, consequences, add: true, act: "a1"}}`. `add` and `act` author the
-// draft as the step is taken (`../evidence-loop-decision.ts`); they belong to the
+// parameters, consequences, add: true, act: "a1"}}`. `act` (and `add`, still read and now
+// changing nothing) are said of the step as it is taken (`../evidence-loop-decision.ts`); they belong to the
 // call, beside `input`, and the reply was refused unread: "input.add is not a key
 // this object takes". It is the mirror of `../tool-call-keys/folded.ts`, which
 // moves an input key written beside `input` into it, and it can mean one

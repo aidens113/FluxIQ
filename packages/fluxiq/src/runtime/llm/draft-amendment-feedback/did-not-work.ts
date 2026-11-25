@@ -25,7 +25,7 @@ export function refusedAgain(step: AutomationStudioDraftAmendmentFeedbackStep): 
   const said = codes.length ? ` (${codes.join(", ")})` : "";
   return `Step ${n} did not work: this exact call was refused before${said} and would be refused again, so it was not sent, and there is nothing from it to go on with. `
     + `Read what its result${under(step)} names as refused and change exactly that in a rerun: {"step": ${n}, "change": "rerun", "input": {<only the keys to change>}} -- the input merges over step ${n}'s stored argument, so a key the refusal named stays until you change it, and null removes it. `
-    + "Or gather new evidence first: look at the page again, or run the action as a new call.";
+    + "Or gather new evidence first: read the page again with core.full_page, or run the action as a new call.";
 }
 
 /** Where a step's result is, by its call id, when it has one that is code-shaped. */

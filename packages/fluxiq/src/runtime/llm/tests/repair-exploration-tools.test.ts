@@ -66,8 +66,9 @@ describe("what a repair may explore with", () => {
     const offered = await offeredPerIteration(tools, 2);
     // The free look has already been taken, and the policy that would let a
     // mutation undo it has not been exercised, so inspect is withheld.
-    expect(offered[0]).toEqual([WAIT, DETECT, ...MUTATIONS]);
-    expect(offered[1]).toEqual([WAIT, DETECT, ...MUTATIONS]);
+    // `core.run_flow` is offered from the first decision (page-diff D11).
+    expect(offered[0]).toEqual([WAIT, DETECT, ...MUTATIONS, "core.run_flow"]);
+    expect(offered[1]).toEqual([WAIT, DETECT, ...MUTATIONS, "core.run_flow"]);
   });
 
   it("offers a mutation-gated observation again once a mutation really was applied", async () => {
@@ -87,8 +88,8 @@ describe("what a repair may explore with", () => {
         ? { kind: "llm_evidence_tool_execution" as const, evidence: { revealed: true }, effectApplied: true }
         : { looked: true })
     });
-    expect(offered[0]).toEqual([WAIT, DETECT, ...MUTATIONS]);
-    expect(offered[1]).toEqual([...OBSERVATIONS, ...MUTATIONS]);
+    expect(offered[0]).toEqual([WAIT, DETECT, ...MUTATIONS, "core.run_flow"]);
+    expect(offered[1]).toEqual([...OBSERVATIONS, ...MUTATIONS, "core.run_flow"]);
   });
 });
 

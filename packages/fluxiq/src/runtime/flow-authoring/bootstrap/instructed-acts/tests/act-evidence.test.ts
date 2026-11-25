@@ -55,7 +55,7 @@ describe("a lasting act claimed on a press of one of its own options (run mux74k
     expect(a1.choices?.find((each) => each.id === "a1.origin")).toMatchObject({ done: 5 });
     expect(a1.todoSaid).toContain('Step 5 chose "Spain", one of a1\'s options (a1.origin)');
     expect(a1.todoSaid).toContain("does not do a1");
-    expect(a1.todoSaid).toContain("No step in the draft names it yet: on the page where a1 is done, after its choices, run the press whose words name it with add true and act a1.");
+    expect(a1.todoSaid).toContain("No step in the draft names it yet: on the page where a1 is done, after its choices, run the press whose words name it with act a1; a call that works is in the draft.");
     // The verdict replaces the doubt: no advisory claimSaid beside it.
     expect(a1).not.toHaveProperty("claimSaid");
     expect(automationStudioInstructedActsNotDone(automationStudioInstructedActsChecklist({ instructionText: HUB, draftSteps: draft }))).toContain("a1");
@@ -65,7 +65,7 @@ describe("a lasting act claimed on a press of one of its own options (run mux74k
     const draft = [spain, press(6, "item", "Share"), press(7, "item", "Add to cart", { disposition: "taken" })];
     const a1 = itemOf(HUB, draft);
     expect(a1).toMatchObject({ todo: "step_only_chooses", step: 5, chooses: "a1.origin", instead: 7 });
-    expect(a1.todoSaid).toContain('Step 7 ("Add to cart") names it: name a1 there with amend_draft add on step 7 with act a1.');
+    expect(a1.todoSaid).toContain('Step 7 ("Add to cart") names it: name a1 there with {"step": 7, "change": "keep", "act": "a1"}.');
   });
 
   it("is said by the verdict, with chooses, instead and the same sentence, and refuses no completion", () => {
@@ -202,7 +202,7 @@ describe("what a step changed, read for the act (run muqiho5c: the cart count ro
     const draft = [add(4), notNow(5)];
     const a1 = itemOf(SEARCH, draft);
     expect(a1).toMatchObject({ todo: "another_step_shows_it", step: 5, instead: 4 });
-    expect(a1.todoSaid).toBe('Step 5 ("Not now") changed nothing that shows a1, and does not do a1. Step 4 ("Add to cart") shows it: name a1 there with amend_draft add on step 4 with act a1.');
+    expect(a1.todoSaid).toBe('Step 5 ("Not now") changed nothing that shows a1, and does not do a1. Step 4 ("Add to cart") shows it: name a1 there with {"step": 4, "change": "keep", "act": "a1"}.');
     expect(a1).not.toHaveProperty("claimSaid");
     const verdict = checkAutomationStudioInstructedActs({ instructionText: SEARCH, result: {}, draftSteps: draft });
     expect(verdict.ok).toBe(false);

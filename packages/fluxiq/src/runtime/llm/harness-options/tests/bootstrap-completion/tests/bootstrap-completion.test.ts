@@ -704,7 +704,7 @@ describe("a completed draft whose act's only step may be skipped", () => {
     const feedback = verdict.check.feedback as unknown as Feedback & { missingActs: { acts: JsonObject[] } };
     expect(feedback.missingActs.acts).toEqual([expect.objectContaining({ id: "a1.version", reason: "step_is_optional", step: "3", said: expect.stringContaining("step 3") })]);
     expect(feedback.instruction).toContain("step_is_optional");
-    expect(feedback.instruction).toContain("only_if");
+    expect(feedback.instruction).toContain("amend_draft keep");
   });
 
   it("is complete once the press always runs, or runs only when a check says it is needed", async () => {

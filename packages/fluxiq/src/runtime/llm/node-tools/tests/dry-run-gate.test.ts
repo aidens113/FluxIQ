@@ -586,7 +586,7 @@ describe("a refusal whose step ran on a page taken steps made", () => {
     const refused = await run.complete();
     expect(refused.answer).toEqual(refusedFor(UNREPRODUCIBLE));
     expect(refused.ran).toEqual(["dryrun.1.reset", "dryrun.1.1", "dryrun.1.3"]);
-    expect(run.lastVerdict().notInFlow).toBe("Step 2 changed the page on the way to step 3 when you ran it, and is not in the Flow, so the test never reached the page step 3 acted on: add it (amend_draft add).");
+    expect(run.lastVerdict().notInFlow).toBe("Step 2 changed the page on the way to step 3 when you ran it, and is not in the Flow, so the test never reached the page step 3 acted on: put it back (amend_draft keep).");
     // Judged again from the same replays, it says so again.
     await run.complete();
     const again = await run.complete();
@@ -637,7 +637,7 @@ describe("a completion on the very draft the last test refused", () => {
     expect(second.ran).toEqual(["dryrun.2.reset", "dryrun.2.2", "dryrun.2.26", "dryrun.2.30"]);
     expect(second.answer).toEqual(first.answer);
     expect(verdictStep(run.lastVerdict(), 26)).toMatchObject({ replayed: "failed", again: true });
-    expect(run.lastVerdict().unchanged).toBe("Nothing in the Flow changed since the last test, and it failed the same way again. Change step 26 (failed) before you say the Flow is ready: rerun it with a corrected argument (amend_draft rerun), mark it optional, or drop it.");
+    expect(run.lastVerdict().unchanged).toBe("Nothing in the Flow changed since the last test, and it failed the same way again. Change step 26 (failed) before you say the Flow is ready: rerun it with a corrected argument (amend_draft rerun), or drop it.");
 
     const third = await run.complete();
     expect(third.ran).toEqual([]);
@@ -645,7 +645,7 @@ describe("a completion on the very draft the last test refused", () => {
     const verdict = run.lastVerdict();
     expect(verdict).toMatchObject({ ok: false, code: AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_ISSUE_CODE, attempt: 2 });
     expect(verdictStep(verdict, 26)).toMatchObject({ replayed: "failed", again: true });
-    expect(verdict.unchanged).toBe("Nothing in the Flow changed since that test, so it would fail the same way, and it was not run again. Change step 26 (failed) before you say the Flow is ready: rerun it with a corrected argument (amend_draft rerun), mark it optional, or drop it.");
+    expect(verdict.unchanged).toBe("Nothing in the Flow changed since that test, so it would fail the same way, and it was not run again. Change step 26 (failed) before you say the Flow is ready: rerun it with a corrected argument (amend_draft rerun), or drop it.");
     expect(run.reports).toEqual([]);
   });
 
@@ -655,7 +655,7 @@ describe("a completion on the very draft the last test refused", () => {
     await run.complete();
     answers[30] = UNREPRODUCIBLE;
     await run.complete();
-    expect(run.lastVerdict().unchanged).toBe("Nothing in the Flow changed since the last test, and it failed again. Change step 26 (failed) and step 30 (unreproducible) before you say the Flow is ready: rerun each with a corrected argument (amend_draft rerun), mark it optional, or drop it.");
+    expect(run.lastVerdict().unchanged).toBe("Nothing in the Flow changed since the last test, and it failed again. Change step 26 (failed) and step 30 (unreproducible) before you say the Flow is ready: rerun each with a corrected argument (amend_draft rerun), or drop it.");
   });
 
   it("is tested again once the draft changed, and not told it is unchanged", async () => {

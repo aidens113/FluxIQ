@@ -64,6 +64,8 @@
 // where.": filter the rows already read with core.set_result_processing where it is offered when
 // the condition is printed on each row, a site's filter only when it cuts reading a lot, and rows a
 // later step acts on still narrowed by the read's where.
+// In t1037 (user, 2026-11-25: the framework drafts the Flow, the model edits it) evidence_tool_decision's clauses on
+// adding steps: a step that works joins the Flow, Core drafts it from the steps that worked, and the model edits it.
 // With
 // them, the domain's text sits after Core's format, injection and schema rules
 // and before Core's task prose, set off by blank lines -- and every word of

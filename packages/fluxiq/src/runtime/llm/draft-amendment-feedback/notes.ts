@@ -11,8 +11,8 @@ export function unreachedNote(entry: AutomationStudioFlowDraftUnreachedStep): st
   const step = entry.step;
   const by = entry.reachedBy;
   const way = by.length === 0
-    ? `No step in the draft moved the page to where step ${step} acted: run the step that gets there with add true, before step ${step}.`
-    : `Step${by.length > 1 ? "s" : ""} ${by.join(", ")} moved the page to where step ${step} acted while exploring: keep ${by.length > 1 ? "the one it needs" : `step ${by[0]}`} in the Flow and put step ${step} after it with reorder.`;
+    ? `No step in the draft moved the page to where step ${step} acted: the Flow runs its steps in the order they ran, so run the step that gets there, then step ${step}'s call again there, and drop step ${step}.`
+    : `Step${by.length > 1 ? "s" : ""} ${by.join(", ")} moved the page to where step ${step} acted while exploring: keep ${by.length > 1 ? "the one it needs" : `step ${by[0]}`} in the Flow with {"step": ${by.length > 1 ? "<that step>" : by[0]}, "change": "keep"}.`;
   return `Step ${step} is in the Flow, but the step before it now, step ${entry.after}, does not leave the page where step ${step} acted, so when the Flow runs step ${step} runs on another page. ${way}`;
 }
 

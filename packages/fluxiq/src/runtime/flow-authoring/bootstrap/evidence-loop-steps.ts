@@ -203,7 +203,6 @@ const EVIDENCE_STEP_AMENDMENT_REFUSAL_REASONS: {
   bind_row_outside_loop: true,
   bind_malformed: true,
   rerun_holds_binding: true,
-  repeat_taken_off: true,
   strands_a_step: true,
   settings_rewrite_run: true,
   second_copy: true,
@@ -211,7 +210,6 @@ const EVIDENCE_STEP_AMENDMENT_REFUSAL_REASONS: {
   repeat_never_ends: true,
   holds_a_repeat: true,
   span_holds_routing: true,
-  not_an_edit: true,
   not_a_read: true
 });
 /**

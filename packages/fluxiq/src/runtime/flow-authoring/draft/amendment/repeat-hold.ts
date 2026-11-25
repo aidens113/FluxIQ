@@ -16,9 +16,9 @@
 //     whose span held it; 0041 wrote a repeat on a step inside another's span:
 //     `repeat_body_is_routed` at save.
 //
-// **The rules, read once the decision's last amendment and its moves are done**:
+// **The rules, read once the decision's last amendment is done**:
 //
-//   - a `drop` or `exploratory` of a step a repeat still in the Flow names as
+//   - a `drop` of a step a repeat still in the Flow names as
 //     its `over`, or as the last step of its span, is put back and refused
 //     `holds_a_repeat`, naming the repeat. A decision that also takes that
 //     repeat off, or takes out the step carrying it, takes the loop out whole
@@ -46,35 +46,30 @@ import {
 } from "../routing.ts";
 import { automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../step.ts";
 import type { AutomationStudioFlowDraftShownNumbering } from "./shown-numbering.ts";
-import { automationStudioFlowDraftAmendmentMove } from "./move.ts";
 import type { AutomationStudioFlowDraftWithdrawal } from "./strand-check.ts";
 import type { AutomationStudioFlowDraftAmendment, AutomationStudioFlowDraftAmendmentRefusal } from "./types.ts";
 
 type Step = AutomationStudioFlowDraftStep;
 
 /**
- * A move or inclusion checked on a prospective draft before it changes the
- * real one. Refuse a newly routed body without deleting either statement or
- * losing the step's prior position, settings, act claims or disposition.
+ * A `keep` that puts a step in the Flow, checked on a prospective draft before
+ * it changes the real one. Refuse a newly routed body without deleting either
+ * statement or losing the step's settings, act claims or disposition.
  */
 export function automationStudioFlowDraftSpanChangeRefusal(
   steps: readonly Step[],
   step: Step,
   amendment: AutomationStudioFlowDraftAmendment,
   shown: AutomationStudioFlowDraftShownNumbering,
-  change: { to?: Step | undefined; keep?: boolean; clearsRouting?: boolean; act?: string | undefined }
+  change: { clearsRouting?: boolean; act?: string | undefined }
 ): AutomationStudioFlowDraftAmendmentRefusal | undefined {
   const projected = steps.map((entry) => ({ ...entry, id: automationStudioFlowDraftStepId(entry) }));
   const originals = new Map<Step, Step>(projected.map((entry, index) => [entry, steps[index]!]));
   const candidate = projected[steps.indexOf(step)]!;
-  const to = change.to === undefined ? undefined : projected[steps.indexOf(change.to)];
-  if (change.keep) {
-    candidate.disposition = "kept";
-    if (change.clearsRouting) delete candidate.routing;
-    if (change.act !== undefined) candidate.acts = [...(candidate.acts ?? []), change.act];
-    automationStudioFlowDraftKeepOpeners(projected, candidate);
-  }
-  if (to !== undefined) automationStudioFlowDraftAmendmentMove(projected, candidate, to, undefined);
+  candidate.disposition = "kept";
+  if (change.clearsRouting) delete candidate.routing;
+  if (change.act !== undefined) candidate.acts = [...(candidate.acts ?? []), change.act];
+  automationStudioFlowDraftKeepOpeners(projected, candidate);
   const key = (span: { head: Step; routed: Step }): string => JSON.stringify([automationStudioFlowDraftStepId(span.head), automationStudioFlowDraftStepId(span.routed)]);
   const before = new Set(spanConflicts(steps).map(key));
   const conflict = spanConflicts(projected).find((span) => !before.has(key(span)));

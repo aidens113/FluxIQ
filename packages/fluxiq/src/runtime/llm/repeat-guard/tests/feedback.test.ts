@@ -7,7 +7,7 @@ describe("the note for a refused repeat", () => {
     const note = automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.run_node", inARow: 1, earlier: { callId: "read-page3", outcome: "failed", resultCode: "web.action.rejected.target_unobserved", resultReason: "handle_not_in_packet", handleUnshown: true } });
     expect(note).toMatchObject({ code: "llm_evidence_loop.repeat_refused", sameAsCall: "read-page3", then: { outcome: "failed", resultReason: "handle_not_in_packet", handleUnshown: true } });
     expect(String(note.instruction)).toMatch(/never shown/u);
-    expect(String(note.instruction)).toMatch(/detect/u);
+    expect(String(note.instruction)).toMatch(/needs no handle minted first/u);
     expect(String(note.instruction)).toMatch(/read the page below/u);
   });
 

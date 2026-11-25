@@ -114,7 +114,7 @@ export function automationStudioEvidenceFlowBootstrapDraftCompletionSchema(
     type: "object",
     additionalProperties: false,
     required: ["summary"],
-    description: "Finish. The Flow is the steps you added to your draft -- it is already written, so there is nothing to write here but one sentence saying what it does. Finish only when every act on the draft's acts checklist is done; correct the draft with amend_draft before you finish, and run and add any step it still needs."
+    description: "Finish. The Flow is the steps of your draft that are in the Flow -- it is already written, so there is nothing to write here but one sentence saying what it does. Finish only when every act on the draft's acts checklist is done; correct the draft with amend_draft before you finish, and run and add any step it still needs."
       + " A step that ran is not settled: what it returned is what the Flow returns, every time. Read the instruction once more against each step's own parameters -- a page it never went on to, rows it was asked to leave out, a column it was asked for -- and rerun that step through amend_draft carrying them."
       + " Too wide an answer still finishes; an empty one does not, so where you are unsure ask for more and let it be narrowed later."
       + " Where the instruction asks for something to be done -- saved, added to a list or queue, a label applied, a branch, filter or setting changed, a page opened to read from, something reserved, renewed, sent, filed, created or confirmed -- the Flow must contain a step that does it, and acts says which.",
@@ -126,7 +126,7 @@ export function automationStudioEvidenceFlowBootstrapDraftCompletionSchema(
       acts: {
         type: "array",
         maxItems: MAX_ACT_CLAIMS,
-        description: "One entry for each thing the instruction asks to be done, naming the draft step that does it. A step you added with act already names its act, so leave this out when every act shows done, or when the instruction only asks for something to be read.",
+        description: "One entry for each thing the instruction asks to be done, naming the draft step that does it. A step named with act already names its act, so leave this out when every act shows done, or when the instruction only asks for something to be read.",
         items: {
           type: "object",
           additionalProperties: false,

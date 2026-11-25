@@ -94,13 +94,14 @@ describe("a rerun of a step whose act was already done while building", () => {
     expect(detail).toContain("not done again");
     expect(detail).toContain("already did it once while this Flow was being built");
     expect(detail).toContain("another control");
-    expect(detail).toContain("add true");
+    expect(detail).toContain("as a new call");
   });
 
   it("takes the new argument on present as well, and applies the amendments held for it to that step", async () => {
     const decide = vi.fn()
       .mockResolvedValueOnce(confirmAmara)
-      .mockResolvedValueOnce(rerun("Confirm Amara", [{ step: 1, change: "optional" }]))
+      // A framework edit held for the rerun (t1037): the step repeats while it succeeds.
+      .mockResolvedValueOnce(rerun("Confirm Amara", [{ step: 1, change: "repeat", while: 1 }]))
       .mockResolvedValueOnce({ kind: "complete", result: { done: true } });
     const site = requests({ ranWith: true });
 
@@ -110,7 +111,7 @@ describe("a rerun of a step whose act was already done while building", () => {
     const answered = shownAt(decide, 2).find((entry) => entry.callId === "rerun.1")?.value;
     expect(answered).toMatchObject({ code: "core.replay.present", rerunCheck: { took: true } });
     const actStep = stepsOf(result).find((step) => step.acts?.includes("a1")) as (Steps[number] & { routing?: JsonObject }) | undefined;
-    expect(actStep?.routing).toMatchObject({ kind: "optional" });
+    expect(actStep?.routing).toMatchObject({ kind: "repeat" });
   });
 
   it("refuses the rerun like a failed one when the check cannot reproduce the target, and keeps the step as it ran", async () => {
@@ -239,7 +240,7 @@ describe("a checked rerun keeps the step as it ran (run muxkzdjw C2b)", () => {
     const note = noteOf(ran);
     expect(note).toMatchObject({ checked: true, doneAgain: false, took: false, answer: "core.replay.verified" });
     expect(String(note.detail)).toContain("another control");
-    expect(String(note.detail)).toContain("add true");
+    expect(String(note.detail)).toContain("as a new call");
   });
 
   it("0075: does not take another control with a text a click never ran with", async () => {
@@ -363,7 +364,7 @@ describe("a checked rerun that takes the new argument", () => {
     expect(detail).toContain("ran nothing");
     expect(detail).toContain("web.output.dom-type");
     expect(detail).toContain("keeps web.output.dom-click");
-    expect(detail).toContain("add true");
+    expect(detail).toContain("as a new call");
   });
 
   it("still takes a value naming the step's own node, or none, when the check declares no action", async () => {
@@ -460,7 +461,7 @@ describe("a checked rerun that takes the new argument", () => {
     // The control it ran on is still the one it names.
     expect(replaces.control).toBe("Amara");
     expect(replaces.replay).toEqual({ from: { location: "requests" } });
-    const shown = automationStudioFlowDraftEntry({ steps: [replaces], authored: true })!.value as JsonObject;
+    const shown = automationStudioFlowDraftEntry({ steps: [replaces] })!.value as JsonObject;
     expect((shown.steps as JsonObject[])[0]).toMatchObject({ disposition: "kept", inResult: true, changed: "no", checkedCandidate: { performed: false }, act: "a1", actEvidence: "intended" });
     expect((shown.steps as JsonObject[])[0]).not.toHaveProperty("written");
     // The old lasting effect survives a changed claim and changed binding test value.

@@ -60,14 +60,15 @@ describe("a step the model runs", () => {
     expect(result.steps[1]!.routing).toBeUndefined();
   });
 
-  it("is evidence, not a step of the Flow, until the model adds it", async () => {
+  // Where the framework drafts the Flow (t1037, user 2026-11-25), a step that worked is in it with or without add.
+  it("is in the Flow once it worked, with or without add, as the framework drafts it", async () => {
     const decide = vi.fn().mockResolvedValueOnce(call(1)).mockResolvedValueOnce(call(2, { add: true })).mockResolvedValueOnce(complete);
     const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool: vi.fn().mockResolvedValue(worked), maxIterations: 4, maxToolCalls: 4, dryRun: false, unusableDecisions: { stalled } });
-    expect(result.steps.map((step) => [step.id, step.disposition])).toEqual([["d1", "taken"], ["d2", "kept"]]);
-    // The draft the next decision reads says so, in the authored telling.
+    expect(result.steps.map((step) => [step.id, step.disposition, step.drafted])).toEqual([["d1", "kept", "in"], ["d2", "kept", "in"]]);
+    // The draft the next decision reads says so, in the framework's telling.
     const draft = shownAt(decide, 1).find((entry) => entry.toolId === "core.flow_draft")!.value;
-    expect(JSON.stringify(draft)).toContain("\"disposition\":\"taken\"");
-    expect(String(draft.instruction)).toContain("not in the Flow until you add it");
+    expect(JSON.stringify(draft)).toContain("\"inResult\":true");
+    expect(String(draft.instruction)).toContain("Core drafts the Flow from the calls that worked");
   });
 
   it("names the act it does when added with act, and a failed call added is still out", async () => {
@@ -77,38 +78,32 @@ describe("a step the model runs", () => {
     expect(result.steps.map((step) => [step.id, step.disposition, step.acts])).toEqual([["d1", "kept", ["a2"]], ["d2", "taken", undefined]]);
   });
 
-  it("is put into the Flow later by an add amendment, at a position and for an act", async () => {
+  it("is named for an act later by a keep edit, which makes it the model's step", async () => {
     const decide = vi.fn()
       .mockResolvedValueOnce(call(1, { add: true }))
       .mockResolvedValueOnce(call(2))
-      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 2, change: "add", to: 1, act: "a1" }] })
+      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 2, change: "keep", act: "a1" }] })
       .mockResolvedValueOnce(complete);
     const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool: vi.fn().mockResolvedValue(worked), maxIterations: 6, maxToolCalls: 6, dryRun: false, unusableDecisions: { stalled } });
-    expect(result.steps.map((step) => [step.id, step.position, step.disposition, step.acts])).toEqual([["d2", 1, "kept", ["a1"]], ["d1", 2, "kept", undefined]]);
-  });
-
-  it("under the transcript rule, is kept as it runs, as a recorded build's was", async () => {
-    const decide = vi.fn().mockResolvedValueOnce(call(1)).mockResolvedValueOnce(complete);
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool: vi.fn().mockResolvedValue(worked), maxIterations: 4, maxToolCalls: 4, dryRun: false, draftAuthoring: "transcript", unusableDecisions: { stalled } });
-    expect(result.steps[0]?.disposition).toBe("kept");
+    expect(result.steps.map((step) => [step.id, step.position, step.disposition, step.acts, step.drafted])).toEqual([["d1", 1, "kept", undefined, "in"], ["d2", 2, "kept", ["a1"], undefined]]);
   });
 });
 
 describe("the grammar a call authors with", () => {
-  it("offers add and act on a call only where the model authors its draft", () => {
+  it("offers add and act on a call only where the loop keeps a draft", () => {
     const authored = JSON.stringify(buildAutomationStudioLlmEvidenceLoopDecisionSchema([go], { type: "object" }, true, false, true));
-    const transcript = JSON.stringify(buildAutomationStudioLlmEvidenceLoopDecisionSchema([go], { type: "object" }, true, false));
+    const undrafted = JSON.stringify(buildAutomationStudioLlmEvidenceLoopDecisionSchema([go], { type: "object" }, true, false));
     expect(authored).toContain("\"add\"");
     expect(authored).toContain("\"act\"");
-    expect(transcript).not.toContain("\"act\"");
+    expect(undrafted).not.toContain("\"act\"");
   });
 
   it("reads add and act, and an act implies add; an act that is not an id is refused", () => {
     expect(automationStudioLlmEvidenceParseDecision({ kind: "tool_call", callId: "c1", toolId: "go", input: {}, act: "a3" })).toEqual({ kind: "tool_call", callId: "c1", toolId: "go", input: {}, add: true, act: "a3" });
     expect(automationStudioLlmEvidenceParseDecision({ kind: "tool_call", callId: "c1", toolId: "go", input: {}, add: false })).toEqual({ kind: "tool_call", callId: "c1", toolId: "go", input: {} });
     expect(automationStudioLlmEvidenceParseDecision({ kind: "tool_call", callId: "c1", toolId: "go", input: {}, act: "save the kettle" })).toBeUndefined();
-    const amendment = automationStudioLlmEvidenceParseDecision({ kind: "amend_draft", amendments: [{ step: 2, change: "add", to: 1, act: "a1" }] });
-    expect(amendment).toEqual({ kind: "amend_draft", amendments: [{ step: 2, change: "add", to: 1, act: "a1" }] });
+    const amendment = automationStudioLlmEvidenceParseDecision({ kind: "amend_draft", amendments: [{ step: 2, change: "keep", act: "a1" }] });
+    expect(amendment).toEqual({ kind: "amend_draft", amendments: [{ step: 2, change: "keep", act: "a1" }] });
   });
 });
 
@@ -134,8 +129,8 @@ describe("the grammar of place", () => {
   });
 
   it("reads place on an amendment beside the change and its act", () => {
-    expect(automationStudioLlmEvidenceParseDecision({ kind: "amend_draft", amendments: [{ step: 2, change: "keep", place: "r1,r2" }, { step: 3, change: "add", act: "a1", place: "none" }] }))
-      .toEqual({ kind: "amend_draft", amendments: [{ step: 2, change: "keep", place: "r1,r2" }, { step: 3, change: "add", act: "a1", place: "none" }] });
+    expect(automationStudioLlmEvidenceParseDecision({ kind: "amend_draft", amendments: [{ step: 2, change: "keep", place: "r1,r2" }, { step: 3, change: "keep", act: "a1", place: "none" }] }))
+      .toEqual({ kind: "amend_draft", amendments: [{ step: 2, change: "keep", place: "r1,r2" }, { step: 3, change: "keep", act: "a1", place: "none" }] });
   });
 
   it("leaves out an amendment whose place is not one of the ids, and keeps the rest", () => {
@@ -153,7 +148,7 @@ describe("the grammar of place", () => {
     expect(onLook).toEqual({ type: "string" });
     expect(onGo).toMatchObject({ type: "string", pattern: AUTOMATION_STUDIO_FLOW_DRAFT_ROUTE_PLACE_VALUE.source });
     expect(onGo?.description).toMatch(/r1,r2/u);
-    expect(onGo?.description).toMatch(/Implies add/u);
+    expect(onGo?.description).not.toMatch(/add/u);
     expect(new RegExp(onGo!.pattern as string, "u").test("r1,r2")).toBe(true);
     expect(places(false)).toEqual([undefined, undefined]);
   });
@@ -192,17 +187,18 @@ describe("progress, where the model authors its draft", () => {
     expect(String(redirect?.instruction)).toContain("does a1");
   });
 
-  it("is a step added to the Flow, wherever the page went", async () => {
+  // t1037: a step the framework drafted in is the call's own landing, not progress; an act done is.
+  it("is an act done, wherever the page went", async () => {
     const states = ["s0", "sA", "sA", "sA", "sA", "sA", "sA", "sA"];
     const decide = vi.fn()
-      .mockResolvedValueOnce(call(1)).mockResolvedValueOnce(call(2)).mockResolvedValueOnce(call(3, { add: true })).mockResolvedValueOnce(call(4))
+      .mockResolvedValueOnce(call(1)).mockResolvedValueOnce(call(2)).mockResolvedValueOnce(call(3, { act: "a1" })).mockResolvedValueOnce(call(4))
       .mockResolvedValueOnce(complete);
     const result = await runAutomationStudioLlmEvidenceLoop({
       tools: [go], decide, executeTool: vi.fn().mockResolvedValue(worked), maxIterations: 8, maxToolCalls: 8, dryRun: false,
       maxStepsWithoutProgress: 3, unusableDecisions: { maxConsecutive: 3, stalled },
-      captureStateDigest: () => states.shift()
+      captureStateDigest: () => states.shift(),
+      draft: { actsMissing: (steps) => (steps.some((step) => step.disposition === "kept" && step.acts?.includes("a1")) ? [] : ["a1"]) }
     });
-    // Calls 2 and 4 revisit; 3 adds, which clears, so the guard never reaches three.
     expect(result.ok).toBe(true);
   });
 
@@ -256,7 +252,7 @@ describe("authoring properties in the decision schema", () => {
       expect(add.type).toBe("boolean");
       expect(act.pattern).toBe("^a[1-9][0-9]{0,2}([.][a-z]{1,16})?$");
       if (variant.toolId === "core.run_node") {
-        expect(add.description).toMatch(/put its step into the Flow/u);
+        expect(add.description).toMatch(/joins the Flow by itself/u);
         expect(act.description).toMatch(/acts checklist/u);
       } else {
         expect(add.description).toBeUndefined();
@@ -432,7 +428,7 @@ describe("a call's statement that its press flipped the control it pressed", () 
     expect(automationStudioLlmEvidenceCallRecord(pressTool, {}, {})).not.toHaveProperty("toggle");
   });
 
-  it("a loop that presses a control off with add, then on, then adds the next press leaves the pair out of the Flow", async () => {
+  it("a loop that presses a control off, then on, then the next press leaves the pair out of the Flow", async () => {
     const decide = vi.fn()
       .mockResolvedValueOnce(call(1, { add: true })).mockResolvedValueOnce(call(2)).mockResolvedValueOnce(call(3, { add: true }))
       .mockResolvedValueOnce(complete);
@@ -441,7 +437,7 @@ describe("a call's statement that its press flipped the control it pressed", () 
       .mockResolvedValueOnce(toggling({ key: "t941", to: "on" }, { before: "s1", after: "s2" }))
       .mockResolvedValueOnce(toggling(undefined, { before: "s2", after: "s3" }));
     const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, maxIterations: 6, maxToolCalls: 6, dryRun: false, unusableDecisions: { stalled } });
-    expect(result.steps.map((step) => step.disposition)).toEqual(["dropped", "dropped", "kept"]);
+    expect(result.steps.map((step) => [step.disposition, step.drafted])).toEqual([["taken", "undone"], ["taken", "undone"], ["kept", "in"]]);
     expect(result.steps.map((step) => step.cancels)).toEqual(["d2", "d1", undefined]);
   });
 
@@ -457,7 +453,7 @@ describe("a call's statement that its press flipped the control it pressed", () 
       .mockResolvedValueOnce(toggling({ key: "t941", to: "on" }, { before: "s2", after: "s3" }));
     const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, maxIterations: 6, maxToolCalls: 6, dryRun: false, unusableDecisions: { stalled } });
     expect(result.steps.map((step) => [step.id, step.disposition, step.acts, step.cancels])).toEqual([
-      ["d1", "kept", undefined, undefined], ["d2", "dropped", undefined, "d3"], ["d3", "dropped", undefined, "d2"]
+      ["d1", "kept", undefined, undefined], ["d2", "taken", undefined, "d3"], ["d3", "taken", undefined, "d2"]
     ]);
     // The draft the completing decision read says why both are out, and where an act about the colour belongs.
     const draft = shownAt(decide, 3).find((entry) => entry.toolId === "core.flow_draft")!.value as { steps: Array<Record<string, unknown>> };
@@ -760,7 +756,7 @@ describe("the policy where the result is a Flow", () => {
   it("lets the model run to learn and write what it has learnt, and makes repetitive work a loop", () => {
     const policy = AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION;
     expect(policy).not.toContain("run each step it needs once and add it");
-    expect(policy).toContain("run steps to learn what works and add the ones the Flow needs");
+    expect(policy).toContain("run steps to learn what works; Core drafts the Flow from the steps that worked");
     expect(policy).toContain("write a step without running it (core.run_node with write true)");
     expect(policy).toContain("repetitive work is a loop, not a sequence");
     expect(policy).toContain("never doing it to every item");
@@ -790,10 +786,9 @@ describe("the policy where the result is a Flow", () => {
     expect(sentence).not.toMatch(/shop|store|seller|retailer|pickup|cart|order|feed|social|job|towel|valueridge|auction|classified|marketplace|photo|company|professional|friend/iu);
   });
 
-  it("says add is for a step run or written, and that write implies it", () => {
+  it("says add is not needed: a step that works joins the Flow by itself", () => {
     const schema = buildAutomationStudioLlmEvidenceLoopDecisionSchema([go], { type: "object" }, true, false, true);
     const add = ((schema.oneOf as JsonObject[]).find((variant) => (variant.properties as JsonObject).toolId !== undefined)!.properties as JsonObject).add as JsonObject;
-    expect(add.description).toContain("a step you run or write");
-    expect(add.description).toContain("write true implies add");
+    expect(add.description).toContain("Not needed: a step that works joins the Flow by itself");
   });
 });

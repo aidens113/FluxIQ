@@ -55,22 +55,23 @@ describe("the draft a build accrues", () => {
     expect(shown.filter((entry) => entry.toolId === "press").map((entry) => entry.value)).toEqual([page, page, page]);
   });
 
-  it("lets the model mark a step exploratory, and says so next time", async () => {
+  // Where the framework drafts the Flow, a step is taken out with drop (`../amendment/edits/`): exploratory is the old grammar's.
+  it("lets the model take a step out of the Flow, and says so next time", async () => {
     const decide = vi.fn()
       .mockResolvedValueOnce(pressed(1))
       .mockResolvedValueOnce(pressed(2))
-      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "exploratory" }] })
+      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "drop" }] })
       .mockResolvedValueOnce({ kind: "complete", result: { flow: "..." } });
     const result = await runAutomationStudioLlmEvidenceLoop({
       tools, decide, maxIterations: 8, maxToolCalls: 8, unusableDecisions: { stalled },
       executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { page: "after" }, effectApplied: true })
     });
     expect(result.ok).toBe(true);
-    expect(result.steps.map((step) => step.disposition)).toEqual(["exploratory", "kept"]);
+    expect(result.steps.map((step) => step.disposition)).toEqual(["dropped", "kept"]);
     expect(result.trace.some((entry) => entry.decision === "amend_draft" && entry.resultCode === "llm_evidence_loop.draft_amended")).toBe(true);
     const shown = decide.mock.calls[3]?.[0].evidence as { toolId: string; value: unknown }[];
     const draft = shown.find((entry) => entry.toolId === "core.flow_draft")?.value as { steps: { disposition: string; inResult: boolean }[] };
-    expect(draft.steps.map((step) => [step.disposition, step.inResult])).toEqual([["exploratory", false], ["kept", true]]);
+    expect(draft.steps.map((step) => [step.disposition, step.inResult])).toEqual([["dropped", false], ["kept", true]]);
   });
 
   // The schema sits in the head of the request, so it stays as it was (t869): an edit asked before there is one to make, or once the allowance is spent, is refused.
@@ -100,7 +101,7 @@ describe("the draft a build accrues", () => {
       .mockResolvedValueOnce(pressed(1))
       .mockResolvedValueOnce({ kind: "tool_call", callId: "call.look", toolId: "inspect", input: { scope: "results" } })
       .mockResolvedValueOnce(repeat)
-      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "exploratory" }] })
+      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "drop" }] })
       .mockResolvedValueOnce(repeat)
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "keep" }] })
       .mockResolvedValueOnce(repeat)

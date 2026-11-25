@@ -1,5 +1,5 @@
-// `amend_draft {change: "take", call: <id>}`: the draft took an earlier read that was a look as a step, with no new
-// act. Its page is recorded as the step's, from the rows that real read kept (design D9), and it is no longer a look.
+// A look the draft now holds as a step: an earlier read that was a look became a step of the draft, with no new
+// act (the framework drafts every read that worked, t1037). Its page is recorded as the step's, from the rows that real read kept (design D9), and it is no longer a look.
 // A step that reads a list some step already reads the same way folds into it (D2), as any new step does.
 //
 // A call that is not a look (never read, or already in the draft) takes nothing, and the ledger stays as it was;

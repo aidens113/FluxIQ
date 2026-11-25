@@ -27,7 +27,7 @@ describe("what the model was shown of its draft", () => {
     expect(measured.bytes).toBe(Buffer.byteLength(JSON.stringify(entry.value), "utf8"));
     expect(measured.budget).toBe(measured.bytes);
     expect(measured.steps).toBe(3);
-    expect(measured.instructionBytes).toBeGreaterThan(1_000);
+    expect(measured.instructionBytes).toBe(Buffer.byteLength(String((entry.value as { instruction: string }).instruction), "utf8"));
     for (const legacy of ["unlisted", "withoutInput", "inputTooLarge", "overBudget", "budgetBelowFloor"]) expect(measured).not.toHaveProperty(legacy);
   });
 

@@ -28,7 +28,7 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW = 3;
 
 const INSTRUCTION = "You already made this exact call -- the same tool with the same input -- on this exact page, and it did not work then, changed nothing, or ended on the same page as the same call before it (then.outcome). "
   + "Making it again from this page does the same, so it was not run and cost nothing but this decision. "
-  + "Do something different instead: amend the draft (rerun a step with a corrected argument, mark it optional, or drop it), "
+  + "Do something different instead: amend the draft (rerun a step with a corrected argument, or drop it), "
   + "read the page below for what you need, use a different control or a different input, or ask the person. "
   + "A call that runs after the page has changed is not a repeat. Repeats refused in a row end this round, and the Flow so far is then tested and judged.";
 
@@ -51,7 +51,7 @@ function sameResultInstruction(recall: "offered" | "unknown" | "absent", timingL
     + "Making it again from this page ends there again, so it was not run and cost nothing but this decision. "
     + recallWords
     + (timingLeftOut ? "Changing only how long a call waits does not make it a different call. " : "")
-    + "Do something different instead: amend the draft (rerun a step with a corrected argument, mark it optional, or drop it), "
+    + "Do something different instead: amend the draft (rerun a step with a corrected argument, or drop it), "
     + "read the page below for what you need, use a different control or a different input, or ask the person. "
     + "A call that runs after the page has changed is not a repeat. Repeats refused in a row end this round, and the Flow so far is then tested and judged.";
 }
@@ -88,7 +88,7 @@ const LOOK_INSTRUCTION = "You already made this exact request -- the same tool w
  */
 const HANDLE_UNSHOWN_INSTRUCTION = "You already made this exact call -- the same tool with the same input -- on this exact page, and it failed because a handle it names was never shown here (then.resultReason): no call had shown or minted that handle yet, and none has since, so it was not run. "
   + "The call itself may be right. First make the call that shows the handle: read the page below, which lists each control under its handle, "
-  + "or for a list's extraction handle detect the list's repeating structure from one of its items, which mints the handle and its fields. "
+  + "A read of a list needs no handle minted first: it names its list by a line the page shows, and finds the list itself. "
   + "Once a call has shown it, this same call may be made again with the handle exactly as shown. Repeats refused in a row end this round, and the Flow so far is then tested and judged.";
 
 /**
@@ -98,7 +98,7 @@ const HANDLE_UNSHOWN_INSTRUCTION = "You already made this exact call -- the same
  */
 const DRAFT_INSTRUCTION = "This exact call -- the same tool with the same input -- already ran on this unchanged draft and this unchanged page, and changed nothing: its result is shown above, under sameAsCall. "
   + "Running it again on the same draft and page gives the same result, so it was not run. "
-  + "If that result, or a refused completion, says something is wrong, change the draft first (amend_draft: reorder, bind, mark optional, rerun with a corrected argument, add or drop the steps it names), then run it again; "
+  + "If that result, or a refused completion, says something is wrong, change the draft first (amend_draft: rerun with a corrected argument, bind, repeat, drop the steps it names, or keep one left out that it needs), then run it again; "
   + "if nothing is wrong, do the next thing the instruction needs. Completing again over an unchanged draft that was refused is refused the same way. "
   + "Repeats refused in a row, and completions refused again over the same draft, end this round, and the Flow so far is then tested and judged.";
 
@@ -116,7 +116,7 @@ const AMENDMENT_INSTRUCTION = "You already sent this exact amend_draft -- the sa
 /** Said instead when that decision's rerun ran and did not work (`same_amendment`, `rerunFailed`). */
 const FAILED_AMENDMENT_INSTRUCTION = "You already sent this exact amend_draft -- the same amendments, word for word -- on this same draft, and its rerun did not work (its result is above, under sameAsCall; then.resultCode says how), so the draft's Flow stayed exactly as it was. "
   + "A rerun resets the page and replays the Flow before it, so sending it again on the same draft fails the same way, and none of it was run: no reset, no replay, no press. "
-  + "Do something different: rerun the step with a corrected argument, correct the step before it that left the page wrong, mark it optional or drop it, or do the next act or choice still not done on the checklist. "
+  + "Do something different: rerun the step with a corrected argument, correct the step before it that left the page wrong, drop it, or do the next act or choice still not done on the checklist. "
   + "Decisions in a row that change nothing end this round, and the Flow so far is then tested and judged.";
 
 /**
@@ -148,7 +148,7 @@ function instructionFor(earlier: AutomationStudioLlmEvidenceRepeatedOutcome, rer
  * refusal run's own warning says (`../decision-handlers/refusal-run.ts`).
  */
 const UNDRAFTED_WORDS: ReadonlyArray<readonly [string, string]> = [
-  ["amend the draft (rerun a step with a corrected argument, mark it optional, or drop it), ", ""],
+  ["amend the draft (rerun a step with a corrected argument, or drop it), ", ""],
   [", or amend the draft so no step needs it", ""],
   [" end this round, and the Flow so far is then tested and judged.", " end this work where it stands, with nothing tested or judged."]
 ];

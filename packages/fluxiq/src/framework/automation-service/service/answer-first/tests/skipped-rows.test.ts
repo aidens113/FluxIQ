@@ -25,6 +25,11 @@ const PERMITTED = { instruction: LOAN_TASK, taskProcessing: { process: {} }, per
 const press = (title: string, over: { add?: true } = { add: true }) => runNode(`renew.${title.replace(/\W+/gu, "-")}`, RENEW_LOAN, { title }, ["modify_existing"], over);
 /** A purse with room for the read and two presses, and little past them. */
 const TIGHT = { ...PERMITTED, costUsd: 0.04, maxTotalEstimatedCostUsd: 0.09, keepLooking: true };
+/** The model takes every step of its Flow out, by the numbers the draft shows it. */
+const dropAll = (request: AutomationStudioLlmTaskRequest) => {
+  const draft = request.context.evidenceLoop?.evidence.find((entry) => entry.toolId === "core.flow_draft")?.value as { steps?: Array<{ step: number; inResult?: boolean }> } | undefined;
+  return { kind: "amend_draft", amendments: (draft?.steps ?? []).filter((line) => line.inResult).map((line) => ({ step: line.step, change: "drop" })) };
+};
 
 describe("rows skipped as already done", () => {
   it("a second attempt's Flow run leaves the two rows the first did alone and says so, and the first said nothing", async () => {
@@ -53,8 +58,9 @@ describe("rows skipped as already done", () => {
 
   it("a model that keeps away from done rows by itself left nothing out", async () => {
     const lane = await laterAttempts(cleanups, { titles: TITLES });
-    // Not added to the Flow, so nothing is run before the rounds, and only its record carries.
-    await lane.attempt({ ...TIGHT, script: [readLoans("read", {}), press(ATLAS, {}), press(BIRDS, {})] });
+    // Left out of the Flow, so nothing is run before the rounds, and only its record carries. Since t1037 every call that
+    // worked joins the draft, so the model drops what it ran (`dropAll`), where it used to leave out `add`.
+    await lane.attempt({ ...TIGHT, maxTotalEstimatedCostUsd: 0.17, script: [readLoans("read", {}), press(ATLAS, {}), press(BIRDS, {}), dropAll] });
     const second = await lane.attempt({ ...PERMITTED, script: [readLoans("list"), press(CLOCKS, {}), press(DUNES, {}), complete("All renewed and listed.")] });
     expect(second.answer.attempt.status).toBe("achieved");
     expect(second.answer.result).not.toHaveProperty("skippedAsDone");

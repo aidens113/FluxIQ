@@ -55,11 +55,12 @@ describe("the run-node tool's declaration", () => {
     expect(built.description).not.toContain("amend_draft add");
   });
 
-  it("keeps the rules the model needs: handles not locators, lists by their detection handle", () => {
+  it("keeps the rules the model needs: handles not locators, a list named by a line of it, nothing detected first", () => {
     const description = tool()!.description;
     expect(description).toContain("{\"handle\": \"<the handle the evidence printed, copied exactly>\"}");
     expect(description).toContain("Never write an address, a description or a guess of your own");
-    expect(description).toContain("by the handle the detection tool issued");
+    expect(description).toContain("by the handle of one of its lines as the evidence printed it");
+    expect(description).toContain("nothing is detected first");
   });
 
   it("shows both answers about consequences, not only the empty one", () => {

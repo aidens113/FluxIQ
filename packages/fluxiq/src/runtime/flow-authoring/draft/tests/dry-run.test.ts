@@ -202,7 +202,7 @@ describe("a refusal for a step the test never reached the page of", () => {
   it("names the steps that changed the page on the way to it and are not in the Flow", () => {
     const verdict = automationStudioFlowDraftDryRunVerdict({ attempt: 1, reset: "ok", outcomes: outcomes(["replayed", "unreproducible", "unreproducible"]) });
     const feedback = automationStudioFlowDraftDryRunFeedback(verdict, new Set(), draft());
-    expect(feedback.notInFlow).toBe("Steps 3, 4 and 5 changed the page on the way to step 6 when you ran them, and are not in the Flow, so the test never reached the page step 6 acted on: add them (amend_draft add).");
+    expect(feedback.notInFlow).toBe("Steps 3, 4 and 5 changed the page on the way to step 6 when you ran them, and are not in the Flow, so the test never reached the page step 6 acted on: put them back (amend_draft keep).");
   });
 
   it("names one such step in the singular, and leaves out a detour", () => {
@@ -216,7 +216,7 @@ describe("a refusal for a step the test never reached the page of", () => {
     const verdict = automationStudioFlowDraftDryRunVerdict({ attempt: 1, reset: "ok", outcomes: [
       { step: 4, actionId: "node.click", status: "replayed" }, { step: 8, actionId: "node.click", status: "unreproducible" }
     ] });
-    expect(automationStudioFlowDraftDryRunFeedback(verdict, new Set(), steps).notInFlow).toBe("Step 7 changed the page on the way to step 8 when you ran it, and is not in the Flow, so the test never reached the page step 8 acted on: add it (amend_draft add).");
+    expect(automationStudioFlowDraftDryRunFeedback(verdict, new Set(), steps).notInFlow).toBe("Step 7 changed the page on the way to step 8 when you ran it, and is not in the Flow, so the test never reached the page step 8 acted on: put it back (amend_draft keep).");
   });
 
   it("says nothing more when every step on the way is in the Flow, when the step failed rather than went unreached, or without the draft", () => {

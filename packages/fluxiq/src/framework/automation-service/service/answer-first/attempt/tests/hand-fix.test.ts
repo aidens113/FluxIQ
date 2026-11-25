@@ -10,6 +10,7 @@
 // broke at it again while the site stayed as it was (`../../flow-run/stand-in.ts`).
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
+import type { AutomationStudioLlmTaskRequest } from "../../../../../../runtime/llm/index.ts";
 import { automationStudioFlowDraftStepIsProposed } from "../../../../../../runtime/flow-authoring/draft/index.ts";
 import { appliedLane, changesOn, graphOf } from "../../apply-proven/tests/applied-lane.ts";
 import { complete, RENEW_CARD } from "../../tests/fake-library.ts";
@@ -60,11 +61,17 @@ describe("a hand fix after a saved Flow broke", () => {
     expect(presses.map((node) => node.parameterValues?.control)).toEqual([RENAMED]);
   });
 
+  // Since t1037 every press that worked joins the draft, so a hand fix is left out of the Flow by the model's own drop.
   it("left out of the Flow is no repair, and the Flow keeps the step it had", async () => {
     const { lane, target, site } = await appliedLane(cleanups);
     await lane.attempt(cardFirstAttempt());
     site.cardControl = RENAMED;
-    const second = await lane.attempt({ ...pressedAgain, script: [pressCardByHand("card.fix", RENAMED, {}), complete("Renewed the card.")] });
+    const dropTheFix = (request: AutomationStudioLlmTaskRequest): JsonObject => {
+      const draft = request.context.evidenceLoop?.evidence.find((entry) => entry.toolId === "core.flow_draft")?.value as { steps?: Array<{ step: number; input?: JsonObject }> } | undefined;
+      const fix = (draft?.steps ?? []).filter((line) => line.input && controlOf({ input: line.input }) === RENAMED).at(-1);
+      return { kind: "amend_draft", amendments: [{ step: fix?.step ?? 0, change: "drop" }] };
+    };
+    const second = await lane.attempt({ ...pressedAgain, script: [pressCardByHand("card.fix", RENAMED, {}), dropTheFix, complete("Renewed the card.")] });
     expect(second.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow_then_explore" });
     expect(target.library.renewals.card).toBe(2);
     const inTheFlow = ((await lane.kept(CARD_TASK))?.best?.steps ?? []).filter(automationStudioFlowDraftStepIsProposed);

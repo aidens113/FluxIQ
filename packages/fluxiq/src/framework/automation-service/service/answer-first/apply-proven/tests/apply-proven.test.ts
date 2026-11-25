@@ -27,10 +27,14 @@ const again = { instruction: LOAN_TASK, taskProcessing: LISTED, ...PERMITTED };
 /** A person's Run again: the press that means do it again, with an empty act record (t869). */
 const pressedAgain = { ...again, runAgain: true };
 const LENGTHEN = "Extend";
-/** The press written again under a renamed control, and made the repeat the old one was. */
+/**
+ * The press written again under a renamed control, and made the repeat the old one was. The framework's edits move no
+ * step (t1037): the written step stays where it was written, after the opening look, and the old one is dropped.
+ */
+const WRITTEN_STEP = 5;
 const repaired = () => ({
   ...again,
-  script: [writeStep(RENEW_LOAN, { title: ATLAS, control: LENGTHEN }), { kind: "amend_draft", amendments: [{ step: LOAN_STEP, change: "drop" }, { step: 5, change: "reorder", to: LOAN_STEP }] }, repeatOverRows(LOAN_STEP, READ_STEP), forwardFrom(READ_STEP), complete("Renewed every loan.")]
+  script: [writeStep(RENEW_LOAN, { title: ATLAS, control: LENGTHEN }), { kind: "amend_draft", amendments: [{ step: LOAN_STEP, change: "drop" }] }, repeatOverRows(WRITTEN_STEP, READ_STEP), forwardFrom(READ_STEP), complete("Renewed every loan.")]
 });
 const spent = (attempt: { answer: { attempt: { spend: { calls: number; usd: number; inputTokens: number; outputTokens: number } } } }) => {
   const { calls, usd, inputTokens, outputTokens } = attempt.answer.attempt.spend;

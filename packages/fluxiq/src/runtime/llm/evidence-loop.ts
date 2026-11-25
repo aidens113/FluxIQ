@@ -3,7 +3,7 @@ import type { JsonObject, JsonValue } from "../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
 import {
   AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID,
-  automationStudioFlowDraftDropReversals, automationStudioFlowDraftKeepOpeners,
+  automationStudioFlowDraftComposeInPlace, automationStudioFlowDraftSettleLoopCovered,
   automationStudioFlowDraftReplaySignature, automationStudioFlowDraftStepCopy,
   automationStudioFlowDraftStepIsAction,
   automationStudioFlowDraftStepIsProposable, automationStudioFlowDraftStepWordsOf, automationStudioFlowDraftSetRoutePlaces,
@@ -18,7 +18,7 @@ import {
 // What the loop does with each kind of answer it gives the model, handed the loop's state as one context object (`decision-handlers/`).
 import {
   automationStudioLlmEvidenceAnswerCheck,
-  automationStudioLlmEvidenceClaimWrittenAct, automationStudioLlmEvidenceSecondCopyRefused,
+  automationStudioLlmEvidenceClaimWrittenAct,
   automationStudioLlmEvidenceHandleAmendment, automationStudioLlmEvidenceSettleHeldAmendments,
   automationStudioLlmEvidenceHandleAnsweredRequest, automationStudioLlmEvidenceLoopCaught, automationStudioLlmEvidenceLoopCheck, automationStudioLlmEvidenceLoopOverdue, automationStudioLlmEvidenceLoopRaise, automationStudioLlmEvidenceLoopRan,
   automationStudioLlmEvidenceHandleRefusedRepeat, automationStudioLlmEvidenceRefusedCallRun, automationStudioLlmEvidenceRerunChangedNothing, automationStudioLlmEvidenceSearchingWithoutActing,
@@ -35,7 +35,7 @@ import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID,
   AUTOMATION_STUDIO_LLM_EVIDENCE_REQUEST_CHECK_TOOL_ID,
   automationStudioLlmEvidenceAmendmentMemory,
-  automationStudioLlmEvidenceDecisionRefusal,
+  automationStudioLlmEvidenceDecisionRefusal, automationStudioLlmEvidenceReadTests, automationStudioLlmEvidenceCarriedSteps,
   automationStudioLlmEvidenceCallDiagnostic as callDiagnostic,
   automationStudioLlmEvidenceCallRecord as callRecord,
   automationStudioLlmEvidenceResumeEntry,
@@ -158,10 +158,12 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
   // in front of the model. Kept whether or not it is shown.
   const draftSteps: AutomationStudioFlowDraftStep[] = automationStudioLlmEvidenceLoopSeedSteps(input.draft);
   const drafting = input.draft !== false;
-  // Who decides which steps are in the Flow: the model, unless a recorded build is replayed under the old rule (`./loop-configuration.ts`).
-  const authoring = input.draftAuthoring !== "transcript";
-  // Whether the authored draft has advanced toward the acts: progress, where the model authors it (`./evidence-progress/authored-progress.ts`).
-  const authored = authoring && drafting ? automationStudioLlmEvidenceAuthoredProgress({ steps: draftSteps, actsMissing: input.draft ? input.draft.actsMissing : undefined }) : undefined;
+  // Steps carried from a saved Flow or an earlier attempt are the model's word, never decided again (`./loop-configuration.ts`, `carried`).
+  const carried = automationStudioLlmEvidenceCarriedSteps(draftSteps, input.draft === false ? undefined : input.draft?.carried);
+  const resultRead = input.draft === false ? undefined : input.draft?.resultRead; // Which reads the caller's answer is made of, where it says.
+  // The framework drafts the Flow from the calls that worked and the model edits it (user, 2026-11-25).
+  // Whether the draft has advanced toward the acts: progress (`./evidence-progress/authored-progress.ts`).
+  const authored = drafting ?automationStudioLlmEvidenceAuthoredProgress({ steps: draftSteps, actsMissing: input.draft ? input.draft.actsMissing : undefined }) : undefined;
   // The numbers the loop and its handlers both move (`decision-handlers/types.ts` says what each counts).
   const counters: AutomationStudioLlmEvidenceLoopCounters = { draftAmendments: 0, unusableInARow: 0, completionAttempts: 0, failedToolCalls: 0, mutationEpoch: 0, attemptEpoch: 0 };
   // Refusals already given, and drafts already stood at (`./evidence-loop/amendment-memory.ts`).
@@ -172,18 +174,25 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
     const match = /^d([0-9]+)$/.exec(step.id ?? "");
     return match ? Math.max(largest, Number(match[1])) : largest;
   }, 0);
+  // The framework's draft, composed again in place over the steps the loop and its handlers hold (`../flow-authoring/draft/compose/in-place.ts`),
+  // then a step a loop before it already does taken out, as an edit's settling does (`../flow-authoring/draft/loop-covered/`). `readTests` is below.
+  const composeDraft = (): void => { automationStudioFlowDraftComposeInPlace(draftSteps, { ...readTests, ...(resultRead ? { isResult: resultRead } : {}), isRuled: (step) => carried.has(step.id ?? "") }); automationStudioFlowDraftSettleLoopCovered(draftSteps); };
   const draftRecord = (step: Omit<AutomationStudioFlowDraftStep, "position" | "disposition" | "id">, authored?: { add?: true | undefined; act?: string | undefined; place?: string | undefined }): boolean => {
     if (input.discoveryOnly) return false; draftAppended += 1;
     // The step's own name, which a position stops being the moment the draft is
     // reordered. Routing statements are kept under it (`../flow-draft/routing.ts`).
-    // A step that ran is `taken` -- evidence, not a step of the Flow -- unless
-    // the model added it as it ran it and it worked (`../flow-draft/step.ts`).
-    const appended: AutomationStudioFlowDraftStep = { ...step, position: draftSteps.length + 1, id: `d${draftAppended}`, disposition: authoring ? "taken" : "kept" };
-    draftSteps.push(appended); // Before the add: a copy of a kept step stays taken, and the model is told which step does it (`./decision-handlers/second-copy.ts`).
-    if (authoring && authored?.add && automationStudioFlowDraftStepIsProposable(appended) && !automationStudioLlmEvidenceSecondCopyRefused(handling, appended)) appended.disposition = "kept";
-    if (authoring && appended.disposition === "kept" && authored?.act !== undefined) automationStudioLlmEvidenceClaimWrittenAct(handling, appended, authored.act); // One act, one step, and a step it leaves is told; a read does no act, and is told so (`./decision-handlers/amendment.ts`, `act_on_a_read`).
-    if (authoring && appended.disposition === "kept" && authored?.place !== undefined) automationStudioFlowDraftSetRoutePlaces(appended, authored.place); // The places on the named route it is on; a read may be on one too (`../flow-draft/route-places/set.ts`).
-    if (authoring && appended.disposition === "kept") { automationStudioFlowDraftKeepOpeners(draftSteps, appended); automationStudioFlowDraftDropReversals(draftSteps); } // The press that opened its page joins it (`../flow-draft/opener.ts`); a pair of presses on one control that changed nothing leaves (`../flow-draft/reversal.ts`).
+    // A step that ran is appended `taken`, and the framework then drafts the Flow over every step: one that worked is in, in run order, and one that
+    // only looked, failed, copied a step in, was undone or led nowhere is out, with why (`../flow-authoring/draft/compose/`). `add` changes nothing.
+    const appended: AutomationStudioFlowDraftStep = { ...step, position: draftSteps.length + 1, id: `d${draftAppended}`, disposition: "taken" };
+    draftSteps.push(appended);
+    composeDraft();
+    // `act` and `place` claim on the step when it is in, and it stays the framework's: a claimed act is lasting, so no detour or after-result rule takes it
+    // out, and a later press undoing it takes both out with the act (run `run-musp8nz1`). One out only for leading nowhere is claimed and comes back in.
+    if (authored?.act !== undefined && (appended.disposition === "kept" || appended.drafted === "dead_end")) {
+      automationStudioLlmEvidenceClaimWrittenAct(handling, appended, authored.act); // One act, one step, and a step it leaves is told; a read does no act, and is told so (`./decision-handlers/amendment.ts`, `act_on_a_read`).
+      if (appended.disposition !== "kept") composeDraft();
+    }
+    if (appended.disposition === "kept" && authored?.place !== undefined) automationStudioFlowDraftSetRoutePlaces(appended, authored.place); // The places on the named route it is on; a read may be on one too (`../flow-draft/route-places/set.ts`).
     return drafting && automationStudioFlowDraftStepIsAction(appended);
   };
   // A digest of the whole state, when the caller offered to take one. It is
@@ -219,6 +228,8 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
   // it when a newer note of its kind arrives (`decision-context/supersede.ts`);
   // a tool's result never does.
   const evidence: AutomationStudioLlmEvidenceEntry[] = [];
+  // Which steps read a list, and which read the table the instruction names, for the framework's choice of the result's read (`./evidence-loop/read-tests.ts`).
+  const readTests = automationStudioLlmEvidenceReadTests({ namedColumns: input.namedColumns, readRowsKey: input.readRowsKey, evidence });
   // Every decision and what the loop answered it, one row per place the loop
   // answers the model, shown beside the window (`decision-context/`).
   const history = new AutomationStudioLlmDecisionContextRecorder();
@@ -356,7 +367,9 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
   const handling: AutomationStudioLlmEvidenceDecisionHandlerContext = {
     loops: automationStudioLlmLoopWatch({ record: input.attemptRecord, holds: (toolId, value, state) => repeatGuard.blocks(toolId, value, state) !== undefined, refuseActs: input.loopSignal !== undefined, askedRepeats: input.askedRepeats, timingOf: automationStudioLlmEvidenceTimingOfNodes(input.definitionOf) }), loopOverdue: (iteration) => automationStudioLlmEvidenceLoopOverdue(handling, iteration), contextOf: draftOf, input, limits, trace, accounting, draftSteps, amendmentMemory, noProgress, evidence, toolIds, toolsById, observeToolFailures, counters,
     history, draftRevision: () => rows.draftRevision, lastAction: undefined, dryRunSeen: { ran: false }, reaskedRequests: new Set(), callStates: new Map(), repeats: repeatGuard,
-    recordRow, draftRecord, accountEvidence, unusable, dryRun, authored, refusalRun: automationStudioLlmEvidenceRefusalRun()
+    recordRow, draftRecord, accountEvidence, unusable, dryRun, authored, refusalRun: automationStudioLlmEvidenceRefusalRun(),
+    // The framework's draft, composed again after the model's edits (`../flow-authoring/draft/amendment/edits/`).
+    composeDraft
   };
   const batchHandling = automationStudioLlmPriorNodesSettlementContext(handling);
   const eligibleNow = () => tools.filter((tool) => runFlow.offered(tool) && (!automationStudioLlmEvidenceLookNeedsAttempt(tool, mutableTools) || observationEpochs.get(tool.toolId) !== counters.attemptEpoch)).map(({ actionInputKey: _key, ...offered }) => offered); // `actionInputKey` is the loop's own data, which provider adapters refuse on a tool (`./deepseek/preflight.ts`).
@@ -457,8 +470,8 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
     if (record.effect === "mutate") handling.lastAction = { callId, iteration };
     const draftChanged = !member && decision.toolId !== AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID && decision.toolId !== AUTOMATION_STUDIO_LLM_SET_RESULT_PROCESSING_TOOL_ID && draftRecord({ iteration, callId, ...record, ...(words ? { words } : {}), effectApplied, ...(resultCode ? { resultCode } : {}), ...(stateBefore !== undefined && stateAfter !== undefined ? { stateBefore, stateAfter } : {}), ...(rerunPlace ? { rerunPlace } : {}) }, { add: decision.add, act: decision.act, place: decision.place });
     if (!member) {
-      automationStudioLlmEvidenceRerunReplaced(draftSteps, rerunReplaces, { takesItsPlace: authoring });
-      if (authoring) automationStudioFlowDraftDropReversals(draftSteps);
+      automationStudioLlmEvidenceRerunReplaced(draftSteps, rerunReplaces);
+      composeDraft(); // The rerun stands where its step stood and the attempt it replaced is out (`./evidence-loop/rerun/replacement.ts`); the draft is composed over both.
     }
     const settled = rerunHeld ? automationStudioLlmEvidenceSettleHeldAmendments(handling, iteration, rerunHeld, rerunTook ? rerunReplaces : draftSteps.find((step) => step.callId === callId), { kind: rerunTook || (!refusedCall && (record.effect !== "mutate" || effectApplied || record.written === true)) ? "accepted" : "failed", callId }, execution) : undefined;
     // Whether this call's step is now in the Flow the model authors: added as it ran, or a rerun standing in for a step that was.
@@ -499,7 +512,7 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
       noProgress.redirect(iteration);
     }
     // Looks in a row with nothing done between: told at five, the round stalled at eight (`decision-handlers/searching.ts`).
-    const searching = automationStudioLlmEvidenceSearchingWithoutActing(member ? batchHandling : handling, iteration) ?? automationStudioLlmEvidenceLoopRan(member ? batchHandling : handling, iteration, { decision, answer: value, execution, returned: ran, effect: record.effect, refused: refusedCall, stateBefore, stateAfter, notCounted: member !== undefined || rerunReplaces !== undefined || rerunChecked, draftKey: drafting ? automationStudioLlmEvidenceDraftKey(draftSteps) : undefined, ranWith: record.ranWith, targetWords: words?.target }); // Looks in a row first; then what the loop detector makes of this call (`./decision-handlers/loop-check.ts`).
+    const searching = automationStudioLlmEvidenceSearchingWithoutActing(member ? batchHandling : handling, iteration) ?? automationStudioLlmEvidenceLoopRan(member ? batchHandling : handling, iteration, { decision, answer: value, execution, returned: ran, effect: record.effect, refused: refusedCall, stateBefore, stateAfter, notCounted: member !== undefined || rerunReplaces !== undefined || rerunChecked, ranWith: record.ranWith, targetWords: words?.target }); // Looks in a row first; then what the loop detector makes of this call (`./decision-handlers/loop-check.ts`). A call's landing moves the draft by itself, so the call's news is its act, page and rows; only an edit moves the draft (t1037).
     if (searching?.kind === "end") return searching.result;
     if (searching?.kind === "recover") {
       if (member) {
@@ -633,7 +646,7 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
     try {
       canAmend = drafting && !finalDecision && counters.draftAmendments < limits.maxDraftAmendments && draftSteps.some(automationStudioFlowDraftStepIsProposable);
       // Amending stays in the schema when it is not on offer, as a wrap-up's tools stay listed: the schema sits in the head, so its changing re-sends everything behind it (`loop-budget.ts`, t869). That holds for a loop that declares a draft to build (`input.draft`), where amending is the work; a loop that declares none (a recovery's exploration) offers the vocabulary only when a step can be amended, as before, so its roughly 6,600 characters are not sent on every call. An amendment asked when it is not on offer is refused as it always was.
-      const decisionSchema = buildAutomationStudioLlmEvidenceLoopDecisionSchema(offered, input.completionSchema, canComplete, input.draft ? limits.maxDraftAmendments > 0 : canAmend, drafting && authoring);
+      const decisionSchema = buildAutomationStudioLlmEvidenceLoopDecisionSchema(offered, input.completionSchema, canComplete, input.draft ? limits.maxDraftAmendments > 0 : canAmend, drafting);
       // From the second decision, when there is spending to measure it by; the first only when it is the last.
       const budgetEntry = remaining && (iteration > 1 || wrappingUp) ? automationStudioLlmEvidenceBudgetEntry(iteration, remaining, wrappingUp, input.discoveryOnly === true, input.finishingTools) : undefined;
       // Every evidence entry, and beside them the history, the draft and the
@@ -641,7 +654,7 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
       // (`decision-context/shown.ts` says why each is where it is).
       const decisionContext = automationStudioLlmDecisionContextShown({
         evidence, records: history.records(), budgetEntry, observedStateKeys: input.observedStateKeys, pageChannel: input.pageChannel, // The page shown in place, whole once and as changes after (`./view-channel/`).
-        draft: drafting ? { steps: draftSteps, authored: authoring, acts: input.draft ? input.draft.acts?.(draftSteps) : undefined, route: input.draft ? input.draft.route?.() : undefined } : undefined
+        draft: drafting ? { steps: draftSteps, acts: input.draft ? input.draft.acts?.(draftSteps) : undefined, route: input.draft ? input.draft.route?.() : undefined } : undefined
       });
       rows.draftShown = decisionContext.draftShown;
       const shown = priorNodes.shown(decisionContext.shown, batchOffer.candidates);

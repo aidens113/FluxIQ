@@ -13,7 +13,7 @@ it("refuses any model-authored processing stamp on run/write at the documented r
 
 it("refuses an authored amendment stamp with a repairable reason, including bare bind parameters and settings", () => {
   const stamp = { recordOutput: { process: { declaration: { version: 1 } } } };
-  for (const amendment of [{ step: 1, change: "rerun", input: { parameters: stamp } }, { step: 1, change: "bind", input: stamp }, { step: 1, change: "add", settings: stamp }]) {
+  for (const amendment of [{ step: 1, change: "rerun", input: { parameters: stamp } }, { step: 1, change: "bind", input: stamp }, { step: 1, change: "keep", settings: stamp }]) {
     const decision = { kind: "amend_draft", amendments: [{ step: 2, change: "drop" }, amendment] };
     expect(automationStudioLlmEvidenceParseDecision(decision)).toBeUndefined();
     expect(automationStudioLlmEvidenceDecisionIssueCodes(decision)).toEqual([CODE]);

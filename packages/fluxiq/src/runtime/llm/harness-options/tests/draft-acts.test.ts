@@ -36,7 +36,7 @@ describe("the draft says when a read misses a column the instruction names", () 
     const acts = automationStudioFlowBootstrapDraftActs({ instructionText: COLUMNS }).acts(steps);
 
     expect(notesOf(acts)).toEqual(["The instruction asks for a column \"rating\" that no read in the draft gives."]);
-    const entry = automationStudioFlowDraftEntry({ steps, authored: true, acts });
+    const entry = automationStudioFlowDraftEntry({ steps, acts });
     expect(JSON.stringify(entry?.value)).toContain("no read in the draft gives");
     expect(JSON.stringify(entry?.value)).not.toContain("of step 2");
   });
@@ -87,8 +87,8 @@ describe("the draft says when a read misses a column the instruction names", () 
 // naming the last act step and never the read.
 describe("the draft says when every read giving the named columns runs before the last act", () => {
   const RUN = "Go through my pending friend requests and confirm everyone I have at least five mutual friends with, leaving the rest alone. Then give me a table of every request the list now shows as accepted, in list order, with columns name and mutualFriends.";
-  const BEFORE = "Every read in the draft that gives \"name\", \"mutualFriends\" runs before step 10, the last step that does what the instruction asks, so it shows the page as it was before that act. If the instruction asks for what the page shows after it, run a new read after step 10 and add it; leave every read before step 10 where it is.";
-  const BEFORE_REPEATED = "Every read in the draft that gives \"name\", \"mutualFriends\" runs before step 10, the last step that does what the instruction asks, so it shows the page as it was before that act. If the instruction asks for what the page shows after it, run a new read after step 10 and add it; the listing step 10 repeats over stays where it is, before step 10.";
+  const BEFORE = "Every read in the draft that gives \"name\", \"mutualFriends\" runs before step 10, the last step that does what the instruction asks, so it shows the page as it was before that act. If the instruction asks for what the page shows after it, run a new read after step 10: running it puts it in the draft there; leave every read before step 10 where it is.";
+  const BEFORE_REPEATED = "Every read in the draft that gives \"name\", \"mutualFriends\" runs before step 10, the last step that does what the instruction asks, so it shows the page as it was before that act. If the instruction asks for what the page shows after it, run a new read after step 10: running it puts it in the draft there; the listing step 10 repeats over stays where it is, before step 10.";
 
   function confirmStep(position: number, disposition: AutomationStudioFlowDraftStep["disposition"] = "taken"): AutomationStudioFlowDraftStep {
     return {

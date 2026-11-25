@@ -21,8 +21,12 @@ export function automationStudioFlowDraftMarkDeadEnds(
   let index = 0;
   while (index < ordered.length) {
     const step = ordered[index]!;
-    const returned = framework.has(step) && step.disposition === "kept" && step.effect === "mutate" && step.stateBefore !== undefined
-      ? lastReturn(ordered, index, step.stateBefore)
+    // A detour starts where a press left the state it found. A press that left it as it was -- opening a form the
+    // digest does not see, typing into a field -- went nowhere to come back from: taken for a detour, the opening and
+    // the note a form's lasting press then sent were left out (t1037 phase 2, the library card's note).
+    const left = step.stateBefore !== undefined && step.stateAfter !== undefined && step.stateAfter !== step.stateBefore;
+    const returned = framework.has(step) && step.disposition === "kept" && step.effect === "mutate" && left
+      ? lastReturn(ordered, index, step.stateBefore!)
       : -1;
     if (returned < 0 || ordered.slice(index, returned + 1).some((inside) => automationStudioFlowDraftStepIsLasting(inside, framework, resultReads))) {
       index += 1;

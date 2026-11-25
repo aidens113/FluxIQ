@@ -9,9 +9,12 @@
 // - **Only where the loop drafts and runs its dry run.** A loop with no draft
 //   has no Flow to run, and a loop whose caller turned the dry run off cannot
 //   run a step again (`../loop-configuration.ts`, `dryRun`).
-// - **Only while the draft holds a proposed step that can run again**: one
-//   with what it ran with and how to run it again. Before that, and in a draft
-//   carried whole from an earlier Flow, there is nothing it could run.
+// - **From the first decision, and never withdrawn** (page-diff D11: one fixed
+//   tool list for the whole run, so the head of every request stays the same).
+//   While the draft holds no proposed step that can run again -- one with what
+//   it ran with and how to run it again, as before the first step and in a
+//   draft carried whole from an earlier Flow -- a call is refused by name
+//   (`run_flow.nothing_to_run`), with a short answer that says why.
 // - **Only where the caller's own tools can act.** A loop offered nothing that
 //   changes anything -- a repair's exploration -- is one where nothing can
 //   mutate, and the loop's repeat rules and its configuration check both read
@@ -33,6 +36,10 @@ import { AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID } from "./run-flow-tool-id.ts";
 
 /** The most tools a loop may offer (`../evidence-loop-decision.ts`); the tool is not added past it. */
 const MAX_TOOLS = 32;
+
+/** The code a call is refused under while the Flow has no step that can run again, and what it is told. */
+const NOTHING_TO_RUN_CODE = "run_flow.nothing_to_run";
+const NOTHING_TO_RUN = "Nothing was run: no step of the Flow can be run again yet. Run the steps the Flow needs first; a step that works joins it.";
 
 const DESCRIPTION = [
   "Run the Flow's own steps again, from step `from` to step `to` (or to its last step), numbered as the draft shows them,",
@@ -102,7 +109,7 @@ type RunFlowLoop = {
  * The loop's tools with `core.run_flow` after them, when it may be offered;
  * an executor that answers it by running the draft's steps through the loop's
  * own executor and passes every other call on; and whether a tool may be
- * offered to the next decision.
+ * offered to the next decision, which `core.run_flow` always is.
  */
 export function automationStudioLlmRunFlowBinding(loop: RunFlowLoop): {
   tools: AutomationStudioLlmEvidenceTool[];
@@ -121,10 +128,20 @@ export function automationStudioLlmRunFlowBinding(loop: RunFlowLoop): {
     tools: adds ? [...tools, automationStudioLlmRunFlowTool(loop.forward !== undefined)] : tools,
     executeTool: adds
       ? async (input) => input.toolId === AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID
-        ? runAutomationStudioFlowDraftPart({ steps, value: input.value, callId: input.callId, executeTool, signal: input.signal, ...(loop.lastingActs ? { lastingActs: await loop.lastingActs() } : {}), ...(loop.nodeOf ? { nodeOf: loop.nodeOf } : {}), ...(loop.definitionOf ? { definitionOf: loop.definitionOf } : {}), ...(loop.partOf ? { partOf: loop.partOf } : {}), ...(loop.namedColumns ? { namedColumns: loop.namedColumns } : {}), ...(loop.forward ? { forward: loop.forward } : {}), ...(look ? { look } : {}) })
+        ? !replayable(steps) ? nothingToRun() : runAutomationStudioFlowDraftPart({ steps, value: input.value, callId: input.callId, executeTool, signal: input.signal, ...(loop.lastingActs ? { lastingActs: await loop.lastingActs() } : {}), ...(loop.nodeOf ? { nodeOf: loop.nodeOf } : {}), ...(loop.definitionOf ? { definitionOf: loop.definitionOf } : {}), ...(loop.partOf ? { partOf: loop.partOf } : {}), ...(loop.namedColumns ? { namedColumns: loop.namedColumns } : {}), ...(loop.forward ? { forward: loop.forward } : {}), ...(look ? { look } : {}) })
         : executeTool(input)
       : executeTool,
-    offered: (tool) => !adds || tool.toolId !== AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID
-      || steps.some((step) => automationStudioFlowDraftStepIsProposed(step) && step.ranWith !== undefined && step.replay !== undefined)
+    // Offered from the first decision; a call before there is anything to run is refused by name (header).
+    offered: () => true
   };
+}
+
+/** Whether the draft holds a proposed step that can run again: what it ran with, and how to run it again. */
+function replayable(steps: readonly AutomationStudioFlowDraftStep[]): boolean {
+  return steps.some((step) => automationStudioFlowDraftStepIsProposed(step) && step.ranWith !== undefined && step.replay !== undefined);
+}
+
+/** The refusal of a call made before the Flow has a step that can run again: by name, short, and nothing ran. */
+function nothingToRun(): AutomationStudioLlmEvidenceToolExecutionResult {
+  return { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: NOTHING_TO_RUN_CODE, reason: NOTHING_TO_RUN }, effectApplied: false, resultCode: NOTHING_TO_RUN_CODE };
 }
