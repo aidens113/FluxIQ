@@ -51,9 +51,14 @@ describe("run-mwohvt8n-a57cad8a's judge 0022 as a continuation of decider 0021",
     expect(blocks).toHaveLength(mark + 2);
     const appended = JSON.parse(blocks[mark + 1]!.text) as { expectedOutput: string; context: { resultSummary: { trail: { entries: { callId?: string }[]; shownAbove?: string } } } };
     expect(appended.expectedOutput).toBe("diagnosis");
-    const held = new Set(deciderBlocks.slice(1, mark + 1).map(callIdOf).filter((callId): callId is string => callId !== undefined));
-    for (const entry of appended.context.resultSummary.trail.entries) expect(held.has(entry.callId ?? ""), entry.callId).toBe(false);
-    expect(appended.context.resultSummary.trail.shownAbove).toMatch(/^\d+ of the attempt's calls are in its evidence above/u);
+    // Held means held whole (t1044): a call whose page or rows above are only a reference to the tail after the mark stays in the trail.
+    const above = deciderBlocks.slice(1, mark + 1).map(callIdOf).filter((callId): callId is string => callId !== undefined);
+    const held = new Set(prefix.callIds);
+    expect(above.filter((callId) => !held.has(callId))).toEqual(["initial.core.run_node", "step3.type_search", "step4.open_hood_listing", "step5.open_seller_shop", "step7.extract_seller_items", "step10.extract_seller_items"]);
+    const sent = appended.context.resultSummary.trail.entries.map((entry) => entry.callId);
+    for (const callId of sent) expect(held.has(callId ?? ""), callId).toBe(false);
+    expect(sent).toEqual(["initial.core.run_node", "step3.type_search", "step4.open_hood_listing", "step5.open_seller_shop", "step7.extract_seller_items", "step10.extract_seller_items"]);
+    expect(appended.context.resultSummary.trail.shownAbove).toMatch(/^3 of the attempt's calls are in its evidence above/u);
     expect(wire.messages).toHaveLength(2);
     expect(wire.messages[1]).toMatchObject({ role: "system" });
     expect(wire.messages[1]!.content).toContain(judgeSystem);
