@@ -40,7 +40,7 @@ export function automationStudioLlmPriorNodesAdmission(input: {
       const original = { toolId: record.toolId, input: record.originalValue };
       const read = input.admission(original, context, { priorSuccessful: true });
       const canonical = input.admission({ ...original, input: { ...record.originalValue, node: record.definitionId } }, context, { priorSuccessful: true });
-      return { read, allowed: read.tool !== undefined && !read.withdrawn && !read.deadline && !read.final && !read.triedHere && !read.answered && !canonical.withdrawn && !canonical.triedHere && !canonical.answered && canonical.nodeOffered !== false };
+      return { read, allowed: read.tool !== undefined && !read.deadline && !read.final && !read.triedHere && !read.answered && !canonical.triedHere && !canonical.answered && canonical.nodeOffered !== false };
     }
   };
 }

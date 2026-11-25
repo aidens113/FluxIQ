@@ -19,13 +19,12 @@ import {
   type AutomationStudioLlmEvidenceLoopDecision,
   type AutomationStudioLlmEvidenceLoopTrace
 } from "../evidence-loop/index.ts";
-import { automationStudioLlmEvidenceAskedAgain } from "./look-withdrawal.ts";
 import type { AutomationStudioLlmEvidenceDecisionHandlerContext, AutomationStudioLlmEvidenceDecisionNext } from "./types.ts";
 
 /**
  * Answers one tool call from what the loop already holds: the loop ends, or
  * asks again. It takes no digest (`./answer-check.ts`), and an answer given
- * right after a redirect withdraws looks (`./look-withdrawal.ts`).
+ * withdraws nothing (page-diff D4: there is no look to withdraw).
  */
 export function automationStudioLlmEvidenceHandleAnsweredRequest(
   context: AutomationStudioLlmEvidenceDecisionHandlerContext,
@@ -67,8 +66,6 @@ export function automationStudioLlmEvidenceHandleAnsweredRequest(
   // After the note, so the redirection is the newest thing the model reads;
   // at once from the second answer out of the same result.
   const answeredAgain = records.filter((record) => record.decision.kind === "answered" && record.decision.signature === signature && record.decision.answeredByCallId === answeredByCallId).length;
-  // Asked again straight after a redirect: looking is withdrawn until an action runs.
-  automationStudioLlmEvidenceAskedAgain(context, iteration);
   noProgress.redirect(iteration, answeredAgain >= 2);
   return { kind: "continue" };
 }

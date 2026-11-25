@@ -37,8 +37,8 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_SEARCHING_CODE = "llm_evidence_loop.
 /** The longest look input listed whole; a longer one is listed by its call id alone. */
 const MAX_LISTED_INPUT = 300;
 
-const LOOKED = "You have looked at or searched the page this many times in a row, and nothing changed between them: no control was used and the page did not move. "
-  + "Their answers are above, under the call ids listed here, and looking again will not change the page. ";
+const LOOKED = "You have asked about the page this many times in a row, and nothing changed between them: no control was used and the page did not move. "
+  + "Their answers are above, under the call ids listed here, and asking again will not change the page. ";
 const ACT = LOOKED
   + "Act on what you found: press, type into or choose a control the page shows, go to another page, use the page's own search or menus, or amend or complete the draft. "
   + "If what you need is not on this page, go where it is.";
@@ -51,7 +51,7 @@ const PLANNING_STOP = " At maxLooksInARow looks in a row the searching is stoppe
  * handle directly are looks, and a live run (`run-mwufisf0-5535f5f5`) answered this note by describing the
  * control it meant to press, again and again.
  */
-const HOW_TO_ACT = " A look never presses: to press, type into or choose a control, call core.run_node with the node from the catalog that does it, naming the control under target as {\"handle\": \"<its handle>\"}.";
+const HOW_TO_ACT = " Asking about the page never presses: to press, type into or choose a control, call core.run_node with the node from the catalog that does it, naming the control under target as {\"handle\": \"<its handle>\"}.";
 
 /** The tool a loop that runs library nodes acts through, restated from `../node-tools/run/node.ts` rather than imported, as `../evidence-loop-decision.ts` does. */
 const RUN_NODE_TOOL_ID = "core.run_node";

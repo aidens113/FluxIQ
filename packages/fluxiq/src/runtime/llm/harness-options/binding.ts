@@ -20,6 +20,7 @@ import type { AutomationStudioExplorationRefusalClassifier, AutomationStudioExpl
 import type { AutomationStudioLlmDomainSystemInstructions } from "../domain-instructions/index.ts";
 import type { AutomationStudioFlowScriptExamples } from "../../flow-authoring/bootstrap/script-examples/index.ts";
 import type { AutomationStudioFlowScriptGuidance } from "../../flow-authoring/bootstrap/script-guidance/index.ts";
+import type { AutomationStudioLlmPageChannelDeclaration } from "../view-channel/index.ts";
 import type { AutomationStudioResolvedControlIntent } from "../resolved-control-intent/index.ts";
 import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
 import type { AutomationStudioLlmFailureEvidenceCaptureInput, AutomationStudioRuntimeTargetOverrideTarget } from "../harness/index.ts";
@@ -210,6 +211,24 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
    * an earlier one back whole (t194 w48, `../evidence-recall/`).
    */
   observedStateKeys?: readonly string[];
+  /**
+   * The page channel (page-diff D1, D5, D6): where a tool result carries this
+   * domain's page as keyed lines (`member`, a page view of
+   * `../view-channel/view.ts`), the most page text one delivery carries
+   * (`budgetChars`, default `AUTOMATION_STUDIO_LLM_PAGE_BUDGET_CHARS`), and a
+   * full capture of the page the work is on (`fullPage`, hidden elements and
+   * attributes as `extra` lines; input shaped like `observeResult`'s).
+   *
+   * Declared, each decision is shown every result's page in place: whole the
+   * first time the window meets its page key, and only what changed on it
+   * after; the member takes no view reference and no current-view tail, so it
+   * need not be among `observedStateKeys` for the window (other readers of
+   * those keys still see it there if the domain lists it). With `fullPage`,
+   * `core.full_page` is offered from the first decision on. Core diffs keys
+   * and texts for equality and never parses page words. Nothing of it is kept
+   * past the run. Absent, the window is as it was.
+   */
+  pageChannel?: AutomationStudioLlmPageChannelDeclaration;
   /**
    * The keys under which this domain's step arguments carry the row a control
    * was found in -- for the web domain, a press's `element.context.record`.
@@ -624,6 +643,7 @@ export function automationStudioHarnessOptionRegistry(input: {
     const runImplementation = bundle.implementations[AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID];
     if (memory && runImplementation) bundle.implementations[AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID] = automationStudioLlmRunNodeDescribingFailures(runImplementation, memory);
     registry.register(bundle);
+    registry.declarePageChannel(input.binding.pageChannel);
     if (memory) registry.register(automationStudioLlmDescribeNodesBundle(memory));
     if (runNode && input.runPart) registry.register(input.runPart);
   }

@@ -2,9 +2,13 @@
 // Declared view members become references on their first appearance; appending
 // evidence never rewrites an earlier historical result. Raw evidence stays whole
 // for recall and execution. No entry, view member or row is ranked or truncated.
+// A declared page channel is the exception for its own member: the page is shown
+// in place, whole once and as changes after, and a page's earlier copies become
+// references when it is shown whole again (`./view-channel/projection.ts`, D7).
 import type { JsonObject, JsonValue } from "../../core/index.ts";
 import { automationStudioLlmEvidenceCurrentView } from "./decision-context/index.ts";
 import { AUTOMATION_STUDIO_LLM_PASSING_NOTE_TOOL_IDS } from "./evidence-moves/index.ts";
+import { automationStudioLlmPageChannelProjection, type AutomationStudioLlmPageChannel } from "./view-channel/index.ts";
 
 /** One evidence entry as a decision is shown it, and as the loop holds it. */
 export type AutomationStudioLlmEvidenceEntry = { callId: string; toolId: string; value: JsonValue };
@@ -27,9 +31,14 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_SUPERSEDED_KEY = "supersededBy";
  */
 export function automationStudioLlmEvidenceContextWindow(
   records: readonly AutomationStudioLlmEvidenceEntry[],
-  observedStateKeys: readonly string[] = []
+  observedStateKeys: readonly string[] = [],
+  pageChannel?: AutomationStudioLlmPageChannel
 ): AutomationStudioLlmEvidenceEntry[] {
-  const { history, currentView } = automationStudioLlmEvidenceCurrentView(records, observedStateKeys);
+  // With a page channel each result's page is shown in place as its delivery (D3): whole once, changes after.
+  // Its member then takes no view reference and no current-view tail; every other view key keeps both.
+  const paged = pageChannel ? automationStudioLlmPageChannelProjection(records, pageChannel) : records;
+  const keys = pageChannel ? observedStateKeys.filter((key) => key !== pageChannel.member) : observedStateKeys;
+  const { history, currentView } = automationStudioLlmEvidenceCurrentView(paged, keys);
   const current = currentFlow(records);
   const passing = (entry: AutomationStudioLlmEvidenceEntry): boolean => AUTOMATION_STUDIO_LLM_PASSING_NOTE_TOOL_IDS.has(entry.toolId);
   return [...history.filter((entry) => !passing(entry)), ...history.filter(passing), ...(currentView ? [currentView] : []), ...(current ? [current] : [])];

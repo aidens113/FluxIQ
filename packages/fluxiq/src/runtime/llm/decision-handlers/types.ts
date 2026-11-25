@@ -27,7 +27,6 @@ import type {
 import type { AutomationStudioLlmEvidenceRepeatGuard, AutomationStudioLlmLoopWatch } from "../repeat-guard/index.ts";
 import type { AutomationStudioLlmEvidenceLoopInput, EvidenceLoopLimits } from "../loop-configuration.ts";
 import type { AutomationStudioFlowDraftDryRunRefusal } from "../node-tools/index.ts";
-import type { AutomationStudioLlmEvidenceLookWithdrawal } from "./look-withdrawal.ts";
 
 /** What a recorded row changed, beside the row itself: the loop turns it into the row's `progress`. */
 export type AutomationStudioLlmEvidenceRowTransition = {
@@ -110,8 +109,6 @@ export type AutomationStudioLlmEvidenceDecisionHandlerContext = {
   loopOverdue(iteration: number): Extract<import("./refused-repeat.ts").AutomationStudioLlmEvidenceRefusedRepeatNext, { kind: "stalled" | "end" | "recover" }> | undefined;
   /** What a tool's call is answered against besides its page: the backend target key, or the draft a part run runs. */
   contextOf(toolId: string): string | undefined;
-  /** Looks withdrawn after an ignored redirect (`./look-withdrawal.ts`). */
-  looks: AutomationStudioLlmEvidenceLookWithdrawal;
   toolIds: ReadonlySet<string>;
   toolsById: ReadonlyMap<string, AutomationStudioLlmEvidenceTool>;
   /** Whether a failed call is shown to the model rather than ending the loop. */

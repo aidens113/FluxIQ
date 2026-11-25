@@ -150,7 +150,7 @@ export function automationStudioHarnessOptionIssues(option: AutomationStudioHarn
  * fields and nothing else. Provider adapters reject an unknown key on a tool,
  * so the gate metadata is dropped here rather than travelling and being
  * ignored; `actionInputKey` is the loop's own and the loop strips it from
- * every tool it offers (`../decision-handlers/look-withdrawal.ts`). Written field by field, never spread, so a renamed tool field is a
+ * every tool it offers (`../evidence-loop.ts`, `eligibleNow`). Written field by field, never spread, so a renamed tool field is a
  * compile error instead of a silently wider payload.
  */
 export function automationStudioHarnessOptionTool(option: AutomationStudioHarnessOption): AutomationStudioLlmEvidenceTool {

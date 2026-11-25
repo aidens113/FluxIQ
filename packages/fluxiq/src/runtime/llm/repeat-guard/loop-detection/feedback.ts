@@ -42,8 +42,8 @@ const UNCHANGED_WORDS: Readonly<Record<AutomationStudioLlmLoopUnchanged, string>
 
 /** What the model's own loop can do instead: a loop that drafts nothing has no draft to change. */
 const DO_INSTEAD = {
-  drafted: "Do something different: look at or search the page for what you need, use a different control or a different input, go to another page, amend the draft, or ask the person.",
-  undrafted: "Do something different: look at or search the page for what you need, use a different control or a different input, go to another page, or ask the person."
+  drafted: "Do something different: read the page below for what you need, use a different control or a different input, go to another page, amend the draft, or ask the person.",
+  undrafted: "Do something different: read the page below for what you need, use a different control or a different input, go to another page, or ask the person."
 } as const;
 
 /** Which loop is being told: whether it holds a draft it can amend. */

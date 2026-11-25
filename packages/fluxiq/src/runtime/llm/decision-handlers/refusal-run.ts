@@ -132,7 +132,7 @@ function undraftedWarning(inARow: number, reason: string): string {
  */
 function candidateWarning(inARow: number, reason: string): string {
   return `Your last ${inARow} decisions were refused, or changed nothing, for the same reason (${reason}). One more decision refused for it ends this build with nothing tested. `
-    + "Do not send another decision of that kind: do what next beside the refusal says instead -- correct the lines a refused submission names and submit the whole candidate again -- or look at the page for what the Flow still needs.";
+    + "Do not send another decision of that kind: do what next beside the refusal says instead -- correct the lines a refused submission names and submit the whole candidate again -- or read the page below for what the Flow still needs.";
 }
 
 /** The digest of a refusal's issues a kind may end in (`:` and 8 hex digits). */

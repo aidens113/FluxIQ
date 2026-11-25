@@ -52,7 +52,7 @@ export function automationStudioLlmEvidenceTellRerunSameResult(context: Automati
     code: "llm_evidence_loop.rerun_same_result",
     step,
     instruction: `The rerun of step ${step} changed its argument, but it found exactly what step ${step} found before: the change made no difference to what step ${step} found, so this rerun counts toward stopping this exploration. `
-      + `Do not rerun step ${step} again with a near-identical argument. If what it found is what the instruction asks for, go on from it -- do the act, or complete. Otherwise change what decides the result, or look at the page first to see why it stays the same.`
+      + `Do not rerun step ${step} again with a near-identical argument. If what it found is what the instruction asks for, go on from it -- do the act, or complete. Otherwise change what decides the result, or read the page below first to see why it stays the same.`
   };
   context.accountEvidence(value);
   automationStudioLlmDecisionContextSupersede(context.evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_RERUN_RESULT_TOOL_ID);

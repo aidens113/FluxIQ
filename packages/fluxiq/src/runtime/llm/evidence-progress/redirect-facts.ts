@@ -13,7 +13,6 @@ export function automationStudioLlmEvidenceRedirectFacts(input: {
   completionAttempts: number;
   canComplete: boolean;
   answerability: AutomationStudioLlmEvidenceLoopAnswerability | undefined;
-  looksWithdrawn: boolean;
 }): Omit<AutomationStudioLlmEvidenceStallRedirectInput, "stepsWithoutProgress" | "maxStepsWithoutProgress" | "repeatingToolIds" | "lastIssueCodes"> {
   const { config, steps } = input;
   return {
@@ -22,7 +21,6 @@ export function automationStudioLlmEvidenceRedirectFacts(input: {
     canComplete: input.canComplete,
     ...(config.discoveryOnly ? { discoveryOnly: true, candidate: automationStudioLlmEvidenceLatestCandidateReceipt(input.evidence, config.finishingTools?.submit), finishing: config.finishingTools } : {}),
     answerability: input.answerability,
-    looksWithdrawn: input.looksWithdrawn,
     actsMissing: config.draft ? config.draft.actsMissing?.(steps) : undefined,
     acts: config.draft ? config.draft.acts?.(steps) : undefined,
     // A loop with a loop signal is an attempt's: it ends a round, never the task (`./stall-redirect.ts`).

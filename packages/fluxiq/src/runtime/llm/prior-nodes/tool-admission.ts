@@ -11,7 +11,6 @@ export function automationStudioLlmEvidenceToolAdmission(input: {
   toolsById: ReadonlyMap<string, AutomationStudioLlmEvidenceTool>;
   eligibleToolIds: ReadonlySet<string>;
   offered: readonly AutomationStudioLlmEvidenceTool[];
-  looks: AutomationStudioLlmEvidenceDecisionHandlerContext["looks"];
   repeats: AutomationStudioLlmEvidenceDecisionHandlerContext["repeats"];
   answeredRequests: ReadonlyMap<string, string>;
   latestObservations: ReadonlyMap<string, string>;
@@ -28,11 +27,10 @@ export function automationStudioLlmEvidenceToolAdmission(input: {
   priorSuccessful?: boolean;
 }) {
   const tool = input.toolsById.get(input.toolId);
-  const withdrawn = !input.rerunning && tool !== undefined && input.looks.refuses(tool, input.value, input.attemptEpoch);
   const candidateOfferedTool = input.discoveryOnly && input.offered.some((offered) => offered.toolId === input.toolId);
   const deadline = candidateOfferedTool && input.deadlineExpired;
   const final = input.finalDecision && Boolean(input.remaining && input.remaining.limitedBy !== "cost") && !candidateOfferedTool;
-  if (!tool) return { tool, withdrawn, deadline, final };
+  if (!tool) return { tool, deadline, final };
   const signature = automationStudioLlmEvidenceRequestSignature({ tool, mutationEpoch: input.mutationEpoch, attemptEpoch: input.attemptEpoch, input: input.draftKey ? { ...input.value, draftKey: input.draftKey } : input.value });
   const answeredBy = input.answeredRequests.get(signature);
   const reobservation = !input.eligibleToolIds.has(input.toolId), withheld = input.withholds(input.toolId, input.value);
@@ -46,7 +44,7 @@ export function automationStudioLlmEvidenceToolAdmission(input: {
   const offered = input.offered.find((candidate) => candidate.toolId === input.toolId);
   const properties = offered?.inputSchema.properties;
   const node = properties && typeof properties === "object" && !Array.isArray(properties) ? properties.node : undefined;
-  return { tool, withdrawn, deadline, final, signature, triedHere, answered, code, by, withheld, reobservation, nodeOffered: acceptsNode(node, input.value.node) };
+  return { tool, deadline, final, signature, triedHere, answered, code, by, withheld, reobservation, nodeOffered: acceptsNode(node, input.value.node) };
 }
 
 /** Only the offered node selector is inspected; all parameter/permission validation remains with the runner. */

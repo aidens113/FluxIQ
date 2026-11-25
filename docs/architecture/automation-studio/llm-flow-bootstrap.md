@@ -3897,18 +3897,14 @@ that is prose the model rewords -- is still checked and replayed; its
 `core.completion_check` feedback gains `sameAsIteration` and `timesSent` unless
 the check already wrote those keys.
 
-An ignored redirect withdraws looking. When a no-progress redirect was shown and
-the next decision again asks for what the loop holds (answered from memory, or a
-verified repeat), looks are withdrawn from the following decision until an action
-runs and the attempt epoch moves: an observe-only tool is not offered, and a tool
-that runs many actions and names the input that picks one (`actionInputKey`,
-`node` on `core.run_node`) is offered with that input's enum narrowed to exclude
-the actions this build saw report `effect: "observe"` and `proposes: false`. The
-key itself is never sent to a provider. A withdrawn look asked for anyway is
-refused as the unusable decision `llm_evidence_loop.look_withdrawn` -- never
-answered from memory, never run -- and counts toward the no-progress stop. The
-decision history lists the withdrawal among its redirects. Only loops that can
-refuse a decision (`unusableDecisions`) withdraw looks.
+Nothing is withdrawn (page-diff D4, D11, t1036). An ignored redirect used to take
+looks away for a decision, narrowing the offered tools and `core.run_node`'s `node`
+enum; every such change moved the provider's cached prefix. There is no look command
+now: each result carries its page (`./evidence-window.md`, "The page channel"), and
+a tool not on offer is refused by name rather than removed from the schema. The
+loop still strips `actionInputKey` (the input that picks an action, `node` on
+`core.run_node`) from every tool it offers: it is the loop's own bookkeeping and is
+never sent to a provider.
 
 The state digests a build records come from the calls themselves. A binding that
 sets `stateDigestsOnCalls` reports on every execution result the digests of the

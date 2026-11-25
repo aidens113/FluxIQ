@@ -29,7 +29,7 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW = 3;
 const INSTRUCTION = "You already made this exact call -- the same tool with the same input -- on this exact page, and it did not work then, changed nothing, or ended on the same page as the same call before it (then.outcome). "
   + "Making it again from this page does the same, so it was not run and cost nothing but this decision. "
   + "Do something different instead: amend the draft (rerun a step with a corrected argument, mark it optional, or drop it), "
-  + "look at or search the page for what you need, use a different control or a different input, or ask the person. "
+  + "read the page below for what you need, use a different control or a different input, or ask the person. "
   + "A call that runs after the page has changed is not a repeat. Repeats refused in a row end this round, and the Flow so far is then tested and judged.";
 
 /**
@@ -52,7 +52,7 @@ function sameResultInstruction(recall: "offered" | "unknown" | "absent", timingL
     + recallWords
     + (timingLeftOut ? "Changing only how long a call waits does not make it a different call. " : "")
     + "Do something different instead: amend the draft (rerun a step with a corrected argument, mark it optional, or drop it), "
-    + "look at or search the page for what you need, use a different control or a different input, or ask the person. "
+    + "read the page below for what you need, use a different control or a different input, or ask the person. "
     + "A call that runs after the page has changed is not a repeat. Repeats refused in a row end this round, and the Flow so far is then tested and judged.";
 }
 
@@ -75,10 +75,10 @@ const COVERED_INSTRUCTION = "You already made this exact press, and it was refus
   + "Press one of those first, or another control inside that layer -- never a control the page marks as covered by it. "
   + "Then this press may be made again: a call made after the page has changed is not a repeat. Repeats refused in a row end this round, and the Flow so far is then tested and judged.";
 
-/** Said instead for a look that already answered the same on this page (`same_answer`). */
-const LOOK_INSTRUCTION = "You already made this exact look -- the same tool with the same input -- on this exact page, and it answered the same twice: its answer is above, under sameAsCall. "
+/** Said instead for a request that already answered the same on this page (`same_answer`). */
+const LOOK_INSTRUCTION = "You already made this exact request -- the same tool with the same input -- on this exact page, and it answered the same twice: its answer is above, under sameAsCall. "
   + "The page has not changed, so asking again answers the same again; it was not run. "
-  + "Change your approach: act on what the answers show (press, type into or choose a control the page shows), go to another page, use the page's own search or menus, or look for something different. "
+  + "Change your approach: act on what the answers show (press, type into or choose a control the page shows), go to another page, use the page's own search or menus, or ask for something different. "
   + "Repeats refused in a row end this round, and the Flow so far is then tested and judged.";
 
 /**
@@ -87,7 +87,7 @@ const LOOK_INSTRUCTION = "You already made this exact look -- the same tool with
  * right, and the same call runs again once a call has shown or minted the handle.
  */
 const HANDLE_UNSHOWN_INSTRUCTION = "You already made this exact call -- the same tool with the same input -- on this exact page, and it failed because a handle it names was never shown here (then.resultReason): no call had shown or minted that handle yet, and none has since, so it was not run. "
-  + "The call itself may be right. First make the call that shows the handle: look at the page, which lists each control under its handle, "
+  + "The call itself may be right. First make the call that shows the handle: read the page below, which lists each control under its handle, "
   + "or for a list's extraction handle detect the list's repeating structure from one of its items, which mints the handle and its fields. "
   + "Once a call has shown it, this same call may be made again with the handle exactly as shown. Repeats refused in a row end this round, and the Flow so far is then tested and judged.";
 

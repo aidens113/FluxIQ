@@ -61,7 +61,7 @@ describe.each(["call", "flow", "build"] as const)("the common %s request copy", 
     expect(JSON.stringify(shown)).not.toContain("OMITTED_RAW_CAPTURE");
   });
 
-  it.each([undefined, [] as string[], ["update"]])("requires real witnesses for a data-role mixed action with consequences %j", (consequences) => {
+  it.each([undefined, [] as string[], ["update"]])("requires the end witness for a data-role mixed action, and the before witness only with lasting consequences %j", (consequences) => {
     for (const facts of [{ effectApplied: true }, { effectApplied: false, failure: FAILURE }]) {
       const original = { ...base(), trail: actualTrail(source, false, { ...facts, ...(consequences === undefined ? {} : { consequences }) }) };
       const shown = automationStudioResultJudgeSummary(original, { ...OPTIONS, projectJudgeEvidence: projector });
@@ -71,10 +71,35 @@ describe.each(["call", "flow", "build"] as const)("the common %s request copy", 
       expect(shown.evidenceProjection?.missing).toEqual([]);
       const { startView: _before, endView: _after, ...missing } = original;
       const gap = automationStudioResultJudgeSummary(missing, { ...OPTIONS, projectJudgeEvidence: projector });
-      expect(gap.evidenceProjection?.missing).toContainEqual({ source: "witnesses.before", codes: ["judge_evidence.before_state_missing"] });
+      // The before side is asked for only after a lasting act (declared consequences); the end side after any act (t1036).
+      const before = { source: "witnesses.before", codes: ["judge_evidence.before_state_missing"] };
+      if (consequences?.length) expect(gap.evidenceProjection?.missing).toContainEqual(before);
+      else expect(gap.evidenceProjection?.missing).not.toContainEqual(before);
       expect(gap.evidenceProjection?.missing).toContainEqual({ source: "witnesses.after", codes: ["judge_evidence.after_state_missing"] });
       expect(automationStudioResultVerdict({ summary: gap, basis: "model", diagnosis: { answersRequest: "yes" } }).verdict).toBe("unsure");
     }
+  });
+});
+
+// t1036 Lab run `run-mwvtl0qe-73df7041`: a task that only dismissed a notice, filtered, sorted and read had no before
+// reading (an exploration reads one only before a lasting act), and every completion the judge said yes to was held.
+describe("the before side is needed only where a lasting act ran", () => {
+  const act = (classes: string[]) => ({ id: `act.${classes.join("-") || "press"}`, what: "Filter", where: "On the site", classes, state: "landed" });
+  const withActs = (acts: JsonObject[]): AutomationStudioRunResultSummary => {
+    const { startView: _noBefore, ...rest } = base();
+    return { ...rest, trail: actualTrail("call", true, { effectApplied: true }), acts } as unknown as AutomationStudioRunResultSummary;
+  };
+
+  it("confirms a yes after only acts with no lasting class, with no before reading", () => {
+    const shown = automationStudioResultJudgeSummary(withActs([act([]), act([])]), { ...OPTIONS, projectJudgeEvidence: projector });
+    expect(shown.evidenceProjection?.missing).toEqual([]);
+    expect(automationStudioResultVerdict({ summary: shown, basis: "model", diagnosis: { answersRequest: "yes" } }).verdict).toBe("answers");
+  });
+
+  it("still holds a yes after a lasting act with no before reading", () => {
+    const shown = automationStudioResultJudgeSummary(withActs([act([]), act(["create_new"])]), { ...OPTIONS, projectJudgeEvidence: projector });
+    expect(shown.evidenceProjection?.missing).toContainEqual({ source: "witnesses.before", codes: ["judge_evidence.before_state_missing"] });
+    expect(automationStudioResultVerdict({ summary: shown, basis: "model", diagnosis: { answersRequest: "yes" } }).verdict).toBe("unsure");
   });
 });
 

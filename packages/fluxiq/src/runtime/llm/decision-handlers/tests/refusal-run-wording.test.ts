@@ -33,6 +33,6 @@ describe("the warning that one more refusal of a kind ends the round", () => {
     expect(warning({})).toBe(`Your last 2 decisions were refused, or changed nothing, for the same reason (${reason}). One more decision refused for it ends this exploration, and the Flow is then tested and judged as it stands. `
       + "Do not send another decision of that kind: do what next beside the refusal says instead, run what the Flow still lacks, or complete if the Flow already does what the person asked.");
     expect(warning({ draft: false, discoveryOnly: true })).toBe(`Your last 2 decisions were refused, or changed nothing, for the same reason (${reason}). One more decision refused for it ends this build with nothing tested. `
-      + "Do not send another decision of that kind: do what next beside the refusal says instead -- correct the lines a refused submission names and submit the whole candidate again -- or look at the page for what the Flow still needs.");
+      + "Do not send another decision of that kind: do what next beside the refusal says instead -- correct the lines a refused submission names and submit the whole candidate again -- or read the page below for what the Flow still needs.");
   });
 });

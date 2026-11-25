@@ -99,6 +99,12 @@
 // hands its own calls to a host (`runtime/result-verification/judge-evidence/core-call.ts`), a held yes says why
 // (`flow-less/judge.ts`), and a yes over rows that are not the table the request names is refused, never taken (`records-yes.ts`).
 //
+// **Nothing that decides the verdict changed is compared by what the judge is shown (t1036, plan D14).** Runs
+// `run-mwuxd2v9-33928ea3` (0163, 0182) and `run-mwv5m906-5e999159` (0081) paid a judge over a summary identical,
+// as the judge is shown it, to one just refused: the digest hashed the page's raw reading, which is read afresh and
+// never shown. `./deciding-digest.ts` says what now counts; the refusal of the same evidence is the stored no, its
+// reasons and its defects, and no judge call. An unreadable judge reply is no refusal, so it is asked again as before.
+//
 // **Rows that cannot be the table asked for are refused before a judge (t1034,** `./asked-table.ts`): run-mwveg5ls-0266dfe0
 // paid 11 judges over such rows, where a yes is refused anyway. A refusal of that evidence, so the same rows again are.
 
@@ -108,11 +114,12 @@ import { automationStudioAnswerFirstKeepBackJudge } from "../../../../../runtime
 import { automationStudioFlowBootstrapInstructionAsk } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { automationStudioLlmStepLogNote, type AutomationStudioLlmEvidenceCompletionCheck } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioLlmProviderError } from "../../../../../runtime/models/failures/index.ts";
-import { automationStudioFlowLessScreenedWords, automationStudioFlowLessSummaryDigest, type AutomationStudioFlowLessFound, type AutomationStudioFlowLessJudgement, type AutomationStudioFlowLessSummary, type AutomationStudioResultEndView, type AutomationStudioResultTrailStep } from "../../../../../runtime/result-verification/index.ts";
+import { automationStudioFlowLessScreenedWords, type AutomationStudioFlowLessFound, type AutomationStudioFlowLessJudgement, type AutomationStudioFlowLessSummary, type AutomationStudioResultEndView, type AutomationStudioResultTrailStep } from "../../../../../runtime/result-verification/index.ts";
 import type { AutomationStudioAnswerFirstCallerCheck } from "../../flow-bootstrap-commands/index.ts";
 import type { AutomationStudioAnswerFirstRowsSummary } from "../rows/index.ts";
 import { automationStudioAnswerFirstScreenedNote } from "../task-memory/index.ts";
 import { automationStudioAnswerFirstCallerCheckAnswer } from "./caller-check.ts";
+import { automationStudioAnswerFirstDecidingDigest, type AutomationStudioAnswerFirstShownSummary } from "./deciding-digest.ts";
 import { AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS as WORDS } from "./refused-words.ts";
 import { AUTOMATION_STUDIO_ANSWER_FIRST_ON_RECORD_WORDS } from "./on-record.ts";
 import { automationStudioAnswerFirstReadShapeOf } from "./read-shape.ts";
@@ -208,6 +215,10 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
   resultEvidence?: (() => NonNullable<AutomationStudioFlowLessSummary["resultEvidence"]>) | undefined;
   /** The person pressed Run again: the judge is told it is a repeat they asked for, and judges this attempt's own change. */
   askedAgain?: boolean | undefined;
+  /** What the judge is shown of a summary (`./shown-summary.ts`), so a completion is compared by that and not by the page's raw reading (header, t1036). Absent, the summary's own digest. */
+  shown?: AutomationStudioAnswerFirstShownSummary | undefined;
+  /** The draft the attempt holds now, a plain value that changes when the draft does: an amendment is a change since the verdict (`./deciding-digest.ts`). Absent, none. */
+  draft?: (() => unknown) | undefined;
   judge(summary: AutomationStudioFlowLessSummary): Promise<AutomationStudioFlowLessJudgement>;
   /** The caller's own confirmation (header). Absent, the judge alone, as the chat has it. */
   confirm?: { judge: "auto" | "always" | "off"; check?: AutomationStudioAnswerFirstCallerCheck | undefined } | undefined;
@@ -256,7 +267,7 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
       if (!readyData && rows.totalRows === 0 && acts.length === 0 && answerText === undefined) return refused(NOTHING, "You have nothing to check yet: no read has returned a row, no lasting act is on the record, and you gave no answer. Get the result first, and complete when you have it.");
       if (asks.records && rows.totalRows === 0 && !input.readsRan()) return refused(ROWS_NOT_READ,WORDS.rowsNotRead(asks.quote));
       const summary = await summaryOf(input, rows, acts, answerText);
-      const digest = automationStudioFlowLessSummaryDigest(summary);
+      const digest = automationStudioAnswerFirstDecidingDigest({ summary, shown: input.shown, draft: input.draft?.() });
       // Which columns the request names that the rows the check reads lack, and how the asked table becomes the result (header, t1032).
       const columns = automationStudioAnswerFirstResultColumnsWords(input.instructions, rows);
       const earlier = refusals.get(digest);

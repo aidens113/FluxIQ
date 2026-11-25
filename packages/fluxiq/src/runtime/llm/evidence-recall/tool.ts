@@ -11,7 +11,7 @@ export function automationStudioLlmEvidenceRecallTool(): AutomationStudioLlmEvid
     description: AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_DESCRIPTION,
     inputSchema: {
       type: "object",
-      properties: { callId: { type: "string", minLength: 1, maxLength: 200 } },
+      properties: { callId: { type: "string", minLength: 1, maxLength: 200 }, round: { type: "integer", minimum: 1 } },
       required: ["callId"],
       additionalProperties: false
     },

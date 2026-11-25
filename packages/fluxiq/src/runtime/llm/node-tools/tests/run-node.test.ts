@@ -126,6 +126,13 @@ describe("the run-node tool's opening arrival", () => {
     expect(automationStudioLlmEvidenceValidTools([tool!])).toBe(true);
   });
 
+  it("leaves Core's own opening node out of the enum the model copies from, and still runs it as the opening (page-diff D4)", () => {
+    const tool = automationStudioLlmRunNodeTool({ nodeIds: ["web.output.dom-capture", "web.output.navigate", "web.output.click"], initial: look });
+    const node = (tool!.inputSchema.properties as Record<string, { enum: string[] }>).node;
+    expect(node?.enum).toEqual(["web.output.click", "web.output.navigate"]);
+    expect(tool?.initialObservation).toEqual({ input: look });
+  });
+
   it("is never offered for a node outside the library, nor without a first look to ride on", () => {
     expect(automationStudioLlmRunNodeTool({ nodeIds: ["web.output.dom-capture"], initial: look, arrival })?.initialObservation).toEqual({ input: look });
     expect(automationStudioLlmRunNodeTool({ nodeIds: ["web.output.navigate"], arrival })?.initialObservation).toBeUndefined();

@@ -4,5 +4,6 @@
 export * from "./binding.ts";
 export * from "./description.ts";
 export * from "./restored.ts";
+export * from "./store.ts";
 export * from "./tool-id.ts";
 export * from "./tool.ts";

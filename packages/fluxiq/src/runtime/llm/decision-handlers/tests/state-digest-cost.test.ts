@@ -160,29 +160,25 @@ describe("what each kind of decision costs", () => {
       code: "llm_evidence_loop.looked_again_unchanged", answeredByCallId: "l.3", pageUnchanged: true, timesAsked: 2, askedAt: [2, 3]
     });
     // The later asks are answered from the fresh result.
-    expect(trace.filter((row) => row.resultCode === "llm_evidence_loop.already_answered").map((row) => row.iteration)).toEqual([4, 5, 6]);
+    expect(trace.filter((row) => row.resultCode === "llm_evidence_loop.already_answered").map((row) => row.iteration)).toEqual([4, 5, 6, 7]);
   });
 
-  it("an ignored redirect withdraws the look from the node list until an action runs, and a look asked for anyway is refused", async () => {
+  it("an ignored redirect withdraws nothing: the node list is the same at every decision, and the look asked for again is answered from memory", async () => {
     const run = await replay(WITHDRAWAL_SCRIPT, "states_on_calls");
     const trace = traceOf(run);
-    // Offered in full up to the decision after the ignoring one, narrowed there, and in full again once an action ran.
-    expect(nodesOffered(run.offered.get(6))).toEqual([NAVIGATE, CLICK, SNAPSHOT].sort());
-    expect(nodesOffered(run.offered.get(7))).toEqual([NAVIGATE, CLICK].sort());
-    expect(nodesOffered(run.offered.get(8))).toEqual([NAVIGATE, CLICK].sort());
-    expect(nodesOffered(run.offered.get(9))).toEqual([NAVIGATE, CLICK, SNAPSHOT].sort());
+    // The node list never changes: the capture node is Core's own opening, not on the model's list, and an ignored redirect takes nothing from it.
+    for (const at of [...run.offered.keys()]) expect(nodesOffered(run.offered.get(at)), `decision ${at}`).toEqual([NAVIGATE, CLICK].sort());
     // The loop's own field never reaches the provider.
     expect([...run.offered.values()].flat().every((tool) => !("actionInputKey" in tool))).toBe(true);
-    expect(trace.find((row) => row.iteration === 7)).toMatchObject({ decision: "unusable", resultCode: "llm_evidence_loop.look_withdrawn" });
-    const feedback = run.shown.get(8)!.find((entry) => entry.toolId === "core.decision_check")!.value as JsonObject;
-    expect(feedback.issueCodes).toEqual(["llm_evidence_loop.look_withdrawn"]);
-    expect(String(feedback.instruction)).toContain("Looks return once an action runs");
-    // The redirect says what ignoring it costs, and then that it has; the history shows the withdrawal.
+    // The look asked for after the ignored redirect is answered from memory like the ones before it, never refused as withdrawn.
+    expect(trace.find((row) => row.iteration === 7)).toMatchObject({ resultCode: "llm_evidence_loop.already_answered" });
+    expect(trace.some((row) => row.resultCode === "llm_evidence_loop.look_withdrawn")).toBe(false);
+    // The redirect says nothing of withdrawing, and the history records no withdrawal.
     const redirectAt = (at: number) => run.shown.get(at)!.find((entry) => entry.toolId === "core.no_progress")!.value as JsonObject;
-    expect(String(redirectAt(6).instruction)).toContain("Asking again for what you already hold withdraws looking until you run an action.");
-    expect(redirectAt(7)).toMatchObject({ looksWithdrawn: true });
+    expect(String(redirectAt(6).instruction)).not.toMatch(/withdraw/u);
+    expect(redirectAt(7)).not.toHaveProperty("looksWithdrawn");
     const history = run.shown.get(7)!.find((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID)!.value as JsonObject;
-    expect((history.redirects as JsonObject)["llm_evidence_loop.looks_withdrawn"]).toEqual([6]);
+    expect(history.redirects as JsonObject).not.toHaveProperty("llm_evidence_loop.looks_withdrawn");
   });
 
   it("a page that moved by itself makes the first re-ask an ordinary look, and progress", async () => {
@@ -245,7 +241,7 @@ const MUNNEAUY_BEFORE = { decisions: 18, providerCalls: 18, executeTool: 9, dige
 
 describe("run-munneauy-de8663ed, rebuilt", () => {
   for (const mode of ["states_on_calls", "digest_hook"] as const) {
-    it(`${mode}: looks are withdrawn at 12, the looks asked for there are refused, and the build ends 3 decisions sooner`, async () => {
+    it(`${mode}: no look is withdrawn, the looks asked for again are answered from memory, and the build ends as the repeat it was, at 15`, async () => {
       const run = await replay(MUNNEAUY, mode, { outcomes: MUNNEAUY_OUTCOMES });
       const trace = traceOf(run);
       const after = {
@@ -261,19 +257,17 @@ describe("run-munneauy-de8663ed, rebuilt", () => {
       // 0-7 as recorded; 8, the first re-ask, run once more and found the page as it was.
       expect([...run.executeByIteration.keys()]).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
       expect(trace.find((row) => row.iteration === 8)).toMatchObject({ decision: "tool_call", callId: "asked.8", progress: { pageState: "unchanged" } });
-      // 9-11 answered from memory, with nothing run and no digest; the redirect at 10 is ignored at 11.
-      expect(trace.filter((row) => row.resultCode === "llm_evidence_loop.already_answered").map((row) => row.iteration)).toEqual([9, 10, 11]);
+      // 9-14 are all answered from memory, with nothing run and no digest: a redirect ignored withdraws nothing.
+      expect(trace.filter((row) => row.resultCode === "llm_evidence_loop.already_answered").map((row) => row.iteration)).toEqual([9, 10, 11, 12, 13, 14]);
       const history = run.shown.get(12)!.find((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID)!.value as JsonObject;
-      expect((history.redirects as JsonObject)["llm_evidence_loop.looks_withdrawn"]).toEqual([11]);
-      // From 12 the snapshot is not offered, and the look scripted there anyway is refused, not answered.
-      expect(nodesOffered(run.offered.get(11))).toContain(SNAPSHOT);
-      expect(nodesOffered(run.offered.get(12))).toEqual([NAVIGATE, CLICK].sort());
-      expect(trace.filter((row) => row.resultCode === "llm_evidence_loop.look_withdrawn").map((row) => row.iteration)).toEqual([12, 13, 14, 15]);
+      expect(history.redirects as JsonObject).not.toHaveProperty("llm_evidence_loop.looks_withdrawn");
+      // The node list is the same at every decision, and no look is refused as withdrawn.
+      for (const at of [...run.offered.keys()]) expect(nodesOffered(run.offered.get(at)), `decision ${at}`).toEqual([NAVIGATE, CLICK].sort());
+      expect(trace.some((row) => row.resultCode === "llm_evidence_loop.look_withdrawn")).toBe(false);
       for (const at of [9, 10, 11, 12, 13, 14, 15]) expect(count(run.executeByIteration, at), `decision ${at}`).toBe(0);
-      // The build still ends as the repeat it was, at 15 instead of 18.
-      expect(after).toEqual({
-        decisions: 15, providerCalls: 15, executeTool: 9, digestHook: mode === "digest_hook" ? 18 : 0, answeredFromMemory: 3, ended: "llm_evidence_loop.repeat_without_progress"
-      });
+      // The build ends as the repeat it was, at 15: the no-progress stop the answered asks count toward, where the refused
+      // withdrawn looks used to count (the same 15). The recorded run ended at 18 under the loop of its day.
+      expect(after).toEqual({ decisions: 15, providerCalls: 15, executeTool: 9, digestHook: mode === "digest_hook" ? 18 : 0, answeredFromMemory: 6, ended: "llm_evidence_loop.repeat_without_progress" });
     });
   }
 });

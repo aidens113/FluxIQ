@@ -57,7 +57,7 @@ import { automationStudioAnswerFirstAttemptStoreOf } from "../attempt-store/inde
 import { automationStudioAnswerFirstCarriedOpening, automationStudioAnswerFirstCarryOnScope, type AutomationStudioAnswerFirstCarriedOpening, type AutomationStudioAnswerFirstCarryOnHold } from "../carry-on/index.ts";
 import { automationStudioAnswerFirstCallerApplied, automationStudioAnswerFirstScopeGate } from "../caller/index.ts";
 import { automationStudioAnswerFirstPermissionAtStart } from "../chat-permission/index.ts";
-import { automationStudioAnswerFirstCompletionCheck, automationStudioAnswerFirstReplayOf } from "../completion/index.ts";
+import { automationStudioAnswerFirstCompletionCheck, automationStudioAnswerFirstReplayOf, automationStudioAnswerFirstShownSummary } from "../completion/index.ts";
 import { automationStudioAnswerFirstFlowRunEngineOf } from "../flow-run/index.ts";
 import { automationStudioFlowHumanness } from "../../flow-settings/index.ts";
 import { automationStudioEndViewLook } from "../../end-view/index.ts";
@@ -257,6 +257,8 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
     readPages: () => result.readPages(),
     resultEvidence: () => result.evidence(),
     askedAgain: again !== undefined || carried?.askedAgain === true,
+    // A completion is compared with the last refused one by what the judge is shown of it, never by the page's raw reading (`../completion/deciding-digest.ts`, t1036 D14).
+    shown: automationStudioAnswerFirstShownSummary({ deniedEvidenceKeys: input.binding?.deniedEvidenceKeys, ...journal.capability(trail, input.binding), projectJudgeEvidence: input.binding?.projectJudgeEvidence }),
     purse: input.creation.purse,
     say: automationStudioAnswerFirstSay,
     ...(carried?.result ? { seed: { timesChecked: carried.result.timesChecked } } : {}),

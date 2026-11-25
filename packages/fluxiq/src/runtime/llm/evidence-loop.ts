@@ -18,13 +18,12 @@ import {
 // What the loop does with each kind of answer it gives the model, handed the loop's state as one context object (`decision-handlers/`).
 import {
   automationStudioLlmEvidenceAnswerCheck,
-  automationStudioLlmEvidenceAskedAgain, automationStudioLlmEvidenceClaimWrittenAct, automationStudioLlmEvidenceSecondCopyRefused,
+  automationStudioLlmEvidenceClaimWrittenAct, automationStudioLlmEvidenceSecondCopyRefused,
   automationStudioLlmEvidenceHandleAmendment, automationStudioLlmEvidenceSettleHeldAmendments,
   automationStudioLlmEvidenceHandleAnsweredRequest, automationStudioLlmEvidenceLoopCaught, automationStudioLlmEvidenceLoopCheck, automationStudioLlmEvidenceLoopOverdue, automationStudioLlmEvidenceLoopRaise, automationStudioLlmEvidenceLoopRan,
   automationStudioLlmEvidenceHandleRefusedRepeat, automationStudioLlmEvidenceRefusedCallRun, automationStudioLlmEvidenceRerunChangedNothing, automationStudioLlmEvidenceSearchingWithoutActing,
   automationStudioLlmEvidenceHandleCompletion, automationStudioLlmEvidenceHandleLoopDecision, automationStudioLlmEvidenceStallNow, AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID,
   automationStudioLlmEvidenceHandleFailedCall,
-  automationStudioLlmEvidenceLookBudget, automationStudioLlmEvidenceLookWithdrawal,
   automationStudioLlmEvidenceReaskOutcome,
   automationStudioLlmEvidenceShowVerifiedRepeat,
   type AutomationStudioLlmEvidenceAnswerCheckOutcome,
@@ -83,7 +82,7 @@ import { automationStudioLlmProviderUnanswered, automationStudioLlmProviderUnans
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID, automationStudioLlmEvidenceDraftKey, automationStudioLlmEvidenceRepeatGuard, automationStudioLlmEvidenceTimingOfNodes, automationStudioLlmLoopWatch } from "./repeat-guard/index.ts";
 import { createAutomationStudioLlmRerunProvenance, type AutomationStudioLlmRerunScope } from "./rerun-provenance/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_NODES_TOOL_ID } from "./node-reruns/index.ts";
-import { automationStudioLlmEvidenceBatchMember, automationStudioLlmEvidenceToolAdmission, automationStudioLlmEvidenceToolWithdrawal, automationStudioLlmPriorNodesLoop, automationStudioLlmPriorNodesSettlementContext, automationStudioLlmPriorNodesUnsettled } from "./prior-nodes/index.ts";
+import { automationStudioLlmEvidenceBatchMember, automationStudioLlmEvidenceToolAdmission, automationStudioLlmPriorNodesLoop, automationStudioLlmPriorNodesSettlementContext, automationStudioLlmPriorNodesUnsettled } from "./prior-nodes/index.ts";
 export { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS };
 export * from "./repeat-guard/loop-detection/index.ts"; // Loop detection's facts, its replay over a saved log (the Lab's `loop-replay/`) and the attempt's record.
 /** What a loop may be configured with, in `loop-configuration.ts` with the arithmetic that reads it. */
@@ -200,9 +199,6 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
   // the result is what keeps a look at one capture rather than three.
   const statesOf = (execution: { stateDigests?: { before?: string; after?: string } }, before: string | undefined, after: string | undefined): { before: string | undefined; after: string | undefined } =>
     hook ? { before, after } : { before: execution.stateDigests?.before, after: execution.stateDigests?.after };
-  // Looks withdrawn after an ignored redirect (`decision-handlers/look-withdrawal.ts`),
-  // only where a decision can be refused without ending the loop.
-  const looks = automationStudioLlmEvidenceLookWithdrawal({ enabled: input.lookWithdrawal !== false && input.unusableDecisions !== undefined, finishing: input.finishingTools, planning: input.planning });
   const accounting = automationStudioLlmEvidenceLoopEmptyAccounting(); const purse = automationStudioLlmEvidenceLoopPurse(input.budget, accounting, input.purse); // Each decision's worst case held against the build's purse, or the loop's own at its cost budget, before it is sent: the only cost authority (`./evidence-loop/cost-purse.ts`).
   // The caller's tools, with `core.run_flow` after them where the loop drafts and runs its dry run: part of the Flow
   // run again, never its test. Fixed for the whole loop, so read once (`./node-tools/loop-tools.ts`).
@@ -251,14 +247,13 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
     redirectAt: limits.redirectAtStepsWithoutProgress,
     facts: () => automationStudioLlmEvidenceRedirectFacts({
       config: input, steps: draftSteps, evidence, completionAttempts: counters.completionAttempts,
-      canComplete: offeredCompletion, answerability: rows.answerability, looksWithdrawn: looks.active(counters.attemptEpoch)
+      canComplete: offeredCompletion, answerability: rows.answerability
     }),
     show: (iteration: number, note: JsonObject) => {
       accountEvidence(note);
       automationStudioLlmDecisionContextSupersede(evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID);
       evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID, value: note });
       history.record(iteration, { kind: "redirect", ...(typeof note.code === "string" ? { code: note.code } : {}) });
-      looks.redirectShown(iteration);
     }
   });
   // Counts evidence the loop itself adds in `accounting` and returns its
@@ -360,13 +355,13 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
   const repeatGuard = automationStudioLlmEvidenceRepeatGuard({ draftOf, timingOf: automationStudioLlmEvidenceTimingOfNodes(input.definitionOf) }); // Timing parameters leave both repeat keys (`./repeat-guard/timing-free.ts`).
   const handling: AutomationStudioLlmEvidenceDecisionHandlerContext = {
     loops: automationStudioLlmLoopWatch({ record: input.attemptRecord, holds: (toolId, value, state) => repeatGuard.blocks(toolId, value, state) !== undefined, refuseActs: input.loopSignal !== undefined, askedRepeats: input.askedRepeats, timingOf: automationStudioLlmEvidenceTimingOfNodes(input.definitionOf) }), loopOverdue: (iteration) => automationStudioLlmEvidenceLoopOverdue(handling, iteration), contextOf: draftOf, input, limits, trace, accounting, draftSteps, amendmentMemory, noProgress, evidence, toolIds, toolsById, observeToolFailures, counters,
-    history, draftRevision: () => rows.draftRevision, lastAction: undefined, dryRunSeen: { ran: false }, reaskedRequests: new Set(), callStates: new Map(), repeats: repeatGuard, looks,
+    history, draftRevision: () => rows.draftRevision, lastAction: undefined, dryRunSeen: { ran: false }, reaskedRequests: new Set(), callStates: new Map(), repeats: repeatGuard,
     recordRow, draftRecord, accountEvidence, unusable, dryRun, authored, refusalRun: automationStudioLlmEvidenceRefusalRun()
   };
   const batchHandling = automationStudioLlmPriorNodesSettlementContext(handling);
-  const eligibleNow = () => looks.offer(tools.filter((tool) => runFlow.offered(tool) && (!automationStudioLlmEvidenceLookNeedsAttempt(tool, mutableTools) || observationEpochs.get(tool.toolId) !== counters.attemptEpoch)), counters.attemptEpoch);
+  const eligibleNow = () => tools.filter((tool) => runFlow.offered(tool) && (!automationStudioLlmEvidenceLookNeedsAttempt(tool, mutableTools) || observationEpochs.get(tool.toolId) !== counters.attemptEpoch)).map(({ actionInputKey: _key, ...offered }) => offered); // `actionInputKey` is the loop's own data, which provider adapters refuse on a tool (`./deepseek/preflight.ts`).
   const admission = (decision: { toolId: string; input: JsonObject }, context: { eligibleToolIds: ReadonlySet<string>; offered: readonly AutomationStudioLlmEvidenceTool[]; withholds(toolId: string, value: JsonObject): boolean }, options: { rerunning?: boolean; priorSuccessful?: boolean } = {}) => automationStudioLlmEvidenceToolAdmission({
-    toolId: decision.toolId, value: decision.input, toolsById, ...context, looks, repeats: handling.repeats, answeredRequests, latestObservations,
+    toolId: decision.toolId, value: decision.input, toolsById, ...context, repeats: handling.repeats, answeredRequests, latestObservations,
     attemptEpoch: counters.attemptEpoch, mutationEpoch: counters.mutationEpoch, draftKey: draftOf(decision.toolId), discoveryOnly: input.discoveryOnly === true,
     finalDecision, remaining: lastRemaining, deadlineExpired: input.budget?.maxDurationMs !== undefined && clock() - startedAtMs >= input.budget.maxDurationMs, ...options
   });
@@ -440,8 +435,6 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
     retest.settled(toolRequestSignature, tool, { evidence: value, effectApplied });
     if (stateAfter !== undefined) handling.callStates.set(callId, stateAfter);
     // An action this build saw only look and propose nothing: what withdrawal withholds.
-    if (record.effect === "observe" && record.proposes === false) looks.sawLook(tool.toolId, record.actionId);
-    automationStudioLlmEvidenceLookBudget(handling, iteration, { tool, lookedAtNothing: lookRefused }); // A planning loop's looks, counted and withdrawn once spent (t569).
     if (record.effect === "mutate") { counters.attemptEpoch += 1; if (effectApplied) counters.mutationEpoch += 1; }
     // What this call did on the page it found: a call that failed or changed nothing is not made again there; a rerun sent as a check, or one whose place was unreachable, is no attempt of its input (`repeat-guard/outcomes.ts`).
     handling.repeats.recorded({ callId, toolId: decision.toolId, input: decision.input, stateBefore, stateAfter, effect: record.effect, proposes: record.proposes ?? record.effect === "mutate", effectApplied, refused: typeof value === "object" && value !== null && !Array.isArray(value) && value.ok === false, resultCode, resultReason: execution.resultReason, failure: execution.failure, personNeeded: execution.personNeeded, ownRetestBound: execution.ownRetestBound, answer: JSON.stringify(value), ...(rerunChecked ? { checked: true } : {}), ...(rerunAt?.kind === "unreachable" ? { unrun: true } : {}) });
@@ -502,7 +495,6 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
       if (noProgress.reached()) return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting);
       if (reask === "repeat") {
         automationStudioLlmEvidenceShowVerifiedRepeat(handling, { iteration, callId, toolId: decision.toolId, answeredByCallId: verifying!.answeredByCallId, requestSignature: toolRequestSignature });
-        automationStudioLlmEvidenceAskedAgain(handling, iteration);
       }
       noProgress.redirect(iteration);
     }
@@ -572,7 +564,6 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
         if (stateAfter !== undefined) { handling.callStates.set(callId, stateAfter); handling.repeats.seen(stateAfter); }
       }
       const initialRecord = callRecord(initialTool, initialInput, execution);
-      if (initialRecord.effect === "observe" && initialRecord.proposes === false) looks.sawLook(initialTool.toolId, initialRecord.actionId);
       evidence.push({ callId, toolId: initialTool.toolId, value: execution.evidence });
       const lookRefusedItself = typeof execution.evidence === "object" && execution.evidence !== null && !Array.isArray(execution.evidence) && execution.evidence.ok === false;
       history.record(0, { kind: "look", callId, toolId: initialTool.toolId, resultCode: execution.resultCode ?? "ok", ...(lookRefusedItself ? { refused: true } : {}) });
@@ -612,7 +603,7 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
     let rerunHeld: AutomationStudioLlmEvidenceRerunHeld | undefined;
     // A look asked again for the first time, run to see whether the page is as its answer left it (`decision-handlers/answer-check.ts`).
     let verifying: Extract<AutomationStudioLlmEvidenceAnswerCheckOutcome, { kind: "verify" }> | undefined;
-    // What may be offered, with looks withdrawn after an ignored redirect.
+    // What may be offered. Nothing is withdrawn (page-diff D4, D11): a tool not on offer is refused by name.
     priorNodes.start(iteration);
     const eligibleTools = eligibleNow();
     const eligibleToolIds = new Set(eligibleTools.map((tool) => tool.toolId));
@@ -649,7 +640,7 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
       // budget, each whole; the draft measured as it goes out
       // (`decision-context/shown.ts` says why each is where it is).
       const decisionContext = automationStudioLlmDecisionContextShown({
-        evidence, records: history.records(), budgetEntry, observedStateKeys: input.observedStateKeys,
+        evidence, records: history.records(), budgetEntry, observedStateKeys: input.observedStateKeys, pageChannel: input.pageChannel, // The page shown in place, whole once and as changes after (`./view-channel/`).
         draft: drafting ? { steps: draftSteps, authored: authoring, acts: input.draft ? input.draft.acts?.(draftSteps) : undefined, route: input.draft ? input.draft.route?.() : undefined } : undefined
       });
       rows.draftShown = decisionContext.draftShown;
@@ -733,15 +724,7 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
       if (ended) return { kind: "complete", result: ended };
       return { kind: "continue" };
     }
-    // A look withdrawn after an ignored redirect, asked for anyway: refused as
-    // an unusable decision -- never run, and never answered from memory, which
-    // is the move being taken away (`decision-handlers/look-withdrawal.ts`).
     const admitted = admission(decision, { eligibleToolIds, offered, withholds: wrapUp.withholds }, { rerunning });
-    if (admitted.withdrawn) {
-      const ended = automationStudioLlmEvidenceToolWithdrawal({ context: handling, iteration, decision, refuse: (codes) => refuseDecision(iteration, codes, offers(), decision.usage) });
-      if (ended) return { kind: "complete", result: ended };
-      return { kind: "continue" };
-    }
     counters.unusableInARow = 0;
     // A candidate's offered finishing tool may use the final slot; ordinary
     // tool/cash gates still apply. An expired deadline cannot start a new tool.

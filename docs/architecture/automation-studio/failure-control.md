@@ -220,16 +220,7 @@ three refused repeats (`evidence-loop/refused-again.ts`) is a `near_repeat` find
 **A fresh round keeps what the run learned** (t1014). A round may still end (loop detection's
 last rung, the completion check's own ladder, a throw), and the next one's evidence window is
 its own, but it no longer starts empty. From the second round on, and in a carried-on attempt's
-first round (its trail is held across the restart), the attempt shows, right after the round's note and constant for the round, every call the
-earlier rounds made (`core.earlier_rounds`, `answer-first/earlier-rounds/`): what ran,
-what it was asked, how it came back, where it was and what it found -- finds, descriptions, a
-read's rows, an act's outcome -- read from the attempt's trail, the record its judge reads. No
-page view travels (`core.view_not_carried` in place of each top-level view key the domain
-declares): the round's opening look shows the page as it stands, and nothing navigates it away.
-It is screened as a judge's trail is, and fitted to a quarter of the model's input window: the
-oldest calls' findings, then what they were asked, are summarised in counts in place
-(`core.summarised`), never dropped. The note beside it still carries the tried list, what the loop
-stopped on, the model's decisions and the judge's defects, in Core's words only.
+first round (its trail is held across the restart), the attempt shows, right after the round's note and constant for the round, the state the earlier rounds established (`core.earlier_rounds`, `answer-first/earlier-rounds/`, t1036): each read as its call, row count and columns, and every other call as one short line (number, id, what it was on, how it ended), grouped by what ran and how it ended, oldest first. No call's result is carried whole and no page view travels: the rows are the attempt's result's (`core.result`), the acts, rows kept, last check and tried list are the round's note, the Flow so far is `core.flow_draft`, and every call stays named by its id for `core.recall_result`. It is screened as a judge's trail is, with no member under a denied key. The note beside it still carries the tried list, what the loop stopped on, the model's decisions and the judge's defects, in Core's words only.
 
 **With no `loopSignal`** a loop keeps steer and refuse, and no signal is raised. It
 ends only the ways it always could: a ladder refusal counts in the existing run of
