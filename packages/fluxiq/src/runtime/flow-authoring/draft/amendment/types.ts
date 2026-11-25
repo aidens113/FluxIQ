@@ -85,7 +85,9 @@ export type AutomationStudioFlowDraftAmendmentRefusal = {
   step: number;
   reason: "no_such_step" | "already_so" | "no_such_position" | "run_by_the_loop" | "no_step_before_it" | "over_not_before" | "not_a_kept_step" | "did_not_work" | "already_in_flow" | "already_out" | "changes_nothing" | "act_on_a_read" | "act_already_named"
     | "bind_not_a_binding" | "bind_new_key" | "bind_row_outside_loop" | "bind_malformed" | "rerun_holds_binding" | "repeat_taken_off"
-    | "strands_a_step" | "settings_rewrite_run" | "second_copy" | "act_not_done_there" | "repeat_never_ends" | "holds_a_repeat" | "span_holds_routing";
+    | "strands_a_step" | "settings_rewrite_run" | "second_copy" | "act_not_done_there" | "repeat_never_ends" | "holds_a_repeat" | "span_holds_routing"
+    /** Only where the framework drafts the Flow (`./edits/`): a change outside the six edits, and `result` on a step that is not a read. */
+    | "not_an_edit" | "not_a_read";
   /**
    * `over_not_before` only: the step the repeat named as `over`, so the
    * telling can say, in the draft's numbers, which step lists the rows and

@@ -59,7 +59,7 @@ export type AutomationStudioLlmEvidenceHeldAmendments = {
   settle(
     steps: AutomationStudioFlowDraftStep[],
     rerun: AutomationStudioFlowDraftStep | undefined,
-    options?: { claimRefused?: AutomationStudioFlowDraftClaimRefused | undefined; loopNeverEnds?: AutomationStudioFlowDraftLoopNeverEnds | undefined }
+    options?: { claimRefused?: AutomationStudioFlowDraftClaimRefused | undefined; loopNeverEnds?: AutomationStudioFlowDraftLoopNeverEnds | undefined; grammar?: "framework" | undefined }
   ): { applied: number; refused: AutomationStudioFlowDraftAmendmentRefusal[] };
 };
 
@@ -103,7 +103,7 @@ export function automationStudioLlmEvidenceHeldAmendments(
           const position = amendment[key];
           if (position !== undefined) moved[key] = at(position);
         }
-        const result = applyAutomationStudioFlowDraftAmendments(draft, [moved], { claimRefused: options.claimRefused, loopNeverEnds: options.loopNeverEnds });
+        const result = applyAutomationStudioFlowDraftAmendments(draft, [moved], { claimRefused: options.claimRefused, loopNeverEnds: options.loopNeverEnds, grammar: options.grammar });
         applied += result.applied;
         refused.push(...result.refused.map((refusal) => refusal.reason === "repeat_taken_off"
           ? takenOffAsWritten(refusal, shown, written)

@@ -40,6 +40,11 @@ const KEEP_ADDS_NOTHING_INSTRUCTION = "keep adds nothing: every amendment in thi
   + "A step joins the Flow only by running it: an act or choice still not done on the checklist is done by running, on the page that shows its control, the call that does it, with add and act naming it. "
   + "Do not send keep for steps already in the Flow; this decision counts toward stopping this exploration.";
 
+/** The same where the framework drafts the Flow: a step it left out is put back by keep, and a step joins by running it, with act naming the act. */
+const KEEP_ADDS_NOTHING_FRAMEWORK_INSTRUCTION = "keep adds nothing here: every amendment in this decision was keep on a step already in the Flow or drop of a step already out, so the Flow is exactly as it was. "
+  + "keep puts back only a step the framework left out (its out line says why). A step joins the Flow by running it: an act or choice still not done on the checklist is done by running, on the page that shows its control, the call that does it, with act naming it. "
+  + "Do not send keep for steps already in the Flow; this decision counts toward stopping this exploration.";
+
 /**
  * Answers one `amend_draft` decision. `canAmend` is whether this iteration
  * offered editing at all.
@@ -72,11 +77,15 @@ export function automationStudioLlmEvidenceHandleAmendment(
   // is recorded, digested and checked like any other; the step it replaces
   // is found before a reorder beside it renumbers the draft, and withdrawn
   // only once that call has worked (`../evidence-loop/rerun-replacement.ts`).
-  const rerun = automationStudioLlmEvidenceRerunRequest(decision.amendments, draftSteps, context.toolIds, (toolId, input, at) => context.repeats.blocks(toolId, input, at), context.input.deniedEvidenceKeys, { rerunsInPlace: context.input.rerunsInPlace === true });
+  // Where the framework drafts the Flow a `rerun` is no edit: refused, never carried out (`../../flow-authoring/draft/amendment/edits/`).
+  const framework = context.draftEdits === "framework";
+  const edited = framework ? decision.amendments.filter((amendment) => amendment.change !== "rerun") : decision.amendments;
+  const notEdits = framework ? decision.amendments.filter((amendment) => amendment.change === "rerun").map((amendment) => ({ step: amendment.step, reason: "not_an_edit" as const })) : [];
+  const rerun = automationStudioLlmEvidenceRerunRequest(edited, draftSteps, context.toolIds, (toolId, input, at) => context.repeats.blocks(toolId, input, at), context.input.deniedEvidenceKeys, { rerunsInPlace: context.input.rerunsInPlace === true });
   // An amendment naming the step the rerun replaces is about the step that
   // will replace it, so it waits for the rerun; the rest apply now, in order
   // (`../evidence-loop/held-amendments.ts`, live run `run-mup2i28c-6c7fc209`).
-  const split = automationStudioLlmEvidenceHeldAmendments(decision.amendments, draftSteps, rerun.request?.step);
+  const split = automationStudioLlmEvidenceHeldAmendments(edited, draftSteps, rerun.request?.step);
   const targetedStepIds = [...new Set(decision.amendments.flatMap((amendment) => {
     const step = draftSteps.find((candidate) => candidate.position === amendment.step);
     return step?.id ? [step.id] : [];
@@ -105,7 +114,7 @@ export function automationStudioLlmEvidenceHandleAmendment(
   // could not carry out was therefore the one amendment that changed
   // nothing silently, on a build where every other kind had been telling the
   // model why since t140. The row records both and the model is shown both.
-  const refused = [...amended.refused, ...rerun.refused].map((refusal) => nodeAt.has(refusal.step) ? { ...refusal, nodeId: nodeAt.get(refusal.step)! } : refusal);
+  const refused = [...amended.refused, ...rerun.refused, ...notEdits].map((refusal) => nodeAt.has(refusal.step) ? { ...refusal, nodeId: nodeAt.get(refusal.step)! } : refusal);
   // Marked `repeated` where this build already gave the refusal, and recorded
   // as given: asked once, for the history and the feedback both.
   const refusals = amendmentMemory.refusals(refused);
@@ -314,9 +323,10 @@ function correctRerunRow(context: AutomationStudioLlmEvidenceDecisionHandlerCont
  * once or held for its rerun: the act judge (`draft.claimRefused`) and the loop
  * check (`draft.loopNeverEnds`), each absent when the caller gave none.
  */
-function amendmentChecks(context: AutomationStudioLlmEvidenceDecisionHandlerContext): Pick<NonNullable<Parameters<typeof applyAutomationStudioFlowDraftAmendments>[2]>, "claimRefused" | "loopNeverEnds"> {
+function amendmentChecks(context: AutomationStudioLlmEvidenceDecisionHandlerContext): Pick<NonNullable<Parameters<typeof applyAutomationStudioFlowDraftAmendments>[2]>, "claimRefused" | "loopNeverEnds" | "grammar"> {
   const draft = context.input.draft;
-  return draft ? { claimRefused: draft.claimRefused, loopNeverEnds: draft.loopNeverEnds } : { claimRefused: undefined, loopNeverEnds: undefined };
+  const grammar = context.draftEdits;
+  return draft ? { claimRefused: draft.claimRefused, loopNeverEnds: draft.loopNeverEnds, grammar } : { claimRefused: undefined, loopNeverEnds: undefined, grammar };
 }
 
 /**
@@ -446,7 +456,7 @@ function tell(
     actsNotDone: context.input.draft ? context.input.draft.actsMissing?.(context.draftSteps) : undefined
   });
   // Said first, so it is read before the refusals it explains (above, `keepOnly`).
-  const amendmentFeedback = keepOnly ? { ...feedback, keepAddsNothing: true, instruction: `${KEEP_ADDS_NOTHING_INSTRUCTION} ${String(feedback.instruction ?? "")}`.trim() } : feedback;
+  const amendmentFeedback = keepOnly ? { ...feedback, keepAddsNothing: true, instruction: `${context.draftEdits === "framework" ? KEEP_ADDS_NOTHING_FRAMEWORK_INSTRUCTION : KEEP_ADDS_NOTHING_INSTRUCTION} ${String(feedback.instruction ?? "")}`.trim() } : feedback;
   context.accountEvidence(amendmentFeedback);
   automationStudioLlmDecisionContextSupersede(context.evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID);
   context.evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID, value: amendmentFeedback });

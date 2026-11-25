@@ -18,6 +18,8 @@ export * from "./amendment/index.ts";
 export * from "./bindable/index.ts";
 export * from "./binding-forms.ts";
 export * from "./binding-render.ts";
+// The framework drafts the Flow from the calls that worked (D16).
+export * from "./compose/index.ts";
 // What each of a read's conditions kept and rejected, as its host stated it (t693).
 export * from "./condition-account.ts";
 export * from "./control-words.ts";

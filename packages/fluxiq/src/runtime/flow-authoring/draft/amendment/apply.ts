@@ -11,6 +11,7 @@ import { automationStudioFlowDraftStepIsAction, automationStudioFlowDraftStepIsP
 import { AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID } from "./act-id.ts";
 import { automationStudioFlowDraftAmendmentBind } from "./bind.ts";
 import type { AutomationStudioFlowDraftAmendmentChange } from "./changes.ts";
+import { automationStudioFlowDraftChangeIsEdit, automationStudioFlowDraftEditPutInOver, automationStudioFlowDraftEditResult, automationStudioFlowDraftStepLeftOut } from "./edits/index.ts";
 import { automationStudioFlowDraftAmendmentMove } from "./move.ts";
 import { automationStudioFlowDraftAmendmentRoute } from "./route.ts";
 import { automationStudioFlowDraftHoldRepeatSteps, automationStudioFlowDraftSettleSpanRouting, automationStudioFlowDraftSpanChangeRefusal, type AutomationStudioFlowDraftWrittenRouting } from "./repeat-hold.ts";
@@ -101,6 +102,11 @@ export function applyAutomationStudioFlowDraftAmendments(
     loopNeverEnds?: AutomationStudioFlowDraftLoopNeverEnds | undefined;
     /** The loop's own withdrawal of the attempt a rerun replaced and now stands in place of (`../../../llm/evidence-loop/rerun/replacement.ts`). */
     withdrawsReplacedAttempt?: boolean | undefined;
+    /**
+     * `"framework"`: the framework drafted the Flow and the model edits it with the six changes
+     * of `./edits/`. Absent, the old grammar, unchanged.
+     */
+    grammar?: "framework" | undefined;
   } = {}
 ): { applied: number; refused: AutomationStudioFlowDraftAmendmentRefusal[]; moved?: ActMove[]; unreached?: AutomationStudioFlowDraftUnreachedStep[] } {
   let applied = 0;
@@ -121,18 +127,26 @@ export function applyAutomationStudioFlowDraftAmendments(
   const withdrawn: AutomationStudioFlowDraftWithdrawal[] = [];
   // A step kept after a withdrawal of this decision, whose reversal waits for the strand check.
   let reversalAfterCheck = false;
+  // Where the framework drafts the Flow the model has six edits and no more (`./edits/`).
+  const framework = options.grammar === "framework";
   for (const said of amendments) {
+    if (framework && !automationStudioFlowDraftChangeIsEdit(said.change)) {
+      refused.push({ step: said.step, reason: "not_an_edit" });
+      continue;
+    }
     // `take` names the call, not the step: the step that call ran, put in the Flow as `add` puts one (`./types.ts`, `call`).
-    const amendment = said.change === "take" ? takenAs(steps, said, shown.number) : said;
-    if (!amendment) {
+    const asked = said.change === "take" ? takenAs(steps, said, shown.number) : said;
+    if (!asked) {
       refused.push({ step: said.step, reason: "no_such_step" });
       continue;
     }
-    const step = shown.step(amendment.step);
+    const step = shown.step(asked.step);
     if (!step) {
-      refused.push({ step: amendment.step, reason: "no_such_step" });
+      refused.push({ step: asked.step, reason: "no_such_step" });
       continue;
     }
+    // A `keep` of a step the framework left out puts it in as `add` does, with the same checks and refusals (`./edits/`).
+    const amendment: AutomationStudioFlowDraftAmendment = framework && asked.change === "keep" && automationStudioFlowDraftStepLeftOut(step) ? { ...asked, change: "add" } : asked;
     // The attempt a rerun replaced: told which step to change instead (`./replaced-attempt.ts`).
     const replacing = automationStudioFlowDraftReplacingStep(steps, step);
     if (replacing) {
@@ -178,6 +192,13 @@ export function applyAutomationStudioFlowDraftAmendments(
     // towels. The draft entry lists it as `disposition: look` (`../entry.ts`).
     if (!automationStudioFlowDraftStepIsAction(step) && (amendment.change === "add" || amendment.change === "keep" || amendment.act !== undefined)) {
       refused.push({ step: amendment.step, reason: NOT_A_FLOW_STEP });
+      continue;
+    }
+    // `result`: this read holds the answer (`./edits/result.ts`).
+    if (amendment.change === "result") {
+      const ruled = automationStudioFlowDraftEditResult(step);
+      if (ruled.ok) applied += 1;
+      else refused.push({ step: amendment.step, reason: ruled.reason });
       continue;
     }
     // Settings that give a parameter the step ran with another value make it a
@@ -238,6 +259,8 @@ export function applyAutomationStudioFlowDraftAmendments(
     if (ROUTING_CHANGES.has(amendment.change)) {
       const previous = step.routing;
       const settings = step.settings;
+      // A repeat over a read the framework left out puts that read in; put back if the repeat is refused (`./edits/put-in-over.ts`).
+      const putBack = framework && amendment.change === "repeat" ? automationStudioFlowDraftEditPutInOver(shown.step(amendment.over)) : undefined;
       const routed = automationStudioFlowDraftAmendmentRoute(steps, step, amendment, shown);
       // A loop that could end only by failing is put back as it was and refused
       // with assembly's sentence, which names the nodes that do end one
@@ -248,15 +271,20 @@ export function applyAutomationStudioFlowDraftAmendments(
         else step.routing = previous;
         if (settings === undefined) delete step.settings;
         else step.settings = settings;
+        putBack?.();
         refused.push({ step: amendment.step, reason: "repeat_never_ends", said: automationStudioFlowDraftSaidInNumbers(neverEnds, shownAt) });
         continue;
       }
       if (routed.ok) {
         applied += 1;
+        if (framework) delete step.drafted;
         // Checked once the decision's moves are done (`./repeat-revalidation.ts`).
         if (step.routing?.kind === "repeat") written.push({ step, routing: step.routing, amendment, previous, settings });
         if (step.routing) routedNow.push({ step, routing: step.routing, amendment, previous, settings });
-      } else refused.push({ step: amendment.step, reason: routed.reason, ...(routed.over === undefined ? {} : { over: routed.over }), ...(routed.through === undefined ? {} : { through: routed.through }) });
+      } else {
+        putBack?.();
+        refused.push({ step: amendment.step, reason: routed.reason, ...(routed.over === undefined ? {} : { over: routed.over }), ...(routed.through === undefined ? {} : { through: routed.through }) });
+      }
       continue;
     }
     const disposition = amendment.change === "keep" || amendment.change === "add" ? "kept" : amendment.change === "drop" ? "dropped" : "exploratory";
@@ -300,7 +328,11 @@ export function applyAutomationStudioFlowDraftAmendments(
     // `add` at a position is one thought: put this step in the Flow, there.
     const place = amendment.change === "add" ? shown.step(amendment.to) : undefined;
     const moves = place !== undefined && place !== step;
-    if (!changesDisposition && !changesSettings && !clearsRouting && act === undefined && !changesPlaces && !moves) {
+    // A `keep` of a step the framework put in, or a `drop` of one it left out, says what the draft already
+    // shows, and still makes the step the model's: the framework never decides it again, so a later read or
+    // a later rule cannot move it (`../step.ts`, `drafted`). Applied, not refused as already so.
+    const pins = framework && step.drafted !== undefined && (disposition === "kept") === (step.drafted === "in");
+    if (!changesDisposition && !changesSettings && !clearsRouting && act === undefined && !changesPlaces && !moves && !pins) {
       // Said as which side of the Flow the step is already on, because that is
       // what the model was trying to settle: a `keep` about a step in the Flow
       // is a confirmation, and the generic "already so" got it sent again.
@@ -343,6 +375,8 @@ export function applyAutomationStudioFlowDraftAmendments(
       else automationStudioFlowDraftDropReversals(steps);
     }
     if (amendment.settings) step.settings = { ...(step.settings ?? {}), ...amendment.settings };
+    // The model has ruled on whether the step is in the Flow: its word stands from now on (`../step.ts`, `drafted`).
+    if (framework) delete step.drafted;
     applied += 1;
   }
   // A repeat this decision wrote that its moves left unable to run is taken

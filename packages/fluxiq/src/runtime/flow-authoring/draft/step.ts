@@ -116,6 +116,20 @@ export type AutomationStudioFlowDraftStepChosen = { key: string; words: string; 
  */
 export type AutomationStudioFlowDraftStepCondition = { kept: number; rejected: number; keptValues: string[] };
 
+/**
+ * Why the framework's draft leaves a step out of the Flow (`./compose/`, D16; user, 2026-11-25:
+ * "Drafting the flow automatically will help in many situations, as long as the model is able and
+ * encouraged to edit it for more efficient flows"): `look`, it only looked; `did_not_work`, it failed
+ * or changed nothing; `replaced`, a rerun took its place; `repeat`, it copies a step already in the
+ * Flow; `undone`, a later press of the same control undid it, or it undid an earlier one;
+ * `dead_end`, the run came back to the state it left from with nothing lasting done on the way;
+ * `not_the_result`, a read that is not the result's.
+ */
+export type AutomationStudioFlowDraftLeftOutReason = "look" | "did_not_work" | "replaced" | "repeat" | "undone" | "dead_end" | "not_the_result";
+
+/** The framework's word on a step where it drafts the Flow: `in`, or why it is left out (`AutomationStudioFlowDraftLeftOutReason`). */
+export type AutomationStudioFlowDraftStepDrafted = "in" | AutomationStudioFlowDraftLeftOutReason;
+
 export type AutomationStudioFlowDraftStep = {
   /** Where it is in the draft, counting from 1: what an amendment names. */
   position: number;
@@ -297,6 +311,20 @@ export type AutomationStudioFlowDraftStep = {
   /** The same digest taken after it. */
   stateAfter?: string;
   disposition: AutomationStudioFlowDraftStepDisposition;
+  /**
+   * The framework's word on this step, where the framework drafts the Flow (`./compose/`, D16): `in`,
+   * put in the Flow (`disposition: "kept"`), or why it is left out (`disposition: "taken"`). Written
+   * only by the drafting function, which reads it back to know which steps are still its own to
+   * decide: a step with it, or `taken` without it, is the framework's; any other is the model's. An
+   * edit by the model that says whether the step is in the Flow (keep, drop, result, a repeat over
+   * it) deletes it, and the model's word stands from then on.
+   */
+  drafted?: AutomationStudioFlowDraftStepDrafted;
+  /**
+   * The model named this read the Flow's result (the `result` edit, D16): the drafting function
+   * keeps it as the result in place of its own choice. Only a step that reads carries it.
+   */
+  result?: true;
   /**
    * Whether a successful call of this kind is a step the result should
    * contain, as the caller reported it.

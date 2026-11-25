@@ -67,6 +67,8 @@ export type AutomationStudioLlmEvidenceDecisionHandlerContext = {
   accounting: AutomationStudioLlmEvidenceLoopAccounting;
   /** The draft, kept whether or not it is shown. */
   draftSteps: AutomationStudioFlowDraftStep[];
+  /** `"framework"`: the framework drafts the Flow and the model edits it with the six edits (`../../flow-authoring/draft/amendment/edits/`). Absent, the old grammar. */
+  draftEdits?: "framework" | undefined;
   amendmentMemory: AutomationStudioLlmEvidenceAmendmentMemory;
   noProgress: AutomationStudioLlmEvidenceNoProgress;
   /** Decisions in a row refused for one reason (`./refusal-run.ts`). */

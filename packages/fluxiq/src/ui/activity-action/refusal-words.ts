@@ -53,6 +53,8 @@ export const ACTIVITY_ACTION_REFUSAL_WORDS = Object.freeze({
     repeat_never_ends: "that repeat could never end on its own: its last step cannot tell when there is nothing more",
     holds_a_repeat: "a repeat still needs that step as its source or its last step",
     span_holds_routing: "a step inside that repeat also says when it runs",
+    not_an_edit: "that is not one of the changes the draft takes",
+    not_a_read: "that step does not read, so it cannot be the result",
   } as const),
   repeated: Object.freeze({
     failed: "it was already tried exactly this way and did not work",

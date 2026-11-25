@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { automationStudioFlowDraftEntry, AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID } from "../entry.ts";
+import { automationStudioFlowDraftEntry, AUTOMATION_STUDIO_FLOW_DRAFT_GUIDES, AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID } from "../entry.ts";
 import type { AutomationStudioFlowDraftStep } from "../step.ts";
 
 function step(position: number, actionId: string, input: Record<string, string>, over: Partial<AutomationStudioFlowDraftStep> = {}): AutomationStudioFlowDraftStep {
@@ -517,5 +517,39 @@ describe("the call identity a draft step line shows", () => {
     const shown = lines([candidate])[0]!;
     expect(shown).not.toHaveProperty("callId");
     expect(shown).toMatchObject({ checkedCandidate: { callId: "checked" }, priorExecution: { callId: "call.1" } });
+  });
+});
+
+describe("the framework's draft", () => {
+  const framework = (steps: readonly AutomationStudioFlowDraftStep[]) => automationStudioFlowDraftEntry({ steps, authored: "framework" })!.value as Entry;
+
+  it("tells the framework drafting and the six edits, shorter than the authored telling, and says nothing of adding", () => {
+    const steps = [step(1, "press", { target: "t" })];
+    const told = framework(steps).instruction;
+    const authored = (automationStudioFlowDraftEntry({ steps, authored: true })!.value as Entry).instruction;
+    expect(told.length).toBeLessThan(authored.length);
+    expect(told).toContain("Core drafts the Flow from the calls that worked");
+    for (const edit of ["repeat", "bind", "result", "drop", "keep"]) expect(told).toContain(edit);
+    expect(told).toContain("each line left out says why under out");
+    expect(told).toContain("A step joins the Flow by running it");
+    expect(told).toContain("never done again for a draft edit");
+    expect(told).toContain("tested whole from its start");
+    expect(told).not.toContain("add");
+    expect(AUTOMATION_STUDIO_FLOW_DRAFT_GUIDES).toContain(told);
+  });
+
+  it("shows out: the reason on a step the framework left out, and an existing out wins", () => {
+    const left = step(2, "press", { target: "u" }, { disposition: "taken", drafted: "repeat" });
+    const undone = step(3, "press", { target: "v" }, { disposition: "taken", drafted: "undone", coveredBy: "d1" });
+    const lines = framework([step(1, "press", { target: "t" }, { id: "d1", drafted: "in" }), left, undone]).steps as unknown as { out?: string }[];
+    expect(lines[0]).not.toHaveProperty("out");
+    expect(lines[1]!.out).toBe("repeat");
+    expect(lines[2]!.out).toContain("taken out by Core");
+  });
+
+  it("leaves the old tellings and lines unchanged", () => {
+    const left = step(2, "press", { target: "u" }, { disposition: "taken", drafted: "repeat" });
+    expect(value([left]).steps[0]).not.toHaveProperty("out");
+    expect((automationStudioFlowDraftEntry({ steps: [left], authored: true })!.value as Entry).steps[0]).not.toHaveProperty("out");
   });
 });
