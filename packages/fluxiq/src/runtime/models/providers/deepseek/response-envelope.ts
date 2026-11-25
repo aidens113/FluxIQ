@@ -5,11 +5,18 @@ import { isRecord } from "../../transport/index.ts";
 import type { AutomationStudioDeepSeekModel } from "../../catalog/index.ts";
 import { automationStudioDeepSeekCacheHitInputTokens, estimateAutomationStudioDeepSeekCostUsd } from "./pricing.ts";
 import { automationStudioDeepSeekClosedContent } from "./unclosed-content.ts";
+import { automationStudioDeepSeekToolCallRefusal } from "./tool-call-refusal.ts";
 
 /** A task adapter interprets structured content; the provider owns envelope, token usage and billing. */
 export type DeepSeekResponseAdapter<Response> = {
   readResponse(value: unknown, paid: AutomationStudioLlmUsageSummary | undefined, truncated: boolean): Response;
   readTruncatedContent?(content: string): Record<string, unknown> | undefined;
+  /**
+   * Present where the answer is one native tool call (an evidence decision sent as tools, D12, t1038): the reply's
+   * `tool_calls` are read instead of its content, and this is handed the one call, its arguments parsed. It throws a
+   * paid refusal (`./tool-call-refusal.ts`) for a call it cannot use.
+   */
+  readToolCall?(call: { name: string; input: unknown }, paid: AutomationStudioLlmUsageSummary | undefined): Response;
 };
 
 /** The answer and what it cost, read out of the reply the provider sent. */
@@ -27,19 +34,24 @@ export function parseAutomationStudioDeepSeekEnvelope<Response>(
   if (!isRecord(value) || !Array.isArray(value.choices) || value.choices.length !== 1) malformed({ case: "envelope_shape" }, paid);
   const choice = value.choices[0];
   if (!isRecord(choice) || !isRecord(choice.message)) malformed({ case: "envelope_shape", ...finishReasonOf(choice) }, paid);
-  if (typeof choice.message.content !== "string") malformed({ case: "content_missing", ...finishReasonOf(choice) }, paid);
-  // A result verification cut off after its diagnosis closed still gave its
-  // verdict, and only that is read (t653, `./verdict-before-cut.ts`); every
-  // other cut reply is refused as before, and is asked again by its caller.
+  // An answer that is one tool call has no content to read (D12, t1038).
+  const toolCall = adapter.readToolCall ? readToolCallOf(choice, paid) : undefined;
   let cutAfterVerdict: Record<string, unknown> | undefined;
-  if (choice.finish_reason === "length") {
-    if (choice.message.content.trim() === "") {
-      refusePaid("llm.provider_output_padding_truncated", "DeepSeek reached the configured output-token limit without substantive content.", paid);
-    }
-    cutAfterVerdict = adapter.readTruncatedContent?.(choice.message.content);
-    if (!cutAfterVerdict) refusePaid("llm.provider_output_truncated", "DeepSeek stopped at the configured output-token limit.", paid);
-  } else if (choice.finish_reason !== "stop") malformed({ case: "finish_reason", ...finishReasonOf(choice), contentChars: choice.message.content.length }, paid);
-  const structured = cutAfterVerdict ?? parseDeepSeekJsonContent(choice.message.content, paid);
+  let structured: unknown;
+  if (!toolCall) {
+    if (typeof choice.message.content !== "string") malformed({ case: "content_missing", ...finishReasonOf(choice) }, paid);
+    // A result verification cut off after its diagnosis closed still gave its
+    // verdict, and only that is read (t653, `./verdict-before-cut.ts`); every
+    // other cut reply is refused as before, and is asked again by its caller.
+    if (choice.finish_reason === "length") {
+      if (choice.message.content.trim() === "") {
+        refusePaid("llm.provider_output_padding_truncated", "DeepSeek reached the configured output-token limit without substantive content.", paid);
+      }
+      cutAfterVerdict = adapter.readTruncatedContent?.(choice.message.content);
+      if (!cutAfterVerdict) refusePaid("llm.provider_output_truncated", "DeepSeek stopped at the configured output-token limit.", paid);
+    } else if (choice.finish_reason !== "stop") malformed({ case: "finish_reason", ...finishReasonOf(choice), contentChars: choice.message.content.length }, paid);
+    structured = cutAfterVerdict ?? parseDeepSeekJsonContent(choice.message.content, paid);
+  }
   const usage = value.usage;
   if (!isRecord(usage)) usageInvalid(paid);
   const inputTokens = nonNegativeInteger(usage.prompt_tokens);
@@ -50,7 +62,7 @@ export function parseAutomationStudioDeepSeekEnvelope<Response>(
   if (inputTokens > request.tokenLimits.maxInputTokens || totalTokens > request.tokenLimits.maxTotalTokens) usageLimitExceeded(paid);
   const cacheHitInputTokens = automationStudioDeepSeekCacheHitInputTokens(usage, inputTokens);
   return {
-    response: adapter.readResponse(structured, paid, cutAfterVerdict !== undefined),
+    response: toolCall ? adapter.readToolCall!(toolCall, paid) : adapter.readResponse(structured, paid, cutAfterVerdict !== undefined),
     usage: {
       inputTokens,
       outputTokens,
@@ -62,6 +74,34 @@ export function parseAutomationStudioDeepSeekEnvelope<Response>(
 }
 
 
+
+/**
+ * The one tool call of a reply that was asked to be one (D12, t1038), its arguments parsed, or the paid, accounted
+ * refusal of a reply that was not: cut off (`length`), no call, several calls, a finish reason Core does not take, a
+ * call that is not the documented `{ function: { name, arguments } }` shape, arguments that are not JSON. Whether the
+ * name is one the request offered is the reader's to say (`readToolCall`), as it holds the offer.
+ */
+function readToolCallOf(choice: Record<string, unknown>, paid: AutomationStudioLlmProviderReplyAccount["usage"]): { name: string; input: unknown } {
+  const message = choice.message as Record<string, unknown>;
+  const calls = Array.isArray(message.tool_calls) ? message.tool_calls as unknown[] : [];
+  const content = typeof message.content === "string" ? message.content : "";
+  const account = { ...finishReasonOf(choice), ...(paid ? { usage: paid } : {}) };
+  if (choice.finish_reason === "length") {
+    if (calls.length === 0 && content.trim() === "") refusePaid("llm.provider_output_padding_truncated", "DeepSeek reached the configured output-token limit without substantive content.", paid);
+    refusePaid("llm.provider_output_truncated", "DeepSeek stopped at the configured output-token limit.", paid);
+  }
+  if (calls.length === 0) throw automationStudioDeepSeekToolCallRefusal({ case: "tool_call_missing", ...account, contentChars: content.length });
+  if (calls.length > 1) throw automationStudioDeepSeekToolCallRefusal({ case: "tool_call_several", ...account, contentChars: content.length });
+  if (choice.finish_reason !== "tool_calls" && choice.finish_reason !== "stop") malformed({ case: "finish_reason", ...finishReasonOf(choice), contentChars: content.length }, paid);
+  const call = calls[0];
+  const fn = isRecord(call) && isRecord(call.function) ? call.function : undefined;
+  if (!fn || typeof fn.name !== "string" || typeof fn.arguments !== "string") malformed({ case: "envelope_shape", ...finishReasonOf(choice) }, paid);
+  try {
+    return { name: fn.name, input: JSON.parse(fn.arguments) as unknown };
+  } catch {
+    throw automationStudioDeepSeekToolCallRefusal({ case: "content_invalid", ...account, contentChars: fn.arguments.length });
+  }
+}
 
 /**
  * The JSON value in a DeepSeek reply's content.

@@ -17,7 +17,8 @@ export async function readAutomationStudioAnthropicStream(response: Response, ma
   let stopped = false;
   const blocks: Array<Record<string, unknown>> = [];
   const active = new Set<number>();
-  const cancel = () => { void reader.cancel(signal.reason).catch(/* best-effort: the call has already ended */ () => undefined); };
+  const toolInputs = new Map<number, string>();
+  const cancel =() => { void reader.cancel(signal.reason).catch(/* best-effort: the call has already ended */ () => undefined); };
   const event = (frame: string) => {
     const data = frame.split("\n").filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart()).join("\n");
     if (!data) return;
@@ -44,10 +45,16 @@ export async function readAutomationStudioAnthropicStream(response: Response, ma
       if (value.delta.type === "text_delta") {
         if (block.type !== "text" || typeof value.delta.text !== "string") throw malformed();
         block.text = String(block.text ?? "") + value.delta.text;
+      } else if (value.delta.type === "input_json_delta") {
+        // A tool call's input arrives as JSON text in pieces (D12): joined here and parsed when its block stops.
+        if (block.type !== "tool_use" || typeof value.delta.partial_json !== "string") throw malformed();
+        toolInputs.set(value.index as number, (toolInputs.get(value.index as number) ?? "") + value.delta.partial_json);
       }
       // Thinking/signature deltas are not the answer and never become one.
     } else if (value.type === "content_block_stop") {
       if (!Number.isInteger(value.index) || !active.delete(value.index as number)) throw malformed();
+      const input = toolInputs.get(value.index as number);
+      if (input !== undefined && input.trim()) toolInput(blocks[value.index as number]!, input);
     } else if (value.type === "message_delta") {
       if (!envelope || !isRecord(value.delta)) throw malformed();
       Object.assign(envelope, value.delta);
@@ -89,6 +96,20 @@ export async function readAutomationStudioAnthropicStream(response: Response, ma
   } finally {
     void reader.cancel().catch(/* best-effort: the stream outcome is already known */ () => undefined);
     reader.releaseLock();
+  }
+}
+
+/**
+ * A tool call's joined input, parsed onto its block. Input that does not parse is not the stream's fault -- the call
+ * still arrived, and was paid for -- so the block keeps no input and says so (`input_unreadable`), for the reader to
+ * refuse with its account (`./messages.ts`).
+ */
+function toolInput(block: Record<string, unknown>, text: string): void {
+  try {
+    block.input = JSON.parse(text) as unknown;
+  } catch {
+    block.input = undefined;
+    block.input_unreadable = true;
   }
 }
 

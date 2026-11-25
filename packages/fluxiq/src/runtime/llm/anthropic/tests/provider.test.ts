@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createAutomationStudioAnthropicProvider } from "../provider.ts";
 import { AUTOMATION_STUDIO_ANTHROPIC_MESSAGES_URL, AUTOMATION_STUDIO_ANTHROPIC_API_VERSION } from "../messages.ts";
 import { automationStudioAnthropicRequest } from "../request.ts";
-import { DIAGNOSIS, USAGE, request, decisionRequest, textFor, envelope, jsonReply, streamReply, useFixtureModel } from "./fixtures.ts";
+import { DIAGNOSIS, USAGE, request, decisionRequest, decisionCall, textFor, envelope, jsonReply, streamReply, toolUseStreamReply, useFixtureModel } from "./fixtures.ts";
 
 // This file asserts Sonnet's prices and thinking setting, so it names Sonnet on purpose (t1012: the unnamed default is Haiku, see default-model.test.ts).
 useFixtureModel("claude-sonnet-5-5");
@@ -42,9 +42,11 @@ describe("native Anthropic task provider", () => {
   it("preserves nonempty nested arbitrary maps in a generic evidence decision", async () => {
     const task = decisionRequest();
     const decision = { kind: "evidence_tool_decision", summary: "Inspect the fields.", decision: { kind: "tool_call", callId: "inspect.one", toolId: "core.inspect_values", input: { parameters: { sample: { label: "West room", options: { enabled: true, positions: [2, 4] } } } } } };
-    expect(automationStudioAnthropicRequest(task, "claude-sonnet-5-5").format.jsonText).toBe(true);
-    const result = await provider(() => streamReply(textFor(decision, task))).runTask(task);
-    expect(result).toMatchObject({ response: decision });
+    // Sent as one tool call (D12, t1038), and in the JSON-text transport where the provider is told not to.
+    expect(automationStudioAnthropicRequest(task, "claude-sonnet-5-5").decisionTools).toBeDefined();
+    expect(automationStudioAnthropicRequest(task, "claude-sonnet-5-5", { decisionTools: false }).format.jsonText).toBe(true);
+    await expect(provider(() => toolUseStreamReply([decisionCall(decision, task)])).runTask(task)).resolves.toMatchObject({ response: decision });
+    await expect(provider(() => streamReply(textFor(decision, task)), { decisionTools: false }).runTask(task)).resolves.toMatchObject({ response: decision });
   });
 
   it.each([
@@ -55,7 +57,7 @@ describe("native Anthropic task provider", () => {
   });
 
   it.each(["not JSON", '{"result_json":"not JSON"}', '{"result_json":"{}","extra":true}']) ("refuses malformed transport JSON while charging the paid call: %s", async (text) => {
-    await expect(provider(() => streamReply(text)).runTask(decisionRequest())).rejects.toMatchObject({ code: "llm.provider_malformed_response", paid: { outputTokens: 30 } });
+    await expect(provider(() => streamReply(text), { decisionTools: false }).runTask(decisionRequest())).rejects.toMatchObject({ code: "llm.provider_malformed_response", paid: { outputTokens: 30 } });
   });
 
   it("enforces the original schema after decoding instead of trusting native structure", async () => {

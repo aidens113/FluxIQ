@@ -5,13 +5,15 @@ import { automationStudioLlmLiftDraftGuide } from "./draft-guide.ts";
 import { automationStudioOverriddenText } from "../../run-overrides/index.ts";
 import { automationStudioLlmTaskOutputSchema } from "./output-schema.ts";
 import { automationStudioLlmTaskSystemPrompt } from "./system-prompt.ts";
+import type { AutomationStudioLlmTaskAnswerTransport } from "./answer-transport.ts";
 
 export type AutomationStudioLlmTaskMessage = { role: "system" | "user"; content: string };
 
-export function automationStudioLlmTaskMessages(request: AutomationStudioLlmTaskRequest): AutomationStudioLlmTaskMessage[] {
+/** A task's system and user messages, its answer asked for by `transport` (`./answer-transport.ts`). */
+export function automationStudioLlmTaskMessages(request: AutomationStudioLlmTaskRequest, transport: AutomationStudioLlmTaskAnswerTransport = "json_object"): AutomationStudioLlmTaskMessage[] {
   return [
-    { role: "system", content: automationStudioLlmTaskSystemPrompt(request) },
-    { role: "user", content: JSON.stringify(providerUserPayload(request)) }
+    { role: "system", content: automationStudioLlmTaskSystemPrompt(request, transport) },
+    { role: "user", content: JSON.stringify(providerUserPayload(request, transport)) }
   ];
 }
 /**
@@ -101,8 +103,8 @@ export function automationStudioLlmTaskMessages(request: AutomationStudioLlmTask
  * (`./draft-guide.ts`, t869). Which entries of the window change is said in one
  * place (`../evidence-moves/evidence-that-moves.ts`).
  */
-function providerUserPayload(request: AutomationStudioLlmTaskRequest): Record<string, unknown> {
-  if (request.taskKind === "evidence_tool_decision" && request.context.evidenceLoop) return providerEvidenceDecisionPayload(request, request.context.evidenceLoop);
+function providerUserPayload(request: AutomationStudioLlmTaskRequest, transport: AutomationStudioLlmTaskAnswerTransport): Record<string, unknown> {
+  if (request.taskKind === "evidence_tool_decision" && request.context.evidenceLoop) return providerEvidenceDecisionPayload(request, request.context.evidenceLoop, transport);
   const context = request.taskKind === "flow_bootstrap" && request.context.flowBootstrap
     ? {
       schemaVersion: request.context.schemaVersion,
@@ -123,15 +125,16 @@ function providerUserPayload(request: AutomationStudioLlmTaskRequest): Record<st
   };
 }
 
-/** One evidence decision's user message: the output schema and the constant head, the window, then everything that varies (see above). */
+/** One evidence decision's user message: the output schema (where no decision tools carry it) and the constant head, the window, then everything that varies (see above). */
 function providerEvidenceDecisionPayload(
   request: AutomationStudioLlmTaskRequest,
-  loop: NonNullable<AutomationStudioLlmTaskRequest["context"]["evidenceLoop"]>
+  loop: NonNullable<AutomationStudioLlmTaskRequest["context"]["evidenceLoop"]>,
+  transport: AutomationStudioLlmTaskAnswerTransport
 ): Record<string, unknown> {
   const routing = request.context.flowBootstrap?.routing;
   // Constant once its situations are in the window; a context that still lists them grows, and goes after it.
   const routingInFront = routing !== undefined && routing.situations.length === 0;
-  const outputSchema = automationStudioLlmTaskOutputSchema(request);
+  const outputSchema = transport === "decision_tools" ? undefined : automationStudioLlmTaskOutputSchema(request);
   const { guide, evidence } = automationStudioLlmLiftDraftGuide(automationStudioLlmPlaceDescribedNodes(request.context.flowBootstrap?.describedNodes ?? [], loop.evidence));
   return {
     taskKind: request.taskKind,

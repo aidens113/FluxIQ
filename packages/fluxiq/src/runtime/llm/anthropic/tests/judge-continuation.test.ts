@@ -2,6 +2,8 @@
 // its last cache mark, with the judging appended (`../../../models/providers/anthropic/continuation.ts`). A paid probe
 // showed the judge's own output format makes the whole prefix a cache miss, so the judge keeps the decider's JSON-text
 // format and carries its own outputSchema in its message. No model is called: the fetch is scripted.
+// This file holds a decider sent in the JSON-text transport (`decisionTools: false`); one sent as tools, and its judge, are in
+// `./native-decision.test.ts` (D12, t1038).
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -43,7 +45,7 @@ function adapter() {
     sent.push(JSON.parse(String(init.body)) as Wire);
     return streamReply(replies[Math.min(sent.length - 1, replies.length - 1)]!);
   });
-  const provider = createAutomationStudioAnthropicProvider({ secretReference: { kind: "secret_reference", id: "secret:claude" }, resolveSecret: async () => "dummy-provider-key", fetchImpl: fetchImpl as unknown as typeof fetch });
+  const provider = createAutomationStudioAnthropicProvider({ secretReference: { kind: "secret_reference", id: "secret:claude" }, resolveSecret: async () => "dummy-provider-key", decisionTools: false, fetchImpl: fetchImpl as unknown as typeof fetch });
   return { provider, sent };
 }
 

@@ -58,7 +58,11 @@ const CASE_SAID: Readonly<Record<AutomationStudioLlmProviderReplyCase, string>> 
   content_trailing: "there was more text after the JSON object",
   content_mismatched: "its brackets did not match: one closed the wrong kind, or there was one too many or too few",
   content_invalid: "the JSON did not parse: a bad escape, an unescaped quote, a trailing comma or an unquoted key",
-  content_off_shape: "it was JSON, but it did not fit the answer asked for"
+  content_off_shape: "it was JSON, but it did not fit the answer asked for",
+  tool_call_missing: "it called none of the offered tools: call exactly one",
+  tool_call_several: "it called more than one tool: call exactly one",
+  tool_call_unknown: "it called a tool by a name that was not offered: call one of the offered tools by its exact name",
+  tool_call_unexpected: "it called a tool where the answer asked for was a JSON object as text"
 });
 
 /** The same, for the provider codes that carry no case of their own. */

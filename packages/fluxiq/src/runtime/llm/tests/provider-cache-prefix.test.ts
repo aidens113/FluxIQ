@@ -346,7 +346,7 @@ describe("a reply that said everything but was not shaped exactly as asked", () 
 /** The user message one request would put on the wire, read from the outbound body itself. */
 async function userMessage(request: AutomationStudioLlmTaskRequest): Promise<string> {
   let outbound = "";
-  const provider = createAutomationStudioDeepSeekProvider({
+  const provider = createAutomationStudioDeepSeekProvider({ decisionTools: false,
     now: PEAK_CLOCK,
     secretReference: { kind: "secret_reference", id: "secret:deepseek" },
     resolveSecret: async (input) => { outbound = input.outboundBody; return "test-secret"; },
@@ -358,7 +358,7 @@ async function userMessage(request: AutomationStudioLlmTaskRequest): Promise<str
 }
 
 async function runWithUsage(usage: Record<string, unknown>): Promise<{ usage: Record<string, number | undefined> }> {
-  const provider = createAutomationStudioDeepSeekProvider({
+  const provider = createAutomationStudioDeepSeekProvider({ decisionTools: false,
     now: PEAK_CLOCK,
     secretReference: { kind: "secret_reference", id: "secret:deepseek" },
     resolveSecret: async () => "test-secret",
@@ -368,7 +368,7 @@ async function runWithUsage(usage: Record<string, unknown>): Promise<{ usage: Re
 }
 
 async function runWithReply(content: unknown): Promise<{ response: unknown }> {
-  const provider = createAutomationStudioDeepSeekProvider({
+  const provider = createAutomationStudioDeepSeekProvider({ decisionTools: false,
     now: PEAK_CLOCK,
     secretReference: { kind: "secret_reference", id: "secret:deepseek" },
     resolveSecret: async () => "test-secret",

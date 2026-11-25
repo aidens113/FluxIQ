@@ -508,7 +508,7 @@ function throughDeepSeek(scripted: AutomationStudioLlmProvider, options: { only?
     runTask: async (built, execution) => {
       if (built.taskKind !== "evidence_tool_decision" || options.only?.(built) === false) return await scripted.runTask(built, execution);
       const request = options.altered ? options.altered(structuredClone(built)) : built;
-      const deepseek = createAutomationStudioDeepSeekProvider({
+      const deepseek = createAutomationStudioDeepSeekProvider({ decisionTools: false,
         secretReference: { kind: "secret_reference", id: "secret:deepseek" },
         resolveSecret: async () => "test-secret",
         fetchImpl: (async () => {
@@ -703,7 +703,7 @@ describe("a reset brief's requests through DeepSeek's own pre-send checks", () =
     const cannotUndo = (loop.completionSchema.properties as JsonObject).cannotUndo as JsonObject;
     cannotUndo.description = `${String(cannotUndo.description)} Reworded.`;
     const wire = vi.fn(async () => new Response("{}", { status: 200 }));
-    const deepseek = createAutomationStudioDeepSeekProvider({ secretReference: { kind: "secret_reference", id: "secret:deepseek" }, resolveSecret: async () => "test-secret", fetchImpl: wire as unknown as typeof fetch });
+    const deepseek = createAutomationStudioDeepSeekProvider({ decisionTools: false, secretReference: { kind: "secret_reference", id: "secret:deepseek" }, resolveSecret: async () => "test-secret", fetchImpl: wire as unknown as typeof fetch });
     await expect(deepseek.runTask(first)).rejects.toMatchObject({ code: "llm.provider_evidence_loop_context_invalid" });
     expect(wire).not.toHaveBeenCalled();
   });

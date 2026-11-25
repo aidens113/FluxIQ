@@ -161,7 +161,9 @@ describe("a Flow-less judge's check whose reply could not be read", () => {
 // The coordinator's addition to t979: a judge continuing the decider's conversation takes the decider's JSON-text
 // format only to share its cache; the judge's own grammar is native (`../../../models/providers/anthropic/schema.ts`,
 // `jsonText: false`, `../../../llm/anthropic/tests/native-judge-schema.test.ts`). So after its first unreadable reply it
-// is asked standalone, in its own format, on the same model; every later retry stays on that model.
+// is asked standalone, in its own format, on the same model; every later retry stays on that model. The decider here is
+// sent in the JSON-text transport (`decisionTools: false`); a judge after a decider sent as tools answers in plain text
+// (D12, t1038: `../../../llm/anthropic/tests/native-decision.test.ts`).
 describe("a judge continuing the decider's conversation whose reply could not be read", () => {
   /** One Messages reply as JSON, the model's answer its text. */
   const reply = (text: string, model: string): Response => new Response(JSON.stringify({ id: "msg_t979", type: "message", role: "assistant", model, content: [{ type: "text", text }], stop_reason: "end_turn", usage: { input_tokens: 100, output_tokens: 30, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } }), { status: 200, headers: { "content-type": "application/json" } });
@@ -189,7 +191,7 @@ describe("a judge continuing the decider's conversation whose reply could not be
         return reply(replies[sent.length - 1] ?? JSON.stringify(NO), wire.model);
       });
       const resolver = async (input: { modelId?: string }) => ({
-        provider: createAutomationStudioAnthropicProvider({ model: input.modelId ?? RUNGS[0], secretReference: { kind: "secret_reference", id: "secret:claude" }, resolveSecret: async () => "dummy-provider-key", fetchImpl: fetchImpl as unknown as typeof fetch })
+        provider: createAutomationStudioAnthropicProvider({ model: input.modelId ?? RUNGS[0], secretReference: { kind: "secret_reference", id: "secret:claude" }, resolveSecret: async () => "dummy-provider-key", decisionTools: false, fetchImpl: fetchImpl as unknown as typeof fetch })
       });
       const resolution = await automationStudioLlmRoleRoutedResolution(resolver, { projectId: "project-1", flowId: "flow-1", modelId: startingModel });
       const provider = resolution!.provider;
