@@ -62,7 +62,9 @@ export type AutomationStudioAnswerFirstResultEvent =
   /** A read that is not a draft step. It never changes the result. */
   | { kind: "look"; read: AutomationStudioAnswerFirstResultRead }
   /** `amend_draft {change: "take"}`: the draft took the look `source` as this step. */
-  | { kind: "take"; source: string; step: AutomationStudioAnswerFirstResultStepRef };
+  | { kind: "take"; source: string; step: AutomationStudioAnswerFirstResultStepRef }
+  /** What the domain declared of the list `listKey` from the site's structure: whether it shows a way to another page (t1032). */
+  | { kind: "pager"; listKey: string; pages: boolean };
 
 /** One page of a step version, as last read at its place. */
 export type AutomationStudioAnswerFirstResultPage = {
@@ -112,6 +114,11 @@ export type AutomationStudioAnswerFirstResultLedger = {
   taken: readonly { source: string; stepId: string }[];
   /** Pages set so far: the next page's `seq`. */
   seq: number;
+  /**
+   * Whether each list, by its `listKey`, shows a way to another page, as the domain declared it from the site's
+   * structure (`../result-feed/list-pager.ts`), the latest declaration of each. Absent, or a list not in it: not said.
+   */
+  pagers?: Readonly<Record<string, boolean>>;
 };
 
 /** What a step version has read of its list, as facts (`./coverage.ts`). Never "complete": the judge decides. */

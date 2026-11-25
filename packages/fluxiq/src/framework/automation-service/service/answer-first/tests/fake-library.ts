@@ -171,7 +171,9 @@ export function judgedYes(request?: AutomationStudioLlmTaskRequest, said: Record
   const [first] = automationStudioResultCitedStoredCells(summary).rows;
   const column = first ? Object.keys(first.cells)[0] : undefined;
   const checked = held > 0 && first && column ? [{ row: first.label, column, value: first.cells[column]! }] : [];
-  return judgeReply("yes", { checked, answerRecords: { asked: false }, ...said });
+  // Rows held are the records asked, counted as the site shows them; a yes over none is an act's (t1032: a yes that says
+  // no records are asked over a table the request names is refused, `runtime/result-verification/cited-yes/records-yes.ts`).
+  return judgeReply("yes", { checked, answerRecords: held > 0 ? { asked: true, siteShows: held } : { asked: false }, ...said });
 }
 
 /** One scripted decision, as a model would answer it. */

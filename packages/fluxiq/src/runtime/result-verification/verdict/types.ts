@@ -37,4 +37,10 @@ export type AutomationStudioResultVerdictInput = {
    * are asked, or counts other records than the rows held is `unsure` (`yesCitationRefuted`). Absent, a yes is read as before.
    */
   yesOnRows?: true | undefined;
+  /**
+   * The columns of the table the request names, where Core's reader was sure of them (the answer contract). With
+   * `yesOnRows`, a yes over rows that hold none under one of them, or that says no records are asked, is refused
+   * (`../cited-yes/records-yes.ts`, t1032). Absent, nothing is asked of the rows' columns.
+   */
+  askedColumns?: readonly string[] | undefined;
 };

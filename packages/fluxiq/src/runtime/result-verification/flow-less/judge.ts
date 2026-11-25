@@ -43,6 +43,11 @@
 // says nothing about the answer. Only a cancellation throws, for the attempt to end
 // on the person's Stop.
 //
+// **A yes Core holds says why (t1032).** A yes held for evidence Core could not read, or for an exclusion it was not
+// shown, was told to the model only as "could not tell" (run-mwv5m906-5e999159, 0094): it now carries Core's reason and,
+// for unread evidence, the calls it was (`./held-yes.ts`). And where the result's own contract names the table asked for, a
+// yes must stand on rows that are that table (`askedColumns`, `../cited-yes/records-yes.ts`).
+//
 // **A yes that also advises a change is a yes.** Its `patchNeeded` is about a Flow, and
 // there is none here to change.
 
@@ -58,6 +63,7 @@ import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES, automationStudioResultVerdict }
 import { automationStudioFlowLessScreenedWords } from "./screened-words.ts";
 import { automationStudioFlowLessJudgedSummary } from "./judged-summary.ts";
 import { automationStudioFlowLessJudgedNoFound } from "./judged-no-found.ts";
+import { automationStudioFlowLessHeldYesReason } from "./held-yes.ts";
 import { automationStudioFlowLessSummaryFitting } from "./window-fitting.ts";
 import { automationStudioLlmUnreadableReplySaid } from "../../models/failures/index.ts";
 import {
@@ -226,12 +232,15 @@ function reading(result: AutomationStudioLlmTaskResult, read: AutomationStudioRu
   }
   // A reply cut off after its verdict is read from its whole fields alone (`../verify.ts`, t653).
   const cut = response.truncatedAfterVerdict === true;
+  // The table the request names, where the result's own contract says it (sure): a yes must stand on rows that are it (t1032).
+  const askedColumns = summary.resultEvidence?.answerContract?.columns;
   const verdict = automationStudioResultVerdict({
     summary: read,
     ...(response.diagnosis ? { diagnosis: response.diagnosis } : {}),
     ...(response.summary && !cut ? { summaryText: response.summary } : {}),
     basis: "model",
-    yesOnRows: true
+    yesOnRows: true,
+    ...(askedColumns?.length ? { askedColumns } : {})
   });
   if (verdict.basis === "model_silent") return { judgement: { verdict: "not_judged", reason: NO_ANSWER, unanswered: true } };
   // A cut yes its whole fields do not carry was cut off before it could be read, and is asked again as any unreadable reply is (t979).
@@ -246,10 +255,12 @@ function reading(result: AutomationStudioLlmTaskResult, read: AutomationStudioRu
   if (verdict.code === AUTOMATION_STUDIO_RESULT_VERDICT_CODES.yesCitationRefuted) {
     const refuted = verdict.yesCitations?.refuted ?? [];
     // Core's own sentences on the rows held carry counts and Core's words only, so they may lead the reason (t875); a cited cell's words never do.
-    const onRows = automationStudioResultRecordsYesRefuted(read, response.diagnosis, response.summary && !cut ? response.summary : undefined);
+    const onRows = automationStudioResultRecordsYesRefuted(read, response.diagnosis, response.summary && !cut ? response.summary : undefined, askedColumns);
     const reason = onRows.length ? `The check said yes, but it does not stand on the rows the result holds, so it stands unconfirmed. ${onRows.join(" ")}` : "The check said yes, but a value it cited is not in the rows that were read, so it stands unconfirmed.";
     return { judgement: { verdict: "unsure", reason, checkedWhat: meantToCheck(summary) }, ...(refuted.length ? { refuted } : {}) };
   }
+  // A yes Core held for its own reason says that reason, never only that the check could not tell (t1032).
+  if (response.diagnosis?.answersRequest === "yes") return { judgement: { verdict: "unsure", reason: automationStudioFlowLessHeldYesReason(verdict.reason, read), checkedWhat: meantToCheck(summary) } };
   return { judgement: { verdict: "unsure", reason: readingWords(verdict.unsureReading) ?? "The check could not tell whether this is what was asked for.", checkedWhat: meantToCheck(summary) } };
 }
 

@@ -5,6 +5,7 @@
 // them on to a record.
 
 export { AUTOMATION_STUDIO_FLOW_LESS_ASKED_AGAIN } from "./asked-again.ts";
+export { automationStudioFlowLessHeldYesReason } from "./held-yes.ts";
 export { automationStudioFlowLessJudge } from "./judge.ts";
 export { automationStudioFlowLessJudgedSummary } from "./judged-summary.ts";
 export type { AutomationStudioFlowLessReadLeftOut } from "./read-left-out.ts";

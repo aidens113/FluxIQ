@@ -1,5 +1,6 @@
 import type { AutomationStudioLlmDiagnosisFields } from "../../llm/index.ts";
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
+import { automationStudioResultHeldColumn } from "../asked-words/index.ts";
 import { automationStudioResultReadWorkingSets } from "../read-account/index.ts";
 import { automationStudioResultYesSaysUnjudged } from "./unjudged-words.ts";
 
@@ -22,6 +23,18 @@ const FIND_THEM = "Where the request asks for records, find where the site now s
  *   rows are not the list the request names.
  * - Its own words say what was asked could not be judged (`./unjudged-words.ts`).
  *
+ * **And where the request names the columns of the table it asks for** (`askedColumns`, the answer contract, given only
+ * where Core's reader was sure of it), the rows held must be that table (t1032). Run-mwv5m906-5e999159 (0094) asked for
+ * a table with three named columns; the result held a read of another list, with other columns, and the cart table was
+ * only in the model's words. Its judge said yes with no defects and `answerRecords.asked: false`. Over rows:
+ *
+ * - A yes that says no records are asked: the request names a table's columns, so it asks for records.
+ * - Rows that hold nothing for one of the named columns: no column of that name (with other case, spaces, `_` or `-`,
+ *   `../asked-words/held-column.ts`), and none sharing a word with it. They are not the table asked for, whatever the
+ *   judge counts. A held column that shares a word ("due" for "due date") is left to the judge, so a name the contract
+ *   reader read with a word too many ("title only", from "with columns title only") never becomes a refusal nothing can
+ *   answer: a task ends only with its result or its budget.
+ *
  * An honest empty result is a yes with `asked` true, `siteShows` 0, no
  * citation and no rows held, and passes. Over no rows each sentence leads to
  * where the site now shows the records asked for.
@@ -29,10 +42,12 @@ const FIND_THEM = "Where the request asks for records, find where the site now s
 export function automationStudioResultRecordsYesRefuted(
   summary: Pick<AutomationStudioRunResultSummary, "reads" | "recordSets">,
   diagnosis: Pick<AutomationStudioLlmDiagnosisFields, "checked" | "answerRecords" | "observed" | "changed"> | undefined,
-  summaryText?: string
+  summaryText?: string,
+  askedColumns?: readonly string[]
 ): string[] {
   const held = automationStudioResultHeldRowCount(summary);
   const records = diagnosis?.answerRecords;
+  const table = held > 0 ? askedTable(summary, askedColumns) : [];
   const cited = diagnosis?.checked?.length ?? 0;
   const said: string[] = [];
   if (held > 0 && !cited) said.push(`The yes cites no stored row, though the result holds ${rows(held)}: a yes on rows cites in checked each stored row that answers the request.`);
@@ -45,7 +60,27 @@ export function automationStudioResultRecordsYesRefuted(
   if (automationStudioResultYesSaysUnjudged({ observed: diagnosis?.observed, changed: diagnosis?.changed, summaryText })) {
     said.push("The yes says in its own words that what was asked could not be judged from what is here, and a yes stands only on what is here. Find where the site now shows what the request asks for and read it into the result; a judge that cannot tell answers unknown.");
   }
+  // The table the request names (header, t1032): its records are asked, and the rows held must be it.
+  if (held > 0 && askedColumns?.length && records?.asked === false) {
+    said.push(`The request names the columns of the table it asks for (${askedColumns.join(", ")}), so it asks for records, and the yes says it does not. A yes on rows says answerRecords asked true and counts the records of that table the site shows.`);
+  }
+  if (table.length) {
+    said.push(`The request names the columns ${askedColumns!.join(", ")}, and the rows the result holds have no ${table.join(" or ")} column, so they are not the table it asks for, whatever else they show. The answer is that table, read where the site shows it: where the result holds other rows, answer no, naming the table asked for in defects.`);
+  }
   return said;
+}
+
+/** The named columns the result's answer rows hold nothing for (header); none where no table is named. */
+function askedTable(summary: Pick<AutomationStudioRunResultSummary, "reads" | "recordSets">, askedColumns: readonly string[] | undefined): string[] {
+  if (!askedColumns?.length) return [];
+  const working = automationStudioResultReadWorkingSets(summary);
+  const columns = [...new Set(summary.recordSets.filter((set) => !working.has(set.datasetId)).flatMap((set) => set.columns))];
+  const heldWords = new Set(columns.flatMap(wordsOf));
+  return askedColumns.filter((column) => automationStudioResultHeldColumn(column, columns) === undefined && !wordsOf(column).some((word) => heldWords.has(word)));
+}
+
+function wordsOf(name: string): string[] {
+  return name.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
 }
 
 /** How many rows the result's answer holds: every answer set's record count, never a working set's (`../read-account/working-sets.ts`). */

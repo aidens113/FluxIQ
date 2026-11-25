@@ -18,8 +18,8 @@ import type { AutomationStudioAnswerFirstResultEvent, AutomationStudioAnswerFirs
 export type AutomationStudioAnswerFirstResultPort = {
   /** Feed what one call or run did; answers the line its answer carries, or `undefined`. */
   record(events: readonly AutomationStudioAnswerFirstResultEvent[], counts?: { before: number; after(): number }): string | undefined;
-  /** The statement every model request carries (`./header.ts`). */
-  header(answerRows?: number): string;
+  /** The statement every model request carries (`./header.ts`): with the answer's row count and, where processing shaped them, its columns. */
+  header(answerRows?: number, answerColumns?: readonly string[]): string;
   /** The output step, which the ending and the keep read back. */
   outputStep(): AutomationStudioAnswerFirstResultStep | undefined;
   /** The steps whose pages are the answer, in draft order, the output step last (`./output-group.ts`). */
@@ -50,7 +50,7 @@ export function automationStudioAnswerFirstResultPort(instruction: string): Auto
       const lines = [...refused.map((line) => `${line}.`), ...(said === undefined ? [] : [said])];
       return lines.length ? lines.join(" ") : undefined;
     },
-    header: (answerRows) => automationStudioAnswerFirstResultHeader(ledger, answerRows),
+    header: (answerRows, answerColumns) => automationStudioAnswerFirstResultHeader(ledger, answerRows, answerColumns),
     outputStep: () => automationStudioAnswerFirstResultOutputStep(ledger),
     outputGroup: () => automationStudioAnswerFirstResultOutputGroup(ledger),
     answer: () => automationStudioAnswerFirstResultAnswer(ledger),
