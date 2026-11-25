@@ -18,28 +18,18 @@
 // look after an act that finds something new is new evidence; a look that changes none of
 // them is not.
 
-import { createHash } from "node:crypto";
 import type { JsonObject } from "../../../core/index.ts";
+import { automationStudioFlowLessJsonDigest } from "./json-digest.ts";
 import type { AutomationStudioFlowLessSummary } from "./types.ts";
 
 /** Same evidence, same digest, whatever order any object's keys were written in. */
 export function automationStudioFlowLessSummaryDigest(summary: AutomationStudioFlowLessSummary): string {
   const { trail: _readThroughTheResult, ...bearing } = summary;
   const evidence = bearing.rows ? { ...bearing, rows: { ...bearing.rows, rows: bearing.rows.rows.map((row) => declared(row, bearing.rows?.columns ?? [])) } } : bearing;
-  return `sha256:${createHash("sha256").update(canonicalJson(evidence)).digest("hex")}`;
+  return automationStudioFlowLessJsonDigest(evidence);
 }
 
 function declared(row: JsonObject, columns: readonly { id: string }[]): JsonObject {
   if (columns.length === 0) return row;
   return Object.fromEntries(columns.filter((column) => Object.hasOwn(row, column.id)).map((column) => [column.id, row[column.id]!]));
-}
-
-/** Copied from `../../llm/repeat-policy.ts`, whose own is private; a member that is `undefined` is no member. */
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  if (value && typeof value === "object") {
-    const members = Object.entries(value).filter(([, member]) => member !== undefined).sort(([one], [two]) => (one < two ? -1 : one > two ? 1 : 0));
-    return `{${members.map(([key, member]) => `${JSON.stringify(key)}:${canonicalJson(member)}`).join(",")}}`;
-  }
-  return JSON.stringify(value) ?? "null";
 }

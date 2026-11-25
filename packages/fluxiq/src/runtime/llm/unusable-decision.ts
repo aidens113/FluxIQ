@@ -198,9 +198,6 @@ const TOOL_CALL_NESTING_INSTRUCTION = "A tool call is {kind, callId, toolId, inp
  * so every other feedback is exactly what it was.
  */
 const ISSUE_INSTRUCTIONS: Readonly<Record<string, string>> = {
-  // `./decision-handlers/look-withdrawal.ts`: a look asked for after an ignored redirect.
-  "llm_evidence_loop.look_withdrawn": "Looking is withdrawn: you asked again for what you already hold right after being told you hold it, so no look runs and none is answered from memory. "
-    + "Looks return once an action runs: run an action the instruction needs, amend the draft, or complete.",
   // `./evidence-loop/decision-refusal.ts`: a decision of a kind this decision was not offered.
   "llm_evidence_loop.complete_not_offered": "Finishing was not offered for this decision: the decision schema has no complete variant yet. Run a tool call the instruction needs first.",
   "llm_evidence_loop.amend_not_offered": "Editing the draft was not offered for this decision: the decision schema has no amend_draft variant, because there is no step in the draft to edit yet, this exploration's edits are used up, or this is its last decision. Run a tool call instead, with add true to put its step in the Flow (and act, if it does one), or complete if that is offered and the Flow already does what the person asked.",

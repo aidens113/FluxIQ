@@ -292,7 +292,7 @@ export async function runAutomationStudioRuntimeExploration(
       ? undefined
       : await runAutomationStudioLlmEvidenceLoop(observeAutomationStudioEvidenceLoop({
         ...(input.stepLogPageText ? { stepLogPageText: input.stepLogPageText } : {}),
-        tools: input.loop.tools, observedStateKeys: input.loop.observedStateKeys, controlParameterKeys: input.controlParameterKeys,
+        tools: input.loop.tools, observedStateKeys: input.loop.observedStateKeys, pageChannel: input.loop.pageChannel, controlParameterKeys: input.controlParameterKeys,
         // An answer that could not be used is asked for again, each attempt
         // admitted and charged like any other call. It is a step that did not
         // advance, so the progress guard -- not the call backstop -- is what

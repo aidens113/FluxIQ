@@ -7,5 +7,4 @@ export * from "./batch-member.ts";
 export * from "./tool-admission.ts";
 export * from "./settlement-context.ts";
 export * from "./eligibility.ts";
-export * from "./tool-withdrawal.ts";
 export * from "./unsettled.ts";

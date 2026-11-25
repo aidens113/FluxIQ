@@ -19,17 +19,72 @@ member contains an independently declared holder, its nested members remain
 references and the held group carries their full latest payload once.
 
 `core.recall_result` reads remembered original held members, without dispatching
-an observation or granting execution authority. Its restored payload uses an
+an observation or granting execution authority. A caller running rounds gives every
+round's loop binding one store for the attempt (`evidenceLoopBinding(..., { recall })`)
+and marks each round on it, so an earlier round's call is recalled by its id; an id
+that ran in more than one round is kept apart by round, the current round's first,
+then the latest earlier one, and the call may name `round`. Its restored payload uses an
 independent tool-qualified group and does not replace current client groups.
 Clients with no declared view keys retain their whole historical results.
+
+## The page channel
+
+A domain may declare a page channel on its evidence-runtime binding
+(`pageChannel`: `member`, optional `budgetChars`, optional `fullPage`;
+`runtime/llm/view-channel/`). A tool result then carries its page under `member`
+as a keyed-line view, `{ key, lines: [{ key, text, extra? }] }`: the page key the
+domain names, and its lines in page order with a key stable for the run while the
+line is the same thing on the page. Core compares keys and texts for equality only
+and never parses a text.
+
+With a channel, the window shows each result's page in place as its delivery,
+projected over the window's own records (`automationStudioLlmPageChannelProjection`):
+
+- whole (`whole`) the first time the window meets the page key, and whenever a fresh
+  window does not hold its earlier views;
+- afterwards only what changed since the last delivery of that key (`since`,
+  `changes`, git style: each group opens with the unchanged line before it after two
+  spaces, then `- ` left, `+ ` arrived, `~ ` now reads as shown), or `unchanged`;
+- whole again once the changes since its last whole view would outgrow that view,
+  or would take that page's own copies past the budget, when every earlier copy of
+  that key becomes `{ key, replacedBy }`;
+- in parts past the budget (default `AUTOMATION_STUDIO_LLM_PAGE_BUDGET_CHARS`, 20,000
+  characters), cut at line boundaries with a note of the lines left and the part to
+  ask for.
+
+The budget holds for the whole request, across pages: the page text of every copy
+the window shows stays within it. When a new delivery would take the window over,
+the copies of the least recently delivered other pages become `{ key, droppedAt }`,
+oldest first, until it fits. The page being delivered is never dropped (reading a
+later part may let its own earlier parts go), and a dropped page is shown whole when
+the work comes back to it. These references and the `replacedBy` ones are the only
+rewrites of history; between them the window is append-only. The budget bounds what
+a request carries; it ends or resets nothing.
+
+Lines marked `extra` show in their own delivery and never enter the state a later
+view is compared with. The member takes no view reference and no current-view tail;
+other declared view keys, such as held read rows, keep both. Without a channel the
+window is exactly as described above.
+
+With `fullPage`, the loop is offered `core.full_page` from its first decision, so
+the tool list never changes. Without `part` it runs the domain's full capture and
+the window shows it whole as the key's new state; with `part` it captures nothing and
+the window answers from the current page's latest delivery in parts. A part that
+does not exist, or a capture the domain could not take, is answered, never an
+ending. A recalled page (`core.recall_result`) is shown whole as the page that call
+ended on and does not change the current page's state.
+
+The loop receives the channel as `pageChannel` beside `tools` and
+`observedStateKeys`, from the registry's loop binding.
 
 Route situations have a separate append-only screened projection. The first
 situation carries `state`; later situations identify `baseSituation` and contain
 only `updates` and `removed` keys. Model-facing deltas are computed after
 screening, while full execution state and existing route equality remain intact.
 
-Historical tool and route entries precede Core's passing notes, then the changing
-current-view/current-Flow, history, draft and budget tails. Stable provider schemas
+Historical tool and route entries, with any page deliveries in place, precede Core's
+passing notes, then the changing current-view/current-Flow, history, draft and
+budget tails. Stable provider schemas
 remain before evidence; actual offer changes can still change that earlier prefix.
 Owning request tests capture the provider's serialized body and measure common
 prefixes in UTF8 bytes, including non-ASCII text and JSON escaping. This proves
@@ -84,7 +139,7 @@ DeepSeek reads the same request and caches its longest shared prefix itself.
   something the provider holds it to.
 
 What still changes the head, each once: completion first being offered, on a loop with
-no opening call; looks withdrawn after an ignored redirect; `core.run_nodes` first
+no opening call; `core.run_flow` first offered once the draft has a step to run; `core.run_nodes` first
 offered; a new stage's `promptVersion`; and the draft's guide below first appearing,
 on a loop that opens with no draft to show.
 
@@ -101,6 +156,9 @@ lists every step, so its text changed on 40 of the 51 decisions of
 a copy per change costs more than leaving it uncached ($0.36, $1.03 and $0.12 more:
 every copy stays in every later request), and keeping one copy and moving it, or
 parking it among the results once it has stood still, changes the bill by at most $0.04.
+The five 2026-11-24 bigbox recordings agree: the draft read differently from one
+decision to the next in 296 of 462 consecutive pairs, so it stays after the history
+rather than before it, where each change would send the whole history uncached.
 
 The step log records `cacheWriteInputTokens` beside the hits and misses. `pricing.ts`
 holds the official rates; a hit on Sonnet 5.5 or Opus 5.5 is 0.05x input.

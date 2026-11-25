@@ -82,6 +82,10 @@ export {
 export * from "./decision-context/index.ts";
 // Core's tool that gives back a held view a newer result replaced (`evidence-recall/`, t194 w48).
 export * from "./evidence-recall/index.ts";
+// The page channel (page-diff D1-D7): the keyed-line page view a domain hands Core,
+// its declaration, the projection that shows each page whole once and as changes
+// after, and `core.full_page` (`view-channel/`).
+export * from "./view-channel/index.ts";
 // What the model is told when the draft refuses one of its amendments, and the
 // entry it arrives under. Published beside the loop for the same reason the
 // decision and completion feedback are: a caller reading a run's evidence has

@@ -23,6 +23,7 @@ import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import { automationStudioLlmEvidenceViewGroups } from "../decision-context/index.ts";
 import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop/index.ts";
 import { automationStudioLlmEvidenceRestored } from "./restored.ts";
+import { automationStudioLlmEvidenceRecallStore, type AutomationStudioLlmEvidenceRecallStore } from "./store.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_TOOL_ID } from "./tool-id.ts";
 import { automationStudioLlmEvidenceRecallTool } from "./tool.ts";
 
@@ -35,33 +36,37 @@ type RecallLoop = {
 /**
  * `loop` with the recall offered after its own tools and answered before any
  * of them is called; `loop` itself when it declares no held view or offers no
- * tool, or already offers one under that id.
+ * tool, or already offers one under that id. `store` is what it remembers
+ * results in and answers from: an attempt's, given, so an earlier round's call
+ * is recalled too (`./store.ts`); otherwise one of this binding's own.
  */
-export function automationStudioLlmEvidenceRecallBinding<L extends RecallLoop>(loop: L): L {
+export function automationStudioLlmEvidenceRecallBinding<L extends RecallLoop>(loop: L, store: AutomationStudioLlmEvidenceRecallStore = automationStudioLlmEvidenceRecallStore()): L {
   const groups = automationStudioLlmEvidenceViewGroups(loop.observedStateKeys ?? []);
   if (!loop.tools.length || !groups.some((group) => group.holder !== undefined)) return loop;
   if (loop.tools.some((tool) => tool.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_TOOL_ID)) return loop;
-  const results = new Map<string, JsonValue>();
   const executeTool = loop.executeTool.bind(loop);
   return {
     ...loop,
     tools: [...loop.tools, automationStudioLlmEvidenceRecallTool()],
     async executeTool(input: Parameters<L["executeTool"]>[0]) {
-      if (input.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_TOOL_ID) return recalled(results, groups, input.value);
+      if (input.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_TOOL_ID) return recalled(store, groups, input.value);
       const result = await executeTool(input);
-      results.set(input.callId, evidenceOf(result));
+      store.remember(input.callId, evidenceOf(result));
       return result;
     }
   };
 }
 
-function recalled(results: ReadonlyMap<string, JsonValue>, groups: ReturnType<typeof automationStudioLlmEvidenceViewGroups>, input: JsonObject): AutomationStudioLlmEvidenceToolExecutionResult {
+function recalled(store: AutomationStudioLlmEvidenceRecallStore, groups: ReturnType<typeof automationStudioLlmEvidenceViewGroups>, input: JsonObject): AutomationStudioLlmEvidenceToolExecutionResult {
   const callId = typeof input.callId === "string" ? input.callId : "";
-  const value = results.get(callId);
-  if (value === undefined) {
-    return { kind: "llm_evidence_tool_execution", evidence: { recalled: callId, found: false }, effectApplied: false, resultCode: "core.recall.not_found" };
+  const round = typeof input.round === "number" && Number.isInteger(input.round) ? input.round : undefined;
+  const found = store.recall(callId, round);
+  if (!found) {
+    return { kind: "llm_evidence_tool_execution", evidence: { recalled: callId, ...(round === undefined ? {} : { round }), found: false }, effectApplied: false, resultCode: "core.recall.not_found" };
   }
-  return { kind: "llm_evidence_tool_execution", evidence: { recalled: callId, restored: automationStudioLlmEvidenceRestored(value, groups) }, effectApplied: false, resultCode: "core.recall.restored" };
+  // Which round it came from is said only where it is not the current one, or where the id ran in more than one.
+  const which = found.round !== found.current || found.rounds.length > 1 ? { round: found.round, ...(found.rounds.length > 1 ? { roundsWithThisId: found.rounds } : {}) } : {};
+  return { kind: "llm_evidence_tool_execution", evidence: { recalled: callId, ...which, restored: automationStudioLlmEvidenceRestored(found.value, groups) }, effectApplied: false, resultCode: "core.recall.restored" };
 }
 
 /** What the loop keeps of a result: its evidence when it is an execution result, else the value itself. */

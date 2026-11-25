@@ -1,60 +1,81 @@
-// What a fresh round starts with of everything the attempt's earlier rounds did and found (t1014).
+// What a fresh round starts with of everything the attempt's earlier rounds did: the state, not the transcript (t1014,
+// t1036 D10).
 //
 // **Why.** A round's evidence window is its own: when a round ends (loop detection's last rung, the completion check's
-// ladder, a stall, a throw) the next one used to start from an empty window, told only what was tried in counts and
-// codes (`../attempt/round-note.ts`). The model then looked again at what it had already read, described and found, and did it
-// again (user, 2026-11-24: "THERE SHOULDNT BE ANY ARBITRARY FUCKING CALL LIMIT THAT RANDOMLY JUST RESETS EVERYTHING").
-// A new round may reframe the conversation, but now it starts with what the run learned: every call the attempt made
-// before it, from the attempt's trail (`../trail/`), in order, each with what it was asked, how it came back, where it
-// was and what it found (`./carried-step.ts`). The round's note still says what was tried, what the loop stopped on and
-// what the check said; this is the evidence beside it.
-//
-// **Compact, and within the window.** No page view is carried (the round's opening look shows the page as it stands),
-// and where the calls still do not fit their share of the model's window the oldest are summarised in counts, never
-// dropped (`./fitted.ts`): a summarised call still says it ran and how it ended. The share is a quarter of the window's
-// input, measured at the judge's conservative bytes per token (`runtime/result-verification/run-trail/window.ts`), so the
-// round's own evidence always has the rest.
+// ladder, a stall, a throw) the next one starts afresh, and it must not start empty (user, 2026-11-24: "THERE SHOULDNT BE
+// ANY ARBITRARY FUCKING CALL LIMIT THAT RANDOMLY JUST RESETS EVERYTHING"). It used to be handed every earlier call's result
+// whole but for its pages: in the long recorded runs that was 40-52% of every decision's input, mostly whole read rows
+// and structure descriptions, none of which the round could act on, since a handle names a control only while its page
+// stands. A fresh round is now handed what the run established and where everything else is:
+// - **the reads**, one entry each: the call, how many rows, under which columns. The rows are the attempt's result's, which
+//   the round's own `core.result` entry carries; the call's id names them to `core.recall_result`;
+// - **every other call, as one short line** (`./reference.ts`): its number, its id, what it was on, grouped by what ran and
+//   how it ended, oldest first, so the last of each group is the latest of its kind;
+// - **by reference only**: the acts that landed (with the control words each pressed), the rows kept, the last check's
+//   reasons and what was tried are the round's note (`core.attempt_note`, `../attempt/round-note.ts`); the draft is
+//   `core.flow_draft` and the result's processing `core.result`. None is copied here.
+// Nothing is dropped, only named: every earlier call stays listed. No page copy travels: the round's opening look is the
+// page as it stands.
 //
 // **Constant for the round.** Built once, as the round starts, and shown right after its note, so every request of the
-// round stays a byte prefix of the next. A page's words in it are evidence, as in any call's result, under Core's id.
+// round stays a byte prefix of the next. Screened as a judge's trail is
+// (`../../../../../runtime/result-verification/run-trail/screen.ts`), and with no member under a key the domain denies,
+// key and all (t1018): the loop refuses a request unsent that shows one.
 
 import type { JsonObject } from "../../../../../core/index.ts";
-import { resolveAutomationStudioLlmTokenLimits, type AutomationStudioLlmTokenLimits } from "../../../../../runtime/models/limits/index.ts";
-import type { AutomationStudioResultTrailStep } from "../../../../../runtime/result-verification/index.ts";
-import { automationStudioAnswerFirstCarriedStep } from "./carried-step.ts";
-import { automationStudioAnswerFirstEarlierFitted } from "./fitted.ts";
+import { automationStudioLlmValueWithoutDeniedKeys } from "../../../../../runtime/llm/harness/index.ts";
+import { automationStudioResultTrailScreened, type AutomationStudioResultTrailStep } from "../../../../../runtime/result-verification/index.ts";
+import { automationStudioAnswerFirstEarlierReadRows } from "./read-rows.ts";
+import { automationStudioAnswerFirstEarlierReference } from "./reference.ts";
 import { AUTOMATION_STUDIO_ANSWER_FIRST_EARLIER_ROUNDS_TOOL_ID } from "./tool-id.ts";
 
-/** Below the densest request measured (2.02 bytes a token, run-mwodpw10-3d5748ab), as the judge's window measure is. */
-const BYTES_PER_TOKEN = 1.8;
-/** The earlier rounds' share of the window's input: the round's own evidence has the rest. */
-const WINDOW_SHARE = 0.25;
-
-const WORDS = "What this attempt did in its earlier rounds, oldest first: each call (did, asked), how it came back (outcome), where it was (where) and what it found (found). "
-  + "This round starts afresh from the page as it stands, and all of this still holds as what was seen then: use it, and do not look again for what is here unless the page has changed. "
-  + "The page each call saw is not repeated (core.view_not_carried): this round's own look shows the page as it is now. "
+const WORDS = "What this attempt did in its earlier rounds, as state: each read (reads: its call, how many rows, which columns) and every other call as one line (calls: what ran and how it ended, with each call's number, id and what it was on, oldest first; the last in a group is the latest of its kind). "
+  + "No call's result is repeated here and no page is carried: this round starts afresh from the page as it stands, and its own look shows it. "
+  + "What stands is held elsewhere: the acts that landed, the rows kept, what was tried and the last check's reasons are in the round's note (core.attempt_note), the Flow so far is core.flow_draft, and the result and its processing are core.result. "
+  + "Name a call's id to core.recall_result to read again what it held, and do not make a call again that a line here shows already ran, unless the page has changed. "
   + "A handle from an earlier round names a control only while its page stands, so check it on the page now before you act on it.";
 
-const SUMMARISED_WORDS = "So that all of it fits, what the oldest calls found, and then what they were asked, is summarised in counts in its own place (core.summarised). Every call is still listed with its outcome: nothing was left out.";
+const WITHHELD_WORDS = "Values under keys the domain does not show to a model are left out.";
 
 /** The entry a fresh round is shown after its note; nothing where no call came before it. */
 export function automationStudioAnswerFirstEarlierRounds(input: {
   trail: readonly AutomationStudioResultTrailStep[];
   observedStateKeys?: readonly string[] | undefined;
+  /** The held member a read's rows are under (`holder.member`), where the domain does not declare it among its views. */
+  readRowsKey?: string | undefined;
   deniedEvidenceKeys: readonly string[];
-  tokenLimits?: Partial<AutomationStudioLlmTokenLimits> | undefined;
 }): { callId: string; toolId: string; value: JsonObject } | undefined {
-  const options = { observedStateKeys: input.observedStateKeys ?? [], deniedEvidenceKeys: input.deniedEvidenceKeys };
-  const carried = input.trail.flatMap((step, index): JsonObject[] => {
-    const shown = automationStudioAnswerFirstCarriedStep(step, index + 1, options);
-    return shown ? [shown] : [];
+  if (input.trail.length === 0) return undefined;
+  const observed = [...(input.observedStateKeys ?? []), ...(input.readRowsKey ? [input.readRowsKey] : [])];
+  const reads: JsonObject[] = [];
+  const groups = new Map<string, { did: string; outcome: string | undefined; calls: string[] }>();
+  input.trail.forEach((step, index) => {
+    const n = index + 1;
+    const read = automationStudioAnswerFirstEarlierReadRows(step, observed);
+    if (read) {
+      reads.push({
+        n,
+        ...(step.callId === undefined ? {} : { callId: step.callId }),
+        did: step.did,
+        ...(step.on === undefined ? {} : { on: step.on }),
+        ...(step.where === undefined ? {} : { where: step.where }),
+        ...read
+      });
+      return;
+    }
+    const key = `${step.did}\n${step.outcome ?? ""}`;
+    const group = groups.get(key) ?? { did: step.did, outcome: step.outcome, calls: [] };
+    group.calls.push(automationStudioAnswerFirstEarlierReference(step, n));
+    groups.set(key, group);
   });
-  if (carried.length === 0) return undefined;
-  const { limits } = resolveAutomationStudioLlmTokenLimits(input.tokenLimits);
-  const { entries, summarised } = automationStudioAnswerFirstEarlierFitted(carried, Math.floor(limits.maxInputTokens * WINDOW_SHARE * BYTES_PER_TOKEN));
-  return {
-    callId: AUTOMATION_STUDIO_ANSWER_FIRST_EARLIER_ROUNDS_TOOL_ID,
-    toolId: AUTOMATION_STUDIO_ANSWER_FIRST_EARLIER_ROUNDS_TOOL_ID,
-    value: { words: WORDS, calls: entries, ...(summarised > 0 ? { summarised: { count: summarised, words: SUMMARISED_WORDS } } : {}) }
+  const entry: JsonObject = {
+    words: WORDS,
+    count: input.trail.length,
+    ...(reads.length ? { reads } : {}),
+    calls: [...groups.values()].map((group) => ({ did: group.did, ...(group.outcome === undefined ? {} : { outcome: group.outcome }), calls: group.calls }))
   };
+  const { value: allowed, withheld } = automationStudioLlmValueWithoutDeniedKeys(entry, input.deniedEvidenceKeys);
+  const screened = automationStudioResultTrailScreened(withheld > 0 ? { ...allowed, withheld: WITHHELD_WORDS } : allowed, input.deniedEvidenceKeys).value;
+  if (typeof screened !== "object" || screened === null || Array.isArray(screened)) return undefined;
+  return { callId: AUTOMATION_STUDIO_ANSWER_FIRST_EARLIER_ROUNDS_TOOL_ID, toolId: AUTOMATION_STUDIO_ANSWER_FIRST_EARLIER_ROUNDS_TOOL_ID, value: screened };
 }

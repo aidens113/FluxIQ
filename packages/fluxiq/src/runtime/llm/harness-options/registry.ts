@@ -22,7 +22,8 @@ import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowScope } from
 import type { AutomationStudioNodeAvailability } from "../../../framework/automation-service/nodes/index.ts";
 import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
 import { automationStudioLlmEvidenceIsOpeningCallId, automationStudioLlmEvidenceOpeningCallScope } from "../evidence-loop/call-id.ts";
-import { automationStudioLlmEvidenceRecallBinding } from "../evidence-recall/index.ts";
+import { automationStudioLlmEvidenceRecallBinding, automationStudioLlmEvidenceRecallStore, type AutomationStudioLlmEvidenceRecallStore } from "../evidence-recall/index.ts";
+import { AUTOMATION_STUDIO_LLM_FULL_PAGE_TOOL_ID, automationStudioLlmPageChannelBinding, type AutomationStudioLlmPageChannel, type AutomationStudioLlmPageChannelDeclaration } from "../view-channel/index.ts";
 import { builtinAutomationStudioHarnessOptions } from "./builtin.ts";
 import { automationStudioCoreMoveRunning } from "./core-move.ts";
 import { automationStudioEvidenceBuildId } from "./evidence-build.ts";
@@ -108,6 +109,18 @@ export type AutomationStudioHarnessOptionLoopBinding = {
    * (`../context-window.ts`).
    */
   observedStateKeys?: readonly string[];
+  /**
+   * The bound domain's page channel, when it declared one: each result's page
+   * is shown whole once and as changes after (`../view-channel/`). A caller
+   * passes it on to the loop with `tools` and `observedStateKeys`.
+   */
+  pageChannel?: AutomationStudioLlmPageChannel;
+  /**
+   * The results `core.recall_result` answers from (`../evidence-recall/store.ts`):
+   * the attempt's store when the caller gave one, so a caller running rounds
+   * marks each round on it and an earlier round's call is recalled too.
+   */
+  recall?: AutomationStudioLlmEvidenceRecallStore;
 };
 
 export class AutomationStudioHarnessOptionRegistry {
@@ -116,6 +129,8 @@ export class AutomationStudioHarnessOptionRegistry {
   private readonly domains = new Set<string>();
   /** Each bundle's declared view keys, by the ids of the options it registered. */
   private readonly observedStateKeysByOption = new Map<string, readonly string[]>();
+  /** The bound domain's page channel (`./binding.ts`), set once beside its bundle. */
+  private pageChannel: AutomationStudioLlmPageChannelDeclaration | undefined;
 
   /** Seeded with Core's own options for the given host, so a domain always
    * registers into a non-empty set and there is something to extend. */
@@ -159,6 +174,18 @@ export class AutomationStudioHarnessOptionRegistry {
       if (observed?.length) this.observedStateKeysByOption.set(option.toolId, [...observed]);
     }
     if (domainId !== undefined) this.domains.add(domainId);
+    return this;
+  }
+
+  /**
+   * The bound domain's page channel (page-diff D1, D5): its member and budget
+   * reach every loop binding this registry makes, and its full capture is
+   * offered there as `core.full_page`. One per registry, as one domain binds one.
+   */
+  declarePageChannel(declared: AutomationStudioLlmPageChannelDeclaration | undefined): this {
+    if (!declared) return this;
+    if (this.pageChannel) throw new Error("Automation Studio view channel is already declared. Build a new host runtime instead of declaring twice.");
+    this.pageChannel = declared;
     return this;
   }
 
@@ -231,17 +258,29 @@ export class AutomationStudioHarnessOptionRegistry {
    */
   evidenceLoopBinding(
     context: { projectId: string; flowId: string; runId?: string; buildId?: string },
-    resolution: AutomationStudioHarnessOptionResolution
+    resolution: AutomationStudioHarnessOptionResolution,
+    options: { recall?: AutomationStudioLlmEvidenceRecallStore } = {}
   ): AutomationStudioHarnessOptionLoopBinding {
+    const recall = options.recall ?? automationStudioLlmEvidenceRecallStore();
     const tools = this.tools(resolution);
     // Only the declarations of bundles the model is offered something from: a
     // key means "a view of the target" only in results of the bundle that said so.
     const observedStateKeys = [...new Set(tools.flatMap((tool) => this.observedStateKeysByOption.get(tool.toolId) ?? []))];
     const scopeOf = evidenceBuildScopes(context);
+    // The page channel, when the domain declared one (`../view-channel/binding.ts`): its member and
+    // budget for the window, and `core.full_page`, whose capture runs in the same build scope as every call.
+    const declared = this.pageChannel;
+    const fullPage = declared?.fullPage?.bind(declared);
+    const pageChannel: AutomationStudioLlmPageChannelDeclaration | undefined = declared && {
+      member: declared.member,
+      ...(declared.budgetChars !== undefined ? { budgetChars: declared.budgetChars } : {}),
+      ...(fullPage ? { fullPage: (input) => runWithAutomationStudioEvidenceBuildScope(scopeOf({ callId: input.callId, toolId: AUTOMATION_STUDIO_LLM_FULL_PAGE_TOOL_ID, value: {} }), () => fullPage(input)) } : {})
+    };
     // A held view (`holder.member`) is replaced in what a decision is shown, so
     // the binding offers `core.recall_result` to give it back (`../evidence-recall/`).
-    return automationStudioLlmEvidenceRecallBinding<AutomationStudioHarnessOptionLoopBinding>({
+    return automationStudioLlmPageChannelBinding(automationStudioLlmEvidenceRecallBinding<AutomationStudioHarnessOptionLoopBinding>({
       tools,
+      recall,
       ...(observedStateKeys.length ? { observedStateKeys } : {}),
       executeTool: ({ callId, toolId, value, signal, permission, referenceNow }) => runWithAutomationStudioEvidenceBuildScope(scopeOf({ callId, toolId, value }), () => this.execute({
         projectId: context.projectId,
@@ -254,7 +293,7 @@ export class AutomationStudioHarnessOptionRegistry {
         ...(referenceNow !== undefined ? { referenceNow } : {}),
         ...(permission !== undefined ? { permission } : {})
       }, resolution))
-    });
+    }, recall), pageChannel, context);
   }
 }
 

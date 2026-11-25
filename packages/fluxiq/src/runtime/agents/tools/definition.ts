@@ -41,10 +41,9 @@ export type AutomationStudioLlmEvidenceTool = {
    *
    * Loop data, never sent: the loop strips it from every tool it offers,
    * because provider adapters refuse a tool carrying a key they do not know.
-   * It is what lets the loop withdraw the looks among such a tool's actions
-   * without withdrawing the tool (`../decision-handlers/look-withdrawal.ts`):
-   * the input is offered with that key narrowed to exclude the actions this
-   * build saw report `effect: "observe"` and `proposes: false`.
+   * It once let the loop narrow the input to exclude the looks among such a
+   * tool's actions; looks are never withdrawn now (page-diff D4 and D11), so
+   * it only names the key (`../llm/decision-handlers/look-withdrawal.ts`).
    */
   actionInputKey?: string;
   /** Optional domain-declared observation that is safe to run before the first
