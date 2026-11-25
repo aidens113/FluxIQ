@@ -167,7 +167,7 @@ type Recovery = { detail: AutomationStudioFlowRunDetail; sent: SentCall[]; revea
 async function recover(options: RecoveryOptions): Promise<Recovery> {
   const sent: SentCall[] = [];
   const revealed: string[] = [];
-  const resolveForCaller = createAutomationStudioSessionKeyProviderResolver({ ports: sessionKeyPorts(revealed), fetchImpl: deepSeekEndpoint(options, sent) });
+  const resolveForCaller = createAutomationStudioSessionKeyProviderResolver({ decisionTools: false, ports: sessionKeyPorts(revealed), fetchImpl: deepSeekEndpoint(options, sent) });
   const llmExecution = { ...ACTOR, intent: "diagnose_and_adapt" as const };
   // As `programs/_shared/runtime.ts` binds it: one resolver for the whole
   // diagnosis, evidence, repair and verification loop. The limits are the

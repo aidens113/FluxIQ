@@ -3,6 +3,8 @@ export * from "./continuation.ts";
 export * from "./json-offset.ts";
 export * from "./trail-cache-content.ts";
 export * from "./credential-screen.ts";
+export * from "./decision-tools-wire.ts";
+export * from "./grammar.ts";
 export * from "./pricing.ts";
 export * from "./schema.ts";
 export * from "./schema-misses.ts";

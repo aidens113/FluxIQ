@@ -37,8 +37,8 @@ function walked(value: unknown, schema: unknown, path: string, walk: Walk, depth
     if (!referenced) misses.push(miss("is not a shape the schema can name"));
     else misses.push(...fit(referenced));
   }
-  if (schema.const !== undefined && JSON.stringify(value) !== JSON.stringify(schema.const)) misses.push(miss(`must be exactly ${JSON.stringify(schema.const)}`));
-  if (Array.isArray(schema.enum) && !schema.enum.some((option) => JSON.stringify(value) === JSON.stringify(option))) misses.push(miss(`must be one of ${schema.enum.slice(0, MOST_OPTIONS_SAID).map((option) => JSON.stringify(option)).join(", ")}`));
+  if (schema.const !== undefined && JSON.stringify(value) !== JSON.stringify(schema.const)) misses.push(miss(exactlyRule(schema.const)));
+  if (Array.isArray(schema.enum) && !schema.enum.some((option) => JSON.stringify(value) === JSON.stringify(option))) misses.push(miss(oneOfRule(schema.enum)));
   if (Array.isArray(schema.anyOf)) {
     const tried = schema.anyOf.map((child) => fit(child));
     if (!tried.some((found) => found.length === 0)) misses.push(...nearest(tried, path));
@@ -70,6 +70,37 @@ function walked(value: unknown, schema: unknown, path: string, walk: Walk, depth
 function nearest(tried: readonly AutomationStudioAnthropicSchemaMiss[][], path: string): AutomationStudioAnthropicSchemaMiss[] {
   const wrongWord = (found: readonly AutomationStudioAnthropicSchemaMiss[]) => found.some((one) => one.rule.startsWith("must be exactly") && one.path.startsWith(`${path}.`) && !one.path.slice(path.length + 1).includes("."));
   return [...tried].sort((one, other) => Number(wrongWord(one)) - Number(wrongWord(other)) || one.length - other.length)[0] ?? [{ path, rule: "fits none of the shapes it may take" }];
+}
+
+/**
+ * A rule's words after its first, as a reply account carries them: at most 200 characters of letters, digits, spaces
+ * and `,"'.:-` (`MISS_RULE`, `../../failures/reply-account.ts`). A rule past that is dropped there and the model is told
+ * only that its reply did not fit (t1034: the node list's rule ran past it), so an option list is cut to fit here and
+ * says how many it left out -- never the bound raised.
+ */
+const RULE_ROOM = 200;
+const SAYABLE = /^[\w ,"'.:-]*$/u;
+
+/** `must be one of ...`, as many options as fit (header), and how many more the schema lists. */
+function oneOfRule(options: readonly unknown[]): string {
+  const head = "be one of ";
+  const said: string[] = [];
+  for (const option of options.slice(0, MOST_OPTIONS_SAID)) {
+    const text = JSON.stringify(option);
+    if (!SAYABLE.test(text)) continue;
+    const more = options.length - said.length - 1;
+    if (`${head}${[...said, text].join(", ")}${more > 0 ? ` or ${more} more the schema lists` : ""}`.length > RULE_ROOM) break;
+    said.push(text);
+  }
+  const more = options.length - said.length;
+  if (!said.length) return `must be one of the ${options.length} values the schema lists`;
+  return `must ${head}${said.join(", ")}${more > 0 ? ` or ${more} more the schema lists` : ""}`;
+}
+
+/** `must be exactly ...`, or, where the value cannot be said within the bound (header), that it must be the schema's own. */
+function exactlyRule(constant: unknown): string {
+  const text = JSON.stringify(constant);
+  return SAYABLE.test(text) && `be exactly ${text}`.length <= RULE_ROOM ? `must be exactly ${text}` : "must be exactly the value the schema gives";
 }
 
 function referencedBy(reference: string, root: unknown): unknown {

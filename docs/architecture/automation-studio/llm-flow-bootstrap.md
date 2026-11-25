@@ -2628,7 +2628,10 @@ is tested before its Flow can be persisted.
 
 **A paid reply is kept where Core can keep it, on Anthropic's JSON-text path too.** That transport sends one string, so
 only Core holds a reply to the schema, and that check came before everything Core does to keep an answer
-(`runtime/llm/anthropic/task-answer.ts`). In order: a word no model can choose is put right where the reply makes it
+(`runtime/llm/anthropic/task-answer.ts`). An evidence decision now goes as one native tool call instead (D12, t1038;
+`automation-studio.md`, the Anthropic adapter); its call is read back into the same wrapper and takes this same path, so
+everything below holds for it too. A miss's rule is worded within the bound a reply account carries: a long list of
+options is cut to fit and says how many more the schema lists, so it reaches the model rather than being dropped. In order: a word no model can choose is put right where the reply makes it
 unambiguous, the outer `kind` being the word its own inner object carries and that object fitting its place
 (`models/providers/anthropic/reply/own-word.ts`), and a word naming another answer stays refused; a decision is read as
 every provider's is (`automationStudioLlmEvidenceNormalizedDecisionResponse`); a length (`maxLength`, `minLength`,

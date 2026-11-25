@@ -67,7 +67,7 @@ async function createFlow(loaded: Runtime) {
 async function assertBudget(loaded: Runtime, service: Service, flow: AutomationStudioFlowArtifact, expected: number, carriedUsd = 0) {
   const providerCall = vi.fn(async () => { throw new Error("Budget resolution must not call a provider"); });
   const secretAccess = vi.fn(async () => { throw new Error("Budget resolution must not read a secret"); });
-  const resolve = loaded.createAutomationStudioSessionKeyProviderResolver({
+  const resolve = loaded.createAutomationStudioSessionKeyProviderResolver({ decisionTools: false,
     ports: { snapshot: secretAccess, createUseAuthorization: secretAccess, revealKeyWithAuthorization: secretAccess, revokeRevealAuthorization: vi.fn() },
     fetchImpl: providerCall
   });

@@ -204,7 +204,7 @@ async function createHarness(options: {
   let verificationCalls = 0;
   let decisions = 0;
   let revealCount = 0;
-  const resolveForCaller = createAutomationStudioSessionKeyProviderResolver({
+  const resolveForCaller = createAutomationStudioSessionKeyProviderResolver({ decisionTools: false,
     ports: {
       snapshot: async () => ({ keys: [{ id: KEY_ID, kind: "llm", provider: "deepseek", enabled: true, updatedAtMs: 1 }] }),
       createUseAuthorization: async (input) => ({

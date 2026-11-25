@@ -121,7 +121,7 @@ describe("the marked prefix of a decision's request", () => {
 
   it("changes no byte of what is sent: the blocks concatenate to the shared projection", async () => {
     for (const task of await requestsOfALoop()) {
-      expect(textOf(wireOf(task).messages[0]!.content)).toBe(automationStudioLlmTaskMessages(task)[1]!.content);
+      expect(textOf(wireOf(task).messages[0]!.content)).toBe(automationStudioLlmTaskMessages(task, "decision_tools")[1]!.content);
     }
   });
 

@@ -8,7 +8,8 @@ import { decisionRequest, streamReply, USAGE } from "./fixtures.ts";
 const DECISION = { kind: "evidence_tool_decision", summary: "Fix the saved step.", decision: { kind: "tool_call", callId: "inspect.one", toolId: "core.inspect_values", input: { parameters: { label: 'A "quoted" label' } } } };
 const inner = JSON.stringify(DECISION);
 const wrap = (resultJson: unknown) => JSON.stringify({ result_json: resultJson });
-const provider = (text: string, stop = "end_turn") => createAutomationStudioAnthropicProvider({ secretReference: { kind: "secret_reference", id: "secret:claude" }, resolveSecret: async () => "dummy-provider-key", fetchImpl: vi.fn(async () => streamReply(text, stop)) as typeof fetch });
+// The JSON-text transport a decision is sent in where it does not go as tools (`decisionTools: false`; D12, t1038).
+const provider = (text: string, stop = "end_turn") => createAutomationStudioAnthropicProvider({ secretReference: { kind: "secret_reference", id: "secret:claude" }, resolveSecret: async () => "dummy-provider-key", decisionTools: false, fetchImpl: vi.fn(async () => streamReply(text, stop)) as typeof fetch });
 
 describe("an Anthropic reply Core can read after undoing damage that adds nothing", () => {
   it.each([

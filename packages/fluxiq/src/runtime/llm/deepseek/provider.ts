@@ -31,6 +31,7 @@ import { automationStudioDeepSeekRefusalText, readAutomationStudioDeepSeekRefusa
 import { automationStudioDeepSeekBalanceExhausted } from "./balance-exhausted.ts";
 import { validateAutomationStudioDeepSeekRequest } from "./preflight.ts";
 import { automationStudioDeepSeekMalformedReply, parseAutomationStudioDeepSeekEnvelope } from "./response-envelope.ts";
+import { automationStudioDeepSeekDecisionTools } from "./decision-tools.ts";
 import { automationStudioLlmStepLogModelStep } from "../step-log/index.ts";
 
 export { AUTOMATION_STUDIO_DEEPSEEK_ORIGIN, AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL } from "../../models/providers/deepseek/index.ts";
@@ -52,6 +53,8 @@ export type AutomationStudioDeepSeekProviderOptions = {
   maxResponseBytes?: number;
   /** The clock a call is priced by, peak or off-peak (`./pricing.ts`); `Date.now` when absent. */
   now?: () => number;
+  /** An evidence decision goes as one native tool call (D12, t1038) unless this is `false`, which keeps its JSON-object transport. */
+  decisionTools?: boolean;
 };
 
 export function createAutomationStudioDeepSeekProvider(options: AutomationStudioDeepSeekProviderOptions): AutomationStudioLlmProvider {
@@ -70,18 +73,19 @@ export function createAutomationStudioDeepSeekProvider(options: AutomationStudio
     throw new AutomationStudioLlmProviderError("llm.provider_response_limit_invalid", "DeepSeek response-byte limit is invalid.");
   }
   const now = options.now ?? Date.now;
+  const decisionTools = options.decisionTools !== false;
   return {
     metadata: { provider: "deepseek", model },
     // The same measure `runDeepSeekTask` refuses on, so the harness refuses an
     // oversize request first and with its size (`../harness/run.ts`).
-    measureInput: (request) => measureAutomationStudioDeepSeekInput(request),
+    measureInput: (request) => measureAutomationStudioDeepSeekInput(request, automationStudioDeepSeekDecisionTools(request, decisionTools)),
     // All input a cache miss -- what is cached is not known before the call --
     // at the model's rates in force now, peak or off-peak (t254): what the
     // harness holds for a call of this size against the ledger and the purse.
     estimateCostUsd: ({ inputTokens, outputTokens }) => estimateAutomationStudioDeepSeekCostUsd(inputTokens, outputTokens, 0, model, now()),
     runTask: async (request, execution) => {
       try {
-        return await runDeepSeekTask({ request, ...(execution?.signal ? { signal: execution.signal } : {}), secretReference, resolveSecret: options.resolveSecret, fetchImpl, model, maxResponseBytes, now });
+        return await runDeepSeekTask({ request, ...(execution?.signal ? { signal: execution.signal } : {}), secretReference, resolveSecret: options.resolveSecret, fetchImpl, model, maxResponseBytes, now, decisionTools });
       } catch (error) {
         if (error instanceof AutomationStudioLlmProviderError) throw error;
         // Transport and response work is normalized inside runDeepSeekTask. Any
@@ -101,15 +105,17 @@ async function runDeepSeekTask(input: {
   model: AutomationStudioDeepSeekModel;
   maxResponseBytes: number;
   now: () => number;
+  decisionTools: boolean;
 }): Promise<{ response: AutomationStudioLlmStructuredResponse; usage: AutomationStudioLlmUsageSummary }> {
   let body: string;
+  const tools = automationStudioDeepSeekDecisionTools(input.request, input.decisionTools);
   try {
     validateAutomationStudioDeepSeekRequest(input.request);
     if (!Number.isInteger(input.request.timeoutMs) || input.request.timeoutMs <= 0 || input.request.timeoutMs > AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS) {
       throw new AutomationStudioLlmProviderError("llm.provider_request_timeout_invalid", "LLM request timeout is outside the allowed provider range.");
     }
-    body = buildAutomationStudioDeepSeekRequestBody(input.request, input.model);
-    const measured = measureAutomationStudioDeepSeekInput(input.request);
+    body = buildAutomationStudioDeepSeekRequestBody(input.request, input.model, tools);
+    const measured = measureAutomationStudioDeepSeekInput(input.request, tools);
     const estimatedInputTokens = measured.estimatedInputTokens;
     // The one size limit on a request: the model's context window, which the
     // request's token limits are sized to (`../session-key-provider.ts`). Over
@@ -144,8 +150,8 @@ async function runDeepSeekTask(input: {
     ...(input.request.context.evidenceLoop?.iteration ? { iteration: input.request.context.evidenceLoop.iteration } : {}),
     observe: automationStudioLlmStepLogModelStep,
     screenMessage: automationStudioProviderRefusalMessageScreen,
-    requestShape: () => automationStudioDeepSeekRequestShape({ request: input.request, model: input.model, body }),
+    requestShape: () => automationStudioDeepSeekRequestShape({ request: input.request, model: input.model, body, ...(tools ? { decisionTools: tools } : {}) }),
     resolveKey: (signal) => input.resolveSecret({ provider: "deepseek", secretReference: input.secretReference, projectId: input.request.context.projectId, flowId: input.request.context.flowId, requestId: input.request.requestId, purpose: "llm_provider_request", outboundBody: body, signal }),
-    readEnvelope: (value, sentAtMs) => parseAutomationStudioDeepSeekEnvelope(value, input.request, input.model, sentAtMs)
+    readEnvelope: (value, sentAtMs) => parseAutomationStudioDeepSeekEnvelope(value, input.request, input.model, sentAtMs, tools)
   });
 }

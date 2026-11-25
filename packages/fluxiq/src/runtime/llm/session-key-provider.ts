@@ -78,6 +78,8 @@ export function createAutomationStudioSessionKeyProviderResolver(options: {
   /** Secret Keys' own service in the host. Its `createUseAuthorization` is required: ports without it are refused when the resolver is built. */
   ports: AutomationStudioSessionKeyPorts;
   fetchImpl?: typeof fetch;
+  /** `false` keeps an evidence decision on its JSON-text transport instead of one native tool call (D12, t1038); a test whose scripted endpoint answers in JSON text says so here. */
+  decisionTools?: boolean;
   /** The environment the isolated-test cost ceiling is read from; the process's own when omitted. A test names one here instead of reloading every module. */
   env?: Readonly<Record<string, string | undefined>>;
   flowSecretKeyId?: (scope: { projectId: string; flowId: string }) => Promise<string | undefined> | string | undefined;
@@ -102,6 +104,7 @@ export function createAutomationStudioSessionKeyProviderResolver(options: {
       secretReference: { kind: "secret_reference", id: `secret:session-${providerId}-key` },
       model,
       ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
+      ...(options.decisionTools === undefined ? {} : { decisionTools: options.decisionTools }),
       resolveSecret: async (request) => {
         if (request.projectId !== input.projectId || request.flowId !== input.flowId) throw new Error("LLM request scope mismatch.");
         // Resolved now, for this call, for the caller's authenticated principal.

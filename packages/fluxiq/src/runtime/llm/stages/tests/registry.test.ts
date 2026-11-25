@@ -54,7 +54,7 @@ async function gatherRequest(registry?: AutomationStudioLoopStageInstructionRegi
 
 async function systemPromptFor(registry?: AutomationStudioLoopStageInstructionRegistry): Promise<{ system: string; user: Record<string, unknown> }> {
   let outbound = "";
-  const provider = createAutomationStudioDeepSeekProvider({
+  const provider = createAutomationStudioDeepSeekProvider({ decisionTools: false,
     secretReference: { kind: "secret_reference", id: "secret:deepseek" },
     resolveSecret: async (input) => { outbound = input.outboundBody; return "test-secret"; },
     fetchImpl: (async () => new Response(JSON.stringify({
@@ -141,7 +141,7 @@ describe("Automation Studio loop stage instructions", () => {
     // The unstaged path is unchanged, so nothing that already worked loses the
     // policy on the way to the stage protocol being wired up.
     let outbound = "";
-    const provider = createAutomationStudioDeepSeekProvider({
+    const provider = createAutomationStudioDeepSeekProvider({ decisionTools: false,
       secretReference: { kind: "secret_reference", id: "secret:deepseek" },
       resolveSecret: async (input) => { outbound = input.outboundBody; return "test-secret"; },
       fetchImpl: (async () => new Response(JSON.stringify({

@@ -171,7 +171,7 @@ async function recoveryFixture(intent: AutomationStudioRuntimeSessionLlmIntent) 
     // The host's own composition: the caller's key resolves the provider for
     // the whole diagnosis, evidence, repair and verification loop, whatever its
     // intent. Nothing is issued before the run or revoked after it.
-    llmProviderResolver: createAutomationStudioSessionKeyProviderResolver({
+    llmProviderResolver: createAutomationStudioSessionKeyProviderResolver({ decisionTools: false,
       ports: {
         snapshot: async () => ({ keys: [{ id: "secret:key", kind: "llm", provider: "deepseek", enabled: true, updatedAtMs: 1 }] }),
         createUseAuthorization: async (input) => {

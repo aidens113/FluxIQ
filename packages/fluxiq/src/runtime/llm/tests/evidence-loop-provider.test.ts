@@ -35,7 +35,7 @@ describe("Automation Studio evidence-loop provider task", () => {
 
   it("sends the strict dynamic decision schema through DeepSeek and parses completion", async () => {
     let outbound = "";
-    const provider = createAutomationStudioDeepSeekProvider({
+    const provider = createAutomationStudioDeepSeekProvider({ decisionTools: false,
       secretReference: { kind: "secret_reference", id: "secret:deepseek" },
       resolveSecret: async (input) => { outbound = input.outboundBody; return "test-secret"; },
       fetchImpl: (async () => new Response(JSON.stringify({
@@ -75,7 +75,7 @@ describe("Automation Studio evidence-loop provider task", () => {
 
   it("rejects altered decision schemas before secret resolution", async () => {
     let secrets = 0;
-    const provider = createAutomationStudioDeepSeekProvider({
+    const provider = createAutomationStudioDeepSeekProvider({ decisionTools: false,
       secretReference: { kind: "secret_reference", id: "secret:deepseek" },
       resolveSecret: async () => { secrets += 1; return "test-secret"; },
       fetchImpl: (async () => { throw new Error("must not run"); }) as typeof fetch
@@ -92,7 +92,7 @@ describe("Automation Studio evidence-loop provider task", () => {
     const arrival = { node: "web.output.navigate", parameters: { url: "https://start.example/" }, consequences: [] };
     const runNode = [{ toolId: "core.run_node", description: "Run a node.", inputSchema: { type: "object" }, effect: "mutate" as const, perCallEffect: true, initialObservation: { input: { node: "web.output.dom-capture" }, arrival } }];
     let outbound = "";
-    const provider = createAutomationStudioDeepSeekProvider({
+    const provider = createAutomationStudioDeepSeekProvider({ decisionTools: false,
       secretReference: { kind: "secret_reference", id: "secret:deepseek" },
       resolveSecret: async (input) => { outbound = input.outboundBody; return "test-secret"; },
       fetchImpl: (async () => new Response(JSON.stringify({
@@ -106,7 +106,7 @@ describe("Automation Studio evidence-loop provider task", () => {
     expect(outbound).not.toContain("https://start.example/");
 
     let secrets = 0;
-    const refusing = createAutomationStudioDeepSeekProvider({
+    const refusing = createAutomationStudioDeepSeekProvider({ decisionTools: false,
       secretReference: { kind: "secret_reference", id: "secret:deepseek" },
       resolveSecret: async () => { secrets += 1; return "test-secret"; },
       fetchImpl: (async () => { throw new Error("must not run"); }) as typeof fetch
@@ -128,7 +128,7 @@ describe("Automation Studio evidence-loop provider task", () => {
       canComplete: true
     };
     let secrets = 0;
-    const provider = createAutomationStudioDeepSeekProvider({
+    const provider = createAutomationStudioDeepSeekProvider({ decisionTools: false,
       secretReference: { kind: "secret_reference", id: "secret:deepseek" },
       resolveSecret: async () => { secrets += 1; return "test-secret"; },
       fetchImpl: (async () => new Response(JSON.stringify({
@@ -173,7 +173,7 @@ describe("Automation Studio evidence-loop provider task", () => {
       canComplete: true
     };
     let outbound = "";
-    const provider = createAutomationStudioDeepSeekProvider({
+    const provider = createAutomationStudioDeepSeekProvider({ decisionTools: false,
       secretReference: { kind: "secret_reference", id: "secret:deepseek" },
       resolveSecret: async (input) => { outbound = input.outboundBody; return "test-secret"; },
       fetchImpl: (async () => new Response(JSON.stringify({
@@ -200,7 +200,7 @@ describe("Automation Studio evidence-loop provider task", () => {
   it("still refuses a decision schema that is neither shape Core builds", async () => {
     const drafting = [{ toolId: "press", description: "Press a control.", inputSchema: { type: "object" }, effect: "mutate" as const }];
     let secrets = 0;
-    const provider = createAutomationStudioDeepSeekProvider({
+    const provider = createAutomationStudioDeepSeekProvider({ decisionTools: false,
       secretReference: { kind: "secret_reference", id: "secret:deepseek" },
       resolveSecret: async () => { secrets += 1; return "test-secret"; },
       fetchImpl: (async () => { throw new Error("must not run"); }) as typeof fetch
@@ -224,7 +224,7 @@ describe("Automation Studio evidence-loop provider task", () => {
       canComplete: true
     };
     let outbound = "";
-    const provider = createAutomationStudioDeepSeekProvider({
+    const provider = createAutomationStudioDeepSeekProvider({ decisionTools: false,
       secretReference: { kind: "secret_reference", id: "secret:deepseek" },
       resolveSecret: async (input) => { outbound = input.outboundBody; return "test-secret"; },
       fetchImpl: (async () => new Response(JSON.stringify({
@@ -278,7 +278,7 @@ describe("Automation Studio evidence-loop provider task", () => {
       completionSchema: completion, canComplete: true
     };
     let secretCalls = 0;
-    const provider = createAutomationStudioDeepSeekProvider({
+    const provider = createAutomationStudioDeepSeekProvider({ decisionTools: false,
       secretReference: { kind: "secret_reference", id: "secret:deepseek" },
       resolveSecret: async () => { secretCalls += 1; return "test-secret"; },
       fetchImpl: (async () => new Response(JSON.stringify({

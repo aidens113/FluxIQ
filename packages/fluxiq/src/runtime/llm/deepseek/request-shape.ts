@@ -3,11 +3,13 @@ import { automationStudioLlmTaskExpectsDiagnosis, type AutomationStudioLlmTaskRe
 import { automationStudioDeepSeekOutputSchema } from "./output-schema.ts";
 import {
   AUTOMATION_STUDIO_DEEPSEEK_RESPONSE_FORMAT,
+  AUTOMATION_STUDIO_DEEPSEEK_TOOL_RESPONSE_FORMAT,
   automationStudioDeepSeekMessages,
-  estimateAutomationStudioDeepSeekInputTokens,
+  measureAutomationStudioDeepSeekInput,
   type AutomationStudioDeepSeekMessage
 } from "./request-body.ts";
 import type { AutomationStudioDeepSeekModel } from "./models.ts";
+import type { AutomationStudioLlmDecisionTools } from "../provider-task/index.ts";
 
 /**
  * What may be said about an outbound request without saying what is in it.
@@ -101,11 +103,13 @@ export function automationStudioDeepSeekRequestShape(input: {
   request: AutomationStudioLlmTaskRequest;
   model: AutomationStudioDeepSeekModel;
   body: string;
+  /** Given, the request was sent as a decision's tools (`./decision-tools.ts`). */
+  decisionTools?: AutomationStudioLlmDecisionTools;
 }): AutomationStudioDeepSeekRequestShape {
-  const { request, model, body } = input;
-  const messages = automationStudioDeepSeekMessages(request);
+  const { request, model, body, decisionTools } = input;
+  const messages = automationStudioDeepSeekMessages(request, decisionTools ? "decision_tools" : "json_object");
   const limits = request.tokenLimits;
-  const measuredInput = estimateAutomationStudioDeepSeekInputTokens(request, model);
+  const measuredInput = measureAutomationStudioDeepSeekInput(request, decisionTools).estimatedInputTokens;
   const schema = automationStudioDeepSeekOutputSchema(request);
   const loop = request.context.evidenceLoop;
   const bootstrap = request.context.flowBootstrap;
@@ -130,7 +134,7 @@ export function automationStudioDeepSeekRequestShape(input: {
     idempotencyKey: request.idempotencyKey,
     timeoutMs: request.timeoutMs,
     bodyBytes: Buffer.byteLength(body, "utf8"),
-    responseFormat: AUTOMATION_STUDIO_DEEPSEEK_RESPONSE_FORMAT,
+    responseFormat: decisionTools ? AUTOMATION_STUDIO_DEEPSEEK_TOOL_RESPONSE_FORMAT : AUTOMATION_STUDIO_DEEPSEEK_RESPONSE_FORMAT,
     messages: messages.map((message) => {
       const bytes = Buffer.byteLength(message.content, "utf8");
       return { role: message.role, bytes, empty: message.content.trim() === "" };

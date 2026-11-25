@@ -33,7 +33,15 @@ export type AutomationStudioAnthropicMessageInput<T> = {
   /** A chat call asked one rung up, for the call's step (`../../transport/observation.ts`, t973). */
   climb?: { from: string; reason: string } | undefined;
   readAnswer(text: string, usage: AutomationStudioLlmUsageSummary): T;
+  /**
+   * Where the request's answer is one native tool call (an evidence decision sent as tools, D12): reads that call, in
+   * place of `readAnswer`. The reply must hold exactly one `tool_use` block; text beside it is not the answer.
+   */
+  readToolCall?: ((call: AutomationStudioAnthropicToolCall, usage: AutomationStudioLlmUsageSummary) => T) | undefined;
 };
+
+/** The one tool call a reply made: the tool's name and its input as parsed JSON. */
+export type AutomationStudioAnthropicToolCall = { name: string; input: unknown };
 
 /** Native Messages transport shared by Flow tasks and chat; no key is retained across calls. */
 export async function automationStudioAnthropicMessage<T>(input: AutomationStudioAnthropicMessageInput<T>): Promise<{ response: T; usage: AutomationStudioLlmUsageSummary }> {
@@ -111,26 +119,44 @@ export async function automationStudioAnthropicMessage<T>(input: AutomationStudi
     if (!isRecord(envelope) || envelope.type !== "message" || envelope.role !== "assistant" || envelope.model !== input.model || !Array.isArray(envelope.content)) throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "Anthropic returned an invalid message envelope.");
     if (envelope.stop_reason === "max_tokens" || envelope.stop_reason === "model_context_window_exceeded") throw new AutomationStudioLlmProviderError("llm.provider_output_truncated", "Anthropic stopped before completing its output.");
     if (envelope.stop_reason === "refusal" || isRecord(envelope.stop_details) && envelope.stop_details.type === "refusal") throw new AutomationStudioLlmProviderError("llm.provider_output_invalid", "Anthropic refused to produce the requested output.");
-    if (envelope.stop_reason !== "end_turn") throw new AutomationStudioLlmProviderError("llm.provider_output_invalid", "Anthropic stopped without completing the requested answer.");
+    const toolAnswer = input.readToolCall !== undefined;
+    const calledTool = envelope.content.some((block) => isRecord(block) && block.type === "tool_use");
+    // A tool call's reply stops for the call (`tool_use`); one that stops for its turn made none, and says so below, as
+    // does a call made where the answer was text.
+    if (envelope.stop_reason !== "end_turn" && !((toolAnswer || calledTool) && envelope.stop_reason === "tool_use")) throw new AutomationStudioLlmProviderError("llm.provider_output_invalid", "Anthropic stopped without completing the requested answer.");
+    const stopReason = String(envelope.stop_reason);
     const content: string[] = [];
+    const calls: Array<Record<string, unknown>> = [];
     for (const block of envelope.content) {
       if (!isRecord(block)) throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "Anthropic returned an invalid content block.");
       if (block.type === "text" && typeof block.text === "string") content.push(block.text);
+      else if (block.type === "tool_use") calls.push(block);
       else if (block.type !== "thinking" && block.type !== "redacted_thinking") throw new AutomationStudioLlmProviderError("llm.provider_output_invalid", "Anthropic returned an unsupported content block.");
     }
     const text = content.join("");
-    if (!text.trim()) step?.reply(raw, response.status);
-    if (!text.trim()) throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "Anthropic returned no answer.", false, undefined, undefined, undefined, undefined, { case: "content_empty", finishReason: "end_turn", contentChars: 0, ...(paid ? { usage: paid } : {}) }, undefined, paid);
+    const unusable = (reason: AutomationStudioLlmProviderReplyAccount["case"], chars: number): AutomationStudioLlmProviderError => {
+      step?.reply(raw, response.status);
+      return new AutomationStudioLlmProviderError("llm.provider_output_invalid", "Anthropic returned an unusable answer.", false, undefined, undefined, undefined, undefined, { case: reason, finishReason: stopReason, contentChars: chars, ...(paid ? { usage: paid } : {}) }, undefined, paid);
+    };
+    // A tool where text was the answer, or no single offered call where one was: paid, and said which.
+    if (!toolAnswer && calls.length) throw unusable("tool_call_unexpected", text.length);
+    if (toolAnswer && calls.length === 0) throw unusable("tool_call_missing", text.length);
+    if (toolAnswer && calls.length > 1) throw unusable("tool_call_several", text.length);
+    const call = calls[0];
+    if (call && (call.input_unreadable === true || typeof call.name !== "string")) throw unusable("content_invalid", 0);
+    if (!toolAnswer && !text.trim()) step?.reply(raw, response.status);
+    if (!toolAnswer && !text.trim()) throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "Anthropic returned no answer.", false, undefined, undefined, undefined, undefined, { case: "content_empty", finishReason: "end_turn", contentChars: 0, ...(paid ? { usage: paid } : {}) }, undefined, paid);
     if (!paid) throw new AutomationStudioLlmProviderError("llm.provider_usage_invalid", "Anthropic returned invalid token usage.");
     // The paid account exists before schema validation can refuse the answer.
+    const said = call ? JSON.stringify(call.input ?? null) : text;
     let answer: T;
     try {
-      answer = input.readAnswer(text, paid);
+      answer = call && input.readToolCall ? input.readToolCall({ name: call.name as string, input: call.input }, paid) : input.readAnswer(text, paid);
     } catch (error) {
       // An answer Core cannot read is the one a person most needs to see, so its raw reply is kept,
       // through the step log's own screen, once it has passed the credential check above. It is
       // never kept where the credential is in the text, however it was encoded in the envelope.
-      if (!text.includes(key)) step?.reply(raw, response.status);
+      if (!said.includes(key)) step?.reply(raw, response.status);
       throw error;
     }
     if (automationStudioAnthropicReplyContainsCredential(answer, key)) throw new AutomationStudioLlmProviderError("llm.provider_output_invalid", "Anthropic answer contained the configured credential.");
