@@ -15,7 +15,9 @@
 // the same before reading the earlier judge saw. Where it is not, the before side the judge is
 // shown says so (`./earlier-words.ts`), holding this attempt's own reading, if it took one, beside
 // those words and never as a reading from before the acts. Only a reading from before every act
-// is told to `keep`.
+// is told to `keep`. Those words are Core's note, never a reading of the page: the judge's evidence tells them in
+// Core's words and hands only a reading beside them to the host's projector
+// (`runtime/result-verification/judge-evidence/earlier-before-note.ts`, t1043).
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_ANSWER_FIRST_EARLIER_BEFORE_WORDS as WORDS } from "./earlier-words.ts";
 import type { AutomationStudioAnswerFirstWitnessesInput } from "./input.ts";

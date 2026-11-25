@@ -10,3 +10,5 @@ export { automationStudioJudgeEvidenceReplacement } from "./replacement.ts";
 export type { AutomationStudioJudgeEvidenceHistory } from "./history.ts";
 export { automationStudioReadJudgeActionRef, type AutomationStudioJudgeActionRef } from "./action-ref.ts";
 export { automationStudioReadJudgeWitnessAssociation, type AutomationStudioJudgeWitnessAssociation } from "./witness-association.ts";
+export { AUTOMATION_STUDIO_JUDGE_EARLIER_BEFORE_WORDS } from "./earlier-before-words.ts";
+export { automationStudioJudgeEarlierBeforeNote, type AutomationStudioJudgeEarlierBeforeNote } from "./earlier-before-note.ts";
