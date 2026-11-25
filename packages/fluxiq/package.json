@@ -1,6 +1,6 @@
 {
   "name": "fluxiq",
-  "version": "0.54.23",
+  "version": "0.54.24",
   "description": "Domain-neutral FluxIQ framework runtime for Node.js.",
   "license": "SEE LICENSE IN LICENSE.md",
   "type": "module",
