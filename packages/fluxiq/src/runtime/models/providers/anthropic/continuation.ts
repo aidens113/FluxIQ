@@ -13,6 +13,14 @@
 // (`{role: "system"}`, accepted on Haiku, Sonnet and Opus 5.5). A cache belongs to its model, so the judge runs on the
 // model that served that decision (`../../../llm/role-routing/provider.ts`).
 //
+// **Held means held whole (t1044).** The decider's evidence shows a call's page and read members as
+// `{"core.view_reference": {callId, group}}`, whose whole value is only in the `core.current_view` tail, and that tail
+// comes after the last cache mark, so it is never in the prefix (`../../../llm/decision-context/current-view.ts`). Live
+// run `run-mwvgjb8c-5a1f2ae3` (0042): the judge was told all 15 of the attempt's calls were "in its evidence above",
+// while every one of their 29 view references resolved to nothing it was sent, so it saw none of the pages and only 3
+// of a read's 15 rows. A call is held above only where every reference in its entry resolves within the prefix;
+// otherwise its trail entry stays in the judge's message.
+//
 // **The decider's output format, not the judge's.** A paid probe (t965, two calls on `claude-haiku-5-5`): the same
 // system and user blocks with the judge's own `output_config.format` read 0 cached tokens and wrote all 9,707 again,
 // the system prompt's included, so the format is part of the cached prefix. The decider's format is the adapter's
@@ -38,7 +46,7 @@ export type AutomationStudioAnthropicDeciderPrefix = {
   wire: Record<string, unknown>;
   /** The user turn's blocks up to and including its last marked block. */
   blocks: TextBlock[];
-  /** The ids of the calls whose evidence entries those blocks hold. */
+  /** The ids of the calls whose evidence entries those blocks hold whole: every view reference in the entry resolves within the blocks. */
   callIds: string[];
   /** Set where the decider was sent as tools: the judge then answers in plain text. Otherwise it answers in the decider's `result_json`. */
   afterTools?: true;
@@ -57,16 +65,41 @@ export function automationStudioAnthropicDeciderPrefix(wire: Record<string, unkn
   const last = content.map((block) => block.cache_control !== undefined).lastIndexOf(true);
   if (last < 0) return undefined;
   const blocks = content.slice(0, last + 1);
-  const callIds = blocks.slice(1).flatMap((block) => {
+  const entries = blocks.slice(1).flatMap((block) => {
     try {
-      const entry = JSON.parse(block.text.replace(/^,/u, "")) as { callId?: unknown };
-      return typeof entry.callId === "string" ? [entry.callId] : [];
+      const entry = JSON.parse(block.text.replace(/^,/u, "")) as { callId?: unknown; toolId?: unknown; value?: unknown };
+      return typeof entry.callId === "string" ? [entry as { callId: string; toolId?: unknown; value?: unknown }] : [];
     } catch (error) {
       if (error instanceof SyntaxError) return []; // The head block and any block that is no whole entry name no call.
       throw error;
     }
   });
+  // The view groups the prefix itself holds whole, by the call and group a reference names (header, t1044).
+  const resolved = new Set(entries.flatMap((entry) => entry.toolId === CURRENT_VIEW && isObject(entry.value) && Array.isArray(entry.value.groups)
+    ? entry.value.groups.flatMap((group) => isObject(group) && typeof group.callId === "string" && typeof group.group === "string" ? [referenceKey(group.callId, group.group)] : [])
+    : []));
+  const callIds = entries.filter((entry) => viewReferences(entry.value).every((key) => resolved.has(key))).map((entry) => entry.callId);
   return { wire: { ...wire, messages: undefined }, blocks, callIds, ...(Array.isArray(wire.tools) ? { afterTools: true as const } : {}) };
+}
+
+/** The decider's tail entry holding each view group's latest whole value (`../../../llm/decision-context/current-view.ts`). */
+const CURRENT_VIEW = "core.current_view";
+/** The member that stands in for a view held elsewhere, `{"core.view_reference": {callId, group}}`. */
+const VIEW_REFERENCE = "core.view_reference";
+
+/** Every view reference in `value`, by its call and group; one that names neither counts as unresolvable. */
+function viewReferences(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap(viewReferences);
+  if (!isObject(value)) return [];
+  if (Object.hasOwn(value, VIEW_REFERENCE)) {
+    const reference = value[VIEW_REFERENCE];
+    return [isObject(reference) && typeof reference.callId === "string" && typeof reference.group === "string" ? referenceKey(reference.callId, reference.group) : "\u0000unnamed"];
+  }
+  return Object.values(value).flatMap(viewReferences);
+}
+
+function referenceKey(callId: string, group: string): string {
+  return `${callId}\u0000${group}`;
 }
 
 /**
