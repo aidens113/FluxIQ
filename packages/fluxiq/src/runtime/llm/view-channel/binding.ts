@@ -13,6 +13,12 @@
 // deliveries it holds, so a part is always one the model was offered, and a
 // part that does not exist is told so -- never an ending. A capture the domain
 // could not take is answered as unavailable, also never an ending.
+//
+// **The capture is read as a view, or as a result holding one under the
+// member (t1042).** The web domain's hook answers with the result its tools
+// answer with -- the published page, whose `pageView` is the view -- and was
+// answered "unavailable" on every call while only a bare view was read. Either
+// shape is read; nothing else of the result is shown.
 
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import { automationStudioActionPermissionDenied, type AutomationStudioActionPermissionCheck } from "../../action-permission-requests/index.ts";
@@ -66,7 +72,7 @@ export function automationStudioLlmPageChannelBinding<L extends PageLoop>(
         permission: input.permission ?? automationStudioActionPermissionDenied,
         ...(input.signal ? { signal: input.signal } : {})
       });
-      const view = captured === undefined ? undefined : automationStudioLlmPageViewOf(captured);
+      const view = captured === undefined ? undefined : automationStudioLlmPageViewOf(captured) ?? automationStudioLlmPageViewOf(captured[declared.member]);
       if (!view) {
         return { kind: "llm_evidence_tool_execution", evidence: { unavailable: "The whole page could not be captured just now; the page each result carries is still current." }, effectApplied: false, resultCode: "core.full_page.unavailable" } satisfies AutomationStudioLlmEvidenceToolExecutionResult;
       }

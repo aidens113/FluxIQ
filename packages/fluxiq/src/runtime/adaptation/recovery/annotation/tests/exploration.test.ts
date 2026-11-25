@@ -196,6 +196,61 @@ describe("runAutomationStudioRecoveryExploration", () => {
     });
     expect(notRun.explored).toEqual([]);
   });
+
+  // t1042 (page-diff D1, D5): a recovery is given the page as a build is, whole the first time its page key is met and
+  // as what changed after, with `core.full_page` among its tools when the domain can capture a page whole. Before,
+  // the registry view of the binding dropped the channel and the domain had to offer a look of its own.
+  it("carries the domain's page channel: the page whole once, then its changes, and core.full_page offered", async () => {
+    const calls: string[] = [];
+    const offered: string[][] = [];
+    const evidence: JsonObject[][] = [];
+    const view = (texts: string[]) => ({ key: "page.one", lines: texts.map((text) => ({ key: text, text })) });
+    // Long enough that one arrived line is a change, not a reason to send the page whole again (D7).
+    const lines = Array.from({ length: 12 }, (_, index) => `line ${String.fromCharCode(65 + index)} of the page as it stands`);
+    const first = { schemaVersion: "test.page.v1", pageView: view(lines) };
+    const second = { schemaVersion: "test.page.v1", pageView: view([...lines, "line arrived"]) };
+    const whole = [...lines, "line arrived", "line only the whole page shows"];
+    const fullPages: string[] = [];
+    const fullPage = async (input: { callId: string }): Promise<JsonObject> => {
+      fullPages.push(input.callId);
+      return { schemaVersion: "test.page.v1", pageView: view(whole) };
+    };
+    const shownTo = recordingProvider(calls, offered, ["test.inspect", "test.reveal", "core.full_page"]);
+    const recording: AutomationStudioLlmProvider = {
+      ...shownTo,
+      runTask: async (request, execution) => {
+        evidence.push((request.context.evidenceLoop?.evidence ?? []) as JsonObject[]);
+        return await shownTo.runTask(request, execution);
+      }
+    };
+    const { exploration, explored } = await runAutomationStudioRecoveryExploration({
+      ...base(calls),
+      binding: {
+        ...pagesBinding(calls, { "test.inspect": first, "test.reveal": second }),
+        pageChannel: { member: "pageView", fullPage }
+      },
+      provider: recording,
+      runBudget: new AutomationStudioLlmRunBudgetLedger({ maxCallsPerRun: 8, maxTotalTokensPerRun: 200_000, maxOutputTokensPerRun: 100_000 }),
+      maxEstimatedCostUsd: AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD / 8,
+      recoveryDeadline: startAutomationStudioRecoveryDeadline({ startedAtMs: Date.now() })
+    });
+
+    expect(exploration.outcome).toBe("evidence_gathered");
+    for (const toolIds of offered) expect(toolIds).toContain("core.full_page");
+    expect(fullPages).toEqual(["call.3"]);
+    // The second decision is shown the first page whole; the third, the second page as the one line that arrived.
+    const pageOf = (decision: number, callId: string) => (evidence[decision]!.find((entry) => entry.callId === callId)!.value as { pageView: JsonObject }).pageView;
+    expect(pageOf(1, "call.1")).toEqual({ key: "page.one", whole: lines.join("\n") });
+    expect(pageOf(2, "call.2").whole).toBeUndefined();
+    expect(JSON.stringify(pageOf(2, "call.2").changes)).toContain("line arrived");
+    expect(JSON.stringify(pageOf(2, "call.2").changes)).not.toContain("line B of the page");
+    // The whole page was captured (the domain answers with a result holding the view, as the web domain does) and shown whole.
+    const fourth = evidence[3]!.find((entry) => entry.callId === "call.3")!.value as { pageView?: JsonObject; unavailable?: string };
+    expect(fourth.unavailable).toBeUndefined();
+    expect(fourth.pageView?.whole).toBe(whole.join("\n"));
+    // The patch is still handed the domain's own packets as they were returned, never the window's projection.
+    expect(explored.map((entry) => entry.packet)).toEqual([first, second]);
+  });
 });
 
 /** Observing options that each return a fixed value, recorded as they run. */

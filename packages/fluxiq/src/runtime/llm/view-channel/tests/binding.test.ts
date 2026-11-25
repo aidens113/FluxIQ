@@ -53,6 +53,14 @@ describe("the page channel binding", () => {
     expect(given.executeTool).not.toHaveBeenCalled();
   });
 
+  // t1042: the web domain's hook answers with the result its tools answer with, the view under the member.
+  it("reads a capture that holds the view under the member, and shows the view alone", async () => {
+    const view = { key: "~/", lines: [{ key: "t1", text: "t1 a" }] };
+    const bound = automationStudioLlmPageChannelBinding(loop(), { member: "pageView", fullPage: async () => ({ schemaVersion: "page.v4", location: "https://example.test/", pageView: view }) as unknown as JsonObject }, context);
+    const answered = await bound.executeTool({ callId: "c9", toolId: AUTOMATION_STUDIO_LLM_FULL_PAGE_TOOL_ID, value: {} });
+    expect(answered).toEqual({ kind: "llm_evidence_tool_execution", evidence: { pageView: view }, effectApplied: false, resultCode: "core.full_page.captured" });
+  });
+
   it("returns a part request without capturing, and a capture the domain could not take as unavailable", async () => {
     const fullPage = vi.fn(async () => ({ not: "a view" }) as JsonObject);
     const bound = automationStudioLlmPageChannelBinding(loop(), { member: "pageView", fullPage }, context);

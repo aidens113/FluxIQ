@@ -75,7 +75,7 @@ describe("the failed-step brief, for a step whose result the site may already ho
 
   it("allows 'already done': keep the step, make it run only when its result is not shown, and go on", () => {
     const body = brief(failedDetail(ROUND_16));
-    expect(body).toContain("First look at whether the page already shows the result this step was meant to bring about");
+    expect(body).toContain("First check whether the page already shows the result this step was meant to bring about");
     expect(body).toContain("do not look for another control to do it again. Keep the step, make it run only when its result is not already shown");
     expect(body).toContain("then go on with the later steps");
   });
@@ -97,7 +97,7 @@ describe("the failed-step brief, for a step whose result the site may already ho
     expect(body).not.toContain("The run's diagnosis of this failure concluded");
     expect(body).not.toContain("Core compared the page");
     // The outcomes are offered whatever was recorded.
-    expect(body).toContain("First look at whether the page already shows the result");
+    expect(body).toContain("First check whether the page already shows the result");
   });
 
   it("says the page check could not be made when the page could not be observed", () => {
