@@ -185,7 +185,8 @@ describe("a verification's defects through the diagnosis channel (t752)", () => 
       { ...kept, row: "   " },
       { ...kept, row: 7 },
       { kind: "kept_not_asked", row: "The Long Road" },
-      { ...wrong, column: "" },
+      // A row's value names a cell, so it needs its column; a blank one is no column (t1034).
+      { ...wrong, column: "", value: "1999" },
       { ...kept, because: "a list of values" },
       "The Long Road"
     ];
@@ -196,6 +197,15 @@ describe("a verification's defects through the diagnosis channel (t752)", () => 
     // The warning never carries what the model wrote.
     expect(JSON.stringify(result.diagnostics)).not.toContain("too_strict");
     expect(JSON.stringify(result.diagnostics)).not.toContain("a list of values");
+  });
+
+  // t1034 (run-mwveg5ls-0266dfe0 step 234): a blank optional text is read as not written, as a blank summary is.
+  it("reads a blank column on a row's defect as no column, and keeps the defect with no warning", async () => {
+    const noColumn = { kind: wrong.kind, row: wrong.row, requestWords: wrong.requestWords };
+    const result = await answer([kept, { ...wrong, column: "  " }]);
+    expect(result.ok).toBe(true);
+    expect(result.response).toEqual({ kind: "diagnosis", summary: "Not what was asked.", diagnosis: { answersRequest: "no", defects: [kept, noColumn] } });
+    expect(dropped(result)).toEqual([]);
   });
 
   it("drops defects that are not a list, or are all malformed, and keeps the verdict", async () => {

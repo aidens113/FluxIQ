@@ -35,6 +35,13 @@ export const AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS = Object.freeze({
    */
   judged: (reason: string, found = false, columns?: string): string => `${reason} ${found ? `${FOUND} ` : ""}${columns ? `${columns} ` : ""}${NEW_EVIDENCE}`,
 
+  /**
+   * Rows that cannot be the table the request names, refused before any judge (`./asked-table.ts`, t1034): which named
+   * columns they lack, and how the asked table becomes the result (`columns`, `./result-columns.ts`).
+   */
+  notAskedTable: (asked: readonly string[], lacking: readonly string[], columns: string | undefined): string =>
+    `This completion was refused before any check was paid for: the request names the columns of the table it asks for (${asked.join(", ")}), and the rows the result holds have no ${lacking.join(" or ")} column, so no check can take them as that table, whatever else they show. Everything else the request asks for is checked once the result is that table. ${columns ? `${columns} ` : ""}${NEW_EVIDENCE}`,
+
   /** A request that asks for rows back, completed before any read ran (`./check.ts`, `rows_not_read`). `asked` is the person's own sentence, where Core found one. */
   rowsNotRead: (asked: string | undefined): string =>
     `The request asks for rows back${asked ? ` ("${asked}")` : ""}, and no read has run in this attempt, so this completion was not checked. Rows come only from a read of the page: words in answer are not rows, however they are laid out. Go to the page that shows the rows asked for, run the read there, and complete once it has returned them. If that read finds none, complete then: an empty read is a result the check can judge.`,
