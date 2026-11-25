@@ -2,11 +2,10 @@
 // key for key with made-up tools and words: what the model wrote, and nothing it saw on a page.
 //
 // - Step 73: a press whose `add` and `act` were written inside `input`. It is the call it can only be.
-// - Steps 192 and 215: a call of the node runner naming the look that looks had withdrawn. It is a decision, and the
-//   loop refuses it by name (`llm_evidence_loop.look_withdrawn`); the adapter no longer refuses it unread.
+// - Steps 192 and 215: a call of the node runner naming a node its offer left out (then a withdrawn look). Since
+//   t1038 the adapter holds it to the list, and its miss names the list within the bound a reply account carries.
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
-import { automationStudioLlmEvidenceLookWithdrawal, automationStudioLlmEvidenceWithdrawnActions } from "../../decision-handlers/index.ts";
 import type { AutomationStudioLlmEvidenceTool } from "../../evidence-loop/index.ts";
 import { automationStudioLlmEvidenceParseDecision, buildAutomationStudioLlmEvidenceLoopDecisionSchema } from "../../evidence-loop-decision.ts";
 import { parseAutomationStudioLlmProviderResult, type AutomationStudioLlmTaskRequest } from "../../harness/index.ts";
@@ -62,43 +61,22 @@ describe("run-mwveg5ls step 73: a press with add and act written inside its inpu
   });
 });
 
-describe("run-mwveg5ls steps 192 and 215: the node runner asked for the look looks had withdrawn", () => {
-  /** Looks withdrawn exactly as the loop withdraws them: the snapshot seen to look, a redirect ignored. */
-  function withdrawn() {
-    const looks = automationStudioLlmEvidenceLookWithdrawal({ enabled: true });
-    looks.sawLook("core.run_node", "lib.output.snapshot");
-    looks.redirectShown(4);
-    expect(looks.askedAgain(5, 0)).toBe(true);
-    return { looks, offered: looks.offer([find, runNode], 0) };
-  }
+describe("run-mwveg5ls steps 192 and 215: the node runner asked for a node its offer left out", () => {
+  // t1034 let a withdrawn look through here for the loop to refuse by name. Looks are gone (W1, t1038), so a node the
+  // offer does not list is held to the list like any other value, and the miss names the list within the bound a
+  // reply account carries, so the model is told what the node may be rather than only that the reply did not fit.
+  const narrowed: AutomationStudioLlmEvidenceTool = { ...runNode, inputSchema: { ...runNode.inputSchema, properties: { ...(runNode.inputSchema.properties as JsonObject), node: { enum: NODES.slice(0, 2), description: "The node's id." } } } };
   const snapshot = { kind: "tool_call", callId: "read.cart.26", toolId: "core.run_node", input: { node: "lib.output.snapshot", parameters: {}, consequences: [] } };
 
-  it("the narrowed node list says which actions it left out, and only those", () => {
-    const { offered } = withdrawn();
-    const node = (offered[0]!.inputSchema.properties as JsonObject).node;
-    expect(automationStudioLlmEvidenceWithdrawnActions(node)).toEqual(["lib.output.snapshot"]);
-    expect(automationStudioLlmEvidenceWithdrawnActions((runNode.inputSchema.properties as JsonObject).node)).toEqual([]);
+  it("is refused by the adapter, its miss naming the nodes the offer lists", () => {
+    const refused = thrownBy(() => automationStudioAnthropicTaskAnswer(reply(snapshot), offering([narrowed]), USAGE, 300));
+    expect(refused?.code).toBe("llm.provider_output_invalid");
+    expect(refused?.reply?.misses).toEqual([{ path: "response.decision.input.node", rule: "must be one of \"lib.output.press\", \"lib.output.read_list\"" }]);
   });
 
-  it("is passed on by the adapter, and the loop's own check refuses it as a withdrawn look", () => {
-    const { looks, offered } = withdrawn();
-    expect(offered.map((tool) => tool.toolId)).toEqual(["core.run_node"]);
-    expect(thrownBy(() => automationStudioAnthropicTaskAnswer(reply(snapshot), offering(offered), USAGE, 300))).toBeUndefined();
-    const answer = automationStudioAnthropicTaskAnswer(reply(snapshot), offering(offered), USAGE, 300);
-    const result = parseAutomationStudioLlmProviderResult({ response: answer }, "evidence_tool_decision", undefined, offered);
-    expect(result.diagnostics.filter((one) => one.severity === "error")).toEqual([]);
-    const parsed = automationStudioLlmEvidenceParseDecision((result.response as { decision: unknown }).decision);
-    expect(parsed).toMatchObject({ kind: "tool_call", toolId: "core.run_node", input: { node: "lib.output.snapshot" } });
-    expect(looks.refuses(runNode, (parsed as { input: JsonObject }).input, 0)).toBe(true);
-    expect(looks.refusalCode(0)).toBe("llm_evidence_loop.look_withdrawn");
-  });
-
-  it("every other key of the call is still held to the variant, and a node never offered is still refused", () => {
-    const { offered } = withdrawn();
-    const extra = thrownBy(() => automationStudioAnthropicTaskAnswer(reply({ ...snapshot, input: { ...snapshot.input, page: 2 } }), offering(offered), USAGE, 300));
+  it("every other key of the call is still held to the variant", () => {
+    const extra = thrownBy(() => automationStudioAnthropicTaskAnswer(reply({ ...snapshot, input: { ...snapshot.input, node: "lib.output.press", page: 2 } }), offering([narrowed]), USAGE, 300));
     expect(extra?.code).toBe("llm.provider_output_invalid");
     expect(extra?.reply?.misses).toEqual([{ path: "response.decision.input.page", rule: "is not a key this object takes" }]);
-    const unknown = thrownBy(() => automationStudioAnthropicTaskAnswer(reply({ ...snapshot, input: { ...snapshot.input, node: "lib.output.capture" } }), offering(offered), USAGE, 300));
-    expect(unknown?.code).toBe("llm.provider_output_invalid");
   });
 });

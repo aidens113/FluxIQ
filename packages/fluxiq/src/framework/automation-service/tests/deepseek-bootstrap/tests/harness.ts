@@ -113,7 +113,7 @@ export async function create(options: {
           .map((definition) => definition.id)
       : []
   );
-  const resolveForCaller = createAutomationStudioSessionKeyProviderResolver({
+  const resolveForCaller = createAutomationStudioSessionKeyProviderResolver({ decisionTools: false,
     ports: sessionKeyPorts(revealed),
     fetchImpl: endpoint({
       reply: options.reply,

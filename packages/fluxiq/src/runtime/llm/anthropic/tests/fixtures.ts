@@ -1,6 +1,7 @@
 import type { AutomationStudioLlmTaskRequest } from "../../harness/index.ts";
 import { buildAutomationStudioLlmEvidenceLoopDecisionSchema } from "../../evidence-loop-decision.ts";
 import { automationStudioAnthropicRequest } from "../request.ts";
+import { automationStudioLlmRequestDecisionTools } from "../../provider-task/index.ts";
 
 export const DIAGNOSIS = { kind: "diagnosis", summary: "The requested state is reachable.", confidence: 0.8 };
 export const USAGE = { input_tokens: 100, output_tokens: 30, cache_read_input_tokens: 50, cache_creation_input_tokens: 20, cache_creation: { ephemeral_5m_input_tokens: 20, ephemeral_1h_input_tokens: 0 } };
@@ -53,7 +54,46 @@ export function streamReply(text = textFor(DIAGNOSIS), stop = "end_turn", usage 
     { type: "message_delta", delta: { stop_reason: stop }, usage: { output_tokens: usage.output_tokens } },
     ...(terminate ? [{ type: "message_stop" }] : [])
   ];
-  const bytes = new TextEncoder().encode(events.map((event) => `event: ${event.type}\r\ndata: ${JSON.stringify(event)}\r\n\r\n`).join(""));
+  return sse(events);
+}
+
+/** The tool call a decision wrapper would be when the request sends it as tools (D12): the variant's tool, the rest as its input. */
+export function decisionCall(value: { summary?: unknown; decision: Record<string, unknown> }, task = decisionRequest()): { name: string; input: Record<string, unknown> } {
+  const offer = automationStudioLlmRequestDecisionTools(task)!;
+  const { kind, toolId, ...rest } = value.decision;
+  const tool = offer.tools.find((candidate) => candidate.variant.kind === kind && candidate.variant.toolId === toolId);
+  return { name: tool?.name ?? String(toolId ?? kind), input: { ...(value.summary !== undefined ? { summary: value.summary } : {}), ...rest } };
+}
+
+/** A streamed reply that makes these tool calls (D12), each input arriving in pieces, after any text `said`. */
+export function toolUseStreamReply(calls: ReadonlyArray<{ name: string; input: unknown }>, stop = "tool_use", usage = USAGE, said = ""): Response {
+  const text = said ? [
+    { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
+    { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: said } },
+    { type: "content_block_stop", index: 0 }
+  ] : [];
+  const first = text.length ? 1 : 0;
+  const blocks = calls.flatMap((call, at) => {
+    const json = JSON.stringify(call.input);
+    const index = first + at;
+    return [
+      { type: "content_block_start", index, content_block: { type: "tool_use", id: `toolu_${at}`, name: call.name, input: {} } },
+      { type: "content_block_delta", index, delta: { type: "input_json_delta", partial_json: json.slice(0, 7) } },
+      { type: "content_block_delta", index, delta: { type: "input_json_delta", partial_json: json.slice(7) } },
+      { type: "content_block_stop", index }
+    ];
+  });
+  return sse([
+    { type: "message_start", message: envelope("", { content: [], stop_reason: null, usage: { ...usage, output_tokens: 0 } }) },
+    ...text,
+    ...blocks,
+    { type: "message_delta", delta: { stop_reason: stop }, usage: { output_tokens: usage.output_tokens } },
+    { type: "message_stop" }
+  ]);
+}
+
+function sse(events: readonly Record<string, unknown>[]): Response {
+  const bytes = new TextEncoder().encode(events.map((event) => `event: ${String(event.type)}\r\ndata: ${JSON.stringify(event)}\r\n\r\n`).join(""));
   let offset = 0;
   return new Response(new ReadableStream<Uint8Array>({ pull(controller) {
     if (offset === bytes.length) {

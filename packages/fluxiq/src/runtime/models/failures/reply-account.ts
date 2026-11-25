@@ -37,6 +37,15 @@ import type { AutomationStudioLlmUsageSummary } from "../contracts/index.ts";
  *   trailing comma, an unquoted key.
  * - `content_off_shape`: it is sound JSON and does not fit the schema asked for.
  *   `misses` says where and why, in the schema's words alone.
+ *
+ * The `tool_call_` cases are a reply to a request whose answer is one native tool
+ * call (an evidence decision sent as tools, D12, t1038), or one that called a
+ * tool where none was the answer:
+ *
+ * - `tool_call_missing`: it called none of the offered tools.
+ * - `tool_call_several`: it called more than one.
+ * - `tool_call_unknown`: it called a tool by a name the request did not offer.
+ * - `tool_call_unexpected`: it called a tool where the answer asked for was text.
  */
 const REPLY_CASES = [
   "media_type",
@@ -52,7 +61,11 @@ const REPLY_CASES = [
   "content_trailing",
   "content_mismatched",
   "content_invalid",
-  "content_off_shape"
+  "content_off_shape",
+  "tool_call_missing",
+  "tool_call_several",
+  "tool_call_unknown",
+  "tool_call_unexpected"
 ] as const;
 
 export type AutomationStudioLlmProviderReplyCase = (typeof REPLY_CASES)[number];

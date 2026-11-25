@@ -29,7 +29,7 @@ const routing = buildAutomationStudioFlowBootstrapRoutingContext({
 describe("the routing context a Flow build sends", () => {
   it("reaches the DeepSeek payload with the paths, the situations seen and how the router decides", async () => {
     let outbound = "";
-    const provider = createAutomationStudioDeepSeekProvider({
+    const provider = createAutomationStudioDeepSeekProvider({ decisionTools: false,
       secretReference: { kind: "secret_reference", id: "secret:deepseek" },
       resolveSecret: async (input) => { outbound = input.outboundBody; return "test-secret"; },
       fetchImpl: (async () => new Response(JSON.stringify({

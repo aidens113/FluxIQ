@@ -5,13 +5,21 @@ import { automationStudioLlmEvidenceNormalizedDecisionResponse } from "../eviden
 import type { AutomationStudioDeepSeekModel } from "./models.ts";
 import { isRecord } from "../provider-transport/index.ts";
 import { automationStudioDeepSeekVerdictBeforeCut } from "./verdict-before-cut.ts";
-import { parseAutomationStudioDeepSeekEnvelope as readEnvelope } from "../../models/providers/deepseek/index.ts";
+import { automationStudioDeepSeekToolCallRefusal, parseAutomationStudioDeepSeekEnvelope as readEnvelope } from "../../models/providers/deepseek/index.ts";
+import { automationStudioLlmDecisionFromToolCall, type AutomationStudioLlmDecisionTools } from "../provider-task/index.ts";
 export { automationStudioDeepSeekContentCase, automationStudioDeepSeekMalformedReply } from "../../models/providers/deepseek/index.ts";
 
 /** Studio injects the exact task-schema interpretation and its verification-specific cut handling. */
-export function parseAutomationStudioDeepSeekEnvelope(value: unknown, request: AutomationStudioLlmTaskRequest, model: AutomationStudioDeepSeekModel, sentAtMs?: number): { response: AutomationStudioLlmStructuredResponse; usage: AutomationStudioLlmUsageSummary } {
+export function parseAutomationStudioDeepSeekEnvelope(value: unknown, request: AutomationStudioLlmTaskRequest, model: AutomationStudioDeepSeekModel, sentAtMs?: number, decisionTools?: AutomationStudioLlmDecisionTools): { response: AutomationStudioLlmStructuredResponse; usage: AutomationStudioLlmUsageSummary } {
   return readEnvelope(value, request, model, sentAtMs, {
     readResponse: (structured, paid, cut) => parseDeepSeekStructuredResponse(structured, request, paid, cut),
+    // A decision sent as tools (D12, t1038): the one call is read back into the wrapper a JSON decision is, and then
+    // takes exactly the path a JSON decision takes.
+    ...(decisionTools ? { readToolCall: (call: { name: string; input: unknown }, paid: AutomationStudioLlmUsageSummary | undefined) => {
+      const read = automationStudioLlmDecisionFromToolCall(decisionTools, call);
+      if (!read.ok) throw automationStudioDeepSeekToolCallRefusal({ case: read.reason === "unknown_tool" ? "tool_call_unknown" : "content_not_object", finishReason: "tool_calls", contentChars: JSON.stringify(call.input ?? null).length, ...(paid ? { usage: paid } : {}) });
+      return parseDeepSeekStructuredResponse(read.response, request, paid);
+    } } : {}),
     ...(request.taskKind === "loop_verification" ? { readTruncatedContent: automationStudioDeepSeekVerdictBeforeCut } : {})
   });
 }

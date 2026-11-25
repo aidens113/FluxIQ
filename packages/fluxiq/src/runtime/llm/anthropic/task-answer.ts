@@ -22,6 +22,10 @@
 //
 // Native-schema requests take this path too. The provider's grammar relaxes what it cannot express into a description, so a
 // length may be past there as well, and the same reading holds.
+//
+// So does a decision sent as tools (D12, t1038): its one tool call is read back into the same wrapper first
+// (`../provider-task/decision-tools/`, `./provider.ts`), and every step above then applies to it unchanged, against the
+// unchanged original schema -- a strict tool's grammar is never the authority either.
 
 import { automationStudioAnthropicPaidFailure, automationStudioAnthropicReplyKeyUp, automationStudioAnthropicReplyOwnWord, automationStudioAnthropicSchemaMisses } from "../../models/providers/anthropic/index.ts";
 import { automationStudioLlmEvidenceNormalizedDecisionResponse } from "../evidence-loop-decision.ts";
@@ -29,8 +33,8 @@ import type { AutomationStudioLlmStructuredResponse, AutomationStudioLlmTaskRequ
 import { automationStudioLlmTaskExpectedOutput, automationStudioLlmTaskOutputSchema } from "../provider-task/index.ts";
 import { automationStudioAnthropicDecisionCheck } from "./decision-check.ts";
 
-/** The answer a task's reply gives (header), or the paid failure saying where it does not fit. `contentChars` is how long the reply's text was. */
-export function automationStudioAnthropicTaskAnswer(structured: unknown, request: AutomationStudioLlmTaskRequest, usage: AutomationStudioLlmUsageSummary, contentChars: number): AutomationStudioLlmStructuredResponse {
+/** The answer a task's reply gives (header), or the paid failure saying where it does not fit. `contentChars` is how long the reply's text (or tool input) was; `finishReason`, why the reply stopped. */
+export function automationStudioAnthropicTaskAnswer(structured: unknown, request: AutomationStudioLlmTaskRequest, usage: AutomationStudioLlmUsageSummary, contentChars: number, finishReason = "end_turn"): AutomationStudioLlmStructuredResponse {
   const schema = automationStudioLlmTaskOutputSchema(request);
   const decisionTask = request.taskKind === "evidence_tool_decision";
   const worded = automationStudioAnthropicReplyKeyUp(automationStudioAnthropicReplyOwnWord(structured, schema), schema);
@@ -38,7 +42,7 @@ export function automationStudioAnthropicTaskAnswer(structured: unknown, request
   const lengths = !decisionTask && automationStudioLlmTaskExpectedOutput(request.taskKind) !== "diagnosis";
   const checked = decisionTask ? automationStudioAnthropicDecisionCheck(answer, schema) : { value: answer, schema };
   const misses = automationStudioAnthropicSchemaMisses(checked.value, checked.schema, { lengths });
-  if (misses.length > 0) throw automationStudioAnthropicPaidFailure("llm.provider_output_invalid", usage, { case: "content_off_shape", finishReason: "end_turn", contentChars, usage, misses });
+  if (misses.length > 0) throw automationStudioAnthropicPaidFailure("llm.provider_output_invalid", usage, { case: "content_off_shape", finishReason, contentChars, usage, misses });
   // The reply goes on as it came, decision unread: the harness reads it the same way and says what it read, then applies its usual semantic result validation again before it can execute an answer.
   return answer as AutomationStudioLlmStructuredResponse;
 }

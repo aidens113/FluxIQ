@@ -5,3 +5,5 @@ export * from "./completion.ts";
 export * from "./endpoints.ts";
 export * from "./send.ts";
 export * from "./http-failure.ts";
+export * from "./decision-tools-wire.ts";
+export * from "./tool-call-refusal.ts";

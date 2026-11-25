@@ -349,7 +349,7 @@ function undeclared(request: AutomationStudioLlmTaskRequest): AutomationStudioLl
 function recordingProvider(reply: JsonObject) {
   const calls = { secrets: 0, transport: 0 };
   let body = "";
-  const provider = createAutomationStudioDeepSeekProvider({
+  const provider = createAutomationStudioDeepSeekProvider({ decisionTools: false,
     secretReference: { kind: "secret_reference", id: "secret:deepseek" },
     resolveSecret: async (input) => {
       calls.secrets += 1;
