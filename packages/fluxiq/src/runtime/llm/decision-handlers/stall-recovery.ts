@@ -34,7 +34,7 @@ const RECOVERED_CODE = "llm_evidence_loop.stall_recovered";
 
 /** What the model is told about the call the loop made for it. */
 const INSTRUCTION = "Your last decisions were stopping the build without getting it further (stalledOn says how). Instead of ending the build, Core made the call in ran for you, "
-  + "because it may still get the build further; its answer is the next entry, under ranAs. Act on that answer, and do not repeat the looks or the refused calls that led here.";
+  + "because it may still get the build further; its answer is the next entry, under ranAs. Act on that answer, and do not repeat the same requests or the refused calls that led here.";
 
 /** What a stall comes to: the call the loop runs instead, or the issue codes it ends under. */
 export type AutomationStudioLlmEvidenceStallOutcome =

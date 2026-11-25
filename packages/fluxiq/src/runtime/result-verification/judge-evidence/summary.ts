@@ -49,9 +49,24 @@ export function automationStudioResultJudgeSummary(summary: AutomationStudioRunR
     return facts.effectApplied !== false || object(facts.failure)?.effect === "ambiguous" || object(facts.skipped) !== undefined;
   }) === true;
   const stateRequired = hasActs || consequential || actionTrail;
+  // The before side is required only where a lasting act ran: an act with a declared class, or a step whose declared
+  // consequences applied or may have. That is where the change is judged from the state recorded just before the
+  // lasting acts (user, 2026-10-27), and the only place an exploration reads a before side
+  // (`framework/automation-service/service/answer-first/witnesses/`). Asked after a filter, a sort or a dismissal
+  // alone, it could never be cleared, and a task that only pressed and read stayed unconfirmed with the judge saying
+  // yes (t1036 Lab run `run-mwvtl0qe-73df7041`). The end state is still required after any act.
+  const lastingActs = Array.isArray(held.acts) && held.acts.some((act) => {
+    const classes = object(act)?.classes;
+    return Array.isArray(classes) && classes.length > 0;
+  });
+  const lastingSteps = trail.trail?.entries.some((step) => {
+    const facts = step.framework;
+    if (!Array.isArray(facts?.consequences) || facts.consequences.length === 0) return false;
+    return facts.effectApplied !== false || object(facts.failure)?.effect === "ambiguous" || object(facts.skipped) !== undefined;
+  }) === true;
   if (stateRequired) {
     const witnesses = object(held.witnesses);
-    if (held.startView === undefined && witnesses?.before === undefined) gaps.push({ source: "witnesses.before", codes: ["judge_evidence.before_state_missing"] });
+    if ((lastingActs || lastingSteps) && held.startView === undefined && witnesses?.before === undefined) gaps.push({ source: "witnesses.before", codes: ["judge_evidence.before_state_missing"] });
     if (held.endView === undefined && witnesses?.after === undefined) gaps.push({ source: "witnesses.after", codes: ["judge_evidence.after_state_missing"] });
   }
   const project = (source: string, value: JsonValue, phase?: "before" | "after"): JsonObject => {

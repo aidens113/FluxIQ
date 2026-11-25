@@ -411,3 +411,36 @@ describe("immutable view history from its first appearance", () => {
     expect(shown.slice(after.length).map(({ toolId }) => toolId)).toEqual(["core.current_view", "core.current_flow", "core.evidence_history", "core.flow_draft", "core.budget"]);
   });
 });
+
+describe("the window with a page channel (page-diff D3, D8)", () => {
+  const view = (key: string, ...texts: string[]) => ({ key, lines: texts.map((text, index) => ({ key: `t${index}`, text })) });
+  const channelKeys = ["pageView", "read.rows"];
+  const pageChannel = { member: "pageView" };
+
+  it("shows each result's page in place as its delivery, with no view reference or current-view tail for it, while held rows keep theirs", () => {
+    const log = [
+      entry("c1", { ok: true, pageView: view("~/", "PAGE one", "t1 a", "t2 b", "t3 c", "t4 d") }),
+      entry("c2", { ok: true, pageView: view("~/", "PAGE one", "t1 a", "t2 B", "t3 c", "t4 d"), read: { rows: [{ name: "x" }] } })
+    ];
+    const window = automationStudioLlmEvidenceContextWindow(log, channelKeys, pageChannel);
+    expect((window[0]!.value as JsonObject).pageView).toEqual({ key: "~/", whole: "PAGE one\nt1 a\nt2 b\nt3 c\nt4 d" });
+    expect((window[1]!.value as JsonObject).pageView).toMatchObject({ key: "~/", since: "c1", changes: "  t1 a\n~ t2 B" });
+    expect((window[1]!.value as JsonObject).read).toEqual({ rows: reference("c2", "holder:read") });
+    expect(groups(window)).toEqual([{ group: "holder:read", callId: "c2", holder: "read", value: { rows: [{ name: "x" }] } }]);
+  });
+
+  it("is today's window exactly without a channel", () => {
+    const log = [entry("c1", { ok: true, page: "p1" }), entry("c2", { ok: true, page: "p2" })];
+    expect(automationStudioLlmEvidenceContextWindow(log, ["page"], undefined)).toEqual(automationStudioLlmEvidenceContextWindow(log, ["page"]));
+  });
+
+  it("keeps the history before the entries rewritten for each decision, the draft among them, so the cache marker sits after the history", () => {
+    const evidence = [entry("c1", { ok: true, pageView: view("~/", "PAGE one", "t1 a") })];
+    const recorder = new AutomationStudioLlmDecisionContextRecorder();
+    recorder.record(1, { kind: "call", signature: "s", callId: "c1", toolId: "core.run_node", actionId: "press", resultCode: "ok", changed: "yes" });
+    const step: AutomationStudioFlowDraftStep = { position: 1, iteration: 1, callId: "c1", actionId: "press", input: {}, effect: "mutate", effectApplied: true, disposition: "kept" };
+    const { shown } = automationStudioLlmDecisionContextShown({ evidence, records: recorder.records(), observedStateKeys: channelKeys, pageChannel, draft: { steps: [step] }, budgetEntry: entry("budget", { left: 1 }, "core.budget") });
+    expect(shown.map(({ toolId }) => toolId)).toEqual(["core.run_node", "core.evidence_history", "core.flow_draft", "core.budget"]);
+    expect((shown[0]!.value as JsonObject).pageView).toEqual({ key: "~/", whole: "PAGE one\nt1 a" });
+  });
+});

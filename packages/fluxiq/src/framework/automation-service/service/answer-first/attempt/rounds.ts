@@ -3,8 +3,8 @@
 //
 // A fresh round keeps the draft, the act record, the tried record and the rows, and tells the
 // model what landed and what it already tried, from the page as it stands. **It keeps what the
-// run learned (t1014):** it is shown every call the earlier rounds made, with what each was asked,
-// how it came back, where and what it found (`../earlier-rounds/`), so however a round ended --
+// run learned (t1014):** it is shown the state the earlier rounds established and every call they made as one line,
+// how it ended (`../earlier-rounds/`, t1036), so however a round ended --
 // loop detection's last rung included -- the next one reframes the conversation and empties
 // nothing. It never navigates: its opening look goes where the page stands (`./round.ts`).
 //

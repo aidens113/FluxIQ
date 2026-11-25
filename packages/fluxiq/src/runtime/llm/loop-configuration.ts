@@ -29,6 +29,7 @@ import type { AutomationStudioRunEnvironment } from "../../framework/automation-
 import type { AutomationStudioLlmEvidenceLoopResume } from "./evidence-loop/index.ts";
 import { automationStudioLlmEvidenceLoopConfigurationIssue as issue, type AutomationStudioLlmEvidenceLoopConfigurationIssue } from "./configuration-issue/index.ts";
 import type { AutomationStudioLlmEvidencePlanningTools } from "./evidence-progress/index.ts";
+import type { AutomationStudioLlmPageChannel } from "./view-channel/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNREADABLE_REPLIES_IN_A_ROW } from "../models/failures/index.ts";
 import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW,
@@ -84,10 +85,8 @@ export type AutomationStudioLlmEvidenceLoopInput = {
   /**
    * A loop whose model plans and hands the work on rather than acting on the
    * target (the project supervisor; t569): the tools that move its work
-   * forward, which looks are never withdrawn from; how many looks it may make
-   * before looks are withdrawn for the rest of the loop; and its way forward,
-   * which the no-progress redirect, the searching note and the spent budget's
-   * note name in place of the words that send a builder to act
+   * forward, which are never taken for looks; and its way forward,
+   * which the no-progress redirect and the searching note name in place of the words that send a builder to act
    * (`./evidence-progress/planning-tools.ts`). Absent, every note is as it was.
    */
   planning?: AutomationStudioLlmEvidencePlanningTools | undefined;
@@ -123,6 +122,14 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * empty, every result is shown whole.
    */
   observedStateKeys?: readonly string[] | undefined;
+  /**
+   * The bound domain's page channel, from the registry's loop binding
+   * (`AutomationStudioLlmEvidenceRuntimeBinding.pageChannel`). Given, each
+   * result's page is shown in place, whole once and as changes after, within
+   * the page budget per request (`./view-channel/`). Absent, the window is as
+   * `observedStateKeys` alone makes it.
+   */
+  pageChannel?: AutomationStudioLlmPageChannel | undefined;
   /** Where a list read's answer holds its kept records, as the bound domain declared it (`AutomationStudioLlmEvidenceRuntimeBinding.readRowsKey`). */
   readRowsKey?: string | undefined;
   /** Explicit bound-domain screening authority for authored rerun path diagnostics. Absent, omit paths. */
@@ -322,13 +329,6 @@ export type AutomationStudioLlmEvidenceLoopInput = {
   describeCall?(call: { toolId: string; value: JsonObject }): AutomationStudioLlmEvidenceCallWords | undefined;
   /** The parameter keys that name the control a step acts on, from the bound domain's bundle (`./node-tools/rerun-check.ts`). Absent, a checked rerun reads every parameter as naming it. */
   controlParameterKeys?: ReadonlySet<string> | undefined;
-  /**
-   * `false` keeps every look on offer after an ignored redirect
-   * (`decision-handlers/look-withdrawal.ts`). For replaying a build recorded
-   * before looks were withdrawn, whose later decisions were made without it;
-   * a live loop leaves it out.
-   */
-  lookWithdrawal?: false;
   /**
    * The draft the loop accrues and shows the model beside its evidence
    * (`runtime/flow-draft/`), with `amend_draft` decisions to correct it.
@@ -656,8 +656,6 @@ function limitsIssue(input: AutomationStudioLlmEvidenceLoopInput, limits: Eviden
     return issue("limits.budget", { maxTotalTokens: budget.maxTotalTokens, maxTokensPerDecision: budget.maxTokensPerDecision, maxCostUsd: budget.maxCostUsd, maxDurationMs: budget.maxDurationMs, keptForFinishing: budget.countCalls?.keptForFinishing },
       "The budget is refused: each bound given must be a positive finite number, its clock a function, and countCalls.keptForFinishing a whole number of at least 0.");
   }
-  const lookBudget = input.planning?.lookBudget;
-  if (lookBudget !== undefined && (!Number.isSafeInteger(lookBudget) || lookBudget < 0)) return issue("limits.look_budget", { lookBudget }, `planning.lookBudget ${lookBudget} must be a whole number of at least 0.`);
   if (!Number.isInteger(minToolCalls) || minToolCalls < 0 || minToolCalls > maxToolCalls || minToolCalls >= maxIterations) {
     return issue("limits.min_tool_calls", { minToolCalls, maxToolCalls, maxIterations }, `minToolCalls ${minToolCalls} must be a whole number from 0 to maxToolCalls ${maxToolCalls}, and below maxIterations ${maxIterations}.`);
   }

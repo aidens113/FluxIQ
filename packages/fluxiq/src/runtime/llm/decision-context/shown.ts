@@ -7,6 +7,19 @@
 // draft and budget remain whole. There is no byte allowance to divide between
 // them; the harness and provider enforce the model context window loudly.
 //
+// **Cache order (page-diff D8).** The request's head -- system text, the tool
+// list, the task and the draft's guidance -- never changes mid-run. After it
+// comes the append-only history of results, each carrying its page delivery in
+// place when a page channel is declared (`../view-channel/projection.ts`), and
+// last the entries rewritten for every decision
+// (`../evidence-moves/evidence-that-moves.ts`). The draft entry stays among
+// those last ones, after the history, not before it: in the five t1015 bigbox
+// recordings it read differently from one decision to the next in 296 of 462
+// consecutive pairs, because it lists every step that ran, so placed first it
+// would have sent every one of those requests' history uncached (measured for
+// t1036). Should the draft stop changing with every call, it can move into
+// the head, and must then leave the moving list, or nothing after it is cached.
+//
 // The draft is measured as it goes out (`../evidence-loop/draft-shown.ts`),
 // so a run's record says what the model was shown of its own draft.
 
@@ -14,6 +27,7 @@ import type { JsonValue } from "../../../core/index.ts";
 import { automationStudioFlowDraftEntry, type AutomationStudioFlowDraftRoute, type AutomationStudioFlowDraftStep } from "../../flow-authoring/draft/index.ts";
 import { automationStudioLlmEvidenceContextWindow, type AutomationStudioLlmEvidenceEntry } from "../context-window.ts";
 import { automationStudioLlmEvidenceLoopDraftShown, type AutomationStudioLlmEvidenceLoopDraftShown } from "../evidence-loop/index.ts";
+import type { AutomationStudioLlmPageChannel } from "../view-channel/index.ts";
 import type { AutomationStudioLlmDecisionContextRecord } from "./decision.ts";
 import { automationStudioLlmDecisionContextEntry } from "./entry.ts";
 
@@ -29,10 +43,12 @@ export function automationStudioLlmDecisionContextShown(input: {
   budgetEntry?: AutomationStudioLlmEvidenceEntry | undefined;
   /** The keys of a result that are a view of the target, as the domain declared them (`../context-window.ts`). */
   observedStateKeys?: readonly string[] | undefined;
+  /** The domain's page channel, when the loop was given one: each result's page shown in place, whole once and as changes after (`../view-channel/`). */
+  pageChannel?: AutomationStudioLlmPageChannel | undefined;
 }): { shown: AutomationStudioLlmEvidenceEntry[]; draftShown?: AutomationStudioLlmEvidenceLoopDraftShown } {
   const historyEntry = automationStudioLlmDecisionContextEntry({ records: input.records });
   const draftEntry = input.draft ? automationStudioFlowDraftEntry({ steps: input.draft.steps, authored: input.draft.authored, acts: input.draft.acts, route: input.draft.route }) : undefined;
   const draftShown = draftEntry ? automationStudioLlmEvidenceLoopDraftShown({ value: draftEntry.value }) : undefined;
   const beside = [historyEntry, draftEntry, input.budgetEntry].filter((entry) => entry !== undefined);
-  return { shown: [...automationStudioLlmEvidenceContextWindow(input.evidence, input.observedStateKeys), ...beside], ...(draftShown ? { draftShown } : {}) };
+  return { shown: [...automationStudioLlmEvidenceContextWindow(input.evidence, input.observedStateKeys, input.pageChannel), ...beside], ...(draftShown ? { draftShown } : {}) };
 }

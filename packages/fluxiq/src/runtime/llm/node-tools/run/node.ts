@@ -80,7 +80,7 @@ const DESCRIPTION = [
   "A failed node says what went wrong and how things now stand. A page that needs a person goes to the person: never press, type into or reload a check.",
   // A step may also be written, not run (t252): said on `write` itself, since
   // this description has 12 characters left under its 1,500.
-  "Run a node that only reads -- a snapshot, a wait, an assertion -- to see where you are, and one that acts to make the page do what the instruction needs. A step you add keeps the parameters it ran with.",
+  "Run a node that only reads -- a wait, an assertion -- to check, and one that acts to make the page do what the instruction needs. A step you add keeps the parameters it ran with.",
   // "only reads" earns its place: a build that had to collect a page of
   // products into a table read "leaves nothing behind" as a question about the
   // dataset it would produce, answered `create_new` for the node that reads the
@@ -119,7 +119,7 @@ const PARAMETERS_DESCRIPTION = "That node's own parameters, exactly as its defin
  *
  * `initial` is one call the caller takes responsibility for: the loop makes it
  * before the first paid decision, so the model's first question is asked with
- * the target already in front of it. The caller writes that argument, not the
+ * the target already in front of it. Its node is not offered to the model. The caller writes that argument, not the
  * model, which is why it may be declared on a tool that can also act.
  *
  * `arrival` is the call that takes the target to where the Flow starts: the
@@ -135,7 +135,13 @@ export function automationStudioLlmRunNodeTool(input: {
   initial?: JsonObject;
   arrival?: { node: string; parameter: string; location: string };
 }): AutomationStudioLlmEvidenceTool | undefined {
-  const nodeIds = [...new Set(input.nodeIds)].filter((id) => typeof id === "string" && id.length > 0).sort();
+  // The node Core opens a round with (`initial`) is Core's own call, never the model's: there is no look command for the
+  // model to ask for, the page below the evidence being the page now (page-diff D4). It stays runnable by Core, and is
+  // left out of the enum the model copies from, so the offered list is the same at every decision of a run (D11).
+  const coreOwn = typeof input.initial?.node === "string" ? input.initial.node : undefined;
+  const all = [...new Set(input.nodeIds)].filter((id) => typeof id === "string" && id.length > 0).sort();
+  // A library of that node alone keeps it: with nothing else to offer, the tool would vanish with the opening it carries.
+  const nodeIds = all.some((id) => id !== coreOwn) ? all.filter((id) => id !== coreOwn) : all;
   if (!nodeIds.length) return undefined;
   // Every node is enumerated, however many (2026-09-30): past 400 the names
   // used to be left to the catalog.
@@ -147,8 +153,7 @@ export function automationStudioLlmRunNodeTool(input: {
     // says for itself what it actually did.
     effect: "mutate",
     perCallEffect: true,
-    // Which node a call runs, so the loop can withdraw the looks among them
-    // without withdrawing the library (`../decision-handlers/look-withdrawal.ts`).
+    // Which node a call runs: the key the loop's own bookkeeping reads, never sent to a provider (`../../evidence-loop.ts` strips it from every tool it offers).
     actionInputKey: "node",
     inputSchema: {
       type: "object",

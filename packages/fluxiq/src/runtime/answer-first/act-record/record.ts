@@ -144,7 +144,7 @@ import { automationStudioAttemptActControlName } from "./control-name.ts";
 import { automationStudioAttemptActScreenedWords } from "./words.ts";
 
 /** What a fresh round is told about the record, in words that teach nothing about any site. */
-const MODEL_RULE = "These acts already happened in this task or may have. Never repeat one: count what landed as done and carry on with what is left. Look at the page for one that may have landed: if its effect is there, it is done. A first try at it again is refused and says to look, and only a look after that lets it go.";
+const MODEL_RULE = "These acts already happened in this task or may have. Never repeat one: count what landed as done and carry on with what is left. Check the page for one that may have landed: if its effect is there, it is done. A first try at it again is refused and says to check, and only a call that reads the page after that lets it go.";
 
 /** `rows` are every row this call answers to, in every shape; `named` are those it says it is on itself (its row's own digest, or the rows that printed its handle), which an act made by this call is named by. */
 type Identity = AutomationStudioAttemptActTargetKeys & { actionId: string; rows: string[]; named: string[] };

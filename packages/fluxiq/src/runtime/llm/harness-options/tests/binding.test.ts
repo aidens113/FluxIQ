@@ -3,6 +3,7 @@ import type { AutomationStudioNodeRegistryResolution } from "../../../../framewo
 import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceToolExecutionResult } from "../../evidence-loop.ts";
 import { automationStudioLlmNodeDescriptions } from "../../node-tools/index.ts";
 import { automationStudioHarnessOptionBundleFromBinding, automationStudioHarnessOptionRegistry, type AutomationStudioLlmEvidenceRuntimeBinding } from "../binding.ts";
+import { automationStudioLlmEvidenceRecallStore } from "../../evidence-recall/index.ts";
 import { AUTOMATION_STUDIO_BUILTIN_HARNESS_OPTION_IDS } from "../builtin.ts";
 import type { AutomationStudioHarnessOptionHost } from "../host.ts";
 import type { AutomationStudioHarnessOptionResolution } from "../registry.ts";
@@ -314,5 +315,37 @@ describe("the arrival a domain declares", () => {
   it("is left off a build told no start, and off a library that does not offer its node", () => {
     expect(initialOf(automationStudioHarnessOptionRegistry({ binding: nodeBinding({ initial: LOOK, arrival: OPEN }), nodeIds: NODE_IDS }))).toEqual({ input: LOOK });
     expect(initialOf(automationStudioHarnessOptionRegistry({ binding: nodeBinding({ initial: LOOK, arrival: OPEN, runnable: ["erp.output.read-ledger"] }), nodeIds: NODE_IDS, startLocation: "2026-10" }))).toEqual({ input: LOOK });
+  });
+});
+
+describe("a bound page channel (page-diff D1, D5)", () => {
+  it("reaches the loop binding with its member and budget, and offers core.full_page, captured inside the call's build scope", async () => {
+    const view = { key: "~/", lines: [{ key: "t1", text: "t1 a" }] };
+    const fullPage = vi.fn(async () => view);
+    const registry = automationStudioHarnessOptionRegistry({ binding: { ...slot(), pageChannel: { member: "pageView", budgetChars: 9_000, fullPage } } });
+    const binding = registry.evidenceLoopBinding({ projectId: "project.one", flowId: "flow.one" }, { ...SCOPE, allowSideEffectsWithoutPolicy: true });
+    expect(binding.pageChannel).toEqual({ member: "pageView", budgetChars: 9_000 });
+    expect(binding.tools.map((tool) => tool.toolId)).toEqual(["erp.inspect", "erp.advance", "core.full_page"]);
+    const answered = await binding.executeTool({ callId: "c1", toolId: "core.full_page", value: {} }) as AutomationStudioLlmEvidenceToolExecutionResult;
+    expect(answered.evidence).toEqual({ pageView: view });
+    expect(fullPage).toHaveBeenCalledWith(expect.objectContaining({ projectId: "project.one", flowId: "flow.one", callId: "c1" }));
+  });
+
+  it("leaves the loop binding as it was when the domain declares none", () => {
+    const binding = automationStudioHarnessOptionRegistry({ binding: slot() }).evidenceLoopBinding({ projectId: "project.one", flowId: "flow.one" }, { ...SCOPE, allowSideEffectsWithoutPolicy: true });
+    expect(binding.pageChannel).toBeUndefined();
+    expect(binding.tools.map((tool) => tool.toolId)).toEqual(["erp.inspect", "erp.advance"]);
+  });
+});
+
+describe("the attempt's recall store on the loop binding (t1036, D10)", () => {
+  it("is the store the caller gave, shared by every binding made with it, and a fresh one otherwise", () => {
+    const store = automationStudioLlmEvidenceRecallStore();
+    const registry = automationStudioHarnessOptionRegistry({ binding: slot() });
+    const first = registry.evidenceLoopBinding({ projectId: "project.one", flowId: "flow.one" }, { ...SCOPE, allowSideEffectsWithoutPolicy: true }, { recall: store });
+    const later = automationStudioHarnessOptionRegistry({ binding: slot() }).evidenceLoopBinding({ projectId: "project.one", flowId: "flow.one" }, { ...SCOPE, allowSideEffectsWithoutPolicy: true }, { recall: store });
+    expect(first.recall).toBe(store);
+    expect(later.recall).toBe(store);
+    expect(registry.evidenceLoopBinding({ projectId: "project.one", flowId: "flow.one" }, SCOPE).recall).not.toBe(store);
   });
 });

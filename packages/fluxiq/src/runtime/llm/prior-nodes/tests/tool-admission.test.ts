@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { automationStudioLlmEvidenceLookWithdrawal } from "../../decision-handlers/index.ts";
 import { automationStudioLlmEvidenceRepeatGuard } from "../../repeat-guard/index.ts";
 import { automationStudioLlmEvidenceToolAdmission } from "../tool-admission.ts";
 
@@ -9,7 +8,7 @@ function fixture() {
   const answeredRequests = new Map<string, string>();
   const base: Parameters<typeof automationStudioLlmEvidenceToolAdmission>[0] = {
     toolId: tool.toolId, value: { node: "catalogue.read", parameters: {} }, toolsById: new Map([[tool.toolId, tool]]),
-    eligibleToolIds: new Set([tool.toolId]), offered: [tool], looks: automationStudioLlmEvidenceLookWithdrawal({ enabled: false }),
+    eligibleToolIds: new Set([tool.toolId]), offered: [tool],
     repeats, answeredRequests, latestObservations: new Map(), attemptEpoch: 0, mutationEpoch: 0,
     discoveryOnly: false, finalDecision: false, remaining: undefined, deadlineExpired: false, withholds: () => false
   };

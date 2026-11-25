@@ -311,7 +311,7 @@ export function automationStudioProjectBuildBriefPorts(input: {
       const scope = parentAuthority.currentScope();
       return scope && !personNeeded.signal.aborted ? { ...scope, generation: permissions, authority: permissions } : undefined;
     } } : undefined;
-    const loop = { ...limits, rerunAuthority, tools: harness.tools, observedStateKeys: harness.observedStateKeys, executeTool: written(routing.recording(personNeeded.executeTool), togglesWritten), nodeOf: nodeDescriptions.definition, unusableDecisions: unusable(request.brief.maxIterations, submissions), decide: delegate };
+    const loop = { ...limits, rerunAuthority, tools: harness.tools, observedStateKeys: harness.observedStateKeys, pageChannel: harness.pageChannel, executeTool: written(routing.recording(personNeeded.executeTool), togglesWritten), nodeOf: nodeDescriptions.definition, unusableDecisions: unusable(request.brief.maxIterations, submissions), decide: delegate };
     const setCompletionSchema = (schema: JsonObject | undefined) => { configuredDecide = decide(schema); };
     return { loop, permissions, decide, setCompletionSchema, submissions, ended: briefEnding(permissions, personNeeded) };
   };

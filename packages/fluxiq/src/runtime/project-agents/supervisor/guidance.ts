@@ -15,8 +15,7 @@
 // builds (A8 round 1) had the supervisor read the task and then search its
 // start page like a builder -- seven finds and a describe on crossborder, one
 // of them for the word "field" -- with tools that cannot act, and never write a
-// plan. So the guidance says its role plainly, a look budget withdraws its looks
-// after `AUTOMATION_STUDIO_PROJECT_SUPERVISOR_LOOK_BUDGET` of them, and every
+// plan. So the guidance says its role plainly, and every
 // note the loop puts in front of it names its next planning step (`forward`).
 // And it is asked for a plan it can write: subflows with their parts, the names
 // of the values they take and hand on, and what runs before each -- never
@@ -98,14 +97,13 @@
 //
 // No string here names a fingerprint field by name: the supervisor completes
 // and tests with the `complete` object assembly hands it, copied whole.
-import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_LOOK_BUDGET as LOOKS } from "./look-budget.ts";
 
 const READ_TASK = "Read the task: the person's instructions, word for word, under the ids a part names them by; what this build's record already holds; "
   + "and the money this build can still give builders, beside what it keeps back for the judged whole run. Taken once for free before your first decision; its answer stays in your evidence.";
 
 const HOW_TO_WORK = [
   "You supervise this build. You do not operate the target and you never write a step: builders do, one subflow each, and they are the ones who explore the target, find what the task names and act on it. You plan, brief, read what comes back, assemble and test.",
-  `Plan from the task and a short look. Your evidence already holds where the build starts: the start page's address, title, what covers it and the names of its controls, not the page itself. You may make at most ${LOOKS} more looks with the look tools, which change nothing; after them looking is withdrawn for the rest of the build. Something the task names that the start page does not show is not yours to find: finding it is what a builder's part is for.`,
+  `Plan from the task and a short look. Your evidence already holds where the build starts: the start page's address, title, what covers it and the names of its controls, not the page itself. Look only as much as planning needs: the look tools change nothing, and a few looks are enough. Something the task names that the start page does not show is not yours to find: finding it is what a builder's part is for.`,
   "1. Write the plan with project.write_plan, once. taskSpec splits the task into parts: a part is one thing the person asked for, given as their exact words copied from one instruction (its sourceId and the text), with the facts that are true once it is done and the lasting acts it needs. Parts share no words: where one stretch of the person's words holds another, it is one part. Parts are for separate things the person asked for: a search, find or open that only leads to an act is no part, but belongs to the part of the act it serves. Under notAsked, name what a builder might be tempted to do that nobody asked for. "
   + "A part whose result is rows of values declares answer: {kind: \"records\", columns: [the columns the person names, in their order]}; a part that only does something declares none. "
     + "A part asks for something to be done or read. What the person says must stay as it is (nothing removed, nothing sent, nothing else changed) is no part: put it under notAsked, which the judge checks the whole run against, and give it no subflow.",
@@ -186,7 +184,7 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
    */
   system: Object.freeze({
     role: "You are the project supervisor of a FluxIQ build. You plan the Flow the person asked for and hand its parts to builder agents: each builder explores the target, acts on it and writes one subflow. "
-      + "You do not operate the target and you never write a step. Your own tools write the plan, brief the builders, assemble their subflows into one Flow and test it; your look tools only look, and only a few times. "
+      + "You do not operate the target and you never write a step. Your own tools write the plan, brief the builders, assemble their subflows into one Flow and test it; your look tools only look. "
       + "Plan from the task and a short look, brief the builders, read what each hands back, assemble, test, and complete only on a yes for the exact revision you assembled, or end honestly with your reason. "
       + "Be efficient: every build has a small cost ceiling.",
     host: "This build runs on the host of the domain \"{domainId}\": the builders act on it through their own tools, and you see it only through your look tools."
@@ -246,8 +244,7 @@ export const AUTOMATION_STUDIO_PROJECT_SUPERVISOR_GUIDANCE = Object.freeze({
     afterWholeAlreadyJudged: "This revision's whole test already answered yes: the plan is one subflow, and its builder's test was the judged whole run of exactly this revision. No second trial ran. Complete now with the complete object here."
   }),
   /**
-   * The way forward the loop's own notes name -- the spent look budget, the
-   * searching note, the no-progress redirect -- by where the build stands
+   * The way forward the loop's own notes name -- the searching note, the no-progress redirect -- by where the build stands
    * (`./planning.ts`).
    */
   forward: Object.freeze({

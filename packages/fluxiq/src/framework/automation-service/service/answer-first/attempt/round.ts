@@ -7,7 +7,7 @@
 // the last one left, read off each decision (`draft.acts`), so a loop that threw loses at most
 // the step it was on, and its opening look goes where the page stands. Only the arrival's tools
 // go to the start location, until the page has got there. A round after the first is shown,
-// after its note, every call the earlier rounds made and what each found, from the attempt's
+// after its note, the state the earlier rounds established and every call they made as a line, from the attempt's
 // trail and with no page view (`../earlier-rounds/`, t1014): its window starts fresh, never empty.
 //
 // The completion check sits outside the observer, as a candidate's does: the observer's
@@ -53,6 +53,9 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
   run.refusalEndedRound = false;
   const options = run.arrived ? input.continuingOptions() : input.harnessOptions;
   run.options = options;
+  // The attempt's recall store, shared by every round's binding: what this round's calls get back is remembered as
+  // this round's, so `core.recall_result` gives back an earlier round's call too (`runtime/llm/evidence-recall/store.ts`).
+  options.recall?.round(round.ordinal);
   const person = automationStudioPersonNeededToolCalls({
     executeTool: run.permissions.executeTool,
     tools: options.tools,
@@ -71,7 +74,7 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
   let lasting: Promise<ReadonlySet<string>> | undefined;
   // What the earlier rounds did and found, built once as this one starts (`../earlier-rounds/`, t1014): a fresh round reframes the conversation, never empties it.
   // A carried-on attempt's first round is a fresh round too: its trail holds what the earlier segments did, across the restart.
-  const earlier = round.ordinal > 1 || run.prior !== undefined ?automationStudioAnswerFirstEarlierRounds({ trail: run.trail, observedStateKeys: options.observedStateKeys, deniedEvidenceKeys: binding.deniedEvidenceKeys, tokenLimits: input.provider.tokenLimits }) : undefined;
+  const earlier = round.ordinal > 1 || run.prior !== undefined ?automationStudioAnswerFirstEarlierRounds({ trail: run.trail, observedStateKeys: options.observedStateKeys, readRowsKey: binding.readRowsKey, deniedEvidenceKeys: binding.deniedEvidenceKeys }) : undefined;
   const loop: AutomationStudioLlmEvidenceLoopInput = {
     ...input.limits.loop,
     // The purse's cost is what is told, and the only cost ending; a person's or a silence's wait is not the round's time.
@@ -81,6 +84,7 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
     // The domain's tools, and the result's own processing, which touches no page (`./result-processing.ts`, t970).
     tools: automationStudioAnswerFirstResultProcessingTools(options.tools),
     observedStateKeys: options.observedStateKeys,
+    pageChannel: options.pageChannel,
     ...(binding.readRowsKey ? { readRowsKey: binding.readRowsKey } : {}),
     deniedEvidenceKeys: binding.deniedEvidenceKeys,
     controlParameterKeys: input.controlParameterKeys,

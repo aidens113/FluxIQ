@@ -59,7 +59,7 @@ describe("the entry a continued build starts from", () => {
     expect(instruction).not.toContain("the test found");
     expect(instruction).not.toContain("wherever the test left it");
     expect(instruction).toContain("What it had was not run from where it starts (judgement.test is not_tested), so nothing here says whether its steps work: judgement says how much of the acts checklist is done.");
-    expect(instruction).toContain("The page is wherever the last round left it, so look first.");
+    expect(instruction).toContain("The page is wherever the last round left it, so read the page below first.");
     expect(instruction).toContain("The whole Flow is tested from where it starts when you complete");
     // A Flow that was run keeps the words it had.
     const ran = automationStudioLlmEvidenceResumeEntry({ revision: 2, stopped: "unusable_decisions", outstandingIssueCodes: [], judgement: { ...judgement, test: "replay_failed", stepsThatDidNotWork: [3] } }, [step(1)]).value.instruction as string;
@@ -73,7 +73,7 @@ describe("the entry a continued build starts from", () => {
     expect(entry.value).toMatchObject({ code: "llm_evidence_loop.repair", stopped: "judged_wrong", judgement: { judge } });
     const instruction = entry.value.instruction as string;
     expect(instruction).toMatch(/^The Flow you said was ready was tested from its start and judged against the instruction: judgement\.judge says what it did not do \(observed\), what was asked \(expected\) and what to change \(advice\)/u);
-    expect(instruction).toContain("The page is where the test left it: look first.");
+    expect(instruction).toContain("The page is where the test left it: read the page below first.");
     expect(instruction).toContain("The acts checklist is the build's own reading and is information, not the bar: the Flow is judged on what its test does.");
     expect(instruction).toContain("complete when the Flow does what the instruction asks");
     expect(instruction).not.toContain("every act and choice on the checklist is done");
@@ -175,7 +175,7 @@ describe("a continued build", () => {
 // ended on the feed, off the requests page its last step left, and the refuted
 // result was filed under that navigate. t195 made that opening taken, not added,
 // but it still ran, so the re-author began on the feed without the requests
-// link, against its own "The page is where the test left it: look first". A
+// link, against its own "The page is where the test left it: read the page below first". A
 // round whose draft holds the Flow (a repair's, a re-author's, seeded with no
 // resume) now opens with the look on the page as it stands, carrying the Flow's
 // calls under `held` so the domain keeps where the build arrived and what it was

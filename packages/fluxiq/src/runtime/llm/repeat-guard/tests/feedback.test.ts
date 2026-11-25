@@ -8,7 +8,7 @@ describe("the note for a refused repeat", () => {
     expect(note).toMatchObject({ code: "llm_evidence_loop.repeat_refused", sameAsCall: "read-page3", then: { outcome: "failed", resultReason: "handle_not_in_packet", handleUnshown: true } });
     expect(String(note.instruction)).toMatch(/never shown/u);
     expect(String(note.instruction)).toMatch(/detect/u);
-    expect(String(note.instruction)).toMatch(/look at the page/u);
+    expect(String(note.instruction)).toMatch(/read the page below/u);
   });
 
   it("keeps the plain repeat note for any other failure", () => {

@@ -64,7 +64,7 @@ const TEST_SUBFLOW = "core.test_subflow";
 
 const SAME_CALL = "You already made this exact call -- the same tool with the same input -- on this exact page, and it did not work then, changed nothing, or ended on the same page as the same call before it (then.outcome). "
   + "Making it again from this page does the same, so it was not run and cost nothing but this decision. "
-  + "Do something different instead: look at or search the page for what you need, use a different control or a different input, submit a corrected candidate, or ask the person. "
+  + "Do something different instead: read the page below for what you need, use a different control or a different input, submit a corrected candidate, or ask the person. "
   + "A call that runs after the page has changed is not a repeat.";
 
 /** Said instead for a call the permission gate refused (`./permission-refused.ts`, t471). */
@@ -84,12 +84,12 @@ const COVERED = "You already made this exact press, and it was refused because s
   + "Press one of those first, or another control inside that layer -- never a control the page marks as covered by it. "
   + "Then this press may be made again: a call made after the page has changed is not a repeat.";
 
-const SAME_LOOK = "You already made this exact look -- the same tool with the same input -- on this exact page, and it answered the same twice: its answer is above, under sameAsCall. "
+const SAME_REQUEST = "You already made this exact request -- the same tool with the same input -- on this exact page, and it answered the same twice: its answer is above, under sameAsCall. "
   + "The page has not changed, so asking again answers the same again; it was not run. "
-  + "Change your approach: act on what the answers show (press, type into or choose a control the page shows), go to another page, use the page's own search or menus, or look for something different.";
+  + "Change your approach: act on what the answers show (press, type into or choose a control the page shows), go to another page, use the page's own search or menus, or ask for something different.";
 
 const HANDLE_UNSHOWN = "You already made this exact call -- the same tool with the same input -- on this exact page, and it failed because a handle it names was never shown here (then.resultReason): no call had shown or minted that handle yet, and none has since, so it was not run. "
-  + "The call itself may be right. First make the call that shows the handle: look at the page, which lists each control under its handle, "
+  + "The call itself may be right. First make the call that shows the handle: read the page below, which lists each control under its handle, "
   + "or for a list's extraction handle detect the list's repeating structure from one of its items, which mints the handle and its fields. "
   + "Once a call has shown it, this same call may be made again with the handle exactly as shown.";
 
@@ -195,7 +195,7 @@ const ACCEPTED_SUBFLOW = "You already submitted this exact subflow -- the same s
 
 const SAME_BUILDER_CALL = "You already made this exact call -- the same tool with the same input -- on this exact page, and it did not work then, changed nothing, or ended on the same page as the same call before it (then.outcome). "
   + "Making it again from this page does the same, so it was not run and cost nothing but this decision. "
-  + "Do something different instead: look at or search the page for what you need, or submit a corrected subflow. "
+  + "Do something different instead: read the page below for what you need, or submit a corrected subflow. "
   + "A call that runs after the page has changed is not a repeat.";
 
 /** What happens if a builder sends the same again: this many refused in a row end its brief. */
@@ -208,7 +208,7 @@ function builderEnding(inARow: number, maxInARow: number, what: string): string 
 function builderInstruction(toolId: string, earlier: AutomationStudioLlmEvidenceRepeatedOutcome, inARow: number, maxInARow: number): { instruction: string; issues?: JsonValue[] } | undefined {
   if (toolId !== SUBMIT_SUBFLOW && toolId !== TEST_SUBFLOW) return undefined;
   const tail = (what: string) => BUILDER_WAY_OUT + builderEnding(inARow, maxInARow, what);
-  if (earlier.outcome === "same_answer") return { instruction: SAME_LOOK + tail("the same call") };
+  if (earlier.outcome === "same_answer") return { instruction: SAME_REQUEST + tail("the same call") };
   if (earlier.handleUnshown) return { instruction: HANDLE_UNSHOWN + tail("it") };
   if (toolId === TEST_SUBFLOW) return { instruction: SAME_BUILDER_CALL + tail("this call") };
   if (earlier.outcome !== "failed") return { instruction: ACCEPTED_SUBFLOW + tail("it") };
@@ -240,7 +240,7 @@ export function automationStudioLlmEvidenceCandidateRepeatInstruction(input: {
     const said = earlier.resultCode !== undefined && UNCHANGED_CODES.has(earlier.resultCode) ? unchangedSubmission(earlier.callId, earlier.standing, CANDIDATE_LOOP) : refusedWithoutIssues(earlier.callId);
     return { instruction: said + ending(inARow, maxInARow, "it") };
   }
-  if (earlier.outcome === "same_answer") return { instruction: SAME_LOOK + ending(inARow, maxInARow, "the same look") };
+  if (earlier.outcome === "same_answer") return { instruction: SAME_REQUEST + ending(inARow, maxInARow, "the same request") };
   if (earlier.handleUnshown) return { instruction: HANDLE_UNSHOWN + ending(inARow, maxInARow, "this call") };
   if (automationStudioLlmEvidenceRepeatCoveredRefused(earlier)) return { instruction: COVERED + ending(inARow, maxInARow, "this press") };
   if (automationStudioLlmEvidenceRepeatPermissionRefused(earlier)) return { instruction: AUTOMATION_STUDIO_LLM_EVIDENCE_PERMISSION_REPEAT_INSTRUCTION + ending(inARow, maxInARow, "this call") };

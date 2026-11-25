@@ -2,8 +2,8 @@
 // A fresh round keeps what the run learned (t1014). Loop detection's last rung ends a round that keeps repeating
 // itself, and the next round used to start with an empty evidence window: the model lost what it had read and found,
 // and read it again (user, 2026-11-24: "THERE SHOULDNT BE ANY ARBITRARY FUCKING CALL LIMIT THAT RANDOMLY JUST RESETS
-// EVERYTHING"). Now the fresh round is shown every earlier call, with what it was asked, how it came back and what it
-// found, beside the note's tried list, with no page view, from the page as it stands.
+// EVERYTHING"). Now the fresh round is shown the state of what it read and a line for every earlier call (t1036), how it
+// came back and never what it found, beside the note's tried list, with no page view, from the page as it stands.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult, AutomationStudioLlmTaskRequest } from "../../../../../../../runtime/llm/index.ts";
@@ -66,16 +66,17 @@ describe("a fresh round after loop detection's last rung", () => {
     expect(window[0]?.toolId).toBe("core.attempt_note");
     expect(window[1]?.toolId).toBe(AUTOMATION_STUDIO_ANSWER_FIRST_EARLIER_ROUNDS_TOOL_ID);
     const earlier = window[1]!.value;
-    const calls = earlier.calls as JsonObject[];
-    // The read it made, with its rows, as found.
-    const read = calls.find((call) => (call.asked as JsonObject | undefined)?.parameters !== undefined && ((call.asked as JsonObject).parameters as JsonObject).first === true);
-    expect(read).toMatchObject({ did: READ_LOANS, found: { read: { extracted: expect.arrayContaining([expect.objectContaining({ title: "Atlas of Rivers" })]) } } });
-    // What it tried, and what came back.
-    const tried = calls.filter((call) => ((call.asked as JsonObject | undefined)?.parameters as JsonObject | undefined)?.from === "the wrong list");
+    const groups = earlier.calls as JsonObject[];
+    // The read it made, as its state: the call, how many rows and under which columns, never the rows themselves.
+    const reads = earlier.reads as JsonObject[];
+    expect(reads).toEqual([expect.objectContaining({ did: READ_LOANS, rows: 3, columns: expect.arrayContaining(["title"]) })]);
+    expect(JSON.stringify(earlier)).not.toContain("Atlas of Rivers");
+    // What it tried, and what came back: one line each, under what ran and how it ended.
+    const tried = groups.filter((group) => group.outcome === "web.action.rejected.target_not_found");
     expect(tried.length).toBeGreaterThanOrEqual(1);
-    expect(tried.every((call) => call.outcome === "web.action.rejected.target_not_found")).toBe(true);
-    // Every earlier call is there, numbered in order, and no page view travels.
-    expect(calls.map((call) => call.n)).toEqual(calls.map((_, index) => index + 1));
+    expect(tried.every((group) => group.did === READ_LOANS && (group.calls as string[]).length >= 1)).toBe(true);
+    // Every earlier call is named, and no page view travels.
+    expect(groups.flatMap((group) => group.calls as string[]).length + reads.length).toBe(earlier.count);
     expect(JSON.stringify(earlier)).not.toContain(PAGE_TEXT);
     expect(JSON.stringify(fresh!.context.evidenceLoop?.evidence ?? []).split(PAGE_TEXT).length - 1).toBeLessThanOrEqual(1);
 
@@ -114,12 +115,12 @@ describe("a carried-on attempt's first round", () => {
     const window = windowOf(second.decisions[0]!);
     expect(window[0]?.toolId).toBe("core.attempt_note");
     expect(window[1]?.toolId).toBe(AUTOMATION_STUDIO_ANSWER_FIRST_EARLIER_ROUNDS_TOOL_ID);
-    const calls = window[1]!.value.calls as JsonObject[];
-    // The read of the earlier segment, with its rows, and the two presses it made, with how they came back.
-    expect(calls.some((call) => call.did === READ_LOANS && JSON.stringify(call.found ?? {}).includes("Atlas of Rivers"))).toBe(true);
-    const presses = calls.filter((call) => call.did === RENEW_LOAN);
-    expect(presses.map((call) => ((call.asked as JsonObject).parameters as JsonObject).title)).toEqual(expect.arrayContaining(["Atlas of Rivers", "Birds of the Coast"]));
-    expect(presses.every((call) => typeof call.outcome === "string")).toBe(true);
-    expect(calls.every((call) => (call.found as JsonObject | undefined)?.page === undefined || (call.found as JsonObject).page === "core.view_not_carried")).toBe(true);
+    const entry = window[1]!.value;
+    // The read of the earlier segment, as its state, and the two presses it made, as lines with how they ended.
+    expect((entry.reads as JsonObject[]).some((read) => read.did === READ_LOANS && read.rows === TITLES.length)).toBe(true);
+    const presses = (entry.calls as JsonObject[]).filter((group) => group.did === RENEW_LOAN);
+    expect(presses.flatMap((group) => group.calls as string[]).length).toBeGreaterThanOrEqual(2);
+    expect(presses.every((group) => typeof group.outcome === "string")).toBe(true);
+    expect(JSON.stringify(entry)).not.toContain("core.view_not_carried");
   });
 });

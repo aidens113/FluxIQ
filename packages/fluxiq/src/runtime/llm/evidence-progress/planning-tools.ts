@@ -12,25 +12,20 @@
 // pattern this follows: the loop holds no branch for any one caller, it reads
 // what the caller says its tools are and says the caller's own sentence.
 //
-// - `toolIds`: the tools that move the work forward. Look withdrawal never
-//   withdraws one, whatever its effect (`../decision-handlers/look-withdrawal.ts`),
-//   and a look budget never counts one.
-// - `lookBudget`: how many looks (observe-only calls that ran) the model may
-//   make before looks are withdrawn for the rest of the loop. Absent, no budget.
+// - `toolIds`: the tools that move the work forward, which the loop never
+//   takes for a look, whatever their effect. No look is ever withdrawn or
+//   counted against a budget (page-diff D4, D11).
 // - `next()`: the way forward now, asked each time a note is written -- the
 //   tool to call, when there is one, and the caller's sentence saying so. The
 //   no-progress redirect (`./stall-redirect.ts`), the searching note
-//   (`../decision-handlers/searching.ts`) and the spent budget's note all say it
-//   in place of the words that send a builder to act.
+//   (`../decision-handlers/searching.ts`) all say it in place of the words that send a builder to act.
 
 /** The way forward a planning loop's notes name: its tool, when there is one, and the caller's own sentence. */
 export type AutomationStudioLlmEvidencePlanningStep = { toolId?: string | undefined; instruction: string };
 
 export type AutomationStudioLlmEvidencePlanningTools = {
-  /** The tools that move the work forward: never withdrawn as looks and never counted against the look budget. */
+  /** The tools that move the work forward: never taken for looks. */
   toolIds: readonly string[];
-  /** Looks the model may make before looks are withdrawn for the rest of the loop; absent, no budget. */
-  lookBudget?: number | undefined;
   /** The way forward now, asked each time a note says it. */
   next(): AutomationStudioLlmEvidencePlanningStep;
 };
