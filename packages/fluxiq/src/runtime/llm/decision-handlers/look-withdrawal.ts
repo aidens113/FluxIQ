@@ -60,6 +60,7 @@ import type { AutomationStudioLlmEvidenceTool } from "../evidence-loop/index.ts"
 import type { AutomationStudioLlmEvidencePlanningTools } from "../evidence-progress/index.ts";
 import { automationStudioLlmEvidenceFinishingToolIds, type AutomationStudioLlmEvidenceFinishingTools } from "../loop-budget.ts";
 import { AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID } from "../loop-decision/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_NARROWED_NOTE } from "./withdrawn-actions.ts";
 
 /**
  * The model's decision about a caught repeat (`../loop-decision/`) is never a
@@ -77,7 +78,7 @@ const NEVER_A_LOOK: readonly string[] = [AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOO
  * that its value was not one of the first few offered (run-mwuuo3zk-75b482b3
  * step 308, run-mwuxd2v9-33928ea3 step 202).
  */
-const NARROWED_NOTE = "Not offered now, because each only looked and looks are withdrawn until an action runs:";
+const NARROWED_NOTE = AUTOMATION_STUDIO_LLM_EVIDENCE_NARROWED_NOTE;
 
 /** The issue code a withdrawn look asked for anyway is refused under. */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOK_WITHDRAWN_CODE = "llm_evidence_loop.look_withdrawn";

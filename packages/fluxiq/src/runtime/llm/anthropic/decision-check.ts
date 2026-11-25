@@ -22,12 +22,21 @@
 //     harness refuses a kind that is none of the three. Here only the wrapper is checked.
 //   - A reply with no `kind` is checked with the wrapper's own word filled in, as the harness fills it: what is missing
 //     is said, not the word Core writes itself.
+//   - A tool call naming an action its tool's input lists as withdrawn -- a look, while looks are withdrawn
+//     (`../decision-handlers/look-withdrawal.ts`) -- is held to its variant with that one action allowed, so every other
+//     key is still checked, and the loop refuses the action by name (`llm_evidence_loop.look_withdrawn`). Bigbox run
+//     run-mwveg5ls-0266dfe0 (t1034, steps 192 and 215) asked twice for the snapshot looks had withdrawn; the narrowed
+//     list refused it here as off-shape, and the rule naming the offered actions ran past the bound a miss is told
+//     within, so the model was told only that its reply did not fit. It was a decision, and the loop says why it is not
+//     one to run.
 //
 // Nothing a decision may be is relaxed: every variant keeps every constraint the schema gives it, and what is passed on
 // is refused downstream exactly as for every other provider.
 
 import { isRecord } from "../provider-transport/index.ts";
 import { automationStudioLlmDecisionRead, type AutomationStudioLlmDecisionReadingTool } from "../decision-reading/index.ts";
+// The owning module, which imports nothing: the decision handlers' barrel leads back to this adapter.
+import { automationStudioLlmEvidenceWithdrawnActions } from "../decision-handlers/withdrawn-actions.ts";
 import type { JsonObject } from "../../../core/index.ts";
 
 const WRAPPER_KIND = "evidence_tool_decision";
@@ -42,7 +51,22 @@ export function automationStudioAnthropicDecisionCheck(answer: unknown, schema: 
   if (!variants || !isRecord(worded.decision)) return { value: worded, schema };
   const read = automationStudioLlmDecisionRead(worded.decision, offeredTools(variants)).decision;
   const named = variantNamed(read, variants);
-  return { value: { ...worded, decision: read }, schema: { ...schema, properties: { ...schema.properties, decision: named ?? LEFT_TO_THE_LOOP } } };
+  return { value: { ...worded, decision: read }, schema: { ...schema, properties: { ...schema.properties, decision: named ? withdrawnAllowed(named, read) : LEFT_TO_THE_LOOP } } };
+}
+
+/** The variant with each action the call names that its input lists as withdrawn allowed at that key, the loop's to refuse by name (header); the variant itself where it names none. */
+function withdrawnAllowed(variant: Record<string, unknown>, decision: unknown): Record<string, unknown> {
+  if (!isRecord(decision) || !isRecord(decision.input) || !isRecord(variant.properties)) return variant;
+  const input = variant.properties.input;
+  if (!isRecord(input) || !isRecord(input.properties)) return variant;
+  const written = decision.input;
+  const allowed = Object.entries(input.properties).flatMap(([key, property]) => {
+    const value = written[key];
+    return isRecord(property) && Array.isArray(property.enum) && typeof value === "string" && !property.enum.includes(value) && automationStudioLlmEvidenceWithdrawnActions(property).includes(value)
+      ? [[key, { ...property, enum: [...property.enum, value] }] as const] : [];
+  });
+  if (!allowed.length) return variant;
+  return { ...variant, properties: { ...variant.properties, input: { ...input, properties: { ...input.properties, ...Object.fromEntries(allowed) } } } };
 }
 
 /** The tools the decision schema offers, as its tool-call variants show them. */

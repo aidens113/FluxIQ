@@ -17,7 +17,8 @@
 //   2. a tool call written flat under its tool's name is that call (`./flat-tool-call.ts`);
 //   3. a decision that can only be a tool call is one (`./inferred-tool-call.ts`);
 //   4. a `toolId` that is a value an offered tool's input names there is that tool (`./value-tool-id.ts`);
-//   5. a tool's input key written beside `input` goes into it (`../tool-call-keys/folded.ts`).
+//   5. a tool's input key written beside `input` goes into it (`../tool-call-keys/folded.ts`);
+//   6. a call's own key (`add`, `act`, `place`) written inside `input` comes out beside it (`./own-keys-lifted.ts`, t1034).
 //
 // Grammar only. Every one reads a shape that can mean one decision and nothing
 // else; none makes a decision the schema does not offer acceptable, and the
@@ -29,6 +30,7 @@ import { automationStudioLlmToolCallKeysFolded } from "../tool-call-keys/index.t
 import { automationStudioLlmDecisionFlatToolCall } from "./flat-tool-call.ts";
 import { automationStudioLlmDecisionInferredToolCall } from "./inferred-tool-call.ts";
 import { automationStudioLlmDecisionOwnKeyNulls } from "./own-key-nulls.ts";
+import { automationStudioLlmDecisionOwnKeysLifted } from "./own-keys-lifted.ts";
 import type { AutomationStudioLlmDecisionReading } from "./reading.ts";
 import type { AutomationStudioLlmDecisionReadingTool } from "./tool.ts";
 import { automationStudioLlmDecisionValueToolId } from "./value-tool-id.ts";
@@ -65,6 +67,11 @@ export function automationStudioLlmDecisionRead(decision: unknown, tools: readon
   if (folded) {
     read = folded.decision;
     readings.push({ code: "keys_folded", toolId: folded.toolId, movedKeys: folded.movedKeys });
+  }
+  const lifted = automationStudioLlmDecisionOwnKeysLifted(read, tools);
+  if (lifted) {
+    read = lifted.decision;
+    readings.push({ code: "own_keys_lifted", keys: lifted.keys });
   }
   return { decision: read, readings };
 }

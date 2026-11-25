@@ -1,5 +1,6 @@
 // A no or an unsure says which columns the request names that the rows the check read lack, and how the asked table
-// becomes the result (t1032). The recorded shape (run-mwv5m906-5e999159, 0081 and 0094): a request for a table with
+// becomes the result (t1032); since t1034 rows that hold nothing for a named column are refused before any judge, with
+// the same words (`../asked-table.ts`). The recorded shape (run-mwv5m906-5e999159, 0081 and 0094): a request for a table with
 // three named columns, a result that is another list read with other columns, a check unsure. The site is made up (a
 // library's loans and its catalogue), as is every row.
 import { describe, expect, it } from "vitest";
@@ -17,7 +18,9 @@ const LOANS = [{ id: "title", label: "Title" }, { id: "copies", label: "Copies" 
 const loanRows: JsonObject[] = [{ title: "Tide Tables", copies: "1", due_date: "Friday" }];
 const UNSURE: AutomationStudioFlowLessJudgement = { verdict: "unsure", reason: "The loans have not been shown as a table.", checkedWhat: "the loans" };
 
+const judgeCalls: number[] = [];
 function made(columns: { id: string; label: string }[], rows: JsonObject[], judgement: AutomationStudioFlowLessJudgement = UNSURE, instructions = ASKED) {
+  judgeCalls.length = 0;
   return automationStudioAnswerFirstCompletionCheck({
     instructions,
     rows: async () => ({ datasetId: "dataset.1", totalRows: rows.length, truncated: false, columns, rows }),
@@ -25,7 +28,10 @@ function made(columns: { id: string; label: string }[], rows: JsonObject[], judg
     readsRan: () => true,
     endView: async () => undefined,
     witnesses: () => ({}),
-    judge: async () => judgement,
+    judge: async () => {
+      judgeCalls.push(1);
+      return judgement;
+    },
     purse,
     say: () => undefined
   });
@@ -38,13 +44,17 @@ async function refusedWords(check: ReturnType<typeof made>, summary = "Shown."):
 }
 
 describe("a refused completion over rows that lack columns the request names", () => {
-  it("says which named columns the rows lack, that they are not the table, and both ways the asked table becomes the result", async () => {
+  it("says which named columns the rows lack, that they are not the table, and both ways the asked table becomes the result, with no judge", async () => {
     const said = await refusedWords(made(CATALOGUE, catalogueRows));
-    expect(said).toContain("The loans have not been shown as a table.");
+    expect(judgeCalls).toHaveLength(0);
+    expect(said).not.toContain("The loans have not been shown as a table.");
+    expect(said).toContain("This completion was refused before any check was paid for: the request names the columns of the table it asks for (title, copies, due date), and the rows the result holds have no title or copies column");
     expect(said).toContain("The rows the check read hold columns name, due date, shelf, and no title or copies, which the request names, so they are not the table it asks for.");
     expect(said).toContain("The result is the draft's last read step not marked intermediate, as resultHolds.result names it.");
     expect(said).toContain("in a call with add: true, which makes that read the result's step");
     expect(said).toContain('amend_draft with change "take" and that read\'s call id');
+    expect(said).toContain("a list is detected where it stands, on the page that shows it, and read through the handle that detection issues");
+    expect(said).toContain("go to the page that shows it, detect its list there, and read it through the handle that detection issues");
     expect(said).toContain("Only new evidence changes");
   });
 
@@ -65,8 +75,16 @@ describe("a refused completion over rows that lack columns the request names", (
     expect(await refusedWords(made(CATALOGUE, catalogueRows, UNSURE, "Renew the oldest loan and show me my loans."))).not.toContain("The rows the check read hold columns");
   });
 
-  it("refuses no yes itself: a yes the judge gave stands here (the judge refuses one over such rows, `cited-yes/records-yes.ts`)", async () => {
+  it("asks no judge over such rows: a yes there could not stand (`cited-yes/records-yes.ts`), so none is paid for (t1034)", async () => {
     const answer = await made(CATALOGUE, catalogueRows, { verdict: "yes", reason: "It was judged to be what was asked for.", checkedWhat: "the loans" }).check({ summary: "Shown." });
+    expect(answer.ok).toBe(false);
+    expect(answer.ok ? [] : answer.issueCodes).toEqual(["answer_first.not_asked_table"]);
+    expect(judgeCalls).toHaveLength(0);
+  });
+
+  it("still asks the judge where a held column shares a word with a named one, so a name read with a word too many is never refused here", async () => {
+    const answer = await made([{ id: "title", label: "Title" }, { id: "copies held", label: "Copies" }, { id: "due", label: "Due" }], [{ title: "Tide Tables", "copies held": "1", due: "Friday" }], { verdict: "yes", reason: "It was judged to be what was asked for.", checkedWhat: "the loans" }).check({ summary: "Shown." });
+    expect(judgeCalls).toHaveLength(1);
     expect(answer.ok).toBe(true);
   });
 });
@@ -75,10 +93,11 @@ describe("the 0094 shape through the real judge (t1032)", () => {
   // The run's yes: no defects, the table only in the model's words, no records asked, over the catalogue's rows.
   const YES_0094 = { answersRequest: "yes", defects: [], checked: [{ row: "Tide Tables", column: "due date", value: "Friday" }], answerRecords: { asked: false, siteShows: 1 } };
   const YES_LOANS = { answersRequest: "yes", defects: [], checked: [{ row: "Tide Tables", column: "copies", value: "1" }], answerRecords: { asked: true, siteShows: 1 } };
+  const calls: number[] = [];
   const provider = (answer: Record<string, unknown>): AutomationStudioLlmProvider => ({
     metadata: { provider: "mock", model: "debug-model" },
     estimateCostUsd: () => 0.001,
-    runTask: async () => ({ response: { kind: "diagnosis", summary: "Request appears met.", diagnosis: answer, confidence: 0.8 }, usage: { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 } }) as Awaited<ReturnType<AutomationStudioLlmProvider["runTask"]>>
+    runTask: async () => (calls.push(1), { response: { kind: "diagnosis", summary: "Request appears met.", diagnosis: answer, confidence: 0.8 }, usage: { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 } }) as Awaited<ReturnType<AutomationStudioLlmProvider["runTask"]>>
   });
   const judged = (columns: { id: string; label: string }[], rows: JsonObject[], answer: Record<string, unknown>) => automationStudioAnswerFirstCompletionCheck({
     instructions: ASKED,
@@ -94,13 +113,14 @@ describe("the 0094 shape through the real judge (t1032)", () => {
     say: () => undefined
   });
 
-  it("stays refused, naming the mismatch and the way to make the asked table the result", async () => {
+  it("stays refused, naming the mismatch and the way to make the asked table the result, before the judge is asked (t1034)", async () => {
+    calls.length = 0;
     const answer = await judged(CATALOGUE, catalogueRows.slice(0, 1), YES_0094).check({ summary: "Done.", answer: "title | copies | due date" });
     if (answer.ok) throw new Error("A yes over another list's rows must not pass.");
-    expect(answer.issueCodes).toEqual(["answer_first.judged_unsure"]);
+    expect(answer.issueCodes).toEqual(["answer_first.not_asked_table"]);
+    expect(calls).toHaveLength(0);
     const said = String(answer.feedback.instruction);
-    expect(said).toContain("The check said yes, but it does not stand on the rows the result holds");
-    expect(said).toContain("have no title or copies column, so they are not the table it asks for");
+    expect(said).toContain("have no title or copies column, so no check can take them as that table");
     expect(said).toContain("in a call with add: true, which makes that read the result's step");
   });
 
