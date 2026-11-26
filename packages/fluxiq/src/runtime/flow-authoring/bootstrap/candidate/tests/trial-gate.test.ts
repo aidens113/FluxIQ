@@ -53,7 +53,7 @@ async function run(steps: Step[], port?: (request: AutomationStudioCandidateTria
     ...(port ? { trial: { candidateId: "candidate.under-test", port } } : {}),
     loop: {
       tools: [{ toolId: "demo.explore", effect: "mutate", description: "Explore", inputSchema: { type: "object" } }], maxIterations: steps.length, maxToolCalls: steps.length,
-      unusableDecisions: { maxConsecutive: steps.length, maxInARow: steps.length, stalled: () => new Error("stalled") },
+      unusableDecisions: { stalled: () => new Error("stalled") },
       executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: explored, effectApplied: false, ...(stateDigests ? { stateDigests } : {}) }),
       decide: async ({ evidence }) => {
         seen.push(evidence.map((entry) => ({ ...entry })));

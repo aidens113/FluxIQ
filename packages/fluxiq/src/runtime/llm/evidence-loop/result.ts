@@ -36,18 +36,21 @@ export type AutomationStudioLlmEvidenceLoopFailureCode =
    */
   | "llm_evidence_loop.evidence_limit"
   /**
-   * The loop ran out of turns: iterations, the run's decision budget, or tool
-   * calls. **Nothing about what the model produced is being reported here**, and
-   * a result carrying this code always carries `exhaustion` saying which
-   * allowance ran out and how far the draft had got (`./exhaustion.ts`).
+   * The loop's budget ran out: the purse refused a decision, or the tokens or
+   * the clock left none. No count of turns or tool calls ends a loop (t1056).
+   * **Nothing about what the model produced is being reported here**, and a
+   * result carrying this code always carries `exhaustion` saying which bound
+   * ran out and how far the draft had got (`./exhaustion.ts`).
    */
   | "llm_evidence_loop.iteration_limit"
   | "llm_evidence_loop.cancelled"
   /**
-   * The provider's replies kept arriving unreadable: an unbroken run of them,
-   * each asked again with a note of what could not be read, reached its limit
-   * (`../unreadable-reply.ts`). A result carrying this code always carries
-   * `unreadable`, saying how many there were and of which kinds.
+   * No longer produced (t1056). It was the ending of a loop whose replies kept
+   * arriving unreadable until a count of them in a row was reached; no count
+   * ends a loop now, and the same unreadable reply again is a repeat loop
+   * detection steers (`./unreadable-reply.ts`). Kept, like `evidence_limit`,
+   * because the outcome tables callers key by this union still name it
+   * (`../../adaptation/recovery/exploration-outcome.ts`).
    */
   | "llm_evidence_loop.unreadable_replies"
   /**

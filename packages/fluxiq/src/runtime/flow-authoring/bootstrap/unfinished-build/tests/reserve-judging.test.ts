@@ -30,7 +30,7 @@ const refusal = (keptBackUsd: number | undefined): Extract<AutomationStudioLlmBu
 /** A round the purse stopped on cost, holding `steps`. */
 const costStopped = (steps: AutomationStudioFlowDraftStep[], keptBackUsd: number | undefined): AutomationStudioLlmEvidenceLoopResult => ({
   ok: false, code: "llm_evidence_loop.iteration_limit", trace: [], steps, accounting: accounting(4, 0.02),
-  exhaustion: { bound: "budget", budgetBound: "cost", costRefusal: refusal(keptBackUsd), maxIterations: 64, iterations: 4, draftSteps: steps.length, proposableSteps: steps.length, completionAttempts: 0, lastIssueCodes: [], outstandingIssueCodes: [] }
+  exhaustion: { bound: "budget", budgetBound: "cost", costRefusal: refusal(keptBackUsd), iterations: 4, draftSteps: steps.length, proposableSteps: steps.length, completionAttempts: 0, lastIssueCodes: [], outstandingIssueCodes: [] }
 });
 
 /** A build whose first round the purse stops on cost; the judge answers `verdict` about whatever it is shown. */
@@ -77,7 +77,7 @@ async function build(options: {
     checklist: (steps) => automationStudioInstructedActsChecklist({ instructionText: INSTRUCTION, draftSteps: steps }),
     budget: { maxCostUsd: 0.1, maxDurationMs: 540_000 },
     purse,
-    maxIterations: 64,
+    
     keep: async (...args) => {
       kept.push((args[2] as unknown[]).length);
       return { revision: 1, steps: (args[2] as unknown[]).length };
@@ -166,13 +166,13 @@ it("uses actual reserved call slots to judge a full test after call admission st
   let judges = 0;
   const steps = draft();
   const outcome = await runAutomationStudioFlowBootstrapBuildPhases({
-    purse, maxIterations: 64, budget: { maxCostUsd: 1 },
+    purse, budget: { maxCostUsd: 1 },
     round: async () => {
       const held = purse.hold({ projectedCostUsd: 0.001, estimatedInputTokens: 1, maxOutputTokens: 1 });
       expect(held.ok).toBe(false);
       if (held.ok || held.refusal.code !== "llm_budget.run_call_limit") throw new Error("Expected reserved call refusal");
       return { ok: false, code: "llm_evidence_loop.iteration_limit", trace: [], steps, accounting: accounting(1, 0.001),
-        exhaustion: { bound: "budget", budgetBound: "calls", callRefusal: held.refusal, maxIterations: 64, iterations: 1, draftSteps: steps.length, proposableSteps: steps.length, completionAttempts: 0, lastIssueCodes: [], outstandingIssueCodes: [] } };
+        exhaustion: { bound: "budget", budgetBound: "calls", callRefusal: held.refusal, iterations: 1, draftSteps: steps.length, proposableSteps: steps.length, completionAttempts: 0, lastIssueCodes: [], outstandingIssueCodes: [] } };
     },
     test: async () => {
       tests += 1;
@@ -207,12 +207,12 @@ it("keeps a known-unresolved draft and its exact refusal at the call limit witho
   let tests = 0, judges = 0, accepted = 0;
   let kept: readonly AutomationStudioFlowDraftStep[] | undefined;
   const outcome = await runAutomationStudioFlowBootstrapBuildPhases({
-    purse, maxIterations: 64, budget: { maxCostUsd: 1 },
+    purse, budget: { maxCostUsd: 1 },
     round: async () => {
       const held = purse.hold({ projectedCostUsd: 0.001, estimatedInputTokens: 1, maxOutputTokens: 1 });
       if (held.ok || held.refusal.code !== "llm_budget.run_call_limit") throw new Error("Expected reserved call refusal");
       return { ok: false, code: "llm_evidence_loop.iteration_limit", trace: [], steps, accounting: accounting(1, 0.001),
-        exhaustion: { bound: "budget", budgetBound: "calls", callRefusal: held.refusal, maxIterations: 64, iterations: 1,
+        exhaustion: { bound: "budget", budgetBound: "calls", callRefusal: held.refusal, iterations: 1,
           draftSteps: steps.length, proposableSteps: steps.length, completionAttempts: 1, lastIssueCodes: issueCodes, outstandingIssueCodes: issueCodes } };
     },
     acceptStopped: async (loop) => {
@@ -260,12 +260,12 @@ it("does not judge, nor ask the caller, when the judging kept back no longer fit
   let accepted = 0;
   const steps = draft();
   const outcome = await automationStudioLlmBuildPurseScope(purse, () => runAutomationStudioFlowBootstrapBuildPhases({
-    purse, maxIterations: 64, budget: { maxCostUsd: 1 },
+    purse, budget: { maxCostUsd: 1 },
     round: async () => {
       const held = purse.hold({ projectedCostUsd: 0.001, estimatedInputTokens: 1, maxOutputTokens: 1 });
       if (held.ok || held.refusal.code !== "llm_budget.run_call_limit") throw new Error("Expected reserved call refusal");
       return { ok: false, code: "llm_evidence_loop.iteration_limit", trace: [], steps, accounting: accounting(1, 0.001),
-        exhaustion: { bound: "budget", budgetBound: "calls", callRefusal: held.refusal, maxIterations: 64, iterations: 1, draftSteps: steps.length, proposableSteps: steps.length, completionAttempts: 0, lastIssueCodes: [], outstandingIssueCodes: [] } };
+        exhaustion: { bound: "budget", budgetBound: "calls", callRefusal: held.refusal, iterations: 1, draftSteps: steps.length, proposableSteps: steps.length, completionAttempts: 0, lastIssueCodes: [], outstandingIssueCodes: [] } };
     },
     test: async () => {
       tests += 1;

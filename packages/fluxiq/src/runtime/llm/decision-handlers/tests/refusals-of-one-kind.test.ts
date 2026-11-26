@@ -1,6 +1,5 @@
-// Three decisions in a row refused for one reason end the round, so the build
-// tests what exists instead of spending its purse (week report W2, 2026-10-06;
-// `../refusal-run.ts`). The repeat guard stops only identical refusals: lane B
+// Decisions in a row refused for one reason are told, then caught as a repeat; no count of them ends a round (t1056;
+// it was three, week report W2, 2026-10-06; `../refusal-run.ts`). The repeat guard stops only identical refusals: lane B
 // (`run-muwaq9w3-baaa4e19`, 0027-0036) sent `keep` on a different step each time,
 // and `run-murzln6g-11debe1d` spent 14 of 30 decisions on refused amendments.
 import { describe, expect, it, vi } from "vitest";
@@ -32,7 +31,7 @@ function site() {
 const built = ["A", "B", "C"].map((target) => ({ kind: "tool_call", callId: `press.${target}`, toolId: "press", input: { target }, add: true }));
 const loop = (decide: ReturnType<typeof vi.fn>, stalled = true) => runAutomationStudioLlmEvidenceLoop({
   tools: [press], decide, executeTool: site(), maxIterations: 30, maxToolCalls: 30, dryRun: false, propagateDecisionErrors: stalled,
-  ...(stalled ? { unusableDecisions: { maxConsecutive: 8, stalled: () => stalledError } } : {})
+  ...(stalled ? { unusableDecisions: { stalled: () => stalledError } } : {})
 });
 
 function decisions(...then: JsonObject[]) {
@@ -71,29 +70,31 @@ describe("decisions refused for one reason, three in a row", () => {
     }
   });
 
-  it("unrepeats of three different steps with no repeat: warned at the second, the round stalls at the third", async () => {
-    const decide = decisions(unrepeat(1), unrepeat(2), unrepeat(3));
+  it("unrepeats of different steps with no repeat: warned at the second, caught as a repeat from the third, and the round goes on", async () => {
+    const decide = decisions(unrepeat(1), unrepeat(2), unrepeat(3), unrepeat(1), unrepeat(2), unrepeat(3));
 
-    await expect(loop(decide)).rejects.toBe(stalledError);
+    await expect(loop(decide)).resolves.toMatchObject({ ok: true });
 
-    expect(decide).toHaveBeenCalledTimes(6);
+    expect(decide).toHaveBeenCalledTimes(10);
     const warned = shownAt(decide, 5).find((entry) => entry.toolId === "core.refusal_run")?.value;
-    expect(warned).toMatchObject({ ok: false, code: "llm_evidence_loop.refused_in_a_row", inARow: 2, maxInARow: 3 });
-    expect(String(warned?.instruction)).toContain("One more decision refused for it ends this exploration");
+    expect(warned).toMatchObject({ ok: false, code: "llm_evidence_loop.refused_in_a_row", inARow: 2 });
+    expect(warned?.maxInARow).toBeUndefined();
+    expect(String(warned?.instruction)).toContain("caught as a repeat, and you decide how to go on");
+    expect(String(warned?.instruction)).not.toContain("ends this exploration");
+    expect(shownAt(decide, 6).find((entry) => entry.toolId === "core.loop_check")?.value).toMatchObject({ pattern: "no_progress", toolIds: ["core.refusal_run"] });
   });
 
-  it("ends the round where no stall is configured", async () => {
+  it("goes on where no stall is configured too", async () => {
     const result = await loop(decisions(unrepeat(1), unrepeat(2), unrepeat(3)), false);
-    expect(result).toMatchObject({ ok: false });
-    expect(JSON.stringify(result)).toContain("repeat_without_progress");
+    expect(result).toMatchObject({ ok: true });
   });
 
-  it("presses the page refused three times in a row for one reason, on three different controls", async () => {
+  it("presses the page refused for one reason, far past three in a row on different controls, and goes on", async () => {
     const gone = (index: number) => ({ kind: "tool_call", callId: `gone.${index}`, toolId: "press", input: { target: `Gone ${index}` } });
-    const decide = decisions(gone(1), gone(2), gone(3));
+    const decide = decisions(...Array.from({ length: 12 }, (_, index) => gone(index + 1)));
 
-    await expect(loop(decide)).rejects.toBe(stalledError);
-    expect(decide).toHaveBeenCalledTimes(6);
+    await expect(loop(decide)).resolves.toMatchObject({ ok: true });
+    expect(decide).toHaveBeenCalledTimes(16);
   });
 
   it("does not stop when a decision between them landed, or the reasons differ", async () => {
@@ -109,7 +110,7 @@ describe("decisions refused for one reason, three in a row", () => {
 describe("decisions refused for one reason, where the caller takes loop detection's signal (t1014)", () => {
   const onTheLadder = (decide: ReturnType<typeof vi.fn>, signals: AutomationStudioLlmLoopSignal[]) => runAutomationStudioLlmEvidenceLoop({
     tools: [press], decide, executeTool: site(), maxIterations: 30, maxToolCalls: 30, dryRun: false, propagateDecisionErrors: true,
-    unusableDecisions: { maxConsecutive: 8, stalled: () => stalledError },
+    unusableDecisions: { stalled: () => stalledError },
     loopSignal: (signal: AutomationStudioLlmLoopSignal) => {
       signals.push(signal);
       return "end";

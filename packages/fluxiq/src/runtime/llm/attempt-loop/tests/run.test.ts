@@ -37,7 +37,7 @@ function scripted(provider: AutomationStudioLlmProvider, served: string[], next:
 
 const loop = (decide: ReturnType<typeof vi.fn>, extra: Partial<AutomationStudioLlmEvidenceLoopInput> = {}) => runAutomationStudioLlmEvidenceLoop({
   tools, decide, executeTool: covered() as unknown as AutomationStudioLlmEvidenceLoopInput["executeTool"], maxIterations: 60, maxToolCalls: 60, dryRun: false, propagateDecisionErrors: true,
-  unusableDecisions: { maxConsecutive: 40, stalled: () => stalledError }, ...extra
+  unusableDecisions: { stalled: () => stalledError }, ...extra
 } as AutomationStudioLlmEvidenceLoopInput);
 
 describe("a loop on its attempt's model ladder", () => {

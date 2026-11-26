@@ -31,7 +31,7 @@ const ACTION_INPUT_KEY = /^[a-z][a-z0-9_]{0,63}$/i;
 
 /** One refused configuration: the check, its figures, and a sentence. */
 export type AutomationStudioLlmEvidenceLoopConfigurationIssue = {
-  /** The check that failed, e.g. `limits.max_tool_calls` or `tool.description_length`. */
+  /** The check that failed, e.g. `limits.budget` or `tool.description_length`. */
   check: string;
   /** The figures it was held to, by name; a value that is not a finite number is said as text. */
   values: JsonObject;

@@ -39,7 +39,7 @@ async function run(script: Array<"look" | "test" | "undo">, options: Options = {
     ],
     maxIterations: script.length + 1, maxToolCalls: script.length + 1, dryRun: false, draft: false,
     requestContextKey: (toolId) => (toolId === TEST ? automationStudioCandidateTestRequestKey(LATEST) : undefined),
-    unusableDecisions: { maxConsecutive: script.length + 1, maxInARow: script.length + 1, stalled: () => new Error("stalled") },
+    unusableDecisions: { stalled: () => new Error("stalled") },
     executeTool: async ({ toolId, value }) => (toolId === TEST ? gate.test(value) : { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: toolId === "library.press", targetsUnchanged: true, stateDigests: { before: "page.one", after: "page.one" }, draft: { actionId: toolId, effect: toolId === "library.press" ? "mutate" : "observe", proposes: false } }),
     decide: async ({ evidence }) => {
       for (const entry of evidence) shown.set(`${entry.callId}:${JSON.stringify(entry.value)}`, { toolId: entry.toolId, value: entry.value });

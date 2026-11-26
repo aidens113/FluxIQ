@@ -43,7 +43,7 @@ describe("an answer folder for a decision Core refused", () => {
       .mockResolvedValueOnce(complete);
     const result = await runAutomationStudioLlmEvidenceLoop({
       tools, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, maxIterations: 10, dryRun: false,
-      unusableDecisions: { maxConsecutive: 3, stalled: () => new Error("stalled") }
+      unusableDecisions: { stalled: () => new Error("stalled") }
     });
 
     expect(result).toMatchObject({ ok: true });
@@ -74,7 +74,7 @@ describe("an answer folder for a decision Core refused", () => {
       .mockReturnValueOnce({ ok: true });
     const result = await runAutomationStudioLlmEvidenceLoop({
       tools, decide, checkCompletion, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, maxIterations: 10, dryRun: false,
-      unusableDecisions: { maxConsecutive: 3, stalled: () => new Error("stalled") }
+      unusableDecisions: { stalled: () => new Error("stalled") }
     });
 
     expect(result).toMatchObject({ ok: true });

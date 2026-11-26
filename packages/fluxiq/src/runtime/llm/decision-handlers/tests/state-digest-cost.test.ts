@@ -84,14 +84,14 @@ async function replay(script: Script, mode: Mode, options: { outcomes?: Record<n
     shown.set(iteration, structuredClone([...request.evidence]));
     return script[iteration] ?? { kind: "complete", result: { done: true } };
   };
-  const limits = automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 48 });
+  const limits = automationStudioFlowBootstrapEvidenceLoopLimits({});
   try {
     const result = await runAutomationStudioLlmEvidenceLoop({
       tools: [tool],
       decide,
       executeTool,
       propagateDecisionErrors: true,
-      unusableDecisions: { maxConsecutive: limits.maxConsecutiveUnusableDecisions, stalled: () => new Error("stalled") },
+      unusableDecisions: { stalled: () => new Error("stalled") },
       ...(mode === "digest_hook" ? { captureStateDigest: () => { bump(hookByIteration); return `page.${world}`; } } : {}),
       // The service's limits for a 48-call grant, on a fixed clock.
       ...limits.loop,

@@ -46,8 +46,6 @@ type Decide = AuthoringInput["loop"]["decide"];
 export async function generateAutomationStudioFlowCandidateDraft(input: {
   submission: AuthoringInput["submission"];
   loop: Omit<AuthoringInput["loop"], "decide" | "unusableDecisions">;
-  /** The build's guard on unusable decisions in a row, the one the legacy round is given (`../../loop-limits/flow-bootstrap-evidence-loop.ts`). */
-  maxConsecutiveUnusableDecisions: number;
   harness: Omit<AutomationStudioLlmHarnessInput, "taskKind" | "expectedOutput" | "evidenceLoop" | "signal"> & { provider: NonNullable<AutomationStudioLlmHarnessInput["provider"]> };
   runHarness(request: AutomationStudioLlmHarnessInput): Promise<AutomationStudioLlmTaskResult>;
   wrapDecision(decide: Decide): Decide;
@@ -108,7 +106,7 @@ export async function generateAutomationStudioFlowCandidateDraft(input: {
   } });
   // A run of unusable decisions ends as an unusable answer, staged and worded as legacy's ("the model's answer could not be used"), with the build's spend;
   // a run of usable answers refused for one reason ends as no progress (`../candidate-failure/stall-code.ts`), naming the refused submission behind it.
-  const unusableDecisions = automationStudioFlowBootstrapUnusableDecisions({ maxConsecutiveUnusableDecisions: input.maxConsecutiveUnusableDecisions, maxIterations: input.loop.maxIterations,
+  const unusableDecisions = automationStudioFlowBootstrapUnusableDecisions({
     callerEnding: (progress) => input.ending(progress, accounted(progress.accounting)),
     // Answers that kept being refused for one reason end as no progress, never as an unusable answer (t362, round 4's C6).
     stalled: (progress) => {

@@ -34,7 +34,7 @@ describe("a judge reply that cost more than its hold (t254 stage 2)", () => {
       checklist: () => undefined,
       budget: { maxCostUsd: 0.1 },
       purse,
-      maxIterations: 8,
+      
       keep: async () => undefined,
       now: () => 0
     });
@@ -61,7 +61,7 @@ describe("a judge reply that cost more than its hold (t254 stage 2)", () => {
       checklist: () => undefined,
       budget: { maxCostUsd: 0.1 },
       purse,
-      maxIterations: 8,
+      
       keep: async () => undefined,
       now: () => 0
     });

@@ -61,7 +61,7 @@ async function build(steps: Array<(evidence: readonly Entry[]) => JsonObject>, o
     loop: {
       tools: [look, ...offeredAlso], maxIterations: options.iterations ?? steps.length, maxToolCalls: options.toolCalls ?? steps.length + 2,
       ...(options.purse ? { purse: options.purse } : {}),
-      unusableDecisions: { maxConsecutive: steps.length, maxInARow: steps.length, stalled: () => new Error("stalled") },
+      unusableDecisions: { stalled: () => new Error("stalled") },
       executeTool: async (call) => {
         executed.push(call.callId);
         return { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: false, targetsUnchanged: true };
@@ -323,7 +323,7 @@ describe("a judge's advice repeated to the same builder", () => {
       trial: { port: async (request: AutomationStudioSubflowTrialRequest) => ({ partial: true as const, scope: "subflow" as const, identity: { ...request.proposal.scope }, revision: request.proposal.revision, digest: request.proposal.digest, entryPrepared: true, ...structuredClone(answers.shift()!) }) },
       loop: {
         tools: [look], maxIterations: steps.length, maxToolCalls: steps.length + 2,
-        unusableDecisions: { maxConsecutive: steps.length, maxInARow: steps.length, stalled: () => new Error("stalled") },
+        unusableDecisions: { stalled: () => new Error("stalled") },
         executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: false, targetsUnchanged: true }),
         decide: async ({ evidence }) => steps[index++]!(evidence as readonly Entry[])
       }
@@ -425,7 +425,7 @@ describe("advice to add a field a read was refused incomplete_text for (S5, t743
         trial: { port: async (request: AutomationStudioSubflowTrialRequest) => ({ partial: true as const, scope: "subflow" as const, identity: { ...request.proposal.scope }, revision: request.proposal.revision, digest: request.proposal.digest, entryPrepared: true, ...structuredClone(answer) }) },
         loop: {
           tools: [look], maxIterations: steps.length, maxToolCalls: steps.length + 2,
-          unusableDecisions: { maxConsecutive: steps.length, maxInARow: steps.length, stalled: () => new Error("stalled") },
+          unusableDecisions: { stalled: () => new Error("stalled") },
           executeTool: async (call) => (call.toolId === "core.run_node" && call.callId.startsWith("initial.") ? refusedRead() : { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: false, targetsUnchanged: true }),
           decide: async ({ evidence }) => steps[index++]!(evidence as readonly Entry[])
         }

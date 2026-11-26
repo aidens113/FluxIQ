@@ -93,20 +93,21 @@ describe("a Flow build whose model reply arrives unreadable", () => {
     expect(note).toMatchObject({ code: "llm_evidence_loop.reply_unreadable", unreadable: { case: "content_mismatched" }, unreadableInARow: 2 });
   });
 
-  it("ends, when the replies stay unreadable, with a message saying so and how many tries it took", async () => {
+  // No count of unreadable replies ends a build (t1056; it once ended at six in a row): each is asked again with its
+  // note, each is paid for, and the purse ends a build whose replies never become readable.
+  it("asks again after every unreadable reply, each paid for, until the build's purse ends it", async () => {
     const { requests, generation } = await build(() => true);
 
     const diagnostic = await rejectedGenerationDiagnostic(generation);
 
-    expect(requests).toHaveLength(6);
-    expect(diagnostic.code).toBe("flow_bootstrap.model_replies_unreadable");
+    const n = requests.length;
+    expect(n).toBeGreaterThan(6);
+    expect(diagnostic.code).toBe("flow_bootstrap.evidence_budget_exhausted");
     expect(diagnostic.code).not.toBe("flow_bootstrap.evidence_invalid_decision");
     expect(diagnostic.retryable).toBe(true);
-    expect(diagnostic.ending).toMatchObject({ kind: "replies_unreadable", tried: { rounds: 1, decisions: 6, stepsInFlow: 0 } });
-    expect(diagnostic.ending?.message).toMatch(/^The build stopped because the replies it got back could not be read: 6 in a row came back unreadable -- because its brackets did not match/u);
-    expect(diagnostic.ending?.message).toContain("In all, 6 of 6 replies could not be read; each was paid for and counted in the build's budget.");
+    expect(diagnostic.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost", tried: { rounds: 1, decisions: n, stepsInFlow: 0 } });
     // Every unreadable reply was paid for, and the build's accounting says so, beside the start's reading of the
     // instruction (t976, b2ee9ed45), which was readable and paid for at `USAGE`.
-    expect(diagnostic.accounting?.estimatedCostUsd).toBeCloseTo(0.012 + USAGE.estimatedCostUsd, 6);
+    expect(diagnostic.accounting?.estimatedCostUsd).toBeCloseTo(0.002 * n + USAGE.estimatedCostUsd, 6);
   });
 });

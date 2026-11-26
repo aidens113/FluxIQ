@@ -21,7 +21,7 @@ function ending(reason = DECLINED): AutomationStudioProjectBriefEnding & { fire(
 const builderPorts = (ended: AutomationStudioProjectBriefEnding, decide: AutomationStudioProjectBuilderPorts["loop"]["decide"]): AutomationStudioProjectBuilderPorts => ({
   loop: {
     tools: [], maxToolCalls: 6,
-    unusableDecisions: { maxConsecutive: 3, maxInARow: 3, stalled: () => new Error("stalled") },
+    unusableDecisions: { stalled: () => new Error("stalled") },
     executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: false, targetsUnchanged: true }),
     decide
   },
@@ -36,7 +36,7 @@ const resetBrief = () => gardenBrief("b-reset", "list_seeds", [], (value) => Obj
 const resetPorts = (ended: AutomationStudioProjectBriefEnding & { fire(): void }, left: AutomationStudioSiteResetNamedAct[]): AutomationStudioProjectResetPorts => ({
   loop: {
     tools: [{ toolId: "site.undo", description: "Undo one act", effect: "mutate", inputSchema: { type: "object" } }],
-    unusableDecisions: { maxConsecutive: 2, maxInARow: 2, stalled: () => new Error("the reset stalled") },
+    unusableDecisions: { stalled: () => new Error("the reset stalled") },
     executeTool: async () => ({ ok: true }),
     decide: async () => {
       ended.fire();

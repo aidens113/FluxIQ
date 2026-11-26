@@ -1,9 +1,8 @@
-// The hard ceilings on a bounded evidence loop.
+// The figures one evidence loop shares between the directories that run it.
 //
 // These numbers are Core's, not the harness's and not recovery's. Two
-// directories are bounded by them and neither owns them: `runtime/llm/` runs
-// the loop and refuses a configuration that asks for more, and
-// `runtime/recovery/` spends the same budget through its exploration ledger.
+// directories read them and neither owns them: `runtime/llm/` runs the loop,
+// and `runtime/recovery/` spends its budget through its exploration ledger.
 //
 // They sit in a directory of their own because a constant that both sides read
 // is exactly the kind of thing that grows an import edge between them, and one
@@ -17,13 +16,14 @@
 // now fails the build on a value import in that direction; this module is where
 // a shared value goes instead of provoking one.
 //
-// They are ceilings on what a caller may configure, not defaults: the loop
-// still starts from eight of each unless it is told otherwise. Sixteen was the
-// ceiling while a recovery was capped at a handful of provider calls anyway;
-// with the cap replaced by a cost and a token bound, a bounded
-// exploration that is still learning has to be able to keep going, and a
-// ceiling of sixteen would simply have become the next hard limit underneath
-// the ones that were removed.
+// **There is no ceiling on a loop's turns or calls (t1056).** These were the
+// most a caller could configure, 64 of each, and the loop, its provider's
+// preflight and every reader of a recorded build were held to them, so a build
+// that was still learning met a limit no person set (user, 2026-11-24: "THERE
+// SHOULDNT BE ANY ARBITRARY FUCKING CALL LIMIT THAT RANDOMLY JUST RESETS
+// EVERYTHING"). Nothing in `runtime/llm/`, the build or its readers reads them
+// now; `adaptation/recovery/` still caps its exploration's backstop with them,
+// and they go with that caller.
 //
 // `maxEvidenceBytes` is no longer a limit on anything. It was a 1 MiB backstop
 // on everything a loop gathered, which ended a loop `evidence_limit`; a
@@ -31,23 +31,12 @@
 // every entry with the model's context window as the only bound on a request
 // (`../llm/context-window.ts`). It stays, at the largest safe integer, only
 // because readers of a recorded trace hold an accounted byte count to it.
+/** @deprecated `maxIterations` and `maxToolCalls` are read only by `adaptation/recovery/` (t1056); no loop, preflight or reader of a build is held to them. */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS = {
   maxIterations: 64,
   maxToolCalls: 64,
   maxEvidenceBytes: Number.MAX_SAFE_INTEGER
 } as const;
-
-// **No longer read by any loop (t1049).** It was the count of steps in a row
-// without progress that ended a loop, and no such count ends anything now (user,
-// 2026-11-24: "THERE SHOULDNT BE ANY ARBITRARY FUCKING CALL LIMIT THAT RANDOMLY
-// JUST RESETS EVERYTHING"): a stall is steered from
-// `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_REDIRECT_AT_STEPS_WITHOUT_PROGRESS` on,
-// a repeat is loop detection's, and only the result, the purse or a person's
-// Stop ends a task. It is kept only because callers still pass it as
-// `unusableDecisions.maxConsecutive`, which the loop ignores
-// (`../llm/loop-configuration.ts`); remove it with them.
-/** @deprecated Read by no loop since t1049; see the comment above. */
-export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS = 8;
 
 // Steps in a row that give a loop nothing new, after which it **changes what it
 // is asking for**.
@@ -58,7 +47,8 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGR
 // repeating and what refused its last attempt to finish
 // (`../llm/evidence-progress/stall-redirect.ts`), and it does so again on every
 // further step without progress until the model does something new. Nothing
-// stops it: no count of steps without progress ends a loop (t1049).
+// stops it: no count of steps without progress ends a loop (t1049), and no other
+// count does either (t1056).
 //
 // Three, for the reason three was once the stop and was wrong as one: two steps
 // that gather nothing new are an ordinary recovery -- a setback, a second look,

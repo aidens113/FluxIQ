@@ -38,7 +38,7 @@ const checklist: AutomationStudioInstructedActChecklistItem[] = [
 ];
 
 const judgement = (over: Partial<AutomationStudioFlowBootstrapJudgement> = {}): AutomationStudioFlowBootstrapJudgement => ({
-  round: 2, stopped: "iterations", tested: "replayed_clean", testIssueCodes: [], failedSteps: [], stepsInFlow: 9, done: 2, proven: 2,
+  round: 2, stopped: "repeat_without_progress", tested: "replayed_clean", testIssueCodes: [], failedSteps: [], stepsInFlow: 9, done: 2, proven: 2,
   todo: ["a2", "a2.quantity", "a3", "a3.variant"], lastIssueCodes: [], flowSignature: "same", ...over
 });
 

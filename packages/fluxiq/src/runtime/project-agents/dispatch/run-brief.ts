@@ -305,13 +305,12 @@ export async function runAutomationStudioProjectDispatchBrief(input: {
     const value = await dispatcher.cancellation.child(async () => {
       const signal = dispatcher.cancellation.signal()!;
       return await leases.run({ role, briefId: brief.briefId }, async (lease) => {
-        const dispatchedCalls = dispatcher.maxCalls ? dispatcher.maxCalls(brief) : brief.maxIterations;
-        // A brief that waited on a predecessor is sized from what the purse can give now (header, t627).
-        const sized = automationStudioProjectDispatchStartAllowance({ brief, maxCalls: dispatchedCalls, purse: dispatcher.purse, shares: input.start?.shares?.() });
-        const maxCalls = sized.ok ? sized.maxCalls : undefined;
-        // A reset is the build's own finishing, so it may be carved from the calls kept back for it (t570).
+        // A brief that waited on a predecessor is sized from what the purse can give now (header, t627). Its allowance is
+        // money and never a count of calls (t1056: a call count ended briefs whose calls were cheap before their money did).
+        const sized = automationStudioProjectDispatchStartAllowance({ brief, purse: dispatcher.purse, shares: input.start?.shares?.() });
+        // A reset is the build's own finishing, so it may be carved from what is kept back for it (t570).
         const carved = sized.ok
-          ? dispatcher.purse.allowance({ role, briefId: brief.briefId, usd: sized.allowanceUsd, ...(maxCalls !== undefined ? { maxCalls } : {}), ...(brief.kind === "reset" ? { fromKeptBack: true } : {}) })
+          ? dispatcher.purse.allowance({ role, briefId: brief.briefId, usd: sized.allowanceUsd, ...(brief.kind === "reset" ? { fromKeptBack: true } : {}) })
           : { ok: false as const, refusal: sized.refusal };
         input.start?.carved();
         if (!carved.ok) {
@@ -322,7 +321,7 @@ export async function runAutomationStudioProjectDispatchBrief(input: {
         spend.allowance = carved.allowance;
         if (sized.ok && sized.changed) {
           spend.sizedAtStart = sized.changed;
-          brief = { ...brief, allowanceUsd: sized.allowanceUsd, maxIterations: sized.maxIterations, ...(sized.maxCalls !== undefined ? { maxCalls: sized.maxCalls } : {}) };
+          brief = { ...brief, allowanceUsd: sized.allowanceUsd };
         }
         await recorded(() => dispatcher.record.store.recordAllowance(dispatcher.record.ref, { role, briefId: brief.briefId, usd: brief.allowanceUsd }));
         const allowance = carved.allowance;
@@ -413,7 +412,7 @@ async function run(input: {
   // One repair memory of the subflow across the build's briefs of one plan (header, t804).
   const pendingRepair = repairOfSubflow(dispatcher, mapped.scope.planDigest, brief.subflowKey);
   const outcome = await untilEnded(signal, outputs.ending(ports.ended), (stop) => runBuilder({
-    loop: { ...loop, maxIterations: brief.maxIterations, signal: stop, purse: allowance },
+    loop: { ...loop, signal: stop, purse: allowance },
     scope: mapped.scope,
     siblings: mapped.siblings,
     submission: { ...ports.submission, signal: stop },

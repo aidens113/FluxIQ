@@ -18,6 +18,9 @@ const tools = [
   { toolId: "press", description: "Press a control.", inputSchema: { type: "object" }, effect: "mutate" as const }
 ];
 const stalled = () => new Error("stalled");
+/** How long a scripted model keeps repeating itself before it finishes: far past every count that once ended a loop (t1056). */
+const REPEATS = 20;
+const finished = { kind: "complete", result: { ready: true } };
 
 const look = (index: number) => ({ kind: "tool_call", callId: `call.look.${index}`, toolId: "inspect", input: {} });
 const pressed = (index: number) => ({ kind: "tool_call", callId: `call.press.${index}`, toolId: "press", input: { target: `target.${index}` } });
@@ -47,8 +50,8 @@ describe("looking again after being refused", () => {
     expect(result).toMatchObject({ ok: true, accounting: { iterations: 6, toolCalls: 5 } });
     // Every look after a refusal ran, and the observation was offered each time.
     expect(result.trace.filter((entry) => entry.toolId === "inspect").every((entry) => entry.callId !== undefined)).toBe(true);
-    expect(decide.mock.calls[2]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["inspect", "press", "core.run_flow"]); // `core.run_flow` is offered from the first decision (page-diff D11), refused by name until a step can run again.
-    expect(decide.mock.calls[4]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["inspect", "press", "core.run_flow"]);
+    expect(decide.mock.calls[2]?.[0].tools.map((tool: { toolId: string }) => tool.toolId).filter((id: string) => id !== "core.loop_decision")).toEqual(["inspect", "press", "core.run_flow"]); // `core.run_flow` is offered from the first decision (page-diff D11), refused by name until a step can run again.
+    expect(decide.mock.calls[4]?.[0].tools.map((tool: { toolId: string }) => tool.toolId).filter((id: string) => id !== "core.loop_decision")).toEqual(["inspect", "press", "core.run_flow"]);
   });
 
   it("does not let the same refused action be asked for again", async () => {
@@ -68,12 +71,14 @@ describe("looking again after being refused", () => {
 
   // t1049: no count of steps without progress ends it; a run that only repeats itself is steered, and here, with
   // nothing else to end it, meets the loop's own ceiling.
-  it("still ends a run that only repeats itself, on the loop's own ceiling", async () => {
-    const decide = vi.fn().mockResolvedValue(look(1));
+  // t1049, t1056: no count of steps without progress, of turns or of calls ends it; a run that only repeats itself is
+  // steered, and goes on until the model finishes (or its purse ends it).
+  it("steers a run that only repeats itself, and ends it with nothing but the model's own result", async () => {
+    const decide = vi.fn().mockImplementation(async () => decide.mock.calls.length <= REPEATS ? look(1) : finished);
     const result = await runAutomationStudioLlmEvidenceLoop({
       tools, decide, maxIterations: 8, maxToolCalls: 8, executeTool: refusing
     });
-    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.iteration_limit", accounting: { iterations: 8 } });
+    expect(result).toMatchObject({ ok: true, accounting: { iterations: REPEATS + 1 } });
   });
 
   it("lets a look that was itself refused be asked again, and runs it", async () => {
@@ -98,18 +103,17 @@ describe("looking again after being refused", () => {
     // Both doors: neither the request's signature nor the tool's latest
     // observation may answer the retry from a refusal carrying nothing.
     expect(result.trace.some((entry) => entry.resultCode?.startsWith("llm_evidence_loop.already_"))).toBe(false);
-    expect(decide.mock.calls[1]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["inspect", "press", "core.run_flow"]); // `core.run_flow` is offered from the first decision (page-diff D11), refused by name until a step can run again.
+    expect(decide.mock.calls[1]?.[0].tools.map((tool: { toolId: string }) => tool.toolId).filter((id: string) => id !== "core.loop_decision")).toEqual(["inspect", "press", "core.run_flow"]); // `core.run_flow` is offered from the first decision (page-diff D11), refused by name until a step can run again.
   });
 
   it("counts a refused look as a step without progress, which steers and never ends the loop (t1049)", async () => {
-    // A refused look asked for again and again is steered; what ends it here is the loop's own ceiling, not a count of
-    // steps without progress, which once stopped it at the third.
-    const decide = vi.fn().mockResolvedValue(look(1));
+    // A refused look asked for again and again is steered, and no count ends it (t1056): the model's result does.
+    const decide = vi.fn().mockImplementation(async () => decide.mock.calls.length <= REPEATS ? look(1) : finished);
     const result = await runAutomationStudioLlmEvidenceLoop({
       tools, decide, maxIterations: 16, maxToolCalls: 16, executeTool: refusingLook
     });
 
-    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.iteration_limit", accounting: { iterations: 16 } });
+    expect(result).toMatchObject({ ok: true, accounting: { iterations: REPEATS + 1 } });
     expect(result.accounting.toolCalls).toBeGreaterThan(3);
   });
 
@@ -125,20 +129,25 @@ describe("looking again after being refused", () => {
   // `lookRefused` again, which answers `false` for every mutating tool.
   it("counts a refused action against the guard, even when each one names a new target", async () => {
     let index = 0;
-    const decide = vi.fn().mockImplementation(async () => pressed((index += 1)));
+    const decide = vi.fn().mockImplementation(async () => (index += 1) <= REPEATS ? pressed(index) : finished);
     const result = await runAutomationStudioLlmEvidenceLoop({
       tools, decide, maxIterations: 16, maxToolCalls: 16, executeTool: refusing
     });
 
-    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_without_progress" });
-    expect(result.accounting.toolCalls).toBe(3);
+    // Counted, so the model is told and steered -- a run of refusals of one kind, then caught as a repeat -- and no count
+    // ends the loop (t1056; it once ended at the third).
+    expect(result).toMatchObject({ ok: true });
+    expect(result.accounting.toolCalls).toBe(REPEATS);
+    const shown = decide.mock.calls.flatMap((call) => (call[0] as { evidence: ReadonlyArray<{ toolId: string }> }).evidence.map((entry) => entry.toolId));
+    expect(shown).toContain("core.refusal_run");
+    expect(shown).toContain("core.loop_check");
   });
 
   // And a call that did something still clears it, so a model working around a
   // refusal keeps its room: the press applies, and the count starts again.
   it("lets an action that applied something clear the count", async () => {
     let index = 0;
-    const decide = vi.fn().mockImplementation(async () => pressed((index += 1)));
+    const decide = vi.fn().mockImplementation(async () => (index += 1) <= 5 ? pressed(index) : finished);
     const applying = async () => ({ kind: "llm_evidence_tool_execution" as const, evidence: { ok: true }, effectApplied: true });
     const result = await runAutomationStudioLlmEvidenceLoop({
       tools, decide, maxIterations: 5, maxToolCalls: 5, executeTool: applying
@@ -146,6 +155,8 @@ describe("looking again after being refused", () => {
 
     expect(result).not.toMatchObject({ code: "llm_evidence_loop.repeat_without_progress" });
     expect(result.accounting.toolCalls).toBe(5);
+    const shown = decide.mock.calls.flatMap((call) => (call[0] as { evidence: ReadonlyArray<{ toolId: string }> }).evidence.map((entry) => entry.toolId));
+    expect(shown).not.toContain("core.refusal_run");
   });
 });
 
@@ -219,18 +230,19 @@ describe("an action refused until a look ran", () => {
     expect(result.trace[1]).toMatchObject({ toolId: "press", resultCode: "llm_evidence_loop.already_answered" });
   });
 
-  it("runs a refuse, look, refuse loop on, steered, to the loop's own ceiling (t1049)", async () => {
+  it("runs a refuse, look, refuse loop on, steered, to the model's result (t1049, t1056)", async () => {
     const gate = gatedPress(false);
     let index = 0;
     const decide = vi.fn().mockImplementation(async () => {
       index += 1;
+      if (index > 2 * REPEATS) return done;
       return index % 2 === 1 ? pressOne(index) : readList(index);
     });
     const result = await runAutomationStudioLlmEvidenceLoop({
       tools: gatedTools, decide, maxIterations: 40, maxToolCalls: 40, unusableDecisions: { stalled }, executeTool: gate.executeTool
     });
 
-    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.iteration_limit", accounting: { iterations: 40 } });
+    expect(result).toMatchObject({ ok: true, accounting: { iterations: 2 * REPEATS + 1 } });
     // The retries after each look reached the tool rather than memory.
     expect(gate.calls.filter((toolId) => toolId === "press").length).toBeGreaterThan(1);
   });
@@ -282,19 +294,21 @@ describe("a trial refused until the site is put back", () => {
     expect(result.trace.filter((entry) => entry.toolId === "core.test_subflow").map((entry) => entry.resultCode)).toEqual(["candidate.trial_reset_required", "subflow.trial_yes"]);
   });
 
-  it("still ends refuse, look, refuse forever as a run without progress", async () => {
+  it("steers refuse, look, refuse as a run without progress, and no count ends it (t1056)", async () => {
     const gate = resetGatedTrial(false);
     let index = 0;
     const decide = vi.fn().mockImplementation(async () => {
       index += 1;
+      if (index > 2 * REPEATS) return done;
       return index % 2 === 1 ? testRevision(index) : readCart(index);
     });
     const result = await runAutomationStudioLlmEvidenceLoop({
       tools: trialTools, decide, maxIterations: 40, maxToolCalls: 40, unusableDecisions: { stalled }, executeTool: gate.executeTool
     });
 
-    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_without_progress" });
-    expect(result.accounting.toolCalls).toBeLessThan(10);
+    expect(result).toMatchObject({ ok: true });
     expect(gate.calls.filter((toolId) => toolId === "core.test_subflow").length).toBeGreaterThan(1);
+    const shown = decide.mock.calls.flatMap((call) => (call[0] as { evidence: ReadonlyArray<{ toolId: string }> }).evidence.map((entry) => entry.toolId));
+    expect(shown.some((toolId) => toolId === "core.loop_check" || toolId === "core.repeat_check" || toolId === "core.no_progress")).toBe(true);
   });
 });

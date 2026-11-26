@@ -80,7 +80,7 @@ describe("a build whose purse refused its next call (run 13)", () => {
       // build's purse. Completion is kept out of reach, as run 13 never had a
       // Flow to finish with, so cost alone decides when it stops.
       round: async (request) => await runAutomationStudioLlmEvidenceLoop({
-        tools: [look], maxIterations: request.maxIterations, maxToolCalls: 40, minToolCalls: 30, completionSchema: { type: "object" }, propagateDecisionErrors: true,
+        tools: [look], maxToolCalls: 40, minToolCalls: 30, completionSchema: { type: "object" }, propagateDecisionErrors: true,
         budget: request.budget,
         ...(request.purse ? { purse: request.purse } : {}),
         executeTool: async ({ callId }) => ({ text: `${callId}: ${"x".repeat(300)}` }),
@@ -99,7 +99,7 @@ describe("a build whose purse refused its next call (run 13)", () => {
       checklist: (steps) => automationStudioInstructedActsChecklist({ instructionText: INSTRUCTION, draftSteps: steps }),
       budget: { maxCostUsd: CEILING, maxDurationMs: 540_000 },
       purse,
-      maxIterations: 40,
+      
       keep: async () => undefined,
       now: () => 0
     });

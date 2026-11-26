@@ -11,7 +11,7 @@ import { automationStudioConsequencesInOrder, isAutomationStudioActionConsequenc
 // them and the LLM adapter produces them, so neither feature barrel may own the
 // value without closing an initialization cycle through the other.
 import { parseAutomationStudioLlmProviderRefusal, type AutomationStudioLlmProviderRefusal } from "../../../llm/provider-refusal/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../loop-limits/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../loop-limits/index.ts";
 import { parseAutomationStudioFlowBootstrapEvidenceSteps } from "../evidence-loop-steps.ts";
 import { automationStudioFlowBootstrapLargestSizeLimits } from "../plan/index.ts";
 import { parseAutomationStudioFlowBootstrapBuildEnding } from "./build-ending.ts";
@@ -166,14 +166,14 @@ function parseAccounting(value: unknown): NonNullable<AutomationStudioFlowBootst
   if (!isRecord(value) || !hasExactFields(value, ["requestId", "estimatedInputTokens", "provider", "model", "providerStatus", "providerRefusal", "inputTokens", "outputTokens", "totalTokens", "estimatedCostUsd"])) return null;
   if (typeof value.requestId !== "string" || !/^[a-z0-9_.:-]{1,200}$/i.test(value.requestId)) return null;
   // A build's totals, not one request's: an iterating build adds up every call.
-  if (!boundedInteger(value.estimatedInputTokens, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS)) return null;
+  if (!boundedInteger(value.estimatedInputTokens, UNCOUNTED)) return null;
   if (value.provider !== undefined && !boundedLabel(value.provider)) return null;
   if (value.model !== undefined && !boundedLabel(value.model)) return null;
   if (value.providerStatus !== undefined && automationStudioFlowBootstrapProviderStatus(value.providerStatus) === undefined) return null;
   const providerRefusal = storedProviderRefusal(value.providerRefusal);
   if (value.providerRefusal !== undefined && !providerRefusal) return null;
   for (const field of ["inputTokens", "outputTokens", "totalTokens"] as const) {
-    if (value[field] !== undefined && !boundedInteger(value[field], AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS)) return null;
+    if (value[field] !== undefined && !boundedInteger(value[field], UNCOUNTED)) return null;
   }
   if (value.estimatedCostUsd !== undefined && (typeof value.estimatedCostUsd !== "number" || !Number.isFinite(value.estimatedCostUsd) || value.estimatedCostUsd < 0 || value.estimatedCostUsd > 10)) return null;
   return {
@@ -233,7 +233,7 @@ function storedProviderRefusal(value: unknown): AutomationStudioLlmProviderRefus
  * exploration failed to parse, and its named reason was replaced by a generic
  * transport failure.
  */
-const EVIDENCE_LOOP_MAX_ITERATIONS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations;
+const EVIDENCE_LOOP_MAX_ITERATIONS = Number.POSITIVE_INFINITY;
 /**
  * A build that could not finish publishes every live round it ran, the
  * exploration and each repair or exploring-again, not the last round's alone
@@ -247,22 +247,16 @@ const EVIDENCE_LOOP_MAX_ITERATIONS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.
  * which refuses every diagnostic.
  */
 function evidenceLoopBuildBounds(): { iterations: number; decisions: number; toolCalls: number; rows: number } {
-  const rounds = AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS;
-  const { maxIterations, maxToolCalls } = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS;
-  return {
-    iterations: maxIterations * rounds,
-    // Decisions plus one opening observation, for each round.
-    decisions: (maxIterations + 1) * rounds,
-    toolCalls: maxToolCalls * rounds,
-    // The published steps are one per trace row, and one decision may write two of them.
-    rows: (maxIterations * 2 + 1) * rounds
-  };
+  // No count of a round's turns or calls has a ceiling (t1056), so none of these does either.
+  const uncounted = Number.POSITIVE_INFINITY;
+  return { iterations: uncounted, decisions: uncounted, toolCalls: uncounted, rows: uncounted };
 }
 
 type EvidenceLoopExhausted = NonNullable<NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["evidenceLoop"]>["exhausted"]>;
 /**
  * Which allowance an exhausted loop ran out of, in the loop's own closed set
- * (`runtime/llm/evidence-loop/exhaustion.ts`). Written out here like every other
+ * (`runtime/llm/evidence-loop/exhaustion.ts`), with the two it could run out of
+ * before t1056 (`iterations`, `tool_calls`), which a stored record may carry. Written out here like every other
  * bound in this file: a reader must be able to decide whether a stored record is
  * Core's without the producer's value in hand.
  */
@@ -278,7 +272,7 @@ const EVIDENCE_LOOP_BUDGET_BOUNDS: readonly string[] = ["iterations", "tokens", 
  * stored diagnostic is read back with no Flow in hand, and one written while
  * the Flow's setting was higher must still parse after it is lowered.
  */
-const EVIDENCE_LOOP_MAX_DRAFT_STEPS = automationStudioFlowBootstrapLargestSizeLimits().maxTotalNodes + AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 1;
+const EVIDENCE_LOOP_MAX_DRAFT_STEPS = automationStudioFlowBootstrapLargestSizeLimits().maxTotalNodes + Number.POSITIVE_INFINITY;
 
 /**
  * What the loop ran out of, read back, or `null` for anything that is not that.
@@ -291,7 +285,7 @@ const EVIDENCE_LOOP_MAX_DRAFT_STEPS = automationStudioFlowBootstrapLargestSizeLi
 function parseEvidenceLoopExhausted(value: unknown): EvidenceLoopExhausted | null {
   if (!isRecord(value) || !hasExactFields(value, EVIDENCE_LOOP_EXHAUSTED_FIELDS)
     || typeof value.bound !== "string" || !EVIDENCE_LOOP_EXHAUSTED_BOUNDS.includes(value.bound)
-    || !boundedInteger(value.maxIterations, EVIDENCE_LOOP_MAX_ITERATIONS)
+    || (value.maxIterations !== undefined && !boundedInteger(value.maxIterations, EVIDENCE_LOOP_MAX_ITERATIONS))
     || !boundedInteger(value.iterations, EVIDENCE_LOOP_MAX_ITERATIONS)
     || !boundedInteger(value.draftSteps, EVIDENCE_LOOP_MAX_DRAFT_STEPS)
     || !boundedInteger(value.proposableSteps, value.draftSteps as number)
@@ -299,7 +293,8 @@ function parseEvidenceLoopExhausted(value: unknown): EvidenceLoopExhausted | nul
     || (value.budgetBound !== undefined && (value.bound !== "budget" || typeof value.budgetBound !== "string" || !EVIDENCE_LOOP_BUDGET_BOUNDS.includes(value.budgetBound)))) return null;
   return {
     bound: value.bound as EvidenceLoopExhausted["bound"],
-    maxIterations: value.maxIterations as number,
+    // Only a diagnostic recorded before t1056 carries it.
+    ...(value.maxIterations !== undefined ? { maxIterations: value.maxIterations as number } : {}),
     iterations: value.iterations as number,
     draftSteps: value.draftSteps as number,
     proposableSteps: value.proposableSteps as number,
@@ -361,6 +356,9 @@ function hasExactFields(value: Record<string, unknown>, allowed: string[]): bool
   const fields = new Set(allowed);
   return Object.keys(value).every((key) => fields.has(key));
 }
+
+// No count of a loop's turns or calls has a ceiling (t1056), so a count a record carries is bounded by nothing but being a whole number.
+const UNCOUNTED = Number.POSITIVE_INFINITY;
 
 function boundedInteger(value: unknown, maximum: number): boolean {
   return Number.isInteger(value) && (value as number) >= 0 && (value as number) <= maximum;

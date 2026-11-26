@@ -94,7 +94,7 @@ describe("the Flow the evidence loop drafts", () => {
 
   it("offers the framework's seven edits and shows the framework's telling", async () => {
     const decide = vi.fn().mockResolvedValueOnce(call("c1", "press", { target: "#a" })).mockResolvedValueOnce(complete);
-    await runAutomationStudioLlmEvidenceLoop({ tools: [press], decide, executeTool: vi.fn().mockResolvedValue(worked), maxIterations: 4, maxToolCalls: 4, dryRun: false, unusableDecisions: { stalled }, draft: { maxAmendments: 4 } });
+    await runAutomationStudioLlmEvidenceLoop({ tools: [press], decide, executeTool: vi.fn().mockResolvedValue(worked), maxIterations: 4, maxToolCalls: 4, dryRun: false, unusableDecisions: { stalled }, draft: { } });
     const schema = (decide.mock.calls[1]![0] as { decisionSchema: { oneOf: JsonObject[] } }).decisionSchema;
     const amend = schema.oneOf.find((variant) => ((variant.properties as JsonObject).kind as JsonObject).const === "amend_draft")!;
     const items = ((amend.properties as JsonObject).amendments as JsonObject).items as { properties: { change: { enum: string[] } } };

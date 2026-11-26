@@ -120,10 +120,13 @@ describe("a whole test that passed only on the run's own recovery", () => {
     expect(run.view?.record.ending).toBeUndefined();
   });
 
-  it("completes on that test when the build's turns run out before its repair, saying why", async () => {
+  // No count of turns ends the supervisor's loop (t1056; it once completed here on "ran out of turns"). A script that runs
+  // out is a model that gives no usable decision, which ends the loop as a guard would, before the repair was made: the
+  // build completes on the rescued pass, saying the build stopped making progress.
+  it("completes on that test when its loop stops before the repair, saying why", async () => {
     const run = await supervise(tested, project({ trialFeedback: () => RESCUED }));
-    expect(run.outcome).toMatchObject({ status: "candidate", trial: { verdict: "yes" }, reliesOnRecovery: { why: "turns" } });
-    expect(run.outcome.reliesOnRecovery!.told).toContain("ran out of turns");
+    expect(run.outcome).toMatchObject({ status: "candidate", trial: { verdict: "yes" }, reliesOnRecovery: { why: "stalled" } });
+    expect(run.outcome.reliesOnRecovery!.told).toContain("stopped making progress");
     expect(run.view?.record.ending).toBeUndefined();
   });
 

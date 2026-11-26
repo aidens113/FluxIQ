@@ -343,7 +343,8 @@ describe("the read also answers the route the person names", () => {
   // until the cross-check after the build, so the read came last and the purse refused it unsent. The read
   // still counted itself, the proposal said 49 calls, and the Lab failed a judged Flow on a call never made.
   it("counts no call, and no tokens, for a read the build's purse refused unsent", async () => {
-    const creation = await automationStudioFlowBootstrapCreationPurse({ store: { get: async () => undefined, save: async () => undefined, delete: async () => undefined } as never, projectId: "project.demo", flowId: "flow.demo", repair: true, ceilingUsd: 1, maxCalls: 1 });
+    const creation = await automationStudioFlowBootstrapCreationPurse({ store: { get: async () => undefined, save: async () => undefined, delete: async () => undefined } as never, projectId: "project.demo", flowId: "flow.demo", repair: true, ceilingUsd: 0.00015 });
+    // A purse that pays for one call's hold and not a second (t1056: a purse is dollars, never a count of calls).
     const provider = { estimateCostUsd: () => 0.0001 };
     // The harness's own hold (`../../llm/harness/run.ts`): a call the purse refuses returns unsent.
     const { reader, sent } = routed(async () => {
@@ -361,7 +362,7 @@ describe("the read also answers the route the person names", () => {
       expect(await reader.route.read()).toEqual({ state: "unavailable", reason: "non_complete" });
     });
 
-    expect(creation.readingRefused?.code).toBe("llm_budget.run_call_limit");
+    expect(creation.readingRefused?.code).toBe("llm_budget.run_cost_limit");
     expect(sent).toHaveLength(1);
     expect(creation.purse.spentCalls()).toBe(1);
     expect(reader.usage).toEqual({ calls: 0, estimatedInputTokens: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 });

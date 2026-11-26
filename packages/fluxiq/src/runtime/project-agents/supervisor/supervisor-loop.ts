@@ -360,11 +360,12 @@ async function supervise(input: SupervisorInput, clock: Clock): Promise<Automati
 
 /** The loop codes that are no guard's: the person's cancel, which never completes on a rescued pass (header). */
 const CANCELLED = "llm_evidence_loop.cancelled";
-const TURNS = "llm_evidence_loop.iteration_limit";
+/** A loop whose budget ran out: its purse, its tokens or its clock. No count of turns ends a loop (t1056). */
+const BUDGET_SPENT = "llm_evidence_loop.iteration_limit";
 
 /**
  * Why a guard ended the loop before a rescued pass's repair was made (header,
- * t622): the purse, the time limit, the turns, the provider, or any other
+ * t622): the purse, the time limit, the provider, or any other
  * stop a guard forced (`stalled`). Undefined when the loop completed or the
  * model ended it, or the person cancelled it.
  */
@@ -374,7 +375,8 @@ function recoveryShortfall(ended: { outOfMoney: boolean; timedOut: boolean; stal
   if (ended.stalled) return "stalled";
   const { loop } = ended;
   if (!loop || loop.ok || loop.code === CANCELLED) return undefined;
-  return loop.code === TURNS ? "turns" : loop.code === PROVIDER_STOPPED ? "provider" : "stalled";
+  if (loop.code === BUDGET_SPENT) return loop.exhaustion?.budgetBound === "duration" ? "time" : "money";
+  return loop.code === PROVIDER_STOPPED ? "provider" : "stalled";
 }
 
 /** The loop code a model provider that stopped answering ends with (`../../llm/unanswered-calls.ts`). */

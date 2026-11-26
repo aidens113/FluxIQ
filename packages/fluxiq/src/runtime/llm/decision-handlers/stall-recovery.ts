@@ -1,5 +1,5 @@
-// What a stall runs instead of ending, while the build still has a move that
-// may get it further (t477).
+// The caller's own move for a loop that keeps repeating, while the build still
+// has one that may get it further (t477).
 //
 // **The failure this closes.** Lane C round 10 (`run-mv5uu9g1-9d80deea`) ended
 // its candidate build on a run of eight looks at 114 s of a 540 s build, with
@@ -10,16 +10,19 @@
 // note promised the Flow "is then tested and judged". The user's rule is that
 // a build never gives up on a recoverable failure.
 //
-// **The rule.** Where the stall would end the round, the caller is asked first
-// (`input.recoverStall`, `../loop-configuration.ts`). A move it names -- for a
+// **The rule.** Where loop detection's ladder reaches its top rung on a loop with
+// no caller to end the round (`./ladder-top.ts`; no count ends a round, t1056), or
+// a caller ends it there, the caller is asked first (`input.recoverStall`,
+// `../loop-configuration.ts`). A move it names -- for a
 // candidate build, the retest of its latest revision
 // (`../../flow-bootstrap/candidate/authoring-loop.ts`) -- is run by the loop as
 // its own call: the model is shown a note saying why, and the call's answer,
 // and the runs of looks and of refused repeats it broke start again
 // (`../repeat-guard/outcomes.ts`, `stallRecovered`). The caller bounds it: a
-// candidate's retests are its trial gate's. With no move left the stall ends
-// as before, and the caller's reason why joins its issue codes, so the ending
-// names it. A tool the loop does not offer is never run.
+// candidate's retests are its trial gate's. With no move left a loop with no
+// caller goes on steered; a round its caller ended stalls, and the caller's
+// reason why joins its issue codes, so the ending names it. A tool the loop does
+// not offer is never run.
 
 import type { JsonObject } from "../../../core/index.ts";
 import { automationStudioLlmDecisionContextSupersede } from "../decision-context/supersede.ts";
@@ -33,7 +36,7 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_STALL_RECOVERY_TOOL_ID = "core.stall
 const RECOVERED_CODE = "llm_evidence_loop.stall_recovered";
 
 /** What the model is told about the call the loop made for it. */
-const INSTRUCTION = "Your last decisions were stopping the build without getting it further (stalledOn says how). Instead of ending the build, Core made the call in ran for you, "
+const INSTRUCTION = "Your last decisions kept repeating without getting the build further (stalledOn says how), so Core made the call in ran for you, "
   + "because it may still get the build further; its answer is the next entry, under ranAs. Act on that answer, and do not repeat the same requests or the refused calls that led here.";
 
 /** What a stall comes to: the call the loop runs instead, or the issue codes it ends under. */
@@ -51,12 +54,12 @@ export function automationStudioLlmEvidenceStallRecovery(
   iteration: number,
   issueCodes: readonly string[]
 ): AutomationStudioLlmEvidenceStallOutcome {
-  const { input, evidence, accounting, limits } = context;
+  const { input, evidence } = context;
   const answer = input.recoverStall?.({ issueCodes: [...issueCodes] });
   if (!answer) return { kind: "stall", issueCodes: [...issueCodes] };
   if ("endedBecause" in answer) return { kind: "stall", issueCodes: [...issueCodes, answer.endedBecause] };
-  // Only a tool this loop offers, and only while calls are left to make.
-  if (!context.toolIds.has(answer.call.toolId) || accounting.toolCalls >= limits.maxToolCalls) return { kind: "stall", issueCodes: [...issueCodes] };
+  // Only a tool this loop offers.
+  if (!context.toolIds.has(answer.call.toolId)) return { kind: "stall", issueCodes: [...issueCodes] };
   const callId = `${AUTOMATION_STUDIO_LLM_EVIDENCE_STALL_RECOVERY_TOOL_ID}.${iteration}.${answer.call.toolId}`;
   const note: JsonObject = { code: RECOVERED_CODE, stalledOn: [...issueCodes], ran: { toolId: answer.call.toolId, input: structuredClone(answer.call.input) }, ranAs: callId, instruction: INSTRUCTION };
   context.accountEvidence(note);

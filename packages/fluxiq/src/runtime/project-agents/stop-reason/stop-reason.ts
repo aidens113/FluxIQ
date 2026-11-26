@@ -27,7 +27,7 @@ const LOOP_SAID: Record<AutomationStudioLlmEvidenceLoopFailureCode, string> = {
   "llm_evidence_loop.repeat_without_progress": "the AI model kept repeating itself without making any progress",
   "llm_evidence_loop.tool_failed": "a tool it ran failed",
   "llm_evidence_loop.evidence_limit": "it gathered more than it could keep",
-  "llm_evidence_loop.iteration_limit": "it ran out of turns",
+  "llm_evidence_loop.iteration_limit": "the budget for the AI model's decisions ran out",
   "llm_evidence_loop.cancelled": "it was cancelled",
   "llm_evidence_loop.unreadable_replies": "the AI model's replies kept arriving unreadable",
   "llm_evidence_loop.provider_unavailable": "the AI model's provider stopped answering"
@@ -59,10 +59,8 @@ function loopSaid(loop: FailedLoop): string {
     return `the AI model's replies could not be read ${times(loop.unreadable.inARow)} in a row`;
   }
   if (loop.code === "llm_evidence_loop.iteration_limit" && loop.exhaustion) {
-    const { bound, iterations } = loop.exhaustion;
-    if (bound === "iterations") return `it used all ${counted(iterations)} of the decisions it was allowed`;
-    if (bound === "budget") return "the budget for the AI model's decisions ran out";
-    return "it had no tool calls left to run";
+    // Only a budget runs out (t1056): no count of decisions or tool calls ends a loop.
+    return "the budget for the AI model's decisions ran out";
   }
   return (LOOP_SAID as Readonly<Record<string, string | undefined>>)[loop.code] ?? UNKNOWN;
 }

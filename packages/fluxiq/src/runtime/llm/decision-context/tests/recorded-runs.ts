@@ -716,12 +716,12 @@ export async function replayRecordedRun(name: RecordedRunName, options: Recorded
   };
 
   // The service's limits for a 48-call grant (`../../../service.ts:1571,1585-1631`).
-  const limits = automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 48 });
+  const limits = automationStudioFlowBootstrapEvidenceLoopLimits({});
   const fixedClock = 1_790_000_000_000;
   const result = await runAutomationStudioLlmEvidenceLoop({
     tools,
     propagateDecisionErrors: true,
-    unusableDecisions: { maxConsecutive: limits.maxConsecutiveUnusableDecisions, stalled: () => new Error(`recorded run ${name}: stalled`) },
+    unusableDecisions: { stalled: () => new Error(`recorded run ${name}: stalled`) },
     checkCompletion,
     // These builds ran before a look asked again was run once more to check
     // the page. Their later decisions were made without it, so the replay keeps

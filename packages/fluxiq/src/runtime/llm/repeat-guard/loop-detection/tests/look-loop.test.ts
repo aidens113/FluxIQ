@@ -50,7 +50,7 @@ function round(decide: ReturnType<typeof vi.fn>, extra: Partial<AutomationStudio
   const ran = runAutomationStudioLlmEvidenceLoop({
     tools, decide, executeTool: executeTool as unknown as AutomationStudioLlmEvidenceLoopInput["executeTool"],
     maxIterations: 8, maxToolCalls: 8, dryRun: false, propagateDecisionErrors: true, attemptRecord: record,
-    unusableDecisions: { maxConsecutive: 8, stalled: () => stalledError },
+    unusableDecisions: { stalled: () => stalledError },
     loopSignal: (signal: AutomationStudioLlmLoopSignal) => {
       signals.push(signal);
       return "end";
@@ -111,12 +111,14 @@ describe("a round that only looks (run-mwufisf0-5535f5f5)", () => {
     expect(executeTool).toHaveBeenCalledTimes(12);
   });
 
-  it("keeps every figure for a caller that does not take the signal", async () => {
+  // No count of looks ends a round for a caller that does not take the signal either (t1056): every look runs, the run
+  // is caught as a repeat, and the model's result ends it.
+  it("ends no round on a count of looks for a caller that does not take the signal either", async () => {
     const decide = vi.fn();
-    decide.mockImplementation(async () => look(decide.mock.calls.length));
+    decide.mockImplementation(async () => decide.mock.calls.length <= 24 ? look(decide.mock.calls.length) : { kind: "complete", result: { done: true } });
     const { ran, executeTool } = round(decide, { loopSignal: undefined });
-    await expect(ran).rejects.toBe(stalledError);
-    expect(executeTool).toHaveBeenCalledTimes(8);
+    await expect(ran).resolves.toMatchObject({ ok: true });
+    expect(executeTool).toHaveBeenCalledTimes(24);
   });
 });
 

@@ -131,14 +131,15 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
   ])("feeds back, then reports a content-free failure for, invalid %s", async (_label, expectedRefusal, expectedIssue, completion) => {
     const requests: AutomationStudioLlmTaskRequest[] = [];
     // The build reads its instruction when it starts (t976, b2ee9ed45): answered apart from the decisions
-    // counted here, and paid for at a decision's price, so the build's accounting holds four calls.
+    // counted here, and paid for at a tenth of a cent. Each decision costs eight cents, so the build's 25-cent purse,
+    // not a count of calls (t1056; the resolution's three is read by nothing), ends it after a few.
     const provider = mockProvider(automationStudioAnsweringInstructionReading(async (request) => (requests.push(request), {
       response: {
         kind: "evidence_tool_decision",
         summary: "Complete candidate.",
         decision: { kind: "complete", result: completion() }
       },
-      usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }
+      usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.08 }
     }), { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }));
     const { project, flow } = await seeded(single);
     const instance = createService({
@@ -157,13 +158,14 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       evidenceGuided: true
     }));
 
-    expect(requests).toHaveLength(3);
+    const n = requests.length;
+    expect(n).toBeGreaterThanOrEqual(2);
     const feedback = requests[1]?.context.evidenceLoop?.evidence.find((item) => item.toolId === "core.completion_check")?.value;
     expect(feedback).toMatchObject({ ok: false, refusal: expectedRefusal, issues: expect.arrayContaining([expect.objectContaining({ code: expectedIssue })]) });
-    // The three calls the run declares are spent with nothing in the Flow: a budget hit, said with its message (t208).
+    // The purse is spent with nothing in the Flow: a budget hit, said with its message (t208).
     expect(diagnostic).toMatchObject({
       code: "flow_bootstrap.evidence_budget_exhausted",
-      ending: { kind: "budget_exhausted", bound: "calls", message: expect.stringContaining("its limit of 3 model calls") },
+      ending: { kind: "budget_exhausted", bound: "cost", message: expect.stringContaining("spending limit") },
       stage: "provider_output_validation",
       retryable: true,
       providerInvocation: "attempted",
@@ -171,22 +173,22 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       accounting: {
         provider: "mock-production",
         model: "mock-bootstrap",
-        inputTokens: 40,
-        outputTokens: 20,
-        totalTokens: 60
+        inputTokens: 10 * n + 10,
+        outputTokens: 5 * n + 5,
+        totalTokens: 15 * n + 15
       },
       evidenceLoop: {
-        iterationCount: 3,
-        // Three decisions and four trace rows: the opening observation is
+        iterationCount: n,
+        // n decisions and n + 1 trace rows: the opening observation is
         // iteration 0 and was never a provider call.
-        decisionCount: 3,
+        decisionCount: n,
         toolCallCount: 1,
         // The opening observation, then each refused plan and the first code that refused it.
-        steps: [{ toolId: "inspect" }, ...Array.from({ length: 3 }, () => ({ toolId: "core.decision_unusable", resultCode: expect.any(String) }))]
+        steps: [{ toolId: "inspect" }, ...Array.from({ length: n }, () => ({ toolId: "core.decision_unusable", resultCode: expect.any(String) }))]
       },
       issueCodes: expect.arrayContaining([expectedIssue])
     });
-    expect(diagnostic.accounting?.estimatedCostUsd).toBeCloseTo(0.004, 9);
+    expect(diagnostic.accounting?.estimatedCostUsd).toBeCloseTo(0.08 * n + 0.001, 9);
     expect(Object.keys(diagnostic)).toEqual(expect.arrayContaining(["code", "stage", "accounting"]));
     expect(JSON.stringify(diagnostic)).not.toMatch(/Candidate|missing\.definition|unexpected/);
     await expectNoTopology(instance, project.id, flow.flowId);

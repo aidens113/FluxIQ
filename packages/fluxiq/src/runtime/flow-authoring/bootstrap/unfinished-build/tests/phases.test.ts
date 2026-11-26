@@ -35,11 +35,10 @@ function spent(iterations: number, estimatedCostUsd: number): AutomationStudioLl
   return { iterations, toolCalls: iterations, evidenceBytes: 100, inputTokens: 1_000 * iterations, cacheHitInputTokens: 0, outputTokens: 100 * iterations, totalTokens: 1_100 * iterations, estimatedCostUsd };
 }
 
-/** The loop ran out of decisions: its backstop, not a budget. */
+/** A round its caller ended over repeats: the one way a round still stops short, since no count of decisions ends one (t1056). */
 function outOfDecisions(steps: AutomationStudioFlowDraftStep[], accounting = spent(64, 0.08)): AutomationStudioLlmEvidenceLoopResult {
   return {
-    ok: false, code: "llm_evidence_loop.iteration_limit", trace: [], steps, accounting,
-    exhaustion: { bound: "iterations", maxIterations: 64, iterations: 64, draftSteps: steps.length, proposableSteps: steps.length, completionAttempts: 9, lastIssueCodes: ["bootstrap.instructed_act_missing"], outstandingIssueCodes: ["bootstrap.instructed_act_missing"] }
+    ok: false, code: "llm_evidence_loop.repeat_without_progress", trace: [], steps, accounting
   };
 }
 
@@ -67,7 +66,7 @@ function harness(rounds: Array<(request: AutomationStudioFlowBootstrapRoundReque
     replayable: (steps) => steps.length > 0 && steps.every((each) => each.replay !== undefined),
     checklist: (steps) => automationStudioInstructedActsChecklist({ instructionText: INSTRUCTION, draftSteps: steps }),
     budget: { maxCostUsd: 0.25, maxDurationMs: 540_000 },
-    maxIterations: 64,
+    
     keep: async (...args) => { kept.push(args); return { revision: 1, steps: (args[2] as unknown[]).length }; },
     announce: ({ phase, label }) => { announced.push(`${phase}: ${label}`); },
     now: () => 0,
@@ -95,10 +94,10 @@ describe("a build whose exploration stops before the Flow is ready", () => {
     // Phase 3: the repair starts from that Flow, told what the test found and what is still to do.
     const repair = requests[1]!.repair!;
     expect(repair.seed.map((each) => [each.id, each.acts, each.replayed?.status])).toEqual([["d2", ["a1"], "replayed"]]);
-    expect(repair.resume).toMatchObject({ stopped: "iterations", judgement: { test: "replayed_clean", stepsInFlow: 1, actsDone: 1, actsTodo: ["a1.quantity", "a2"] } });
+    expect(repair.resume).toMatchObject({ stopped: "repeat_without_progress", judgement: { test: "replayed_clean", stepsInFlow: 1, actsDone: 1, actsTodo: ["a1.quantity", "a2"] } });
     expect(announced).toEqual(["verifying: Testing the Flow so far", "repairing: Repairing the Flow"]);
-    // The repair meets the decision backstop afresh, and spends only what the exploration left of the build's $0.25.
-    expect(requests[1]!.maxIterations).toBe(64);
+    // The repair is handed no count of decisions (t1056), and spends only what the exploration left of the build's $0.25.
+    expect(requests[1]).not.toHaveProperty("maxIterations");
     expect(requests[1]!.budget.maxCostUsd).toBeCloseTo(0.17, 5);
     expect(outcome.accounting).toMatchObject({ iterations: 74 });
     expect(outcome.accounting.estimatedCostUsd).toBeCloseTo(0.11, 5);
@@ -170,7 +169,7 @@ describe("a build whose exploration stops before the Flow is ready", () => {
     const { input, requests, tested, announced } = harness([
       () => ({
         ok: false, code: "llm_evidence_loop.iteration_limit", trace: [], steps: [step(1, { acts: ["a1"] })], accounting: spent(40, 0.25),
-        exhaustion: { bound: "budget", budgetBound: "cost", maxIterations: 64, iterations: 40, draftSteps: 1, proposableSteps: 1, completionAttempts: 2, lastIssueCodes: [], outstandingIssueCodes: [] }
+        exhaustion: { bound: "budget", budgetBound: "cost", iterations: 40, draftSteps: 1, proposableSteps: 1, completionAttempts: 2, lastIssueCodes: [], outstandingIssueCodes: [] }
       })
     ]);
 
@@ -202,11 +201,11 @@ describe("a build whose exploration stops before the Flow is ready", () => {
     const { input, requests } = harness([
       () => outOfDecisions([step(1, { acts: ["a1"] })], spent(30, 0.05)),
       (request) => finished(request.repair!.seed)
-    ], { declaredCalls: 48, maxIterations: 48 });
+    ], { });
 
     await runAutomationStudioFlowBootstrapBuildPhases(input);
 
-    expect(requests[1]!.maxIterations).toBe(18);
+    expect(requests[1]).not.toHaveProperty("maxIterations");
   });
 
   it("keeps an empty draft exploring live while budget remains, told plainly that nothing is in the Flow yet", async () => {

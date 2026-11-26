@@ -131,8 +131,8 @@ describe("a tool call that fails, in a loop that observes failures", () => {
         return { look: looks };
       }
     });
-    expect(decide.mock.calls[0]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["press", "core.run_flow"]); // `core.run_flow` is offered from the first decision (page-diff D11), refused by name until a step can run again.
-    expect(decide.mock.calls[1]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["inspect", "press", "core.run_flow"]);
+    expect(decide.mock.calls[0]?.[0].tools.map((tool: { toolId: string }) => tool.toolId).filter((id: string) => id !== "core.loop_decision")).toEqual(["press", "core.run_flow"]); // `core.run_flow` is offered from the first decision (page-diff D11), refused by name until a step can run again.
+    expect(decide.mock.calls[1]?.[0].tools.map((tool: { toolId: string }) => tool.toolId).filter((id: string) => id !== "core.loop_decision")).toEqual(["inspect", "press", "core.run_flow"]);
     expect(result).toMatchObject({ ok: true, accounting: { toolCalls: 3 } });
     expect(looks).toBe(2);
   });
@@ -160,17 +160,18 @@ describe("a tool call that fails, in a loop that observes failures", () => {
   // t1049: a run of failures is steps without progress, which steer and end nothing. It once ended the loop
   // `tool_failed` at the guard; now each is shown and the loop runs on to its own ceilings (eight decisions, eight calls).
   it("never ends on how many failures came in a row, each one in the trace", async () => {
+    // Twenty presses that each fail, then the model finishes: no count of failures, turns or calls ends it (t1049, t1056).
     let call = 0;
-    const decide = vi.fn(async () => ({ kind: "tool_call", callId: `call.press.${++call}`, toolId: "press", input: { attempt: call } }));
+    const decide = vi.fn(async () => (++call) <= 20 ? { kind: "tool_call", callId: `call.press.${call}`, toolId: "press", input: { attempt: call } } : { kind: "complete", result: {} });
     const executeTool = vi.fn(async ({ toolId }: { toolId: string }) => {
       if (toolId === "press") throw new Error(PRIVATE);
       return { page: "home" };
     });
     const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, unusableDecisions: { stalled } });
-    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.iteration_limit", accounting: { iterations: 8, toolCalls: 8 } });
-    // The first look, then a failed press for each decision the loop's eight tool calls had room for.
-    expect(result.trace.slice(1).map((step) => [step.callId, step.resultCode])).toEqual(
-      Array.from({ length: 7 }, (_, index) => [`call.press.${index + 1}`, "llm_evidence_loop.tool_failed"])
+    expect(result).toMatchObject({ ok: true, accounting: { iterations: 21 } });
+    // The first look, then a failed press for each of the twenty decisions.
+    expect(result.trace.filter((step) => step.callId?.startsWith("call.press.")).map((step) => [step.callId, step.resultCode])).toEqual(
+      Array.from({ length: 20 }, (_, index) => [`call.press.${index + 1}`, "llm_evidence_loop.tool_failed"])
     );
   });
 
@@ -189,7 +190,7 @@ describe("a tool call that fails, in a loop that observes failures", () => {
     });
     expect(result.trace[0]).toMatchObject({ iteration: 0, callId: "initial.inspect", toolId: "inspect", resultCode: "llm_evidence_loop.tool_failed" });
     expect(decide.mock.calls[0]?.[0]).toMatchObject({ canComplete: false });
-    expect(decide.mock.calls[0]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["inspect", "press", "core.run_flow"]); // `core.run_flow` is offered from the first decision (page-diff D11), refused by name until a step can run again.
+    expect(decide.mock.calls[0]?.[0].tools.map((tool: { toolId: string }) => tool.toolId).filter((id: string) => id !== "core.loop_decision")).toEqual(["inspect", "press", "core.run_flow"]); // `core.run_flow` is offered from the first decision (page-diff D11), refused by name until a step can run again.
     expect(decide.mock.calls[1]?.[0]).toMatchObject({ canComplete: true });
     expect(result).toMatchObject({ ok: true, accounting: { toolCalls: 2 } });
   });

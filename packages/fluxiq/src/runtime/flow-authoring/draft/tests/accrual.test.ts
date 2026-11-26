@@ -75,20 +75,23 @@ describe("the draft a build accrues", () => {
   });
 
   // The schema sits in the head of the request, so it stays as it was (t869): an edit asked before there is one to make, or once the allowance is spent, is refused.
-  it("has an edit refused before there is one to make and once the allowance is spent, with the schema unchanged", async () => {
+  // No count of edits withdraws amending (t1056): editing the draft is the authoring, and the purse bounds it.
+  it("offers an edit on every decision, with no allowance of edits to spend, and the schema unchanged", async () => {
     const offered: boolean[] = [];
     const decide = vi.fn(async ({ decisionSchema }: { decisionSchema: JsonObject }) => {
       const variants = decisionSchema.oneOf as { properties: { kind: { const: string } } }[];
       offered.push(variants.some((variant) => variant.properties.kind.const === "amend_draft"));
+      if (offered.length > 21) throw new Error("script exhausted");
       return offered.length === 1 ? pressed(1) : { kind: "amend_draft", amendments: [{ step: 1, change: offered.length % 2 ? "keep" : "drop" }] };
     });
     const { trace } = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 8, maxToolCalls: 8, unusableDecisions: { stalled }, draft: { maxAmendments: 2 },
+      tools, decide, unusableDecisions: { stalled }, draft: {},
       executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { page: "after" }, effectApplied: true })
     });
     expect(new Set(offered)).toEqual(new Set([true]));
-    // The press, the two amendments the allowance holds, and a refusal of the third.
-    expect(trace.slice(0, 4).map((row) => row.decision)).toEqual(["tool_call", "amend_draft", "amend_draft", "unusable"]);
+    // The press, then twenty edits, none refused as not on offer for an allowance spent.
+    expect(trace[0]?.decision).toBe("tool_call");
+    expect(trace.some((row) => row.resultCode === "llm_evidence_loop.amend_not_offered")).toBe(false);
   });
 
   // A live build alternated a repeated request with an edit for sixteen calls.

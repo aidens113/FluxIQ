@@ -16,10 +16,10 @@
 // Never more than once per step, and never for a step already excused or one
 // the Flow would not always run, which do not block either way.
 //
-// **Nothing here is counted as a tool call.** The loop's `maxToolCalls` and
-// `minToolCalls` bound what the *model* asked for, and a replay is what Core
-// asked for. Counting these would end long builds early and would make a
-// refused dry run cost the model the calls it needs to fix it.
+// **Nothing here is counted as a tool call.** The loop's `minToolCalls` is a
+// floor on what the *model* asked for, and a replay is what Core asked for.
+// Counting these would let a refused dry run stand in for the calls the model
+// needs to make itself.
 //
 // **A step the Flow passes over says so (t193 1002-M, C6 and C10).** One that
 // did not replay and does not stand in the way -- the draft says the Flow does

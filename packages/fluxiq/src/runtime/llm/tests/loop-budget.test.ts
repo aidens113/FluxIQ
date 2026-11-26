@@ -16,8 +16,7 @@ describe("what an evidence loop has left", () => {
   it("is the fewest decisions any bound allows, from what was actually spent", () => {
     const remaining = automationStudioLlmEvidenceLoopRemaining(
       { maxTotalTokens: 600_000, maxTokensPerDecision: 56_000, maxCostUsd: 2, maxDurationMs: 540_000 },
-      { decisions: 10, reportedDecisions: 10, totalTokens: 120_000, estimatedCostUsd: 0.055, elapsedMs: 70_000 },
-      54
+      { decisions: 10, reportedDecisions: 10, totalTokens: 120_000, estimatedCostUsd: 0.055, elapsedMs: 70_000 }
     );
 
     // Tokens: 600,000 less the 120,000 spent and one decision held back leaves
@@ -27,9 +26,9 @@ describe("what an evidence loop has left", () => {
   });
 
   it("assumes the worst case before anything is reported, and counts an unreported decision at the average", () => {
-    expect(automationStudioLlmEvidenceLoopRemaining({ maxTotalTokens: 600_000, maxTokensPerDecision: 56_000 }, { decisions: 0, reportedDecisions: 0, totalTokens: 0, estimatedCostUsd: 0, elapsedMs: 0 }, 64).decisionsLeft).toBe(9);
-    const reported = automationStudioLlmEvidenceLoopRemaining({ maxTotalTokens: 100_000 }, { decisions: 2, reportedDecisions: 2, totalTokens: 20_000, estimatedCostUsd: 0, elapsedMs: 0 }, 64);
-    const oneUnreported = automationStudioLlmEvidenceLoopRemaining({ maxTotalTokens: 100_000 }, { decisions: 3, reportedDecisions: 2, totalTokens: 20_000, estimatedCostUsd: 0, elapsedMs: 0 }, 64);
+    expect(automationStudioLlmEvidenceLoopRemaining({ maxTotalTokens: 600_000, maxTokensPerDecision: 56_000 }, { decisions: 0, reportedDecisions: 0, totalTokens: 0, estimatedCostUsd: 0, elapsedMs: 0 }).decisionsLeft).toBe(9);
+    const reported = automationStudioLlmEvidenceLoopRemaining({ maxTotalTokens: 100_000 }, { decisions: 2, reportedDecisions: 2, totalTokens: 20_000, estimatedCostUsd: 0, elapsedMs: 0 });
+    const oneUnreported = automationStudioLlmEvidenceLoopRemaining({ maxTotalTokens: 100_000 }, { decisions: 3, reportedDecisions: 2, totalTokens: 20_000, estimatedCostUsd: 0, elapsedMs: 0 });
     expect(reported.tokensLeft! - oneUnreported.tokensLeft!).toBe(10_000);
   });
 
@@ -38,11 +37,11 @@ describe("what an evidence loop has left", () => {
     // average of $0.0192, the last request (479,196 tokens) $0.1534 at worst.
     // $0.0961 left, nothing held back (t234): the next at the average, then three more.
     const spent = { decisions: 8, reportedDecisions: 8, totalTokens: 1_600_000, estimatedCostUsd: 0.1539, elapsedMs: 0 };
-    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.25 }, spent, 56)).toMatchObject({ decisionsLeft: 4, limitedBy: "cost" });
+    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.25 }, spent)).toMatchObject({ decisionsLeft: 4, limitedBy: "cost" });
     // A worst case past what is left counts one, never none: the purse decides.
-    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.25 }, { ...spent, nextDecisionCostUsd: 0.1534 }, 56)).toMatchObject({ decisionsLeft: 1, limitedBy: "cost" });
+    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.25 }, { ...spent, nextDecisionCostUsd: 0.1534 })).toMatchObject({ decisionsLeft: 1, limitedBy: "cost" });
     // Cheaper than the average, it changes nothing.
-    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.25 }, { ...spent, nextDecisionCostUsd: 0.001 }, 56).decisionsLeft).toBe(4);
+    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.25 }, { ...spent, nextDecisionCostUsd: 0.001 }).decisionsLeft).toBe(4);
   });
 
   // `run-muq3uozx-3153564b` withdrew its tools with $0.09 left: every decision
@@ -51,7 +50,7 @@ describe("what an evidence loop has left", () => {
   it("reserves the worst case once and counts the decisions after it at the average", () => {
     // One decision reported at $0.0023, nothing held back: $0.0523 left.
     const spent = { decisions: 1, reportedDecisions: 1, totalTokens: 20_000, estimatedCostUsd: 0.0023, elapsedMs: 0, nextDecisionCostUsd: 0.025 };
-    const remaining = automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.0546 }, spent, 64);
+    const remaining = automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.0546 }, spent);
     expect(remaining.costLeftUsd).toBeCloseTo(0.0523, 4);
     expect(remaining.limitedBy).toBe("cost");
     expect(remaining.decisionsLeft).toBeGreaterThanOrEqual(10);
@@ -60,13 +59,13 @@ describe("what an evidence loop has left", () => {
   it("leaves one decision for money enough for exactly one worst case, and still one for less: the purse decides", () => {
     // $0.25 spent in one decision, nothing held back: $0.5 left.
     const spent = { decisions: 1, reportedDecisions: 1, totalTokens: 20_000, estimatedCostUsd: 0.25, elapsedMs: 0 };
-    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.75 }, { ...spent, nextDecisionCostUsd: 0.5 }, 64)).toMatchObject({ decisionsLeft: 1, limitedBy: "cost" });
-    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.75 }, { ...spent, nextDecisionCostUsd: 0.25 }, 64)).toMatchObject({ decisionsLeft: 2, limitedBy: "cost" });
-    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.75 }, { ...spent, nextDecisionCostUsd: 0.5000001 }, 64)).toMatchObject({ decisionsLeft: 1, limitedBy: "cost" });
+    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.75 }, { ...spent, nextDecisionCostUsd: 0.5 })).toMatchObject({ decisionsLeft: 1, limitedBy: "cost" });
+    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.75 }, { ...spent, nextDecisionCostUsd: 0.25 })).toMatchObject({ decisionsLeft: 2, limitedBy: "cost" });
+    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.75 }, { ...spent, nextDecisionCostUsd: 0.5000001 })).toMatchObject({ decisionsLeft: 1, limitedBy: "cost" });
     // Before anything is reported, the worst case is the only price known.
     const fresh = { decisions: 0, reportedDecisions: 0, totalTokens: 0, estimatedCostUsd: 0, elapsedMs: 0 };
-    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.5 }, { ...fresh, nextDecisionCostUsd: 0.125 }, 64).decisionsLeft).toBe(4);
-    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.5 }, { ...fresh, nextDecisionCostUsd: 0.75 }, 64).decisionsLeft).toBe(1);
+    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.5 }, { ...fresh, nextDecisionCostUsd: 0.125 }).decisionsLeft).toBe(4);
+    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.5 }, { ...fresh, nextDecisionCostUsd: 0.75 }).decisionsLeft).toBe(1);
   });
 
   // `run-muqbzu32-8691a65e` stopped with $0.0738 of $0.10 spent: the count held
@@ -74,20 +73,22 @@ describe("what an evidence loop has left", () => {
   // would have paid for the next at its $0.0245 worst case, never saw it.
   it("counts the next decision while the purse can pay for it at worst, with nothing held back (t234)", () => {
     const spent = { decisions: 10, reportedDecisions: 10, totalTokens: 200_000, estimatedCostUsd: 0.0738, elapsedMs: 0, nextDecisionCostUsd: 0.0245 };
-    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.1 }, spent, 16)).toMatchObject({ decisionsLeft: 1, limitedBy: "cost", costLeftUsd: expect.closeTo(0.0262, 3) });
+    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.1 }, spent)).toMatchObject({ decisionsLeft: 1, limitedBy: "cost", costLeftUsd: expect.closeTo(0.0262, 3) });
     // Read from the purse in use: what earlier builds carried and what is in flight count, and its ceiling is the one.
     const purse = { ceilingUsd: 0.1, spentUsd: 0.0738, pendingUsd: 0 };
-    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.25 }, { ...spent, estimatedCostUsd: 0.02, purse }, 16)).toMatchObject({ decisionsLeft: 1, limitedBy: "cost", costLeftUsd: expect.closeTo(0.0262, 3) });
-    expect(automationStudioLlmEvidenceLoopRemaining({ maxTotalTokens: 10_000_000 }, { ...spent, purse: { ...purse, pendingUsd: 0.01 } }, 16)).toMatchObject({ decisionsLeft: 1, limitedBy: "cost", costLeftUsd: expect.closeTo(0.0162, 3) });
+    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.25 }, { ...spent, estimatedCostUsd: 0.02, purse })).toMatchObject({ decisionsLeft: 1, limitedBy: "cost", costLeftUsd: expect.closeTo(0.0262, 3) });
+    expect(automationStudioLlmEvidenceLoopRemaining({ maxTotalTokens: 10_000_000 }, { ...spent, purse: { ...purse, pendingUsd: 0.01 } })).toMatchObject({ decisionsLeft: 1, limitedBy: "cost", costLeftUsd: expect.closeTo(0.0162, 3) });
   });
 
   it("is nothing once a bound is spent, save cost, and never more than the iteration backstop", () => {
     const spent = { decisions: 4, reportedDecisions: 4, totalTokens: 40_000, estimatedCostUsd: 0.4, elapsedMs: 40_000 };
     // Cost never counts to none, however little is left: the purse refuses a decision it cannot pay for (t234).
-    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.45 }, spent, 60)).toMatchObject({ decisionsLeft: 1, limitedBy: "cost", costLeftUsd: expect.closeTo(0.05, 3) });
-    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.3 }, spent, 60)).toMatchObject({ decisionsLeft: 1, limitedBy: "cost", costLeftUsd: 0 });
-    expect(automationStudioLlmEvidenceLoopRemaining({ maxDurationMs: 40_000 }, spent, 60)).toMatchObject({ decisionsLeft: 0, limitedBy: "duration" });
-    expect(automationStudioLlmEvidenceLoopRemaining({ maxTotalTokens: 10_000_000 }, spent, 3)).toMatchObject({ decisionsLeft: 3, limitedBy: "iterations" });
+    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.45 }, spent)).toMatchObject({ decisionsLeft: 1, limitedBy: "cost", costLeftUsd: expect.closeTo(0.05, 3) });
+    expect(automationStudioLlmEvidenceLoopRemaining({ maxCostUsd: 0.3 }, spent)).toMatchObject({ decisionsLeft: 1, limitedBy: "cost", costLeftUsd: 0 });
+    expect(automationStudioLlmEvidenceLoopRemaining({ maxDurationMs: 40_000 }, spent)).toMatchObject({ decisionsLeft: 0, limitedBy: "duration" });
+    // No count of turns stands behind the bounds (t1056): the tokens name the count, never an iteration backstop.
+    expect(automationStudioLlmEvidenceLoopRemaining({ maxTotalTokens: 10_000_000 }, spent)).toMatchObject({ limitedBy: "tokens" });
+    expect(automationStudioLlmEvidenceLoopRemaining({}, spent)).toEqual({ decisionsLeft: Number.POSITIVE_INFINITY });
   });
 });
 
@@ -171,24 +172,25 @@ describe("an evidence loop given a budget", () => {
     expect(stalled).not.toHaveBeenCalled();
   });
 
-  it("ends as the spent allowance on the literal final iteration, saying how far the draft got", async () => {
+  // No count of turns ends a loop (t1056): the allowance here is the tokens.
+  it("ends as the spent allowance after its final decision, saying how far the draft got", async () => {
     const stalled = vi.fn(() => new Error("stopped on final refusal"));
     const decide = vi.fn()
       .mockResolvedValueOnce(look(1, 10_000))
       .mockResolvedValueOnce({ kind: "complete", result: {}, usage: { totalTokens: 10_000 } });
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 2, maxToolCalls: 2, propagateDecisionErrors: true,
+      tools, decide, propagateDecisionErrors: true,
       unusableDecisions: { stalled },
       checkCompletion: () => ({ ok: false, issueCodes: ["plan.cannot_answer"], feedback: { issue: "plan.cannot_answer" } }),
-      // Keep tokens far from binding: maxIterations is the bound reached.
-      budget: { maxTotalTokens: 1_000_000, maxTokensPerDecision: 20_000 },
+      // Two decisions of 10,000 tokens leave too little for a third.
+      budget: { maxTotalTokens: 35_000, maxTokensPerDecision: 10_000 },
       executeTool: async () => ({ facts: ["ready"] })
     });
 
     expect(result).toMatchObject({
       ok: false,
       code: "llm_evidence_loop.iteration_limit",
-      exhaustion: { maxIterations: 2, iterations: 2, draftSteps: 1, completionAttempts: 1, lastIssueCodes: ["plan.cannot_answer"] }
+      exhaustion: { bound: "budget", budgetBound: "tokens", iterations: 2, draftSteps: 1, completionAttempts: 1, lastIssueCodes: ["plan.cannot_answer"] }
     });
     expect(decide).toHaveBeenCalledTimes(2);
     expect(stalled).not.toHaveBeenCalled();
@@ -283,8 +285,8 @@ describe("an evidence loop given a budget", () => {
 describe("the cost count beside a judging reserve (t254)", () => {
   it("takes what is kept back for judging out of what is left, and wraps up sooner for it", () => {
     const spent = { decisions: 30, reportedDecisions: 30, totalTokens: 600_000, estimatedCostUsd: 0.0889, elapsedMs: 0, nextDecisionCostUsd: 0.0069 };
-    const without = automationStudioLlmEvidenceLoopRemaining({}, { ...spent, purse: { ceilingUsd: 0.1, spentUsd: 0.0889, pendingUsd: 0 } }, 64);
-    const kept = automationStudioLlmEvidenceLoopRemaining({}, { ...spent, purse: { ceilingUsd: 0.1, spentUsd: 0.0889, pendingUsd: 0, keptBackUsd: 0.0068 } }, 64);
+    const without = automationStudioLlmEvidenceLoopRemaining({}, { ...spent, purse: { ceilingUsd: 0.1, spentUsd: 0.0889, pendingUsd: 0 } });
+    const kept = automationStudioLlmEvidenceLoopRemaining({}, { ...spent, purse: { ceilingUsd: 0.1, spentUsd: 0.0889, pendingUsd: 0, keptBackUsd: 0.0068 } });
     expect(without.costLeftUsd).toBeCloseTo(0.0111, 3);
     expect(kept.costLeftUsd).toBeCloseTo(0.0043, 3);
     expect(without.decisionsLeft).toBeGreaterThan(1);
@@ -360,12 +362,13 @@ describe("a candidate's wrap-up (t383)", () => {
       .mockResolvedValueOnce({ kind: "tool_call", callId: "call.3", toolId: "inspect", input: { page: 2 } })
       .mockResolvedValueOnce({ kind: "complete", result: { revision: 1, digest: "d" } });
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools: candidateTools, decide, executeTool, draft: false, discoveryOnly: true, maxIterations: 6, maxToolCalls: 6,
-      completionSchema: { type: "object" }, budget: { maxTotalTokens: 10_000_000 }
+      tools: candidateTools, decide, executeTool, draft: false, discoveryOnly: true,
+      // Decisions left are counted from the tokens, seven decisions' worth: no count of turns stands behind them (t1056).
+      completionSchema: { type: "object" }, budget: { maxTotalTokens: 7_000, maxTokensPerDecision: 1_000 }
     });
 
     expect(result).toMatchObject({ ok: true, result: { revision: 1, digest: "d" } });
-    const offered = (call: number) => (decide.mock.calls[call]![0].tools as Array<{ toolId: string }>).map((tool) => tool.toolId);
+    const offered = (call: number) => (decide.mock.calls[call]![0].tools as Array<{ toolId: string }>).map((tool) => tool.toolId).filter((id) => id !== "core.loop_decision");
     expect(offered(0)).toEqual(["inspect", "core.submit_candidate", "core.test_candidate"]);
     // The same tools and the same decision schema on either side of the wrap-up (t503, W6).
     expect(offered(1)).toEqual(offered(0));
@@ -421,8 +424,9 @@ describe("a discovery-only loop's own finishing tools (t537)", () => {
       .mockResolvedValueOnce({ kind: "tool_call", callId: "call.3", toolId: "inspect", input: { page: 2 } })
       .mockResolvedValueOnce({ kind: "complete", result: { revision: 1, digest: "d" } });
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools: builderTools, decide, executeTool, draft: false, discoveryOnly: true, finishingTools: builder, maxIterations: 6, maxToolCalls: 6,
-      completionSchema: { type: "object" }, budget: { maxTotalTokens: 10_000_000 }
+      tools: builderTools, decide, executeTool, draft: false, discoveryOnly: true, finishingTools: builder,
+      // Decisions left are counted from the tokens, seven decisions' worth: no count of turns stands behind them (t1056).
+      completionSchema: { type: "object" }, budget: { maxTotalTokens: 7_000, maxTokensPerDecision: 1_000 }
     });
 
     expect(result).toMatchObject({ ok: true });
@@ -483,8 +487,9 @@ describe("an undo in a candidate's wrap-up (t741)", () => {
       .mockResolvedValueOnce({ kind: "tool_call", callId: "call.3", toolId: "core.run_node", input: { node: "open-next-page" } })
       .mockResolvedValueOnce({ kind: "complete", result: { revision: 1, digest: "d" } });
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools: builderTools, decide, executeTool, draft: false, discoveryOnly: true, finishingTools: builder, maxIterations: 6, maxToolCalls: 6,
-      completionSchema: { type: "object" }, budget: { maxTotalTokens: 10_000_000 }
+      tools: builderTools, decide, executeTool, draft: false, discoveryOnly: true, finishingTools: builder,
+      // Decisions left are counted from the tokens, seven decisions' worth: no count of turns stands behind them (t1056).
+      completionSchema: { type: "object" }, budget: { maxTotalTokens: 7_000, maxTokensPerDecision: 1_000 }
     });
 
     expect(result).toMatchObject({ ok: true });
@@ -498,18 +503,18 @@ describe("a budget that counts calls (t570)", () => {
   const spent = { decisions: 2, reportedDecisions: 2, totalTokens: 200, estimatedCostUsd: 0.002, elapsedMs: 10, purse: { ceilingUsd: 1, spentUsd: 0.002, pendingUsd: 0, callsLeft: 9 } };
 
   it("counts the purse's calls less those kept for the finishing trials' judges, and shows them", () => {
-    const remaining = automationStudioLlmEvidenceLoopRemaining({ countCalls: { keptForFinishing: 4 } }, spent, 20);
+    const remaining = automationStudioLlmEvidenceLoopRemaining({ countCalls: { keptForFinishing: 4 } }, spent);
     expect(remaining).toMatchObject({ decisionsLeft: 5, limitedBy: "calls", callsLeft: 9 });
     expect(automationStudioLlmEvidenceBudgetEntry(3, remaining, undefined, true).value).toMatchObject({ decisionsLeft: 5, callsLeft: 9 });
     // Never none: the purse decides.
-    expect(automationStudioLlmEvidenceLoopRemaining({ countCalls: { keptForFinishing: 4 } }, { ...spent, purse: { ...spent.purse, callsLeft: 2 } }, 20)).toMatchObject({ decisionsLeft: 1, callsLeft: 2 });
+    expect(automationStudioLlmEvidenceLoopRemaining({ countCalls: { keptForFinishing: 4 } }, { ...spent, purse: { ...spent.purse, callsLeft: 2 } })).toMatchObject({ decisionsLeft: 1, callsLeft: 2 });
   });
 
   it("leaves a budget that does not count calls -- every candidate build's -- as it was", () => {
-    const remaining = automationStudioLlmEvidenceLoopRemaining({}, spent, 20);
+    const remaining = automationStudioLlmEvidenceLoopRemaining({}, spent);
     expect(remaining.callsLeft).toBeUndefined();
     expect(remaining.limitedBy).not.toBe("calls");
-    expect(remaining).toEqual(automationStudioLlmEvidenceLoopRemaining({}, { ...spent, purse: { ceilingUsd: 1, spentUsd: 0.002, pendingUsd: 0 } }, 20));
+    expect(remaining).toEqual(automationStudioLlmEvidenceLoopRemaining({}, { ...spent, purse: { ceilingUsd: 1, spentUsd: 0.002, pendingUsd: 0 } }));
   });
 });
 

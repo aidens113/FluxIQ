@@ -24,20 +24,24 @@ const ISSUED: Issued = [
   { ref: "destination-5", count: 0 }
 ];
 
-/** Builder ports whose model presses once, then ends the brief blocked; every call sent kept in `sent`. */
+/**
+ * Builder ports whose model presses once, then ends the brief blocked; every call sent kept in `sent`. Its ending is
+ * refused, and after a few tries the model stops answering: no count of turns ends the loop (t1056).
+ */
 function builderPorts(sent: Sent[], issuedRefs?: () => Issued): () => AutomationStudioProjectBuilderPorts {
   return () => {
     let decisions = 0;
     const ports: AutomationStudioProjectBuilderPorts & { issuedRefs?: () => Issued } = {
       loop: {
-        tools: [LOOK, PRESS], maxToolCalls: 6,
-        unusableDecisions: { maxConsecutive: 3, maxInARow: 3, stalled: () => new Error("stalled") },
+        tools: [LOOK, PRESS],
+        unusableDecisions: { stalled: () => new Error("stalled") },
         executeTool: async (call) => {
           sent.push({ callId: call.callId, value: structuredClone(call.value) });
           return { kind: "llm_evidence_tool_execution", evidence: { ok: true, page: "The shelves." }, effectApplied: false, targetsUnchanged: true };
         },
         decide: async () => {
           decisions += 1;
+          if (decisions > 5) throw new Error("script exhausted");
           return decisions === 1 ? { kind: "tool_call", callId: "call.1", toolId: PRESS.toolId, input: { press: "next" } } : { kind: "complete", result: { ended: "blocked", reason: "Nothing to do here." } };
         }
       },
@@ -93,7 +97,7 @@ describe("a reset brief's opening call", () => {
     const ports: AutomationStudioProjectResetPorts & { issuedRefs: () => Issued } = {
       loop: {
         tools: [LOOK, { toolId: "site.undo", description: "Undo one act", effect: "mutate", inputSchema: { type: "object" } }],
-        unusableDecisions: { maxConsecutive: 2, maxInARow: 2, stalled: () => new Error("the reset stalled") },
+        unusableDecisions: { stalled: () => new Error("the reset stalled") },
         executeTool: async (call) => {
           sent.push({ callId: call.callId, value: structuredClone(call.value) });
           return { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: false, targetsUnchanged: true };

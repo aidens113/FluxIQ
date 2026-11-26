@@ -16,12 +16,9 @@ import type { AutomationStudioFlowBootstrapBudgetBound } from "../generation-fai
 
 /** Why a live round stopped without the model saying the Flow was ready, where no budget was the reason. */
 export type AutomationStudioFlowBootstrapUnfinishedStop =
-  /** It used the decisions or tool calls a round is allowed. */
-  | "iterations"
-  | "tool_calls"
-  /** Its decisions kept coming back unusable: most often completions the check kept refusing. */
+  /** Its caller ended it on loop detection's signal over decisions that kept coming back unusable, or the model asked the person. No count of decisions or tool calls ends a round (t1056). */
   | "unusable_decisions"
-  /** Its no-progress guard stopped it. */
+  /** Its caller ended it on loop detection's signal over a run of repeats. */
   | "repeat_without_progress"
   /**
    * It finished: the model said the Flow was ready and its test passed, but

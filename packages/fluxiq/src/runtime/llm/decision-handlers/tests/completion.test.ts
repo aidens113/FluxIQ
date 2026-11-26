@@ -56,7 +56,7 @@ describe("a completion's test in the decision history", () => {
 
     const result = await runAutomationStudioLlmEvidenceLoop({
       tools: [tool], decide, executeTool, checkCompletion, propagateDecisionErrors: true, maxIterations: 6, maxToolCalls: 6, minToolCalls: 1,
-      unusableDecisions: { maxConsecutive: 4, stalled: () => new Error("stalled") }
+      unusableDecisions: { stalled: () => new Error("stalled") }
     });
 
     expect(result.ok).toBe(true);
@@ -84,7 +84,7 @@ describe("a completion's test in the decision history", () => {
 
     const result = await runAutomationStudioLlmEvidenceLoop({
       tools: [tool], decide, executeTool, checkCompletion, propagateDecisionErrors: true, maxIterations: 6, maxToolCalls: 6, minToolCalls: 1,
-      unusableDecisions: { maxConsecutive: 4, stalled: () => new Error("stalled") }
+      unusableDecisions: { stalled: () => new Error("stalled") }
     });
 
     expect(result.ok).toBe(true);
@@ -117,7 +117,7 @@ describe("a completion check's own sent-again words", () => {
 
     const result = await runAutomationStudioLlmEvidenceLoop({
       tools: [{ ...tool, effect: "observe" as const, perCallEffect: false }], decide, executeTool: read, checkCompletion, propagateDecisionErrors: true, maxIterations: 6, maxToolCalls: 6, minToolCalls: 1,
-      unusableDecisions: { maxConsecutive: 4, stalled: () => new Error("stalled") }
+      unusableDecisions: { stalled: () => new Error("stalled") }
     });
 
     expect(result.ok).toBe(true);

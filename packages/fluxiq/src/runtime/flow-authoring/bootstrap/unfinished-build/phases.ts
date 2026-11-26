@@ -259,8 +259,6 @@ export type AutomationStudioFlowBootstrapRoundRequest = {
   budget: AutomationStudioLlmEvidenceLoopBudget;
   /** The build's purse, for the caller to hand its loop: every round draws from this one. Absent where the build was given none. */
   purse?: AutomationStudioLlmBuildPurse | undefined;
-  /** The round's decision backstop. */
-  maxIterations: number;
   /** A repair's seed and the entry its first decision reads. Absent for the exploration. */
   repair?: { seed: AutomationStudioFlowDraftStep[]; resume: AutomationStudioLlmEvidenceLoopResume };
   /**
@@ -286,10 +284,6 @@ export type AutomationStudioFlowBootstrapBuildPhasesInput = {
    * are read from it. Absent: each round is given what the rounds before left.
    */
   purse?: AutomationStudioLlmBuildPurse | undefined;
-  /** The decision backstop of one round. */
-  maxIterations: number;
-  /** A call count the Flow's settings or the resolver declared, which the whole build is held to. */
-  declaredCalls?: number | undefined;
   /** Keep the Flow so far for a later build (`../incomplete-draft/`), and say where. */
   keep(stopped: AutomationStudioLlmEvidenceLoopResume["stopped"], outstanding: readonly string[], steps: readonly AutomationStudioFlowDraftStep[], completionAttempts: number): Promise<AutomationStudioFlowBootstrapIncompleteDraftPointer | undefined>;
   /**
@@ -413,7 +407,7 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
    */
   let judgedNo: { flowSignature: string; judge: AutomationStudioFlowBootstrapJudgedWrong } | undefined;
   for (let round = 0; ; round += 1) {
-    const left = round === 0 ? { budget: input.budget, maxIterations: input.maxIterations } : remaining(input, spent, clock() - startedAt);
+    const left = round === 0 ? { budget: input.budget } : remaining(input, spent, clock() - startedAt);
     let outcome: AutomationStudioLlmEvidenceLoopResult | AutomationStudioFlowBootstrapUnfinishedStall;
     try {
       // The step log's round and phase for every call this round makes (`../../llm/step-log/`): a round with nothing to repair explores.
@@ -542,7 +536,7 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
             ? automationStudioFlowBootstrapProviderUnavailable({ ...told, providerUnavailable: kind.providerUnavailable, changes: record.filter((row) => row.decision === "tool_call" && row.effectApplied === true).length, kept: kept !== undefined })
           : typeof kind === "object"
             ? automationStudioFlowBootstrapRepliesUnreadable({ ...told, unreadable: kind.unreadable, kept: kept !== undefined })
-            : automationStudioFlowBootstrapBudgetExhausted({ ...told, bound: kind, kept: kept !== undefined, sizes: { maxCostUsd: input.purse?.ceilingUsd ?? input.budget.maxCostUsd, maxDurationMs: input.budget.maxDurationMs, maxTotalTokens: input.budget.maxTotalTokens, declaredCalls: input.declaredCalls, maxRounds }, spending: kind === "cost" ? costSpending(phase2.progress.exhaustion?.costRefusal, input.purse, spentBefore, spent.estimatedCostUsd, unfunded, judgedAtStopUsd, unchangedAtStop) : undefined, lastRound: phase2.progress.trace }),
+            : automationStudioFlowBootstrapBudgetExhausted({ ...told, bound: kind, kept: kept !== undefined, sizes: { maxCostUsd: input.purse?.ceilingUsd ?? input.budget.maxCostUsd, maxDurationMs: input.budget.maxDurationMs, maxTotalTokens: input.budget.maxTotalTokens, maxRounds }, spending: kind === "cost" ? costSpending(phase2.progress.exhaustion?.costRefusal, input.purse, spentBefore, spent.estimatedCostUsd, unfunded, judgedAtStopUsd, unchangedAtStop) : undefined, lastRound: phase2.progress.trace }),
         progress: { trace: [...record], accounting: { ...spent }, ...(phase2.progress.exhaustion ? { exhaustion: phase2.progress.exhaustion } : {}) },
         lastIssueCodes: phase2.lastIssueCodes,
         kept,
@@ -728,15 +722,15 @@ function costSpending(refusal: AutomationStudioLlmEvidenceLoopExhaustion["costRe
  * With a purse the cost stays whole: the purse holds what is left of it, and a
  * share refilled from the rounds' accounting would be a second count.
  */
-function remaining(input: AutomationStudioFlowBootstrapBuildPhasesInput, spent: AutomationStudioLlmEvidenceLoopAccounting, elapsedMs: number): { budget: AutomationStudioLlmEvidenceLoopBudget; maxIterations: number } {
+function remaining(input: AutomationStudioFlowBootstrapBuildPhasesInput, spent: AutomationStudioLlmEvidenceLoopAccounting, elapsedMs: number): { budget: AutomationStudioLlmEvidenceLoopBudget } {
   const budget: AutomationStudioLlmEvidenceLoopBudget = {
     ...input.budget,
     ...(input.budget.maxCostUsd !== undefined && !input.purse ? { maxCostUsd: Math.max(0, input.budget.maxCostUsd - spent.estimatedCostUsd) } : {}),
     ...(input.budget.maxTotalTokens !== undefined ? { maxTotalTokens: Math.max(0, input.budget.maxTotalTokens - spent.totalTokens) } : {}),
     ...(input.budget.maxDurationMs !== undefined ? { maxDurationMs: Math.max(0, input.budget.maxDurationMs - elapsedMs) } : {})
   };
-  const callsLeft = input.declaredCalls === undefined ? input.maxIterations : Math.max(0, input.declaredCalls - spent.iterations);
-  return { budget, maxIterations: Math.min(input.maxIterations, callsLeft) };
+  // No count of calls is left to give (t1056): a purse is dollars, never a count of calls.
+  return { budget };
 }
 
 /**
@@ -747,7 +741,7 @@ function remaining(input: AutomationStudioFlowBootstrapBuildPhasesInput, spent: 
  * all where it has not.
  */
 function exhaustedBound(input: AutomationStudioFlowBootstrapBuildPhasesInput, spent: AutomationStudioLlmEvidenceLoopAccounting, elapsedMs: number, needUsd: number | undefined): AutomationStudioFlowBootstrapBudgetBound | undefined {
-  const { budget, maxIterations } = remaining(input, spent, elapsedMs);
+  const { budget } = remaining(input, spent, elapsedMs);
   if (input.purse) {
     const left = input.purse.leftUsd();
     // A purse's spend is summed in floating point: a ceiling spent to the cent can leave 1e-17 of it, which no call fits.
@@ -755,7 +749,6 @@ function exhaustedBound(input: AutomationStudioFlowBootstrapBuildPhasesInput, sp
   } else if (budget.maxCostUsd !== undefined && budget.maxCostUsd <= 0) return "cost";
   if (budget.maxTotalTokens !== undefined && budget.maxTotalTokens < (budget.maxTokensPerDecision ?? 1)) return "tokens";
   if (budget.maxDurationMs !== undefined && budget.maxDurationMs < AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MIN_REPAIR_MS) return "duration";
-  if (maxIterations < 1) return "calls";
   return undefined;
 }
 

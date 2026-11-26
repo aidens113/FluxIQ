@@ -80,10 +80,13 @@ export type AutomationStudioLlmEvidenceLoopResume = {
    * Which allowance the build it continues ran out of, `unusable_decisions`
    * when that build ended because its decisions kept coming back unusable --
    * most often completions the checks kept refusing -- rather than on a count,
-   * or `repeat_without_progress` when a repeat guard stopped it, or
-   * `judged_wrong` when it finished and the judge of its test sent it back.
+   * or `repeat_without_progress` when a round its caller ended on loop
+   * detection's signal stopped it, or `judged_wrong` when it finished and the
+   * judge of its test sent it back. `iterations` and `tool_calls` are no longer
+   * produced (t1056: no count of turns or calls ends a loop), and are read only
+   * from a draft kept before (`../../flow-authoring/bootstrap/incomplete-draft/`).
    */
-  stopped: AutomationStudioLlmEvidenceLoopExhaustedBound | "unusable_decisions" | "repeat_without_progress" | "judged_wrong";
+  stopped: AutomationStudioLlmEvidenceLoopExhaustedBound | "iterations" | "tool_calls" | "unusable_decisions" | "repeat_without_progress" | "judged_wrong";
   /** The completion failures that build had not answered, by issue code. */
   outstandingIssueCodes: readonly string[];
   /**

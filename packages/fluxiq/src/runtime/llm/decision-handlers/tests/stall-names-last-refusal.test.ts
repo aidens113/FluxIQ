@@ -32,8 +32,9 @@ async function stalledCodes(decisions: JsonObject[], refusal?: string): Promise<
   decide.mockResolvedValue({ kind: "complete", result: { done: true } });
   const stalled = vi.fn((input: { issueCodes: readonly string[] }) => Object.assign(new Error("stalled"), { issueCodes: [...input.issueCodes] }));
   await expect(runAutomationStudioLlmEvidenceLoop({
-    tools, decide, executeTool: site(refusal), maxIterations: 30, maxToolCalls: 30, dryRun: false, propagateDecisionErrors: true,
-    unusableDecisions: { maxConsecutive: 8, stalled }
+    // A caller that ends the round on loop detection's signal: no count ends one on its own (t1056).
+    tools, decide, executeTool: site(refusal), dryRun: false, propagateDecisionErrors: true, loopSignal: () => "end",
+    unusableDecisions: { stalled }
   })).rejects.toThrow("stalled");
   expect(stalled).toHaveBeenCalledTimes(1);
   return stalled.mock.calls[0]![0].issueCodes;

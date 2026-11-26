@@ -169,7 +169,7 @@ const DECISION_FEEDBACK_INSTRUCTION = "Your previous decision could not be used,
 const UNREADABLE_INSTRUCTION = "Nothing ran and nothing changed. Answer the same question again, with exactly one complete JSON object of the accepted shape and nothing before or after it. "
   + "Keep it short: a rerun's input carries only the keys that change.";
 
-/** Where no count ends the loop (t1014): what follows a reply sent again the same way. */
+/** No count ends the loop (t1014, t1056): what follows a reply sent again the same way. */
 const UNREADABLE_UNCOUNTED_INSTRUCTION = "A reply that cannot be read the same way as the one before is caught as a repeat, and you decide how to go on: fix exactly what is named here.";
 
 /**
@@ -302,10 +302,11 @@ export function automationStudioLlmUnusableDecisionFeedback(input: {
   fieldIssues?: readonly AutomationStudioLlmUnusableDecisionFieldIssue[];
   /**
    * Present when the reply arrived and could not be read (`./unreadable-reply.ts`):
-   * the note says what could not be read and how many in a row stop the loop,
-   * in place of the no-progress count, which such a reply does not move.
+   * the note says what could not be read and how many came in a row, in place
+   * of the no-progress count, which such a reply does not move. No count of them
+   * ends the loop (t1056): the same one again is caught as a repeat.
    */
-  unreadable?: { reply?: AutomationStudioLlmProviderReplyAccount | undefined; inARow: number; maxInARow: number };
+  unreadable?: { reply?: AutomationStudioLlmProviderReplyAccount | undefined; inARow: number };
   /** Present when the decision named a tool that was not offered: its instruction names the offered ids and the nearest. */
   unknownTool?: AutomationStudioLlmUnusableDecisionUnknownTool;
 }): JsonObject {
@@ -313,24 +314,22 @@ export function automationStudioLlmUnusableDecisionFeedback(input: {
   const issueCodes = [...new Set(input.issueCodes.filter((code) => ISSUE_CODE.test(code)))];
   const fieldIssues = screenedFieldIssues(input.fieldIssues, issueCodes);
   if (input.unreadable) {
-    const { reply, inARow, maxInARow } = input.unreadable;
+    const { reply, inARow } = input.unreadable;
     const said = automationStudioLlmUnreadableReplySaid({ case: reply?.case, issueCodes: input.issueCodes });
     // Said only where a tool call could have been the answer.
     const nesting = reply && BRACKET_CASES.has(reply.case) && (!input.offers || input.offers.tools) ? ` ${TOOL_CALL_NESTING_INSTRUCTION}` : "";
     // Where it did not fit, in the schema's words and never its own, read back through the account's bounds at this model boundary.
     const misses = automationStudioLlmProviderReplyAccount(reply)?.misses ?? [];
     const atFault = misses.length > 0 ? ` At fault: ${misses.map((miss) => `${miss.path} ${miss.rule}`).join("; ")}.` : "";
-    // Where no count ends the loop (t1014, a caller that takes loop detection's signal), the same unreadable reply again is caught as a repeat instead.
-    const counted = Number.isFinite(maxInARow);
+    // No count ends the loop (t1014, t1056): the same unreadable reply again is caught as a repeat instead.
     return {
       ok: false,
       code: "llm_evidence_loop.reply_unreadable",
       issueCodes,
       unreadable: { ...(reply ? { case: reply.case } : {}), said, ...(misses.length > 0 ? { misses } : {}) },
       unreadableInARow: inARow,
-      ...(counted ? { maxUnreadableInARow: maxInARow } : {}),
       accepted: acceptedDecision(input.offers),
-      instruction: `Your previous reply could not be read: ${said}.${atFault} ${UNREADABLE_INSTRUCTION}${nesting} ${counted ? `${maxInARow} unreadable replies in a row stop this build; that was ${inARow}.` : UNREADABLE_UNCOUNTED_INSTRUCTION}`
+      instruction: `Your previous reply could not be read: ${said}.${atFault} ${UNREADABLE_INSTRUCTION}${nesting} ${UNREADABLE_UNCOUNTED_INSTRUCTION}`
     };
   }
   return {

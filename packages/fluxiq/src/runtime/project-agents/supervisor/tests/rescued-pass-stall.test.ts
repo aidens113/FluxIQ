@@ -43,7 +43,7 @@ const answersOf = (shown: ReadonlyArray<{ toolId: string; value: unknown }>, too
 describe("a pass the run rescued, when its repair came back short", () => {
   it("is completed on when completions refused on their shape stall the loop: the person is told it relies on the run's recovery", async () => {
     const built = project({ trialFeedback: () => RESCUED });
-    const run = await supervise([...UP_TO_SHORT, misshapen, misshapen, misshapen, misshapen, misshapen, misshapen], built, { propagateDecisionErrors: true });
+    const run = await supervise([...UP_TO_SHORT, ...Array.from({ length: 16 }, () => misshapen)], built, { propagateDecisionErrors: true, endsOnSignal: true });
 
     expect(answersOf(run.shown, IDS.dispatch)[1]).toMatchObject({ ok: true, wholeTestStands: { complete: { revision: 1 } } });
     const shapes = run.feedback.filter((entry) => entry.code === "project.completion_shape");
@@ -77,7 +77,7 @@ describe("a pass the run rescued, when its repair came back short", () => {
     const silent: Step = () => {
       throw new AutomationStudioLlmUnusableDecisionError(["llm.provider_timeout"]);
     };
-    const run = await supervise([...UP_TO_SHORT, silent, silent, silent], project({ trialFeedback: () => RESCUED }), { propagateDecisionErrors: true });
+    const run = await supervise([...UP_TO_SHORT, silent, silent, silent], project({ trialFeedback: () => RESCUED }), { propagateDecisionErrors: true, endsOnSignal: true });
     expect(run.outcome).toMatchObject({ status: "candidate", reliesOnRecovery: { why: "provider" } });
     expect(run.outcome.reliesOnRecovery!.told).toContain("The AI model provider stopped answering before the build could add that.");
     expect(run.view?.record.ending).toBeUndefined();
@@ -105,7 +105,7 @@ describe("a pass the run rescued, when its repair came back short", () => {
       person.abort();
       return mixed(evidence);
     };
-    const run = await supervise([...UP_TO_SHORT, cancel], built, { propagateDecisionErrors: true });
+    const run = await supervise([...UP_TO_SHORT, cancel], built, { propagateDecisionErrors: true, endsOnSignal: true });
     expect(run.outcome.status).toBe("ended");
     expect(run.outcome).not.toHaveProperty("reliesOnRecovery");
     expect(run.outcome.ending?.outcome).toBe("cancelled");
@@ -132,7 +132,7 @@ describe("a pass the run rescued, before any repair of it", () => {
       person.abort();
       return end("partial")(evidence);
     };
-    const run = await supervise([...tested, cancel], made, { propagateDecisionErrors: true });
+    const run = await supervise([...tested, cancel], made, { propagateDecisionErrors: true, endsOnSignal: true });
     expect(run.outcome.status).toBe("ended");
     expect(run.outcome).not.toHaveProperty("reliesOnRecovery");
     expect(run.outcome.ending?.outcome).toBe("cancelled");

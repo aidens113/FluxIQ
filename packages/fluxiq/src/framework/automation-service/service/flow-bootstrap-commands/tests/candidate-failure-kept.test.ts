@@ -4,7 +4,9 @@
 // were test-run, then twelve refused submissions stopped the build, which told
 // the person "the model's answer could not be used" and that the Flow "has no
 // steps yet", and the Lab recorded `candidate: null`. These drive the actual
-// service.
+// service. No count of refused submissions ends a build any more (t1056): each
+// refusal is told and loop detection steers, and the purse ends a build that
+// only repeats itself, so each decision here costs two cents of its purse.
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -34,9 +36,9 @@ async function candidateBuild(reply: Reply, verdict: "yes" | "no" = "no") {
     calls++;
     const evidence = request.context.evidenceLoop?.evidence ?? [];
     const latest = [...evidence].reverse().find((entry) => entry.toolId === "core.submit_candidate" && (entry.value as { ok?: unknown } | undefined)?.ok === true)?.value as { revision?: number; digest?: string } | undefined;
-    return { response: { kind: "evidence_tool_decision", summary: "Scripted candidate authoring", decision: reply(calls, latest) }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 } };
+    return { response: { kind: "evidence_tool_decision", summary: "Scripted candidate authoring", decision: reply(calls, latest) }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.02 } };
   });
-  const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 20, maxEstimatedCostUsd: 0.1 }),
+  const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxEstimatedCostUsd: 0.1 }),
     llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect", inputSchema: { type: "object" }, effect: "observe" }],
       executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { area: "item" }, effectApplied: false, targetsUnchanged: true }) } });
   const { project, flow } = await blankFixture(service);
@@ -47,7 +49,7 @@ async function candidateBuild(reply: Reply, verdict: "yes" | "no" = "no") {
 }
 
 describe("a candidate build that fails after writing its Flow says what it kept", () => {
-  it("refused submissions in a row end as no progress, keep the latest accepted revision as a draft, and name the candidate and its trial", async () => {
+  it("refused submissions in a row run on to the purse, keep the latest accepted revision as a draft, and name the candidate and its trial", async () => {
     const build = await candidateBuild((call, latest) => call === 1 ? { kind: "tool_call", callId: "look", toolId: "inspect", input: { area: "item" } }
       : call === 2 ? { kind: "tool_call", callId: "submit", toolId: "core.submit_candidate", input: { summary: "whole flow", plan: plan() } }
       : call === 3 ? { kind: "tool_call", callId: "test", toolId: "core.test_candidate", input: { revision: latest?.revision, digest: latest?.digest } }
@@ -56,16 +58,16 @@ describe("a candidate build that fails after writing its Flow says what it kept"
       if (build.settled.ok) throw new Error(`expected the build to end, got ${build.settled.result.status}`);
       const diagnostic = parseAutomationStudioFlowBootstrapFailureDiagnostic((build.settled.error as { diagnostic?: unknown }).diagnostic);
       if (!diagnostic) throw new Error("the failure carried no diagnostic Core reads back");
-      // No progress, not an unusable answer: each refused submission was a readable Flow.
-      expect(diagnostic.code).toBe("flow_bootstrap.evidence_repeat_without_progress");
+      // The purse, not a count of refusals and not an unusable answer: each refused submission was a readable Flow.
+      expect(diagnostic.code).toBe("flow_bootstrap.evidence_iteration_limit");
+      expect(diagnostic.evidenceLoop?.exhausted).toMatchObject({ bound: "budget", budgetBound: "cost" });
       const draft = await build.draft();
       expect(draft).toBeDefined();
       expect(diagnostic.candidate).toEqual({ candidateId: draft!.candidateId, draft: "saved", revision: draft!.candidate.revision, digest: draft!.candidate.digest, trialCount: 1,
         trials: [{ revision: draft!.candidate.revision, verdict: "no", trialRunId: expect.any(String), code: expect.any(String) }] });
       // What the chat says: the real cause, never the stage's words.
       const said = automationStudioConversationCallCause("the build", { ok: false, payload: { diagnostic } } as Parameters<typeof automationStudioConversationCallCause>[1]);
-      // The refused submission behind the stall, said in the refusal's words (t378: lanes C and D ended "it kept trying without getting any further").
-      expect(said).toBe("the build failed: the Flow it wrote was refused 3 times in a row, the last time because some steps weren't written in a way the Flow can run");
+      expect(said).toBe("the build failed: it reached its spending limit");
       expect(said).not.toContain("could not be used");
     } finally { await build.close(); }
   }, 60_000);
@@ -97,11 +99,11 @@ describe("a candidate build that stops on a refused step names the step", () => 
       if (build.settled.ok) throw new Error(`expected the build to end, got ${build.settled.result.status}`);
       const diagnostic = parseAutomationStudioFlowBootstrapFailureDiagnostic((build.settled.error as { diagnostic?: unknown }).diagnostic);
       if (!diagnostic) throw new Error("the failure carried no diagnostic Core reads back");
-      expect(diagnostic.code).toBe("flow_bootstrap.evidence_repeat_without_progress");
-      // The step's own words, with where its issue is and that issue's code; never the node's key or definition.
-      expect(diagnostic.refusedSteps).toEqual([{ step: "keep requests with 5 or more mutual friends", path: "plan.subflows.0.nodes.1.parameters.minimumMutualFriends", code: "bootstrap.unknown_parameter" }]);
+      // The purse ends it (t1056). Each refusal named the step to the model as it came; the purse's ending does not carry
+      // `refusedSteps`, which only a stall on refused submissions wrote (open question in t1056's report).
+      expect(diagnostic.code).toBe("flow_bootstrap.evidence_iteration_limit");
       const said = automationStudioConversationCallCause("the build", { ok: false, payload: { diagnostic } } as Parameters<typeof automationStudioConversationCallCause>[1]);
-      expect(said).toBe("the build failed: the Flow it wrote was refused 3 times in a row, the last time because the step 'keep requests with 5 or more mutual friends' was given a setting it doesn't take, so nothing was tested");
+      expect(said).toBe("the build failed: it reached its spending limit");
     } finally { await build.close(); }
   }, 60_000);
 });

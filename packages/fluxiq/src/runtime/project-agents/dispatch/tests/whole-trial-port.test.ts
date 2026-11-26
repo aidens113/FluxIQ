@@ -65,7 +65,7 @@ function builder(seen: Seen, options: { moving?: boolean } = {}) {
     return {
       loop: {
         tools: [LOOK], maxToolCalls: 8,
-        unusableDecisions: { maxConsecutive: 3, maxInARow: 3, stalled: () => new Error("stalled") },
+        unusableDecisions: { stalled: () => new Error("stalled") },
         executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true, page: "The seed catalogue." }, effectApplied: false, targetsUnchanged: true }),
         decide: async ({ evidence, tools }) => {
           seen.testTool ??= tools.find((tool) => tool.toolId === AUTOMATION_STUDIO_SUBFLOW_TEST_TOOL_ID)?.description;
@@ -182,7 +182,7 @@ describe("a single-subflow plan's whole test in the dispatcher", () => {
     const reset = (): AutomationStudioProjectResetPorts => ({
       loop: {
         tools: [],
-        unusableDecisions: { maxConsecutive: 2, maxInARow: 2, stalled: () => new Error("the reset stalled") },
+        unusableDecisions: { stalled: () => new Error("the reset stalled") },
         executeTool: async () => ({ ok: true }),
         decide: async () => ({ kind: "complete", result: { summary: "done" } })
       },

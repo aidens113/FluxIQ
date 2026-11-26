@@ -27,22 +27,23 @@ describe("a tool call naming a tool that was not offered", () => {
     expect(result).toMatchObject({ ok: true, result: { done: true } });
     const feedback = feedbackOf(decide, 1);
     expect(feedback).toMatchObject({ ok: false, code: "llm_evidence_loop.decision_unusable", issueCodes: ["llm_evidence_loop.unknown_tool_refused"] });
-    expect(feedback.instruction).toContain('offered for this decision are: "page.press", "core.run_flow".'); // The look was already answered, so the press is offered, and core.run_flow from the first decision (page-diff D11).
+    expect(feedback.instruction).toContain('offered for this decision are: "page.press", "core.loop_decision", "core.run_flow".'); // The look was already answered, so the press is offered, the loop decision every loop is offered (t1056), and core.run_flow from the first decision (page-diff D11).
     expect(feedback.instruction).toContain('nearest to the one you gave is "page.press"');
     expect(executeTool).toHaveBeenCalledWith(expect.objectContaining({ toolId: "page.press" }));
     expect(executeTool).not.toHaveBeenCalledWith(expect.objectContaining({ toolId: "page.pres" }));
     expect(result.trace.some((row) => row.decision === "unusable" && row.resultCode === "llm_evidence_loop.unknown_tool_refused")).toBe(true);
   });
 
-  // Asked again each time, never ended on the first, and never on a count of steps without progress (t1049): the
-  // unusable streak's backstop (held to the loop's eight iterations here) is what ends a model that never corrects it.
-  it("asks again when the model keeps naming ids that do not exist, and ends only on the unusable streak's backstop", async () => {
-    const decide = vi.fn().mockResolvedValue({ kind: "tool_call", callId: "call.x", toolId: "nonexistent", input: {} });
+  // Asked again each time, never ended on the first, and never on a count (t1049, t1056): the model's own correction
+  // ends it, or its purse.
+  it("asks again when the model keeps naming ids that do not exist, however often, until it corrects itself", async () => {
+    let asked = 0;
+    const decide = vi.fn(async () => (asked += 1) <= 20 ? { kind: "tool_call", callId: "call.x", toolId: "nonexistent", input: {} } : { kind: "complete", result: { done: true } });
     const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool: async () => ({}), unusableDecisions: { stalled }, propagateDecisionErrors: false });
 
-    expect(result).toMatchObject({ ok: false });
-    expect(result.ok === false && result.code).not.toBe("llm_evidence_loop.unknown_tool");
-    expect(decide.mock.calls.length).toBe(8);
+    expect(result).toMatchObject({ ok: true });
+    expect(decide.mock.calls.length).toBe(21);
+    expect(result.trace.filter((row) => row.resultCode === "llm_evidence_loop.unknown_tool_refused")).toHaveLength(20);
   });
 
   it("leaves a legitimate known id alone", async () => {

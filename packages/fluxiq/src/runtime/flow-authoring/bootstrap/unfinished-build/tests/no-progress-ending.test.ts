@@ -74,7 +74,7 @@ function harness(rounds: Array<(request: AutomationStudioFlowBootstrapRoundReque
     replayable: (steps) => steps.length > 0 && steps.every((each) => each.replay !== undefined),
     checklist: (steps) => automationStudioInstructedActsChecklist({ instructionText: INSTRUCTION, draftSteps: steps }),
     budget: { maxCostUsd: 0.1, maxDurationMs: 540_000 },
-    maxIterations: 64,
+    
     keep: async (...args) => { kept.push(args); return { revision: 1, steps: (args[2] as unknown[]).length }; },
     now: () => 0,
     ...overrides

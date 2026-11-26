@@ -275,12 +275,12 @@ describe("a run a person asked the model into, with no grant", () => {
     expect(dispatchCount).toBe(1);
   });
 
-  // One call count still applies to a run: the one its provider resolver
-  // declares, as a plain budget limit. The
-  // training settings' intervention limit used to be read as a provider-call
-  // cap too, and no longer is -- it counts interventions -- so the single call
-  // here is declared where a real host declares it.
-  it("shares one atomic call budget across diagnosis and patch requests", async () => {
+  // No call count applies to a run (t1056): the one its provider resolver
+  // declares here is read by nothing, and the training settings' intervention
+  // limit counts interventions. The run's one dollar ceiling is what the
+  // diagnosis and the patch share: the diagnosis, charged at its hold because
+  // its provider reports no cost, leaves too little to hold the patch.
+  it("shares one atomic budget across diagnosis and patch requests", async () => {
     const taskKinds: string[] = [];
     const service = createService({
       dataDir: tempRoot,
@@ -311,7 +311,7 @@ describe("a run a person asked the model into, with no grant", () => {
     expect(taskKinds).toEqual(["runtime_diagnosis"]);
     expect(detail?.adaptationIds).toEqual([]);
     expect(detail?.interventions).toEqual(expect.arrayContaining([
-      expect.objectContaining({ kind: "runtime_patch", validation: { ok: false, issues: [expect.stringContaining("llm_budget.run_call_limit")] } })
+      expect.objectContaining({ kind: "runtime_patch", validation: { ok: false, issues: [expect.stringContaining("llm_budget.run_cost_limit")] } })
     ]));
   });
 });

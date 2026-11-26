@@ -84,7 +84,7 @@ describe("what the record says about the draft the model was shown", () => {
   it("the live build profile carries no evidence or draft byte limit", () => {
     const decide = async () => complete;
     const live = automationStudioFlowBootstrapEvidenceLoopLimits({});
-    expect(Object.keys(live.loop).sort()).toEqual(["budget", "maxIterations", "maxToolCalls", "minToolCalls"]);
+    expect(Object.keys(live.loop).sort()).toEqual(["budget", "minToolCalls"]);
     const limits = resolveLimits({ tools, decide, executeTool: pressing, ...live.loop });
     expect(limits).toBeDefined();
     for (const removed of ["maxEvidenceBytes", "maxEvidenceContextBytes", "toolEvidenceBytes", "draftBytes"]) expect(limits).not.toHaveProperty(removed);

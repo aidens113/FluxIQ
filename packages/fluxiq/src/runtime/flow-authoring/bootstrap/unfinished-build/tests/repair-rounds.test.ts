@@ -48,8 +48,7 @@ function calls(purse: AutomationStudioLlmBuildPurse | undefined, count: number, 
 
 function outOfDecisions(steps: AutomationStudioFlowDraftStep[], accounting: AutomationStudioLlmEvidenceLoopAccounting): AutomationStudioLlmEvidenceLoopResult {
   return {
-    ok: false, code: "llm_evidence_loop.iteration_limit", trace: [], steps, accounting,
-    exhaustion: { bound: "iterations", maxIterations: 64, iterations: 64, draftSteps: steps.length, proposableSteps: steps.length, completionAttempts: 1, lastIssueCodes: [], outstandingIssueCodes: [] }
+    ok: false, code: "llm_evidence_loop.repeat_without_progress", trace: [], steps, accounting
   };
 }
 
@@ -89,7 +88,7 @@ function harness(
     replayable: (steps) => steps.length > 0 && steps.every((each) => each.replay !== undefined),
     checklist: (steps) => automationStudioInstructedActsChecklist({ instructionText: INSTRUCTION, draftSteps: steps }),
     budget: { maxCostUsd: 0.1, maxDurationMs: 540_000 },
-    maxIterations: 64,
+    
     keep: async (...args) => ({ revision: 1, steps: (args[2] as unknown[]).length }),
     now: () => 0,
     ...overrides
@@ -300,7 +299,7 @@ describe("each round's stop, recorded on the ending", () => {
 
     expect(outcome.kind === "unfinished" && outcome.ending.tried).toEqual({
       rounds: 2, decisions: 13, stepsInFlow: 2, tested: "replayed_clean",
-      stops: [{ round: 0, stopped: "iterations" }, { round: 1, stopped: "repeat_without_progress" }],
+      stops: [{ round: 0, stopped: "repeat_without_progress" }, { round: 1, stopped: "repeat_without_progress" }],
       noRoute: { kind: "repeated_unchanged" }
     });
   });
@@ -329,7 +328,7 @@ describe("each round's stop, recorded on the ending", () => {
 
     const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
 
-    expect(outcome.kind === "unfinished" && outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "rounds", tried: { stops: [{ round: 0, stopped: "iterations" }, { round: 1, stopped: "iterations" }] } });
+    expect(outcome.kind === "unfinished" && outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "rounds", tried: { stops: [{ round: 0, stopped: "repeat_without_progress" }, { round: 1, stopped: "repeat_without_progress" }] } });
     expect(outcome.kind === "unfinished" && outcome.ending.tried.noRoute).toBeUndefined();
   });
 });

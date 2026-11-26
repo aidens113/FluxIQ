@@ -12,17 +12,20 @@
 // `maxEstimatedCostUsdPerRun` and never raised by either), and a deadline --
 // and works out from what it has actually spent how many
 // decisions it has left, tells the model so on every decision, and offers its
-// last one only completion (`runtime/llm/loop-budget.ts`). Under those sit the
-// loop's no-progress checks. The call count is only the backstop: the
-// resolver's declared count, or the loop's ceiling when none is declared.
+// last one only completion (`runtime/llm/loop-budget.ts`).
 //
-// The cost ceiling is enforced there, from each decision's reported cost: no
-// decision is asked for once what was spent leaves no room for another at the
-// running average (the first is always asked for, having nothing to average),
-// and the loop ends `llm_evidence_loop.iteration_limit` with `bound: "budget"`
-// and `budgetBound: "cost"`. A build has no ledger, so a per-call cost on its
-// requests was never checked against anything; the even share of the total it
-// used to carry only restated the total, and is gone.
+// **No count of calls bounds a build (t1056).** The resolver's `maxCallsPerRun`
+// was the loop's backstop and a count the whole build, repairs included, was
+// held to, and a build that circled ended "at its limit of 12 model calls" with
+// money left (t1049's continuation test). A purse is dollars, never a count of
+// calls (user, 2026-11-24: "THERE SHOULDNT BE ANY ARBITRARY FUCKING CALL LIMIT
+// THAT RANDOMLY JUST RESETS EVERYTHING"), so the count is no longer read here:
+// a build ends with its result, its purse, its tokens or its clock.
+//
+// The cost ceiling is enforced by the purse, from each decision's worst case:
+// no decision is sent that it could not pay for, and the loop ends
+// `llm_evidence_loop.iteration_limit` with `bound: "budget"` and
+// `budgetBound: "cost"`.
 //
 // This module does arithmetic only. From `runtime/llm/` it reads the harness's
 // token constants and the run cost ceiling.
@@ -34,19 +37,8 @@
 // only bound on a request is the model's context window, enforced loudly
 // before a request is sent (`runtime/llm/context-window.ts`).
 
-import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST, resolveAutomationStudioLlmTokenLimits, type AutomationStudioLlmTokenLimits } from "../llm/harness/index.ts";
+import { resolveAutomationStudioLlmTokenLimits, type AutomationStudioLlmTokenLimits } from "../llm/harness/index.ts";
 import { automationStudioLlmRunCostCeilingUsd, type AutomationStudioLlmEvidenceLoopBudget } from "../llm/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "./evidence-loop.ts";
-
-/**
- * The most tokens one Flow Bootstrap can record in its accounting: 64 calls --
- * the run-call backstop -- at the per-request ceiling.
- *
- * The recorded totals used to be held to 50,000 -- the ceiling on a single
- * request -- while an iterating build adds up every call it made, and a build
- * that legitimately spent more was refused after the provider had been paid.
- */
-export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS = 64 * AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST;
 
 /**
  * How long a build's exploration may run: nine minutes, so the plan check, the
@@ -59,27 +51,9 @@ export type AutomationStudioFlowBootstrapEvidenceLoopLimits = {
   /** Handed to the evidence loop as they are. */
   loop: {
     minToolCalls: number;
-    /** The backstop: the resolver's declared call count, or the loop's ceiling. */
-    maxIterations: number;
-    maxToolCalls: number;
     /** The bounds that decide: the run's token budget and cost ceiling, and the deadline. */
     budget: AutomationStudioLlmEvidenceLoopBudget;
   };
-  /**
-   * @deprecated Read by no loop since t1049: it reaches the loop as
-   * `unusableDecisions.maxConsecutive`, which was the length of the guard on
-   * steps without progress, and no such count ends a loop now. A loop's
-   * unusable replies in a row are bounded by its own `maxInARow` default.
-   * Remove it with its callers.
-   */
-  maxConsecutiveUnusableDecisions: number;
-  /**
-   * The call count the resolver or the Flow's settings declared, when one was:
-   * a budget the whole build is held to, repairs included
-   * (`runtime/flow-bootstrap/unfinished-build/`). Absent, the count is only the
-   * loop's backstop, which each phase of a build meets on its own.
-   */
-  declaredCalls?: number;
 };
 
 /**
@@ -91,18 +65,10 @@ export type AutomationStudioFlowBootstrapEvidenceLoopLimits = {
  * total where either is a positive number, and never raised by them.
  */
 export function automationStudioFlowBootstrapEvidenceLoopLimits(resolution: {
-  maxCallsPerRun?: number | undefined;
   maxTotalEstimatedCostUsd?: number | undefined;
   maxTotalTokensPerRun?: number | undefined;
   tokenLimits?: Partial<AutomationStudioLlmTokenLimits> | undefined;
 }, flowMaxEstimatedCostUsdPerRun?: number): AutomationStudioFlowBootstrapEvidenceLoopLimits {
-  const ceiling = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS;
-  const declared = positive(resolution.maxCallsPerRun) ? Math.trunc(resolution.maxCallsPerRun) : undefined;
-  const maxIterations = Math.min(declared ?? ceiling.maxIterations, ceiling.maxIterations);
-  // One more tool call than decisions: the loop's first observation is a tool
-  // call made before any decision, and the last decision completes. So tool
-  // calls never bind before the call count does.
-  const maxToolCalls = Math.min(maxIterations + 1, ceiling.maxToolCalls);
   const maxCostUsd = automationStudioLlmRunCostCeilingUsd(resolution.maxTotalEstimatedCostUsd, flowMaxEstimatedCostUsdPerRun);
   // The most one decision may use, set aside before each call.
   const tokens = resolveAutomationStudioLlmTokenLimits(resolution.tokenLimits).limits;
@@ -111,14 +77,7 @@ export function automationStudioFlowBootstrapEvidenceLoopLimits(resolution: {
     maxCostUsd,
     maxDurationMs: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_DURATION_MS
   };
-  return {
-    loop: { minToolCalls: 1, maxIterations, maxToolCalls, budget },
-    // Read by no loop since t1049 (see the field). What bounds a build is what it
-    // spends -- its cost, its tokens and the run's deadline, all of which this
-    // function hands the loop as its budget.
-    maxConsecutiveUnusableDecisions: Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS, maxIterations),
-    ...(declared === undefined ? {} : { declaredCalls: declared })
-  };
+  return { loop: { minToolCalls: 1, budget } };
 }
 
 function positive(value: number | undefined): value is number {

@@ -38,7 +38,7 @@ async function run(script: Step[]) {
     tools: [{ toolId: "library.look", description: "Read the page.", effect: "observe", inputSchema: { type: "object" } }, gate.tool],
     maxIterations: script.length + 1, maxToolCalls: script.length + 1, dryRun: false, draft: false,
     requestContextKey: (toolId) => (toolId === TEST ? automationStudioCandidateTestRequestKey(latest) : undefined),
-    unusableDecisions: { maxConsecutive: script.length + 1, maxInARow: script.length + 1, stalled: () => new Error("stalled") },
+    unusableDecisions: { stalled: () => new Error("stalled") },
     executeTool: async ({ toolId, value }) => (toolId === TEST ? gate.test(value) : { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: false, targetsUnchanged: true, stateDigests: { before: "page.one", after: "page.one" } }),
     decide: async ({ evidence }) => {
       for (const entry of evidence) shown.set(`${entry.callId}:${JSON.stringify(entry.value)}`, { toolId: entry.toolId, value: entry.value });

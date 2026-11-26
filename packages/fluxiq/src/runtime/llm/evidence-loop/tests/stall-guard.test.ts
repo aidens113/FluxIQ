@@ -21,10 +21,10 @@
 
 import { describe, expect, it, vi } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import {
-  AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS,
-  AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_REDIRECT_AT_STEPS_WITHOUT_PROGRESS
-} from "../../../loop-limits/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_REDIRECT_AT_STEPS_WITHOUT_PROGRESS } from "../../../loop-limits/index.ts";
+
+/** The count of steps without progress that once stopped a loop (t1049 removed it, t1056 its constant). */
+const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS = 8;
 import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID,
   automationStudioLlmEvidenceStallRedirect,
@@ -146,14 +146,14 @@ describe("a loop that makes no progress", () => {
     expect(redirections(decide).length).toBeGreaterThan(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS);
   });
 
-  it("on a loop with no loop signal, runs past the old stop to its own ceiling, steered", async () => {
-    const decide = presses(Number.MAX_SAFE_INTEGER, { kind: "complete", result: {} });
+  it("on a loop with no loop signal, runs past the old stop and past the turns it was given, steered, until its result", async () => {
+    // No count of turns ends a loop either (t1056): the 48 it is given bound nothing.
+    const decide = presses(MANY * 2, { kind: "complete", result: {} });
 
     const result = await runAutomationStudioLlmEvidenceLoop({ tools: library, decide, executeTool: pressesNothing(), maxIterations: 48, maxToolCalls: 48, dryRun: false });
 
-    // Not repeat_without_progress at eight: the loop's own iteration ceiling, which is a different bound.
-    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.iteration_limit" });
-    expect(result.accounting.iterations).toBe(48);
+    expect(result).toMatchObject({ ok: true });
+    expect(result.accounting.iterations).toBe(MANY * 2 + 1);
     expect(redirections(decide).length).toBeGreaterThan(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS);
   });
 
@@ -209,7 +209,7 @@ describe("a loop that is working", () => {
 
   it("is never redirected while the answers keep changing", async () => {
     let call = 0;
-    const decide = presses(Number.MAX_SAFE_INTEGER, { kind: "complete", result: {} });
+    const decide = presses(MANY, { kind: "complete", result: {} });
     const executeTool = vi.fn(async () => {
       call += 1;
       return { kind: "llm_evidence_tool_execution" as const, evidence: { ok: true, sawSomethingNew: call }, effectApplied: false };
@@ -217,8 +217,8 @@ describe("a loop that is working", () => {
 
     const result = await runAutomationStudioLlmEvidenceLoop({ tools: library, decide, executeTool, maxIterations: 12, maxToolCalls: 12, dryRun: false });
 
-    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.iteration_limit" });
-    expect(result.accounting.iterations).toBe(12);
+    expect(result).toMatchObject({ ok: true });
+    expect(result.accounting.iterations).toBe(MANY + 1);
     expect(redirections(decide)).toEqual([]);
   });
 });

@@ -4,11 +4,16 @@
 // token limits, a per-call timeout and a per-call cost ceiling. Since grants
 // went (t186) the host's resolver hands back its own defaults and nothing read
 // these, so a Flow configured for 48 calls was built with 64
-// (`run-munnq7vz-98c3481c`). This is where the two that bound spending are
-// read: the call count and the per-call cost. It is arithmetic only: it sets
-// numbers the run's own budget already enforces, adds no check, refuses
-// nothing and issues nothing, and each can only lower what the resolution (or,
-// where it names nothing, the harness default) allows.
+// (`run-munnq7vz-98c3481c`). This is where the one that bounds spending is
+// read: the per-call cost. It is arithmetic only: it sets a number the run's
+// own budget already enforces, adds no check, refuses nothing and issues
+// nothing, and it can only lower what the resolution (or, where it names
+// nothing, the harness default) allows.
+//
+// **The call count is not read (t1056).** It once became the run's
+// `maxCallsPerRun` and ended a build at its count, before its money did; no
+// count of calls ends a round (user, 2026-11-24). The settings check still
+// accepts a stored count, and nothing reads it.
 //
 // The token limits and the timeout are deliberately not read. They size one
 // request rather than bound spending, and a Flow saved from the web app stores
@@ -27,16 +32,11 @@ import type { JsonObject } from "../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_MAX_USD } from "../../../flows/authoring/model/run-cost-ceiling/index.ts";
 import { AUTOMATION_STUDIO_LLM_DEFAULT_MAX_ESTIMATED_COST_USD } from "../harness/index.ts";
 import type { AutomationStudioLlmProviderResolution } from "../resolver-contract.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP } from "./run-call-backstop.ts";
-
-/** The settings check's own bound (`api/handlers/llm-execution-settings.ts`): Core's runaway backstop (t583). */
-const FLOW_MAX_CALLS = AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP;
-const FLOW_UNSET_CALL_COUNT = 1;
 
 /**
- * `resolved` narrowed by the Flow's stored `llmExecutionSettings`: `maxCalls`
- * becomes (or lowers) `maxCallsPerRun`, and `maxEstimatedCostUsd` lowers the
- * per-call cost ceiling. Token limits and the timeout are left as resolved.
+ * `resolved` narrowed by the Flow's stored `llmExecutionSettings`:
+ * `maxEstimatedCostUsd` lowers the per-call cost ceiling. The call count, token
+ * limits and the timeout are left as resolved.
  * Anything that is not a resolution -- nothing, or a bare provider -- is
  * returned as it came.
  */
@@ -46,21 +46,11 @@ export function automationStudioLlmResolutionWithinFlowSettings<T>(resolved: T, 
   if (!settings) return resolved;
   const resolution = resolved as unknown as AutomationStudioLlmProviderResolution;
   const narrowed: AutomationStudioLlmProviderResolution = { ...resolution };
-  const calls = wholeNumber(settings.maxCalls, 1, FLOW_MAX_CALLS);
-  if (calls !== undefined && calls !== FLOW_UNSET_CALL_COUNT) narrowed.maxCallsPerRun = lower(resolution.maxCallsPerRun, calls);
   const cost = settings.maxEstimatedCostUsd;
   if (typeof cost === "number" && Number.isFinite(cost) && cost > 0 && cost <= AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_MAX_USD) {
     narrowed.maxEstimatedCostUsd = Math.min(resolution.maxEstimatedCostUsd ?? AUTOMATION_STUDIO_LLM_DEFAULT_MAX_ESTIMATED_COST_USD, cost);
   }
   return narrowed as unknown as T;
-}
-
-function lower(current: number | undefined, limit: number): number {
-  return typeof current === "number" && Number.isFinite(current) && current >= 1 ? Math.min(Math.trunc(current), limit) : limit;
-}
-
-function wholeNumber(value: unknown, minimum: number, maximum: number): number | undefined {
-  return Number.isInteger(value) && (value as number) >= minimum && (value as number) <= maximum ? value as number : undefined;
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {

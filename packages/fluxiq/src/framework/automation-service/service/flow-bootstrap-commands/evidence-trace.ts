@@ -12,7 +12,6 @@ import {
 import { automationStudioLlmBuildCallRecord, type AutomationStudioLlmRunCallRecord } from "../../../../runtime/llm/index.ts";
 import { automationStudioLlmEvidenceDiagnostic } from "../../../../runtime/llm/evidence-diagnostic/index.ts";
 import { readRuntimeTargetActionability } from "../../../../runtime/result-control/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../../runtime/loop-limits/index.ts";
 import { requiredBootstrapCommandId } from "./field-readings.ts";
 
 // The evidence loop trace an audit event records: validated first, then
@@ -61,12 +60,13 @@ const EVIDENCE_RESULT_CODE = /^[a-z0-9_.:-]{1,100}$/i;
  * third row for one iteration (`runtime/llm/evidence-loop.ts`).
  */
 function maxTraceRows(): number {
-  return (AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations * 2 + 1) * AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS;
+  // No count of a round's turns has a ceiling (t1056), so neither have its rows.
+  return Number.POSITIVE_INFINITY;
 }
 
 /** The highest decision number a stored row may carry: one round's ceiling for each round. Read at call time, like the rows. */
 function maxTraceIteration(): number {
-  return AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations * AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS;
+  return Number.POSITIVE_INFINITY;
 }
 
 export function sanitizeEvidenceLoopTrace(

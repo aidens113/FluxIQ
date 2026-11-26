@@ -56,7 +56,7 @@ async function tested(options: { reset?: { moved: boolean; movesDuring: number }
     }),
     loop: {
       tools: [look], maxIterations: 6, maxToolCalls: 8,
-      unusableDecisions: { maxConsecutive: 3, maxInARow: 3, stalled: () => new Error("stalled") },
+      unusableDecisions: { stalled: () => new Error("stalled") },
       executeTool: async (call) => {
         if (call.callId.endsWith(".page")) {
           looks.push(call.callId);

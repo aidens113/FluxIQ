@@ -56,7 +56,7 @@ export type AutomationStudioLlmRunNodesAuthority = {
 
 export type AutomationStudioLlmRunNodesAllowance =
   | { allowed: true }
-  | { allowed: false; reason: "cancelled" | "tool_calls" | "time" | "purse" | "unavailable" };
+  | { allowed: false; reason: "cancelled" | "time" | "purse" | "unavailable" };
 
 /** INTERNAL resolved data, captured once before any member; never serialize as model evidence. */
 export type AutomationStudioLlmRunNodesIdentity = Readonly<{
@@ -79,7 +79,6 @@ export type AutomationStudioLlmRunNodesStopReason =
   | "list_guard_record_failed"
   | "allowance_unreadable"
   | "cancelled"
-  | "tool_calls"
   | "time"
   | "purse"
   | "unavailable"

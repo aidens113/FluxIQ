@@ -80,7 +80,7 @@ function harness(
     replayable: (steps) => steps.length > 0 && steps.every((each) => each.replay !== undefined),
     checklist: (steps) => automationStudioInstructedActsChecklist({ instructionText: INSTRUCTION, draftSteps: steps }),
     budget: { maxCostUsd: 0.25, maxDurationMs: 540_000 },
-    maxIterations: 64,
+    
     keep: async (...args) => { kept.push(args); return { revision: 1, steps: (args[2] as unknown[]).length }; },
     announce: ({ phase, label, text }) => { announced.push(`${phase}: ${label}: ${text}`); },
     now: () => 0,

@@ -776,22 +776,22 @@ purse. Approval or application failure after an adaptation exists cannot
 trigger another generate. Internal HTTP retries remain within their original
 logical provider question.
 
-### Scoped Lab build-call allowance
+### No build-call allowance (t1056)
 
-The public `resolveAutomationStudioLlmBuildCallLimit` reader accepts an optional
-positive safe integer from `FLUXIQ_LLM_BUILD_CALL_LIMIT` only when
-`FLUXIQ_LLM_BUILD_CALL_LIMIT_SCOPE=test`. An unscoped process ignores the value,
-including a malformed one. There is no implicit call limit for ordinary UI.
-The Lab forwards its resolved plan before starting its owned Core process;
-explicit Flow/provider settings can narrow that allowance.
+A build's purse is dollars, never a count of calls (user, 2026-11-24: no count
+of calls ends a round). The public `resolveAutomationStudioLlmBuildCallLimit`
+reader still parses `FLUXIQ_LLM_BUILD_CALL_LIMIT` under
+`FLUXIQ_LLM_BUILD_CALL_LIMIT_SCOPE=test`, but neither the service's creation
+purse nor the session-key resolver reads it any more, a Flow's stored
+`llmExecutionSettings.maxCalls` narrows nothing, and a project build carves each
+brief's allowance in dollars only. A build whose model never finishes ends when
+its purse cannot pay for the next question.
 
-The creation purse admits each logical provider question before sending it.
-Pending questions reserve slots; settlement consumes one, and an explicitly
-unsent request releases it. Internal HTTP retries share the original question's
-slot. Reader, decision, repair-round and judge questions share the allowance;
-deterministic replay consumes none. The configured judge pair is kept back from
-nonjudge questions, without recording the reserve as paid usage. Calls and
-dollars retain separate refusal fields and closed budget endings.
+The creation purse admits each logical provider question before sending it,
+against its money. Internal HTTP retries share the original question's hold.
+Reader, decision, repair-round and judge questions share the purse;
+deterministic replay consumes none. The judging reserve is kept back from
+nonjudge questions, without recording the reserve as paid usage.
 
 Failed builds can publish optional root `totalProviderCallCount` from the
 actual current purse. This aggregate is separate from evidence-loop decision

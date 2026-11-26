@@ -32,7 +32,7 @@ describe("a completion refused twice over the same draft", () => {
 
     const result = await runAutomationStudioLlmEvidenceLoop({
       tools: initial, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, checkCompletion,
-      unusableDecisions: { maxConsecutive: 5, stalled: () => new Error("stalled") }
+      unusableDecisions: { stalled: () => new Error("stalled") }
     });
 
     expect(result).toMatchObject({ ok: true, result: { other: true } });
@@ -59,7 +59,7 @@ describe("a completion refused twice over the same draft", () => {
     await runAutomationStudioLlmEvidenceLoop({
       tools: initial, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true,
       checkCompletion: async (result: JsonObject) => result.other ? { ok: true as const } : own,
-      unusableDecisions: { maxConsecutive: 5, stalled: () => new Error("stalled") }
+      unusableDecisions: { stalled: () => new Error("stalled") }
     });
 
     expect(ofTool(shownAt(decide, 2), "core.completion_check")[0]!.value).toMatchObject({ sameAsIteration: 1, timesSent: 99 });

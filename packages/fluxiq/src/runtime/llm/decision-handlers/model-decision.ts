@@ -61,14 +61,14 @@ type ToolCall = Extract<AutomationStudioLlmEvidenceLoopDecision, { kind: "tool_c
 const CODES = Object.freeze({
   carried: "core.loop_decision.carried_out",
   invalid: "core.loop_decision.invalid",
-  noPerson: "core.loop_decision.no_person",
   notYet: "core.loop_decision.ask_person_not_offered"
 });
 
 /** Why `ask_person` is not on offer yet (`../loop-decision/options.ts`), in the model's terms. */
 const NOT_YET: Readonly<Record<Exclude<AutomationStudioLlmLoopDecisionOptions["askPerson"], "offered">, string>> = Object.freeze({
   after_change_approach: "Asking the person is a last resort, for after you have changed approach and the repeat still comes back, and you have not changed approach yet.",
-  after_repeat_persists: "Asking the person is a last resort, for after you have changed approach and the repeat still comes back, and nothing has been repeated since you changed approach."
+  after_repeat_persists: "Asking the person is a last resort, for after you have changed approach and the repeat still comes back, and nothing has been repeated since you changed approach.",
+  no_person: "No person can be asked from here."
 });
 
 /** What the model is told once each decision is carried out. */
@@ -128,9 +128,8 @@ async function finished(context: AutomationStudioLlmEvidenceDecisionHandlerConte
   return undefined;
 }
 
-/** The person is asked the model's own question through the loop's caller, which ends the round there; with no caller, nobody can be asked and the model chooses again. */
+/** The person is asked the model's own question through the loop's caller, which ends the round there. Offered only where there is one (`./decision-options.ts`). */
 function asked(context: AutomationStudioLlmEvidenceDecisionHandlerContext, iteration: number, call: ToolCall, question: string, why: string, about: AutomationStudioLlmLoopFinding | undefined, steps: AutomationStudioLlmEvidenceModelDecisionSteps, options: AutomationStudioLlmLoopDecisionOptions): AutomationStudioLlmEvidenceLoopResult | undefined {
-  if (!context.input.loopSignal) return answered(context, iteration, call, { ok: false, code: CODES.noPerson, instruction: `No person can be asked from here. Call ${AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID} again with another decision.` });
   recorded(context, iteration, { decision: "ask_person", question, why }, about, options);
   answered(context, iteration, call, { ok: true, code: CODES.carried, decision: "ask_person", instruction: CARRIED.ask_person });
   const finding = about ?? { pattern: "exact_repeat", repeats: 0, toolIds: [], unchanged: [] };

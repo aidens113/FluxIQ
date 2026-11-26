@@ -93,7 +93,7 @@ describe("a stalled candidate build", () => {
       },
       loop: {
         tools: [{ toolId: "demo.find", effect: "observe", description: "Find", inputSchema: { type: "object" } }], maxIterations: 20, maxToolCalls: 20,
-        unusableDecisions: { maxConsecutive: 20, maxInARow: 20, stalled: () => new Error("stalled") },
+        unusableDecisions: { stalled: () => new Error("stalled") },
         executeTool: async ({ value }) => ({ kind: "llm_evidence_tool_execution", evidence: { found: `0 matches for ${String(value.query)}` }, effectApplied: false, stateDigests: { before: "s1", after: "s1" } }),
         decide: async ({ evidence }): Promise<AutomationStudioLlmEvidenceLoopDecision> => {
           decisions += 1;
@@ -101,8 +101,9 @@ describe("a stalled candidate build", () => {
           if (submitted?.ok === true) receipt = { revision: submitted.revision as number, digest: submitted.digest as string };
           if (decisions === 1) return { kind: "tool_call", toolId: "core.submit_candidate", callId: "submit.1", input: plan };
           if (decisions === 2) return { kind: "tool_call", toolId: AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, callId: "test.1", input: receipt! };
-          // Eight looks in a row; the stall after the eighth runs the retest, whose yes the next decision completes on.
-          if (decisions <= 10) return { kind: "tool_call", toolId: "demo.find", callId: `find.${decisions}`, input: { query: `q${decisions}` } };
+          // Looks in a row, caught as a repeat from the eighth; once refusing has not stopped them, the ladder's top runs the
+          // retest (no count ends the round, t1056), and the decision after its yes completes on it.
+          if (!evidence.some((entry) => entry.toolId === AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID && entry.callId.startsWith("core.stall_recovery."))) return { kind: "tool_call", toolId: "demo.find", callId: `find.${decisions}`, input: { query: `q${decisions}` } };
           const retest = evidence.find((entry) => entry.toolId === AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID && entry.callId.startsWith("core.stall_recovery."))?.value as JsonObject | undefined;
           expect(retest).toMatchObject({ ok: true, verdict: "yes" });
           return { kind: "complete", result: receipt! };
@@ -110,7 +111,8 @@ describe("a stalled candidate build", () => {
       }
     });
     expect(outcome.loop.ok).toBe(true);
-    expect(asked.map((request) => request.revision)).toEqual([1, 1]);
+    expect(asked.length).toBeGreaterThanOrEqual(2);
+    expect(asked.every((request) => request.revision === 1)).toBe(true);
     expect(outcome.trial?.verdict).toBe("yes");
   });
 });

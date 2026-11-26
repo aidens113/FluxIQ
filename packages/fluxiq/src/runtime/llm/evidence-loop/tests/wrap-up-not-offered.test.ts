@@ -21,8 +21,9 @@ describe("a tool call in the wrap-up", () => {
       .mockResolvedValueOnce({ kind: "tool_call", callId: "call.2", toolId: "inspect", input: { page: 2 } })
       .mockResolvedValueOnce({ kind: "complete", result: { plan: true } });
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, executeTool, maxIterations: 4, maxToolCalls: 4, completionSchema: { type: "object" },
-      budget: { maxTotalTokens: 10_000_000 }
+      tools, decide, executeTool, completionSchema: { type: "object" },
+      // Decisions left are counted from the tokens: no count of turns stands behind them (t1056).
+      budget: { maxTotalTokens: 5_000, maxTokensPerDecision: 1_000 }
     });
 
     expect(result).toMatchObject({ ok: true, result: { plan: true } });
@@ -45,8 +46,9 @@ describe("a tool call in the wrap-up", () => {
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "rerun", input: { page: 3 } }] })
       .mockResolvedValueOnce({ kind: "complete", result: { plan: true } });
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, executeTool, maxIterations: 4, maxToolCalls: 4, completionSchema: { type: "object" },
-      budget: { maxTotalTokens: 10_000_000 }
+      tools, decide, executeTool, completionSchema: { type: "object" },
+      // Decisions left are counted from the tokens: no count of turns stands behind them (t1056).
+      budget: { maxTotalTokens: 5_000, maxTokensPerDecision: 1_000 }
     });
 
     expect(result).toMatchObject({ ok: true });
@@ -68,8 +70,9 @@ describe("an exploring call in a candidate's wrap-up", () => {
       .mockResolvedValueOnce({ kind: "tool_call", callId: "call.2", toolId: "inspect", input: { page: 2 } })
       .mockResolvedValueOnce({ kind: "complete", result: { revision: 1, digest: "d" } });
     await runAutomationStudioLlmEvidenceLoop({
-      tools: candidateTools, decide, executeTool, draft: false, discoveryOnly: true, maxIterations: 6, maxToolCalls: 6,
-      completionSchema: { type: "object" }, budget: { maxTotalTokens: 10_000_000 }
+      tools: candidateTools, decide, executeTool, draft: false, discoveryOnly: true, 
+      // Decisions left are counted from the tokens: no count of turns stands behind them (t1056).
+      completionSchema: { type: "object" }, budget: { maxTotalTokens: 7_000, maxTokensPerDecision: 1_000 }
     });
     expect((decide.mock.calls[1]![0].tools as Array<{ toolId: string }>).map((tool) => tool.toolId)).toContain("inspect");
     expect(executeTool).toHaveBeenCalledTimes(1);
@@ -86,7 +89,8 @@ const finishingTools = ["core.submit_candidate", "core.test_candidate"].map((too
 }));
 
 describe("a candidate tool offered in the final counted slot", () => {
-  for (const bound of ["duration", "iterations", "tokens", "cost"] as const) {
+  // No count of turns is a bound any more (t1056): the budget's own are.
+  for (const bound of ["duration", "tokens", "cost"] as const) {
     for (const toolId of ["core.submit_candidate", "core.test_candidate"]) {
       it(`executes the offered ${toolId} when ${bound} leaves one slot`, async () => {
         let now = 0;
@@ -99,18 +103,16 @@ describe("a candidate tool offered in the final counted slot", () => {
         });
         const result = await runAutomationStudioLlmEvidenceLoop({
           tools: finishingTools, decide, executeTool, draft: false, discoveryOnly: true, completionSchema: { type: "object" },
-          maxIterations: bound === "iterations" ? 2 : 20, maxToolCalls: 20,
           budget: { now: () => now, ...(bound === "duration" ? { maxDurationMs: 10_000 } : {}),
             ...(bound === "tokens" ? { maxTotalTokens: 300, maxTokensPerDecision: 100 } : {}),
             ...(bound === "cost" ? { maxCostUsd: 0.1 } : {}) }
         });
         const last = decide.mock.calls[1]![0] as unknown as { tools: Array<{ toolId: string }>; evidence: Array<{ toolId: string; value: unknown }> };
-        expect(last.tools.map((tool) => tool.toolId)).toContain(toolId);
+        expect(last.tools.map((tool) => tool.toolId).filter((id: string) => id !== "core.loop_decision")).toContain(toolId);
         expect(last.evidence.at(-1)?.value).toMatchObject({ decisionsLeft: 1 });
         expect(executeTool).toHaveBeenCalledTimes(2);
         expect(executeTool.mock.calls[1]![0]).toMatchObject({ toolId, value: { revision: 2 } });
         expect(result.trace.some((row) => row.iteration === 2 && row.resultCode === "llm_evidence_loop.not_offered")).toBe(false);
-        if (bound === "iterations") expect(result).toMatchObject({ ok: false, exhaustion: { bound: "iterations", iterations: 2 } });
       });
     }
   }

@@ -45,7 +45,7 @@ async function build(answer: "person_done" | "person_stop") {
   const result = await runAutomationStudioLlmEvidenceLoop({
     tools: [tool], decide, executeTool: personNeeded.executeTool, signal: personNeeded.signal,
     maxIterations: 6, maxToolCalls: 6, minToolCalls: 1,
-    unusableDecisions: { maxConsecutive: 4, stalled: () => new Error("stalled") }
+    unusableDecisions: { stalled: () => new Error("stalled") }
   });
   return { result, decide, opened, personNeeded };
 }

@@ -25,18 +25,24 @@ async function opening(callScope?: string) {
       return { state: { lines: 0 }, differs: [] };
     }
   };
+  let decided = 0;
   await runAutomationStudioFlowCandidateAuthoringLoop({
     submission: { ...testSubmission(), binding: { ...testSubmission().binding, ...binding } },
     trial: { candidateId: "candidate.scoped", port: async (request) => ({ revision: request.revision, digest: request.digest, verdict: "yes", feedback: {} }) },
     siteReset: new AutomationStudioSiteResetLedger(), siteResetSettleMs: 0,
     loop: {
       ...(callScope === undefined ? {} : { callScope }),
-      tools: [look], maxIterations: 1, maxToolCalls: 2,
+      tools: [look],
       executeTool: async (call) => {
         executed.push(call.callId);
         return { kind: "llm_evidence_tool_execution", evidence: { ok: true } as JsonObject, effectApplied: false, targetsUnchanged: true };
       },
-      decide: async () => ({ kind: "tool_call", toolId: "core.run_node", callId: "look.1", input: { node: "demo.look", parameters: {}, consequences: [] } })
+      // One look, then the model stops answering: no count of turns ends the loop (t1056; `maxIterations: 1` once did).
+      decide: async () => {
+        decided += 1;
+        if (decided > 1) throw new Error("script exhausted");
+        return { kind: "tool_call", toolId: "core.run_node", callId: "look.1", input: { node: "demo.look", parameters: {}, consequences: [] } };
+      }
     }
   }).catch((error: unknown) => error);
   return { executed, readAfter };

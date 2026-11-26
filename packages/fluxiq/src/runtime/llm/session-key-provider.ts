@@ -22,7 +22,6 @@
 // explicit adaptation policy supplies its total when configured. An isolated
 // test runtime alone applies the environment ceiling to every such total.
 
-import { resolveAutomationStudioLlmBuildCallLimit } from "../../flows/authoring/model/index.ts";
 import { releaseAutomationStudioSessionProviderKey, type AutomationStudioSessionKeyPorts } from "../models/secrets/index.ts";
 import { AUTOMATION_STUDIO_LLM_DEFAULT_MODEL, AUTOMATION_STUDIO_ANTHROPIC_MODEL_LIMITS, automationStudioLlmModelProvider, automationStudioLlmProviderDefaultModel, assertAutomationStudioLlmModelBinding, isAutomationStudioAnthropicModel } from "./models/index.ts";
 import type { JsonObject } from "../../core/index.ts";
@@ -142,10 +141,8 @@ export function createAutomationStudioSessionKeyProviderResolver(options: {
     const policy = input.metadata?.adaptationPolicySettings;
     const policyCost = policy && typeof policy === "object" && !Array.isArray(policy) ? policy.maxEstimatedCostUsdPerRun : undefined;
     const totalCostUsd = automationStudioLlmRunCostCeilingUsdIn(options.env, policyCost);
-    const buildCalls = resolveAutomationStudioLlmBuildCallLimit();
     return {
       provider,
-      ...(buildCalls === undefined ? {} : { maxCallsPerRun: buildCalls }),
       tokenLimits: { ...automationStudioSessionKeyProviderTokenLimits((isAutomationStudioAnthropicModel(model) ? AUTOMATION_STUDIO_ANTHROPIC_MODEL_LIMITS[model] : AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS[model as keyof typeof AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS]).contextTokens) },
       timeoutMs: defaults.timeoutMs,
       maxEstimatedCostUsd: totalCostUsd,

@@ -9,7 +9,6 @@ import type { automationStudioLlmEvidenceToolAdmission } from "./tool-admission.
 /** Re-read ordinary offering and hard bounds immediately before every actual member. */
 export function automationStudioLlmPriorNodesAdmission(input: {
   config: AutomationStudioLlmEvidenceLoopInput;
-  maxToolCalls: number;
   accounting: { toolCalls: number };
   failedCalls(): number;
   minToolCalls: number;
@@ -23,7 +22,6 @@ export function automationStudioLlmPriorNodesAdmission(input: {
 }) {
   function allowance(): AutomationStudioLlmRunNodesAllowance {
     if (input.config.signal?.aborted) return { allowed: false, reason: "cancelled" };
-    if (input.accounting.toolCalls >= input.maxToolCalls) return { allowed: false, reason: "tool_calls" };
     if (input.config.budget?.maxDurationMs !== undefined && input.clock() - input.startedAtMs >= input.config.budget.maxDurationMs) return { allowed: false, reason: "time" };
     if (input.config.purse?.isClosed() || input.purse.refusal) return { allowed: false, reason: "purse" };
     const figures = input.purse.figures();

@@ -1,19 +1,19 @@
-// A call refused before it runs, because the same call already failed or
+/// A call refused before it runs, because the same call already failed or
 // changed nothing on this same page (`../repeat-guard/outcomes.ts`).
 //
 // The decision is recorded as refused, the model is told what happened then
 // and what to do instead, and it is a step without progress. Refused repeats
-// in a row end the round as a stall (`AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW`):
-// a build then tests and judges the Flow so far, and repairs it or says why it
-// cannot be done (`../../flow-bootstrap/unfinished-build/phases.ts`). In
-// candidate mode (`discoveryOnly`) there is no draft to test, so a refused
-// call's stall asks the caller first for a move that may still get the build
-// further -- the retest of its latest revision -- and runs that instead
-// (`./stall-recovery.ts`, t477); with none left the build ends, and the note
-// never names the draft (`../repeat-guard/candidate-feedback.ts`). Never an
-// endless loop, and never silent.
+// in a row end no round (t1056): from
+// `AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW` the run is
+// raised on loop detection's ladder (`./ladder-top.ts`), which steers the
+// model and offers its own decision of how to go on. A loop whose caller takes
+// the signal ends the round there only if that caller says so; any other loop
+// goes on, running the caller's own move first where it names one -- a
+// candidate build's retest of its latest revision (`./stall-recovery.ts`,
+// t477). The note never names a draft a loop does not have
+// (`../repeat-guard/candidate-feedback.ts`). Never silent, and never ended by a
+// count: the purse ends a loop that will not stop repeating.
 
-import { automationStudioFlowDraftStepCopy } from "../../flow-authoring/draft/index.ts";
 import { automationStudioLlmDecisionContextSignature, automationStudioLlmDecisionContextSupersede } from "../decision-context/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_TOOL_ID } from "../evidence-recall/tool-id.ts";
 import { automationStudioLlmEvidenceLoopFailure as failure, type AutomationStudioLlmEvidenceLoopDecision, type AutomationStudioLlmEvidenceLoopResult } from "../evidence-loop/index.ts";
@@ -24,10 +24,11 @@ import {
   automationStudioLlmEvidenceRepeatRefusalNote,
   type AutomationStudioLlmEvidenceRepeatedOutcome
 } from "../repeat-guard/index.ts";
-import { automationStudioLlmEvidenceLoopRaise } from "./loop-signal.ts";
+import { automationStudioLlmEvidenceLadderTop } from "./ladder-top.ts";
 import { automationStudioLlmEvidenceRefusalDecisionAsk } from "./refusal-decision-ask.ts";
 import { automationStudioLlmEvidenceRefusedOfAKind } from "./refusal-run.ts";
-import { automationStudioLlmEvidenceStallRecovery, type AutomationStudioLlmEvidenceStallOutcome } from "./stall-recovery.ts";
+import { automationStudioLlmEvidenceRepeatStall } from "./repeat-stall.ts";
+import type { AutomationStudioLlmEvidenceStallOutcome } from "./stall-recovery.ts";
 import type { AutomationStudioLlmEvidenceDecisionHandlerContext, AutomationStudioLlmEvidenceDecisionNext } from "./types.ts";
 
 /** What the loop does after a refused repeat: ask again, end, stall the round with the error its caller built, or run the call its caller recovers the stall with. */
@@ -79,7 +80,7 @@ export function automationStudioLlmEvidenceStallNow(context: AutomationStudioLlm
  * `run-muwaobm2-882cadd9`, where each such rerun read as progress). It is a step
  * without progress and one more decision in a row that changed nothing, in the
  * same run as the identical decision then refused unrun. Answers the loop's
- * ending when the round stops here, or nothing while it goes on.
+ * ending where a caller ends the round on it, or nothing while it goes on.
  */
 export function automationStudioLlmEvidenceRerunChangedNothing(
   context: AutomationStudioLlmEvidenceDecisionHandlerContext,
@@ -100,12 +101,15 @@ export function automationStudioLlmEvidenceRerunChangedNothing(
 
 /**
  * Counts one refused repeat against the round -- a call above, or a rerun the
- * amendment handler refused as `changes_nothing` (`./amendment.ts`) -- and
- * says how the round stops when this one is the last allowed: stalled with the
- * error its caller builds, ended where it has none, or nothing while it goes on.
- * `issueCode` is what the stall is recorded under, and what the person's
- * ending reads its reason from: the repeat refusal by default, the amendment
- * refusal for a run of amendments refused again (`./amendment.ts`).
+ * amendment handler refused as `changes_nothing` (`./amendment.ts`). From
+ * `AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW` in a row the run
+ * is raised on loop detection's ladder (`./ladder-top.ts`): it ends no round on
+ * its own (t1056), and a loop goes on unless its caller ends the round there,
+ * in which case this says how: stalled with the error its caller builds, or
+ * ended where it has none. `issueCode` is what that stall is recorded under,
+ * and what the person's ending reads its reason from: the repeat refusal by
+ * default, the amendment refusal for a run of amendments refused again
+ * (`./amendment.ts`).
  */
 export function automationStudioLlmEvidenceRepeatStop(
   context: AutomationStudioLlmEvidenceDecisionHandlerContext,
@@ -113,9 +117,9 @@ export function automationStudioLlmEvidenceRepeatStop(
   issueCode?: string
 ): Extract<AutomationStudioLlmEvidenceRefusedRepeatNext, { kind: "stalled" | "end" }> | undefined;
 /**
- * The same, for a caller that can run a call: given the iteration, a stall
- * first asks the loop's caller for a move that may still get the build further
- * (`./stall-recovery.ts`), and answers that call to run instead.
+ * The same, for a caller that can run a call: given the iteration, a loop with
+ * no caller to end it runs the caller's own move where it names one
+ * (`./stall-recovery.ts`), and answers that call to run.
  */
 export function automationStudioLlmEvidenceRepeatStop(
   context: AutomationStudioLlmEvidenceDecisionHandlerContext,
@@ -132,67 +136,20 @@ export function automationStudioLlmEvidenceRepeatStop(
   const { noProgress } = context;
   noProgress.stepped();
   if (inARow < AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW) return undefined;
-  // A caller on the single-loop path takes the stall as its cue to change approach or ask (`./loop-check.ts`); one that does not ends as it always has.
-  if (context.input.loopSignal && automationStudioLlmEvidenceLoopRaise(context, recoverAt ?? context.accounting.iterations, context.loops.stalling()) === "continue") {
-    context.repeats.stallRecovered();
-    noProgress.cleared();
-    return undefined;
-  }
-  return automationStudioLlmEvidenceRepeatStall(context, issueCode, recoverAt);
+  const next = automationStudioLlmEvidenceLadderTop(context, recoverAt ?? context.accounting.iterations, context.loops.stalling(), issueCode, recoverAt);
+  if (next) return next;
+  // Going on: the run of refusals counts again from nothing, and the loop is steered off it afresh.
+  context.repeats.stallRecovered();
+  noProgress.cleared();
+  return undefined;
 }
 
 /**
  * The ladder's next step once refusing has not worked, whether or not its
- * refusals came in a row: nothing, or how the round stops. Only a caller on the
- * single-loop path acts on it: with no `loopSignal` a loop keeps steer and
- * refuse, and ends only the ways it always could. A lane adds no new way to end.
+ * refusals came in a row (`./ladder-top.ts`): nothing while the loop goes on,
+ * the caller's move to run, or how the round stops where its caller ends it.
  */
 export function automationStudioLlmEvidenceLoopOverdue(context: AutomationStudioLlmEvidenceDecisionHandlerContext, iteration: number): Extract<AutomationStudioLlmEvidenceRefusedRepeatNext, { kind: "stalled" | "end" | "recover" }> | undefined {
-  if (!context.input.loopSignal) return undefined;
   const signal = context.loops.due();
-  if (!signal || automationStudioLlmEvidenceLoopRaise(context, iteration, signal) === "continue") return undefined;
-  return automationStudioLlmEvidenceRepeatStall(context, undefined, iteration);
-}
-
-/**
- * How the round stops: the error its caller built for a stall, the call its
- * caller recovers the stall with (`./stall-recovery.ts`), or the loop's own
- * ending where it built neither. The one way a refused run ends.
- */
-export function automationStudioLlmEvidenceRepeatStall(
-  context: AutomationStudioLlmEvidenceDecisionHandlerContext,
-  issueCode: string = AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_REFUSED_CODE,
-  recoverAt?: number
-): Extract<AutomationStudioLlmEvidenceRefusedRepeatNext, { kind: "stalled" | "end" | "recover" }> {
-  const { input, trace, accounting, draftSteps } = context;
-  if (input.unusableDecisions) {
-    const stall = recoverAt === undefined ? { kind: "stall" as const, issueCodes: [issueCode] } : automationStudioLlmEvidenceStallRecovery(context, recoverAt, [issueCode]);
-    if (stall.kind === "recover") return stall;
-    // The caller is asked to recover with the guard's codes alone; the stall it ends under also names the refusal the repeats followed (t748).
-    return { kind: "stalled", error: input.unusableDecisions.stalled({ issueCodes: [...stall.issueCodes, ...lastRefusal(context)], trace: [...trace], accounting: { ...accounting }, steps: draftSteps.map((step) => automationStudioFlowDraftStepCopy(step)) }) };
-  }
-  return { kind: "end", result: failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting) };
-}
-
-/**
- * The prefix a stall carries the last refusal before its repeats under, as
- * `<prefix><code>` (t748). A run of refused repeats is a symptom: in live run
- * `run-mvgw7320-de416190` a reset brief's press was refused by Core, and the
- * builder asked one look again until this guard ended the brief, whose stall
- * then named only the guard. The supervisor's brief return
- * (`../../project-agents/dispatch/ending.ts`) and the debug read the stall's
- * codes; this one says which answer stranded the builder. Nothing more is refused.
- */
-const LAST_REFUSAL = "llm_evidence_loop.last_refusal:";
-
-/** The newest call or look the history records as refused under a code of its own (not a refused repeat), as one code, or none. */
-function lastRefusal(context: AutomationStudioLlmEvidenceDecisionHandlerContext): string[] {
-  const records = context.history.records();
-  for (let index = records.length - 1; index >= 0; index -= 1) {
-    const decision = records[index]!.decision;
-    if ((decision.kind !== "call" && decision.kind !== "look") || decision.refused !== true) continue;
-    const code = decision.resultCode;
-    if (code && code !== "ok" && code !== AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_REFUSED_CODE) return [`${LAST_REFUSAL}${code}`];
-  }
-  return [];
+  return signal ? automationStudioLlmEvidenceLadderTop(context, iteration, signal, undefined, iteration) : undefined;
 }

@@ -1,5 +1,6 @@
-// The loop ran out of turns: what it was allowed, what it used, and how far the
-// draft had got when the allowance ended.
+// The loop's budget ran out: what it used, and how far the draft had got when
+// the purse, the tokens or the clock ended it. No count of turns or calls ends a
+// loop any more (t1056), so a budget is the one allowance that runs out.
 //
 // **Running out is not a bad answer, and must never be reported as one.** Until
 // 2026-09-28 an exhausted loop whose last paid decision had been refused ended
@@ -34,10 +35,12 @@
 import { automationStudioFlowDraftStepIsProposable, type AutomationStudioFlowDraftStep } from "../../flow-authoring/draft/index.ts";
 import type { AutomationStudioLlmBuildPurseRefusal } from "../build-purse/index.ts";
 
-/** Which allowance ran out. Each is a number a retry can raise. */
+/**
+ * Which allowance ran out. Only the budget can (t1056): `iterations` (`maxIterations`) and `tool_calls`
+ * (`maxToolCalls`) were counts of turns and calls, and no count ends a loop now. A recorded run from before may still
+ * carry them, and the readers of a recorded run accept them (`../../flow-authoring/bootstrap/generation-failure/`).
+ */
 export type AutomationStudioLlmEvidenceLoopExhaustedBound =
-  /** `maxIterations`: the loop reached the last turn it was configured for. */
-  | "iterations"
   /**
    * The run's budget ran out. Either the purse (`./cost-purse.ts`) refused a
    * decision it could not pay for at worst -- the only cost ending -- or the
@@ -45,9 +48,7 @@ export type AutomationStudioLlmEvidenceLoopExhaustedBound =
    * including a last decision, offered only completion, spent on something
    * else while one of those was the bound.
    */
-  | "budget"
-  /** `maxToolCalls`: the loop had turns left but no allowance to run anything with them. */
-  | "tool_calls";
+  "budget";
 
 /**
  * What an exhausted loop has to say for itself.
@@ -59,8 +60,6 @@ export type AutomationStudioLlmEvidenceLoopExhaustedBound =
  */
 export type AutomationStudioLlmEvidenceLoopExhaustion = {
   bound: AutomationStudioLlmEvidenceLoopExhaustedBound;
-  /** Decisions the loop was allowed. */
-  maxIterations: number;
   /** Decisions it used. */
   iterations: number;
   /**
@@ -137,17 +136,15 @@ export type AutomationStudioLlmEvidenceLoopExhaustion = {
 };
 
 /** A budget bound that can run out, as `../loop-budget.ts` counts them. */
-export type AutomationStudioLlmEvidenceLoopBudgetBound = "iterations" | "tokens" | "cost" | "duration" | "calls";
+export type AutomationStudioLlmEvidenceLoopBudgetBound = "tokens" | "cost" | "duration" | "calls";
 
 /**
  * What an exhausted loop has to say for itself, read off the loop's state at
- * the moment its allowance ran out. Shared by every allowance that can run
- * out: the budget's at the top of an iteration, the tool-call ceiling, and the
- * literal max-iteration exit.
+ * the moment its budget ran out: at the top of an iteration, or on a last
+ * decision spent on something other than finishing.
  */
 export function automationStudioLlmEvidenceLoopExhaustion(state: {
   bound: AutomationStudioLlmEvidenceLoopExhaustedBound;
-  maxIterations: number;
   iterations: number;
   draftSteps: readonly AutomationStudioFlowDraftStep[];
   completionAttempts: number;
@@ -156,7 +153,7 @@ export function automationStudioLlmEvidenceLoopExhaustion(state: {
   /** The issues of the latest unusable decision, whether or not the run of them is still unbroken. */
   lastIssueCodes: readonly string[];
   /** Which budget bound had the fewest decisions left when the budget was last read, where it was. */
-  lastRemaining: { limitedBy: AutomationStudioLlmEvidenceLoopBudgetBound } | undefined;
+  lastRemaining: { limitedBy?: AutomationStudioLlmEvidenceLoopBudgetBound | undefined } | undefined;
   /** The decision the purse refused, when that is what ended the loop (`./cost-purse.ts`); undefined otherwise. */
   purseRefusal: AutomationStudioLlmBuildPurseRefusal | undefined;
   outstandingIssueCodes: readonly string[];
@@ -167,7 +164,6 @@ export function automationStudioLlmEvidenceLoopExhaustion(state: {
   const purseRefusal = bound === "budget" ? state.purseRefusal : undefined;
   return {
     bound,
-    maxIterations: state.maxIterations,
     iterations: state.iterations,
     draftSteps: state.draftSteps.length,
     // Counted exactly as an amendment's `keptStepCount` is, so the last row
@@ -179,7 +175,7 @@ export function automationStudioLlmEvidenceLoopExhaustion(state: {
     // decision it could use has no last refusal, and reporting the one before
     // it would be the same conflation in a smaller field.
     lastIssueCodes: state.unusableInARow ? [...state.lastIssueCodes] : [],
-    ...(purseRefusal ? (purseRefusal.code === "llm_budget.run_call_limit" ? { budgetBound: "calls" as const, callRefusal: { ...purseRefusal } } : { budgetBound: "cost" as const, costRefusal: { ...purseRefusal } }) : bound === "budget" && lastRemaining ? { budgetBound: lastRemaining.limitedBy } : {}),
+    ...(purseRefusal ? (purseRefusal.code === "llm_budget.run_call_limit" ? { budgetBound: "calls" as const, callRefusal: { ...purseRefusal } } : { budgetBound: "cost" as const, costRefusal: { ...purseRefusal } }) : bound === "budget" && lastRemaining?.limitedBy ? { budgetBound: lastRemaining.limitedBy } : {}),
     // What a continuation of this build is told it still owes.
     outstandingIssueCodes: state.outstandingIssueCodes
   };

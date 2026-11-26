@@ -178,7 +178,7 @@ describe("a completion the loop refuses says why", () => {
     let index = 0;
     await runAutomationStudioFlowCandidateAuthoringLoop({ submission, loop: {
       tools: [{ toolId: "demo.look", effect: "observe", description: "Look", inputSchema: { type: "object" } }], maxIterations: decisions.length + 1, maxToolCalls: decisions.length + 1,
-      unusableDecisions: { maxConsecutive: 3, maxInARow: 3, stalled: ({ issueCodes }) => {
+      unusableDecisions: { stalled: ({ issueCodes }) => {
         stalledCodes = issueCodes;
         return new Error("stalled");
       } },
@@ -206,8 +206,10 @@ describe("a completion the loop refuses says why", () => {
     expect(told).not.toHaveProperty("revision");
     // No trial runner here, so it is not told to test with one.
     expect(String(told.instruction)).not.toContain("core.test_candidate");
-    // The stall carries the code the build's ending reads (`../../../conversations/commands/progress.ts`).
-    expect(stalledCodes()).toContain("candidate.latest_submission_required");
+    // Four refused completions in a row once stalled the loop on this code. No count of refusals ends a loop (t1056): each
+    // is told why, loop detection steers the run, and the loop goes on until the model stops answering here.
+    expect(stalledCodes()).toBeUndefined();
+    expect(feedback.filter((entry) => entry?.code === "candidate.latest_submission_required").length).toBeGreaterThanOrEqual(3);
   });
 
   it("with a submission: names the latest revision and digest to complete with", async () => {

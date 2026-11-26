@@ -90,7 +90,7 @@ describe("a candidate submission and exploration's view history", () => {
       submission: submissionWith([]),
       loop: {
         tools: [{ toolId: "demo.look", effect: "observe", description: "Look", inputSchema: { type: "object" } }], maxIterations: decisions.length + 2, maxToolCalls: decisions.length + 2,
-        unusableDecisions: { maxConsecutive: decisions.length + 2, maxInARow: decisions.length + 2, stalled: ({ issueCodes }) => Object.assign(new Error("stalled"), { issueCodes }) },
+        unusableDecisions: { stalled: ({ issueCodes }) => Object.assign(new Error("stalled"), { issueCodes }) },
         executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { looked: true }, effectApplied: false, stateDigests: { before: "page.item", after: "page.item" } }),
         decide: async ({ evidence }) => {
           seen.push(evidence.map((entry) => ({ toolId: entry.toolId, value: entry.value })));

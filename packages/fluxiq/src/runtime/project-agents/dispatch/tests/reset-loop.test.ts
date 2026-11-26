@@ -11,13 +11,17 @@ const SETTLE = "Nothing read shows where its effect would be: read the list wher
 
 async function refusalWith(issuedRefs?: () => Array<{ ref: string; count: number }>): Promise<JsonObject> {
   const seen: unknown[] = [];
+  let completions = 0;
   const ports: AutomationStudioProjectResetPorts & { issuedRefs?: () => Array<{ ref: string; count: number }> } = {
     loop: {
       tools: [{ toolId: "site.undo", description: "Undo one act", effect: "mutate", inputSchema: { type: "object" } }],
-      unusableDecisions: { maxConsecutive: 2, maxInARow: 2, stalled: () => new Error("the reset stalled") },
+      unusableDecisions: { stalled: () => new Error("the reset stalled") },
       executeTool: async () => ({ ok: true }),
       decide: async ({ evidence }) => {
         seen.push(...evidence.map((entry) => entry.value));
+        // Refused each time, then the model stops answering: no count of turns ends the loop (t1056).
+        completions += 1;
+        if (completions > 3) throw new Error("script exhausted");
         return { kind: "complete", result: { summary: "done" } };
       }
     },

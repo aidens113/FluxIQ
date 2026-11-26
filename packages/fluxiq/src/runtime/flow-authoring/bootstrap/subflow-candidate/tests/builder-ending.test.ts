@@ -42,7 +42,7 @@ async function build(steps: Step[], answer: Answer = MISSING, scope = testScope(
     trial: { port: async (request: AutomationStudioSubflowTrialRequest) => ({ partial: true as const, scope: "subflow" as const, identity: { ...request.proposal.scope }, revision: request.proposal.revision, digest: request.proposal.digest, ...structuredClone(answer) }) },
     loop: {
       tools: [look], maxIterations: steps.length + 1, maxToolCalls: steps.length + 2,
-      unusableDecisions: { maxConsecutive: steps.length, maxInARow: steps.length, stalled: () => new Error("stalled") },
+      unusableDecisions: { stalled: () => new Error("stalled") },
       // The opening look carries what Core's entry note says, as the brief's port adds it (t676); every other call answers ok.
       executeTool: async (call) => ({ kind: "llm_evidence_tool_execution", evidence: call.callId.startsWith("initial.") ? opening : { ok: true }, effectApplied: false, targetsUnchanged: true }),
       decide: async ({ evidence }) => {

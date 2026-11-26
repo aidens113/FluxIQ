@@ -95,7 +95,7 @@ async function murzln6g(atMs: number, repairVerdict: "yes" | "no" = "yes") {
         refusal = purse.refusal && { ...purse.refusal };
         return {
           ok: false, code: "llm_evidence_loop.iteration_limit", trace: [], steps: request.repair!.seed, accounting: accounting(0, 0),
-          exhaustion: { bound: "budget", budgetBound: "cost", ...(purse.refusal ? { costRefusal: { ...purse.refusal } } : {}), maxIterations: 64, iterations: 0, draftSteps: 3, proposableSteps: 3, completionAttempts: 0, lastIssueCodes: [], outstandingIssueCodes: [] }
+          exhaustion: { bound: "budget", budgetBound: "cost", ...(purse.refusal ? { costRefusal: { ...purse.refusal } } : {}), iterations: 0, draftSteps: 3, proposableSteps: 3, completionAttempts: 0, lastIssueCodes: [], outstandingIssueCodes: [] }
         };
       }
       return { ok: true, result: { summary: "Adds and saves." }, trace: [], steps: [...request.repair!.seed.slice(0, 2), step(3, { id: "d9", acts: ["a2"], ranWith: { target: "kettle" } })], accounting: accounting(1, 0.0025) };
@@ -117,7 +117,7 @@ async function murzln6g(atMs: number, repairVerdict: "yes" | "no" = "yes") {
     checklist: (steps) => automationStudioInstructedActsChecklist({ instructionText: INSTRUCTION, draftSteps: steps }),
     budget: { maxCostUsd: 0.1, maxDurationMs: 540_000 },
     purse,
-    maxIterations: 64,
+    
     keep: async (...args) => ({ revision: 1, steps: (args[2] as unknown[]).length }),
     now: () => 0
   }));

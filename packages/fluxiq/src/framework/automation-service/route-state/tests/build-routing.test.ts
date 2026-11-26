@@ -161,7 +161,7 @@ async function build(script: Script, routing: Routing, options: {
     return code ? { ok: false, issueCodes: [code], feedback: { code, instruction: "Fix it." } } : { ok: true };
   };
   const tool = automationStudioLlmRunNodeTool({ nodeIds: [NAVIGATE, CLICK, SNAPSHOT], ...(options.freeFirstLook === false ? {} : { initial: { node: SNAPSHOT, parameters: {}, consequences: [] } }) })!;
-  const limits = automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 48 });
+  const limits = automationStudioFlowBootstrapEvidenceLoopLimits({});
   let result: Build["result"];
   try {
     result = await runAutomationStudioLlmEvidenceLoop({
@@ -170,7 +170,7 @@ async function build(script: Script, routing: Routing, options: {
       executeTool: now ? now.recording(executeTool) : executeTool,
       checkCompletion,
       propagateDecisionErrors: true,
-      unusableDecisions: { maxConsecutive: limits.maxConsecutiveUnusableDecisions, stalled: () => new Error("stalled") },
+      unusableDecisions: { stalled: () => new Error("stalled") },
       ...limits.loop,
       budget: { ...limits.loop.budget, now: () => 1_790_000_000_000 }
     });

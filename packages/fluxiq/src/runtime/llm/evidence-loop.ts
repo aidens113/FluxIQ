@@ -108,9 +108,6 @@ export { AUTOMATION_STUDIO_LLM_EVIDENCE_BUDGET_TOOL_ID, AUTOMATION_STUDIO_LLM_EV
 
 export { AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION } from "./evidence-loop-decision.ts";
 
-/** Far backstop for unusable decisions in a row, on a loop with no `loopSignal`; the cost and time gates bind underneath it. */
-export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW = 12;
-
 /** Established public loop contracts. */
 export type {
   AutomationStudioLlmEvidenceCompletionCheck,
@@ -272,10 +269,11 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
     accounting.evidenceBytes += bytes;
     return bytes;
   };
-  // One more unusable decision. Returns the error that ends the loop once the
-  // far backstop or a repeat's stall is reached, or nothing when the loop should
-  // ask again. Refused for the same issues again, it is a step without progress,
-  // which steers and ends nothing (t1049).
+  // One more unusable decision. Returns the error that ends the loop where a
+  // caller that takes loop detection's signal ends the round on a completion
+  // refused again, or nothing when the loop should ask again. No count of them in
+  // a row ends anything (t1056). Refused for the same issues again, it is a step
+  // without progress, which steers and ends nothing (t1049).
   const unusable = (step: AutomationStudioLlmEvidenceLoopTrace, issueCodes: readonly string[], transition?: RowTransition): { error: unknown } | undefined => {
     counters.unusableInARow += 1;
     lastIssueCodes = issueCodes;
@@ -288,7 +286,7 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
     recordRow(step, transition);
     // It is also one more repeat refused in a row, beside the identical part runs it sat between (`repeat-guard/outcomes.ts`, run-musr9pv3-f4bf6256); with a loop signal, loop detection's ladder decides (`./evidence-loop/refused-again.ts`, t1014).
     const repeatsStall = sameDraftRefusedAgain && automationStudioLlmEvidenceRefusedAgainEnds(handling, step.iteration, handling.repeats.refusedAgain(step.iteration), { caught: automationStudioLlmEvidenceLoopCaught, raise: automationStudioLlmEvidenceLoopRaise });
-    if (!repeatsStall && counters.unusableInARow < limits.maxUnusableDecisionsInARow) {
+    if (!repeatsStall) {
       // A refused completion is the one stall the redirection has something
       // specific to say about: its issue codes are what stand between the
       // draft and a Flow.
@@ -316,8 +314,8 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
     automationStudioLlmFailedDecisionFeedback({ iteration, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID, feedback, evidence, accountEvidence });
     return "ask_again";
   };
-  // A reply that could not be read: asked again; a count ends it only with no loop signal, else a repeat is loop detection's (`./evidence-loop/unreadable-reply.ts`, t1014).
-  const unreadable = automationStudioLlmEvidenceUnreadableReplies({ loopSignal: input.loopSignal !== undefined, maxInARow: limits.maxUnreadableRepliesInARow, progress: () => ({ steps: noProgress.steps }), ended: (summary) => failure(draftSteps, "llm_evidence_loop.unreadable_replies", trace, accounting, undefined, summary),
+  // A reply that could not be read: asked again, never ended by a count; the same one again is loop detection's (`./evidence-loop/unreadable-reply.ts`, t1014, t1056).
+  const unreadable = automationStudioLlmEvidenceUnreadableReplies({
     record: (iteration, thrown) => {
       history.record(iteration, { kind: "unusable", signature: automationStudioLlmDecisionContextSignature({ kind: "unusable", issueCodes: thrown.issueCodes }), issueCodes: thrown.issueCodes });
       const usage = automationStudioLlmFailedDecisionUsage(thrown);
@@ -328,15 +326,14 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
   // said to the model, which did nothing, and an unbroken run of them ends the
   // loop as an outage rather than as the model's stall.
   const unanswered = automationStudioLlmProviderUnansweredCount();
-  // **A loop that ran out of turns ends as that, whatever its last decision
+  // **A loop whose budget ran out ends as that, whatever its last decision
   // was** (`./evidence-loop/exhaustion.ts` says what the other reading cost and
-  // which live run it was). Shared by every allowance that can run out: the
-  // budget's at the top of an iteration, the tool-call ceiling, and the literal
-  // max-iteration exit.
+  // which live run it was): the purse's refusal, the tokens or the clock. No
+  // count of turns or calls ends a loop (t1056).
   // What the record says is built in `./evidence-loop/exhaustion.ts`; `costRefusal` is the purse's refusal, the only cost ending.
   const exhausted = (bound: AutomationStudioLlmEvidenceLoopExhaustedBound, costRefusal?: AutomationStudioLlmBuildPurseRefusal): AutomationStudioLlmEvidenceLoopResult =>
     failure(draftSteps, "llm_evidence_loop.iteration_limit", trace, accounting, automationStudioLlmEvidenceLoopExhaustion({
-      bound, maxIterations: limits.maxIterations, iterations: accounting.iterations, draftSteps, completionAttempts: counters.completionAttempts,
+      bound, iterations: accounting.iterations, draftSteps, completionAttempts: counters.completionAttempts,
       unusableInARow: counters.unusableInARow, lastIssueCodes, lastRemaining, purseRefusal: costRefusal, outstandingIssueCodes: noProgress.outstanding
     }));
   // The dry run (`../flow-draft/dry-run.ts`): before a completed result is
@@ -366,7 +363,7 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
   const handling: AutomationStudioLlmEvidenceDecisionHandlerContext = {
     loops: automationStudioLlmLoopWatch({ record: input.attemptRecord, holds: (toolId, value, state) => repeatGuard.blocks(toolId, value, state) !== undefined, refuseActs: input.loopSignal !== undefined, askedRepeats: input.askedRepeats, timingOf: automationStudioLlmEvidenceTimingOfNodes(input.definitionOf) }), loopOverdue: (iteration) => automationStudioLlmEvidenceLoopOverdue(handling, iteration), contextOf: draftOf, input, limits, trace, accounting, draftSteps, amendmentMemory, noProgress, evidence, toolIds, toolsById, observeToolFailures, counters,
     history, draftRevision: () => rows.draftRevision, lastAction: undefined, dryRunSeen: { ran: false }, reaskedRequests: new Set(), callStates: new Map(), repeats: repeatGuard,
-    recordRow, draftRecord, accountEvidence, unusable, dryRun, authored, refusalRun: automationStudioLlmEvidenceRefusalRun(),
+    recordRow, draftRecord, accountEvidence, unusable, dryRun, authored, refusalRun: automationStudioLlmEvidenceRefusalRun(), decisionsLeft: () => lastRemaining?.decisionsLeft,
     // The framework's draft, composed again after the model's edits (`../flow-authoring/draft/amendment/edits/`).
     composeDraft
   };
@@ -600,7 +597,8 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
     evidence.push(resumed);
   }
   return await runAgentIterations({
-    maxIterations: limits.maxIterations,
+    // No count of turns ends the loop (t1056): only its result, its budget, a cancellation, or a round its caller ends.
+    maxIterations: Number.POSITIVE_INFINITY,
     iterate: async (iteration): Promise<AgentIterationResult<AutomationStudioLlmEvidenceLoopResult>> => {
     if (input.signal?.aborted) return { kind: "complete", result: failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting) };
     accounting.iterations = iteration;
@@ -627,7 +625,7 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
     const remaining = input.budget && automationStudioLlmEvidenceLoopRemaining(input.budget, {
       decisions: iteration - 1, reportedDecisions, totalTokens: accounting.totalTokens, estimatedCostUsd: accounting.estimatedCostUsd, elapsedMs: clock() - startedAtMs,
       ...(purse.lastProjectedCostUsd !== undefined ? { nextDecisionCostUsd: purse.lastProjectedCostUsd } : {}), ...(purseFigures ? { purse: purseFigures } : {})
-    }, limits.maxIterations - iteration + 1);
+    });
     // No decision left for tokens or time (cost never counts to none: the purse decides). The budget is what
     // ran out, which a retry raises; what the last decision happened to be is recorded beside it, not the ending.
     lastRemaining = remaining || undefined;
@@ -642,9 +640,9 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
     // A reply read and still not a decision this iteration offered (`./evidence-loop/decision-refusal.ts`).
     let refusal: ReturnType<typeof automationStudioLlmEvidenceDecisionRefusal> = undefined;
     try {
-      canAmend = drafting && !finalDecision && counters.draftAmendments < limits.maxDraftAmendments && draftSteps.some(automationStudioFlowDraftStepIsProposable);
+      canAmend = drafting && !finalDecision && draftSteps.some(automationStudioFlowDraftStepIsProposable);
       // Amending stays in the schema when it is not on offer, as a wrap-up's tools stay listed: the schema sits in the head, so its changing re-sends everything behind it (`loop-budget.ts`, t869). That holds for a loop that declares a draft to build (`input.draft`), where amending is the work; a loop that declares none (a recovery's exploration) offers the vocabulary only when a step can be amended, as before, so its roughly 6,600 characters are not sent on every call. An amendment asked when it is not on offer is refused as it always was.
-      const decisionSchema = buildAutomationStudioLlmEvidenceLoopDecisionSchema(offered, input.completionSchema, canComplete, input.draft ? limits.maxDraftAmendments > 0 : canAmend, drafting);
+      const decisionSchema = buildAutomationStudioLlmEvidenceLoopDecisionSchema(offered, input.completionSchema, canComplete, input.draft ? true : canAmend, drafting);
       // From the second decision, when there is spending to measure it by; the first only when it is the last.
       const budgetEntry = remaining && (iteration > 1 || wrappingUp) ? automationStudioLlmEvidenceBudgetEntry(iteration, remaining, wrappingUp, input.discoveryOnly === true, input.finishingTools) : undefined;
       // Every evidence entry, and beside them the history, the draft and the
@@ -668,7 +666,11 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
       const unusableUsage = automationStudioLlmFailedDecisionUsage(input.unusableDecisions !== undefined && thrown instanceof AutomationStudioLlmUnusableDecisionError ? thrown : undefined);
       automationStudioLlmEvidenceLoopAddUsage(accounting, unusableUsage);
       if (unusableUsage) reportedDecisions += 1;
-      if (input.unusableDecisions && thrown instanceof AutomationStudioLlmUnusableDecisionError && automationStudioLlmProviderUnanswered(thrown.issueCodes)) {
+      // A reply the provider sent and billed nothing for, which could not be read, is the provider failing, not the model
+      // deciding: it joins the run of unanswered calls, which ends the loop as the provider failing (t1056). With no count
+      // ending a loop, such replies would otherwise be asked again, unpaid, until the clock.
+      const unbilledUnreadable = thrown instanceof AutomationStudioLlmUnusableDecisionError && automationStudioLlmReplyUnreadable(thrown.issueCodes) && !(unusableUsage && ((unusableUsage.totalTokens ?? 0) > 0 || (unusableUsage.estimatedCostUsd ?? 0) > 0));
+      if (input.unusableDecisions && thrown instanceof AutomationStudioLlmUnusableDecisionError && (automationStudioLlmProviderUnanswered(thrown.issueCodes) || unbilledUnreadable)) {
         recordRow({ iteration, decision: "unusable", resultCode: thrown.issueCodes[0]!, ...(unusableUsage ? { usage: unusableUsage } : {}) });
         if (!unanswered.unanswered(thrown.issueCodes[0]!)) return { kind: "continue" };
         return { kind: "complete", result: failure(draftSteps, "llm_evidence_loop.provider_unavailable", trace, accounting, undefined, undefined, unanswered.summary()) };
@@ -678,7 +680,6 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
         if (automationStudioLlmReplyUnreadable(thrown.issueCodes)) {
           const asked = unreadable.reply(iteration, thrown, offers());
           if (asked === "ask_again") return { kind: "continue" };
-          if ("ended" in asked) return { kind: "complete", result: asked.ended };
           const rung = asked.overdue; // Loop detection's last rung on a repeated unreadable reply (t1014), ended as every rung ends a round.
           if (rung.kind === "end") return { kind: "complete", result: rung.result };
           if (rung.kind === "recover") {
@@ -778,17 +779,11 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
     // loop gives it one of its own rather than ending: the ids are the model's
     // bookkeeping, and the evidence only needs them to be distinct.
     const callId = automationStudioLlmEvidenceUnusedCallId(callIds, decision.callId);
-    // Turns left, but no allowance to run anything with them. This reported
-    // `iteration_limit` with nothing to say which of the two ceilings it was --
-    // the same borrowing, one file down, that made an exhausted loop read as a
-    // refused one. Same code, because both are an allowance running out; the
-    // record now names which.
-    if (accounting.toolCalls >= limits.maxToolCalls) return { kind: "complete", result: exhausted("tool_calls") };
     const ended = await runCall(iteration, callId, decision, tool, toolRequestSignature, { replaces: rerunReplaces, held: rerunHeld, verifying });
     if (ended) return { kind: "complete", result: ended };
       return { kind: "continue" };
     },
-    exhausted: () => exhausted("iterations")
+    exhausted: () => { throw new Error("The evidence loop has no count of turns to run out of (t1056)."); }
   });
   } finally { provenance.dispose(); }
 }

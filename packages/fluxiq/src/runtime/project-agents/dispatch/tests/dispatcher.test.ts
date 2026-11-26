@@ -38,14 +38,15 @@ describe("the project dispatcher", () => {
     expect(build.mostAtOnce()).toBe(1);
   });
 
-  it("gives each builder a lease of its own, its allowance as its purse and its brief's iteration bound", async () => {
+  // A builder's loop is handed no count of turns (t1056): its allowance, a purse, bounds it.
+  it("gives each builder a lease of its own and its allowance as its purse, and no iteration bound", async () => {
     const build = await gardenBuild({ capacity: 1, briefs: [read(), open()] });
     await build.run();
     for (const seen of build.seen) {
       expect(seen.lease?.holder).toEqual({ role: "builder", briefId: seen.briefId });
       expect(seen.purse?.attribution).toEqual({ role: "builder", briefId: seen.briefId });
       expect(seen.purse?.isClosed()).toBe(true);
-      expect(seen.maxIterations).toBe(12);
+      expect(seen.maxIterations).toBeUndefined();
     }
   });
 
@@ -128,7 +129,7 @@ describe("the project dispatcher", () => {
     const reset = (): AutomationStudioProjectResetPorts => ({
       loop: {
         tools: [{ toolId: "site.undo", description: "Undo one act", effect: "mutate", inputSchema: { type: "object" } }],
-        unusableDecisions: { maxConsecutive: 2, maxInARow: 2, stalled: () => new Error("the reset stalled") },
+        unusableDecisions: { stalled: () => new Error("the reset stalled") },
         executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: false, targetsUnchanged: true }),
         decide: async () => ({ kind: "complete", result: { summary: "nothing to undo" } })
       },

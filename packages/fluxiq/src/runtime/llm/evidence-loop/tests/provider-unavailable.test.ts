@@ -19,7 +19,8 @@ const tools = [{ toolId: "inspect", description: "Collect bounded evidence.", in
 const complete = { kind: "complete", result: { done: true } };
 const look = (callId: string) => ({ kind: "tool_call", callId, toolId: "inspect", input: { area: callId } });
 const unanswered = (code = "llm.provider_timeout") => new AutomationStudioLlmUnusableDecisionError([code]);
-const malformed = () => new AutomationStudioLlmUnusableDecisionError(["llm.provider_malformed_response"], { case: "content_mismatched", finishReason: "stop", contentChars: 2100 });
+/** A reply that arrived, billed, and could not be read: the model's, not the provider failing. One the provider billed nothing for joins the unanswered run (t1056). */
+const malformed = () => new AutomationStudioLlmUnusableDecisionError(["llm.provider_malformed_response"], { case: "content_mismatched", finishReason: "stop", contentChars: 2100, usage: { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 } });
 
 type Shown = { evidence: ReadonlyArray<{ toolId: string; value: unknown }> };
 const toldTheModel = (calls: Array<[Shown]>) => calls.some(([request]) => request.evidence.some((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID));
@@ -28,7 +29,7 @@ async function run(decide: ReturnType<typeof vi.fn>) {
   const stalled = vi.fn(() => new Error("stalled"));
   const result = await runAutomationStudioLlmEvidenceLoop({
     tools, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, maxIterations: 12,
-    unusableDecisions: { maxConsecutive: 8, stalled }
+    unusableDecisions: { stalled }
   });
   return { result, stalled };
 }

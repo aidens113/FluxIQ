@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODES } from "../../../../llm/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../../loop-limits/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../../loop-limits/index.ts";
+
+/** The ceiling a loop's turns and calls were once held to, which readers of a record were bounded by (t1056 removed it). */
+const OLD_LOOP_CEILING = 64;
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS } from "../../decision-step-ids.ts";
 import { automationStudioFlowBootstrapLargestSizeLimits } from "../../plan/index.ts";
 import {
@@ -66,17 +69,18 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
    * asserted alongside to prove the two are still told apart.
    */
   describe("an exploration that ran out of turns", () => {
-    const exhausted = (bound: "iterations" | "budget" | "tool_calls", lastIssueCodes: readonly string[] = []) => flowBootstrapEvidenceLoopFailure({
+    // Only a budget runs out now (t1056): no count of turns or calls ends a loop.
+    const exhausted = (_bound: "budget" = "budget", lastIssueCodes: readonly string[] = []) => flowBootstrapEvidenceLoopFailure({
       ok: false,
       code: "llm_evidence_loop.iteration_limit",
       trace: [{ iteration: 26, decision: "unusable", resultCode: "bootstrap.cannot_answer_instruction" }],
       steps: [],
       accounting: { iterations: 26, toolCalls: 22, evidenceBytes: 4_096, inputTokens: 400_000, cacheHitInputTokens: 0, outputTokens: 2_600, totalTokens: 402_600, estimatedCostUsd: 0.047 },
-      exhaustion: { bound, maxIterations: 26, iterations: 26, draftSteps: 13, proposableSteps: 7, completionAttempts: 3, lastIssueCodes, outstandingIssueCodes: lastIssueCodes }
+      exhaustion: { bound: "budget", budgetBound: "cost", iterations: 26, draftSteps: 13, proposableSteps: 7, completionAttempts: 3, lastIssueCodes, outstandingIssueCodes: lastIssueCodes }
     });
 
     it("is named as itself and marked retryable, never as an unusable decision", () => {
-      const failure = exhausted("iterations", ["bootstrap.cannot_answer_instruction"]);
+      const failure = exhausted("budget", ["bootstrap.cannot_answer_instruction"]);
       expect(failure.diagnostic.code).toBe("flow_bootstrap.evidence_iteration_limit");
       expect(failure.diagnostic.code).not.toBe("flow_bootstrap.evidence_unusable_decision");
       // The field an operator acts on. `false` here is what sent the debug of
@@ -92,10 +96,10 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
     });
 
     it("carries what it was allowed, what it used, and how close the draft came", () => {
-      const failure = exhausted("iterations", ["bootstrap.cannot_answer_instruction"]);
+      const failure = exhausted("budget", ["bootstrap.cannot_answer_instruction"]);
       expect(failure.diagnostic.evidenceLoop).toMatchObject({
         iterationCount: 26,
-        exhausted: { bound: "iterations", maxIterations: 26, iterations: 26, draftSteps: 13, proposableSteps: 7, completionAttempts: 3 }
+        exhausted: { bound: "budget", budgetBound: "cost", iterations: 26, draftSteps: 13, proposableSteps: 7, completionAttempts: 3 }
       });
       // The last refusal is context for the ending, and travels where every
       // other issue code does rather than in a second place of its own.
@@ -103,15 +107,24 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
       expect(failure.diagnostic.evidenceLoop?.exhausted).not.toHaveProperty("lastIssueCodes");
     });
 
-    it.each(["iterations", "budget", "tool_calls"] as const)("round-trips through the reader for the %s allowance", (bound) => {
-      const failure = exhausted(bound);
+    it("round-trips through the reader", () => {
+      const failure = exhausted();
       expect(parseAutomationStudioFlowBootstrapGenerationError(failure)).toEqual(failure.diagnostic);
+      expect(failure.diagnostic.evidenceLoop?.exhausted).not.toHaveProperty("maxIterations");
+    });
+
+    // A record written before t1056 names the counts that could end a loop then, and still reads back whole.
+    it.each(["iterations", "tool_calls"] as const)("reads back a record written before t1056 that ran out of %s", (bound) => {
+      const stored = JSON.parse(JSON.stringify(exhausted().diagnostic)) as { evidenceLoop: { exhausted: Record<string, unknown> } };
+      const { budgetBound: _budgetBound, ...rest } = stored.evidenceLoop.exhausted;
+      stored.evidenceLoop.exhausted = { ...rest, bound, maxIterations: 26 };
+      expect(parseAutomationStudioFlowBootstrapFailureDiagnostic(stored)?.evidenceLoop?.exhausted).toEqual({ ...rest, bound, maxIterations: 26 });
     });
 
     // The producer and the reader share one table, so a record claiming the
     // ending without its retryability is not Core's and does not read back.
     it("refuses a stored record that claims the ending but not its retryability", () => {
-      const stored = { ...JSON.parse(JSON.stringify(exhausted("iterations").diagnostic)), retryable: false };
+      const stored = { ...JSON.parse(JSON.stringify(exhausted("budget").diagnostic)), retryable: false };
       expect(parseAutomationStudioFlowBootstrapFailureDiagnostic(stored)).toBeNull();
     });
 
@@ -120,13 +133,13 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
     // account than none, so it refuses the diagnostic rather than arriving short.
     it.each([
       ["an allowance it does not have", { bound: "tokens" }],
-      ["more iterations than the loop may have", { maxIterations: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 1 }],
+      ["a fractional count of turns", { maxIterations: 2.5 }],
       ["more proposable steps than steps", { draftSteps: 2, proposableSteps: 3 }],
       ["a fractional count", { completionAttempts: 1.5 }],
       ["a negative count", { draftSteps: -1 }],
       ["a field nothing declares", { lastIssueCodes: ["bootstrap.cannot_answer_instruction"] }]
     ])("refuses a stored exhaustion naming %s", (_name, override) => {
-      const stored = JSON.parse(JSON.stringify(exhausted("iterations").diagnostic)) as { evidenceLoop: { exhausted: Record<string, unknown> } };
+      const stored = JSON.parse(JSON.stringify(exhausted("budget").diagnostic)) as { evidenceLoop: { exhausted: Record<string, unknown> } };
       stored.evidenceLoop.exhausted = { ...stored.evidenceLoop.exhausted, ...override };
 
       expect(parseAutomationStudioFlowBootstrapFailureDiagnostic(stored)).toBeNull();
@@ -137,7 +150,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
     // back with its account intact. The reader has no Flow in hand and bounds
     // by the largest Flow the setting allows.
     it.each([100, 150])("reads back a stored exhaustion and kept-draft pointer of %i draft steps", (draftSteps) => {
-      const stored = JSON.parse(JSON.stringify(exhausted("iterations").diagnostic)) as { evidenceLoop: { exhausted: Record<string, unknown>; incompleteDraft?: unknown } };
+      const stored = JSON.parse(JSON.stringify(exhausted("budget").diagnostic)) as { evidenceLoop: { exhausted: Record<string, unknown>; incompleteDraft?: unknown } };
       stored.evidenceLoop.exhausted = { ...stored.evidenceLoop.exhausted, draftSteps, proposableSteps: draftSteps };
       stored.evidenceLoop.incompleteDraft = { revision: 1, steps: draftSteps };
 
@@ -147,12 +160,13 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
       });
     });
 
-    it("refuses a stored exhaustion claiming more draft steps than any Flow could hold", () => {
-      const beyond = automationStudioFlowBootstrapLargestSizeLimits().maxTotalNodes + AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 2;
-      const stored = JSON.parse(JSON.stringify(exhausted("iterations").diagnostic)) as { evidenceLoop: { exhausted: Record<string, unknown> } };
+    // A loop appends a step for every action and no count of its turns has a ceiling (t1056), so neither has its draft.
+    it("reads back a stored exhaustion claiming more draft steps than the old ceiling of turns allowed", () => {
+      const beyond = automationStudioFlowBootstrapLargestSizeLimits().maxTotalNodes + OLD_LOOP_CEILING + 2;
+      const stored = JSON.parse(JSON.stringify(exhausted("budget").diagnostic)) as { evidenceLoop: { exhausted: Record<string, unknown> } };
       stored.evidenceLoop.exhausted = { ...stored.evidenceLoop.exhausted, draftSteps: beyond, proposableSteps: 1 };
 
-      expect(parseAutomationStudioFlowBootstrapFailureDiagnostic(stored)).toBeNull();
+      expect(parseAutomationStudioFlowBootstrapFailureDiagnostic(stored)?.evidenceLoop?.exhausted).toMatchObject({ draftSteps: beyond });
     });
   });
 
@@ -199,11 +213,13 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
     expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...valid, code: "flow_bootstrap.invalid_input", stage: "pre_provider_validation", providerInvocation: "not_attempted", providerResponse: "not_received", accounting: undefined })).toEqual({ code: "flow_bootstrap.invalid_input", stage: "pre_provider_validation", retryable: false, providerInvocation: "not_attempted", providerResponse: "not_received" });
     expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...valid, prompt: "private" })).toBeNull();
     expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...valid, accounting: { ...valid.accounting, authorization: "private" } })).toBeNull();
-    // A build's totals add up every call it made, so they are bounded by every
-    // call the loop may make at one request's ceiling -- not by that ceiling.
+    // A build's totals add up every call it made, and no count of its calls has a ceiling (t1056), so they are bounded by
+    // nothing but being whole numbers: past the old sixty-four calls at one request's ceiling, and refused only when not.
+    const pastOld = OLD_LOOP_CEILING * 1_000_000 + 1;
     expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...valid, accounting: { ...valid.accounting, estimatedInputTokens: 50_001, totalTokens: 60_000 } })).toMatchObject({ accounting: { estimatedInputTokens: 50_001, totalTokens: 60_000 } });
-    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...valid, accounting: { ...valid.accounting, estimatedInputTokens: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS + 1 } })).toBeNull();
-    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...valid, accounting: { ...valid.accounting, totalTokens: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS + 1 } })).toBeNull();
+    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...valid, accounting: { ...valid.accounting, estimatedInputTokens: pastOld, totalTokens: pastOld } })).toMatchObject({ accounting: { estimatedInputTokens: pastOld, totalTokens: pastOld } });
+    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...valid, accounting: { ...valid.accounting, estimatedInputTokens: 1.5 } })).toBeNull();
+    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...valid, accounting: { ...valid.accounting, totalTokens: -1 } })).toBeNull();
     expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...valid, stage: "raw_provider_body" })).toBeNull();
   });
 
@@ -227,38 +243,21 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
       ...valid,
       evidenceLoop: { ...valid.evidenceLoop, steps: [{ toolId: "web.click", resultCode: "private result text!" }] }
     })).toBeNull();
-    // Bounded by the loop's own ceiling -- its decisions plus one opening
-    // observation -- not by the sixteen it used to be. A diagnostic from a
-    // longer exploration failed to parse at sixteen, and its named reason was
-    // replaced by a generic transport failure. And by that ceiling for every
-    // live round a build may run: a build that could not finish publishes all
-    // of its rounds, not the last one's alone (t214).
+    // Bounded by nothing but being whole numbers (t1056): no count of a round's turns or calls has a ceiling, so a build
+    // that ran past the old sixty-four in every live round a build may run reads back whole -- the old ceiling refused
+    // such a record and replaced its named reason with a generic transport failure. A build that could not finish
+    // publishes all of its rounds, not the last one's alone (t214).
     const rounds = AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS;
-    const longest = (AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 1) * rounds;
+    const longest = (OLD_LOOP_CEILING + 1) * rounds + 1;
     const long = {
       ...valid,
-      evidenceLoop: { iterationCount: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations * rounds, decisionCount: longest, toolCallCount: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls * rounds, evidenceBytes: 123, steps: Array.from({ length: longest }, () => ({ toolId: "web.click" })) }
+      evidenceLoop: { iterationCount: longest, decisionCount: longest, toolCallCount: longest, evidenceBytes: 123, steps: Array.from({ length: longest }, () => ({ toolId: "web.click" })) }
     };
     expect(parseAutomationStudioFlowBootstrapFailureDiagnostic(long)).toEqual(long);
-    // The steps are one per trace row, not one per decision, and the one kind
-    // of decision that edits the draft and re-runs a step writes two rows under
-    // its single iteration. So they are bounded by the rows: at the decision
-    // ceiling this refused a record the loop can legitimately write, and threw
-    // away the whole named reason for a build that had corrected itself.
-    const mostRows = (AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations * 2 + 1) * rounds;
-    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({
-      ...long,
-      evidenceLoop: { ...long.evidenceLoop, steps: Array.from({ length: mostRows }, () => ({ toolId: "web.click" })) }
-    })).not.toBeNull();
-    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({
-      ...valid,
-      evidenceLoop: { ...valid.evidenceLoop, steps: Array.from({ length: mostRows + 1 }, () => ({ toolId: "web.click" })) }
-    })).toBeNull();
     for (const field of ["iterationCount", "decisionCount", "toolCallCount"] as const) {
-      expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...long, evidenceLoop: { ...long.evidenceLoop, [field]: longest + 1 } })).toBeNull();
+      expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...long, evidenceLoop: { ...long.evidenceLoop, [field]: 2.5 } })).toBeNull();
+      expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...long, evidenceLoop: { ...long.evidenceLoop, [field]: -1 } })).toBeNull();
     }
-    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...long, evidenceLoop: { ...long.evidenceLoop, iterationCount: long.evidenceLoop.iterationCount + 1 } })).toBeNull();
-    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...long, evidenceLoop: { ...long.evidenceLoop, toolCallCount: long.evidenceLoop.toolCallCount + 1 } })).toBeNull();
   });
 
   it("names an exploration stopped on unusable decisions, with its progress and why", () => {
@@ -379,19 +378,19 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
       const widenedStep = widened.evidenceLoop.steps[0];
       if (!widenedStep) throw new Error("The widened diagnostic fixture must contain its representative step.");
       const bad: Array<Record<string, unknown>> = [
-        { iteration: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations * AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS + 1 },
+        { iteration: 2.5 },
         { iteration: -1 },
         { evidenceBytes: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes + 1 },
         { at: -1 },
         { at: 4_102_444_800_001 },
         { at: 1.5 },
         { callId: "an id with spaces in it" },
-        { progress: { ...widenedStep.progress, draftRevisionAfter: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations * 2 + 1 } },
+        { progress: { ...widenedStep.progress, draftRevisionAfter: -1 } },
         { draftChange: { ...widenedStep.draftChange, targetedStepIds: ["private id"] } },
         // More listed and unlisted steps than the largest Flow the size setting allows could represent.
-        { draft: { ...widenedStep.draft, unlisted: automationStudioFlowBootstrapLargestSizeLimits().maxTotalNodes + AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 1 } },
+        { draft: { ...widenedStep.draft, unlisted: 1.5 } },
         { answerability: { ...widenedStep.answerability, issueCode: "private prose" } },
-        { usage: { inputTokens: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS + 1 } },
+        { usage: { inputTokens: -1 } },
         { usage: { estimatedCostUsd: 11 } },
         { usage: { promptText: "what the model was shown" } }
       ];

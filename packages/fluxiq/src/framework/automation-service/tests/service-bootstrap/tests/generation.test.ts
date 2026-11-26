@@ -290,14 +290,16 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     expect(JSON.stringify(stored?.evidenceTrace)).not.toContain("privatePageContent");
   });
 
-  // The loop used to stop at `min(calls, 8)` decisions. The resolution's call
-  // count is now what bounds it, and a model that never finishes is still
-  // stopped at that count.
+  // The loop used to stop at `min(calls, 8)` decisions, then at the
+  // resolution's call count. No count of calls bounds a build now (t1056): the
+  // resolution's twelve is read by nothing, a model that finishes takes the
+  // decisions it needs, and one that never finishes gathers until its purse is
+  // nearly spent, when the build tests and judges the Flow it has.
   it.each([
     { looks: 10, calls: 11, finishes: true },
-    // Never finishing: stopped at the resolution's twelve, not at eight and not later.
-    { looks: 100, calls: 12, finishes: false }
-  ])("lets an evidence-guided bootstrap keep gathering past eight decisions, up to its call count (%o)", async ({ looks, calls, finishes }) => {
+    // Never finishing: past the resolution's twelve, until the purse.
+    { looks: 1_000, calls: 12, finishes: false }
+  ])("lets an evidence-guided bootstrap keep gathering past eight decisions, and past any call count (%o)", async ({ looks, calls, finishes }) => {
     const requests: AutomationStudioLlmTaskRequest[] = [];
     // The build reads its instruction when it starts (t976, b2ee9ed45): answered apart from the decisions scripted here.
     const provider = mockProvider(automationStudioAnsweringInstructionReading(async (request) => {
@@ -326,17 +328,18 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     });
     const generation = instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true });
 
-    if (finishes) {
-      const result = await generation;
-      await expect(instance.getFlowBootstrapAdaptation(project.id, flow.flowId, result.adaptationId)).resolves.toMatchObject({ status: "proposed" });
-    } else {
-      await expect(generation).rejects.toThrow();
-    }
+    const result = await generation;
+    await expect(instance.getFlowBootstrapAdaptation(project.id, flow.flowId, result.adaptationId)).resolves.toMatchObject({ status: "proposed" });
     // A build that finishes then asks the judge of its test twice, its yes confirmed by a second call (murwcmx2, C-H):
-    // provider calls that are not decisions.
+    // provider calls that are not decisions. One that never finishes is tested and judged as its purse runs low.
     const decisions = requests.filter((request) => !isJudgeRequest(request));
-    expect(decisions).toHaveLength(calls);
-    expect(requests).toHaveLength(calls + (finishes ? 2 : 0));
+    if (finishes) {
+      expect(decisions).toHaveLength(calls);
+      expect(requests).toHaveLength(calls + 2);
+    } else {
+      expect(decisions.length).toBeGreaterThan(calls);
+      expect(requests.filter(isJudgeRequest)).toHaveLength(2);
+    }
     // A new Flow's settings carry the run cost ceiling ($0.10 since 2026-10-01;
     // was $0.25), and the build's
     // total is that ceiling, which the resolution's $2 cannot raise. A build has
@@ -400,11 +403,13 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     expect(stored?.auditEvents[0]?.detail).toMatchObject({ reusableContext: { status: "hit", sourceRunIds: ["run.prior"], sourceAdaptationIds: ["adaptation.prior"] } });
   });
 
+  // No count of calls ends it (t1056; the resolution's three is read by nothing): each decision costs five cents, so the
+  // build's purse is spent after a few.
   it("asks again after an unknown tool and returns the closed budget reason with content-free counts", async () => {
     // The build reads its instruction when it starts (t976, b2ee9ed45): answered apart from the decisions scripted here.
     const provider = mockProvider(automationStudioAnsweringInstructionReading(async () => ({
       response: { kind: "evidence_tool_decision", summary: "Use a tool.", decision: { kind: "tool_call", callId: "call.unknown", toolId: "unregistered", input: {} } },
-      usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }
+      usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.05 }
     }), { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }));
     const { project, flow } = await seeded(single);
     const instance = createService({
@@ -419,18 +424,20 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       evidenceGuided: true
     }));
     // A tool the decision did not offer is refused and asked again (P1a), so the build is spent, not ended by the first such call.
+    const decided = diagnostic.evidenceLoop?.decisionCount ?? 0;
+    expect(decided).toBeGreaterThan(1);
     expect(diagnostic).toMatchObject({
       code: "flow_bootstrap.evidence_budget_exhausted",
       stage: "provider_output_validation",
       retryable: true,
       providerInvocation: "attempted",
       providerResponse: "received",
-      // What the build spent before it ended, so a failed run can be costed: the three decisions and the start's
+      // What the build spent before it ended, so a failed run can be costed: its decisions and the start's
       // reading of the instruction (t976, b2ee9ed45), which is a call of the build's too.
-      accounting: { requestId: expect.stringMatching(/^evidence\./), estimatedInputTokens: expect.any(Number), provider: "mock-production", model: "mock-bootstrap", inputTokens: 30 + 10, outputTokens: 15 + 5, totalTokens: 45 + 15, estimatedCostUsd: 0.004 /* 0.003 + 0.001 */ },
-      evidenceLoop: { iterationCount: 3, decisionCount: 3, toolCallCount: 0 },
-      totalProviderCallCount: 3 + 1
+      accounting: { requestId: expect.stringMatching(/^evidence\./), estimatedInputTokens: expect.any(Number), provider: "mock-production", model: "mock-bootstrap", inputTokens: 10 * decided + 10, outputTokens: 5 * decided + 5, totalTokens: 15 * decided + 15, estimatedCostUsd: expect.closeTo(0.05 * decided + 0.001, 6) },
+      evidenceLoop: { iterationCount: decided, decisionCount: decided, toolCallCount: 0 },
+      totalProviderCallCount: decided + 1
     });
-    expect((diagnostic as unknown as { evidenceLoop: { steps: { resultCode: string }[] } }).evidenceLoop.steps.map((step) => step.resultCode)).toEqual(Array(3).fill("llm_evidence_loop.unknown_tool_refused"));
+    expect((diagnostic as unknown as { evidenceLoop: { steps: { resultCode: string }[] } }).evidenceLoop.steps.map((step) => step.resultCode)).toEqual(Array(decided).fill("llm_evidence_loop.unknown_tool_refused"));
   });
 });

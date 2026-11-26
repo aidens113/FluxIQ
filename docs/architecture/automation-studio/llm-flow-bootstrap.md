@@ -2665,10 +2665,11 @@ arrived and could not be read (`llm.provider_malformed_response`, a truncated
 or oversized reply, output that is not the decision object) has a count of its
 own and never moves the count of steps without progress. It is asked again with the same
 context and a `core.decision_check` note saying what could not be read (the
-reply's case from `runtime/models/failures/reply-account.ts`, in words) and how many in a
-row stop the build; it is paid for and counted in the budget. Six in a row end
-the round `llm_evidence_loop.unreadable_replies`, and the build ends
-`flow_bootstrap.model_replies_unreadable` with an `ending` message saying so,
+reply's case from `runtime/models/failures/reply-account.ts`, in words); it is paid for and
+counted in the budget. No count of them in a row ends a round (t1056): the same unreadable reply
+again is a repeat loop detection steers, and the purse ends a loop that never gets a readable one.
+Before t1056 six in a row ended the round `llm_evidence_loop.unreadable_replies`, and the build
+ended `flow_bootstrap.model_replies_unreadable` with an `ending` message saying so,
 how many tries it took, what of the request the Flow already does and whether
 the Flow so far was kept (`runtime/models/failures/unreadable-reply.ts`,
 `runtime/flow-authoring/bootstrap/unfinished-build/replies-unreadable.ts`). A reply that
@@ -3158,8 +3159,8 @@ acts/choices and `tried` (rounds, decisions, Flow steps and test verdict).
 | --- | --- | --- |
 | `flow_bootstrap.not_doable` | The judge of a tested, non-empty Flow said what was asked can no longer be had (`stillAchievable: "no"`) | "I could not build this Flow, and I found no way to:" followed by what the judge found, what could not be done and what was tried |
 | `flow_bootstrap.build_not_finished` | A repair made no progress on the round before it, or a round ended on refused repeats with the Flow it started from unchanged | "I have not finished this Flow yet." followed by what stood still, the judge's advice or doubt, how much was done, what was tried and what was kept |
-| `flow_bootstrap.evidence_budget_exhausted` | The purse refused a call or could not fund another round (the only cost endings), time, token or declared calls ran out, or the live-round backstop was reached | "The build stopped at ... before the Flow was finished." followed by progress, what blocked it and whether the Flow was kept |
-| `flow_bootstrap.model_replies_unreadable` | Six consecutive unreadable replies, each asked again with a corrective note | "The build stopped because the replies it got back could not be read:" followed by the count, cause, paid attempts, progress and kept-Flow status |
+| `flow_bootstrap.evidence_budget_exhausted` | The purse refused a call or could not fund another round (the only cost endings), time or tokens ran out, a test-scoped call allowance (`FLUXIQ_LLM_BUILD_CALL_LIMIT`) was spent, or the live-round backstop was reached | "The build stopped at ... before the Flow was finished." followed by progress, what blocked it and whether the Flow was kept |
+| `flow_bootstrap.model_replies_unreadable` | No longer produced (t1056): no count of unreadable replies ends a round. Before, six consecutive unreadable replies, each asked again with a corrective note | "The build stopped because the replies it got back could not be read:" followed by the count, cause, paid attempts, progress and kept-Flow status |
 
 Budget exhaustion does not establish that the task is impossible, and an empty
 Flow never establishes `not_doable`. Budget and unreadable endings are
@@ -3459,7 +3460,7 @@ instruction, every decision, the test and the judge are all held against it.
   A repaired draft is checked afresh on the next round. Where the test ran
   clean and the Flow is not the one a judge of this
   build last said no to, the test goes to the build's judge, whose calls draw on
-  the judging reserve -- its money and, under a call allowance, its calls
+  the judging reserve, in money (a build has no call allowance since t1056)
   (t262). A yes about that very Flow finishes the build with it. Any other
   verdict becomes the round's judgement with the judge's account, and the
   repair rules below apply to it unchanged (a judged "can no longer be had" is
@@ -3518,10 +3519,10 @@ decision schema, allowlisted tools, and prior sanitized evidence. A decision eit
 `{ summary, plan }` candidate whose plan schema is the existing strict Flow
 Bootstrap schema. Unknown tools, duplicate calls, cancellation, iteration
 exhaustion, and evidence-byte overflow fail closed. An unusable reply and a
-refused completion are asked again, up to three in a row, as described above.
-The series has no fixed length of its own. It makes at most 64 decisions, or
-fewer when the resolution declares a call count, with at most one more tool
-call than decisions. No decision has a cost share: each is held against the
+refused completion are asked again, however many in a row, as described above.
+The series has no fixed length of its own, and no count of its decisions or
+tool calls ends it (t1056): the resolution's `maxCallsPerRun` no longer bounds
+a build. No decision has a cost share: each is held against the
 Flow creation's one purse at its own worst case, and the loop's budget holds
 the build's token totals on every call. The cost ceiling follows the Flow's
 explicit policy, defaulting to $0.25. An explicitly scoped test process may

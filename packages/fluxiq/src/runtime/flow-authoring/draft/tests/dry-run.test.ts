@@ -259,7 +259,7 @@ describe("the loop's gate on proposing", () => {
     });
     const result = await runAutomationStudioLlmEvidenceLoop({
       tools: [tool], decide, executeTool, maxIterations: 6, maxToolCalls: 6, minToolCalls: 1,
-      unusableDecisions: { maxConsecutive: 4, stalled: () => new Error("stalled") }
+      unusableDecisions: { stalled: () => new Error("stalled") }
     });
     return { result, decide, executeTool };
   };
@@ -309,11 +309,14 @@ describe("the loop's gate on proposing", () => {
   it("refuses, and runs nothing again, a build's Flow whose caller cannot run its steps again", async () => {
     const decide = vi.fn()
       .mockResolvedValueOnce({ kind: "tool_call", callId: "c1", toolId: "press", input: { target: "#a" }, add: true })
-      .mockResolvedValue({ kind: "complete", result: { summary: "done" } });
+      .mockResolvedValueOnce({ kind: "complete", result: { summary: "done" } })
+      .mockResolvedValueOnce({ kind: "complete", result: { summary: "done" } })
+      // The model's script runs out: no count of turns ends the loop (t1056).
+      .mockRejectedValue(new Error("script exhausted"));
     const executeTool = vi.fn(async () => ({ kind: "llm_evidence_tool_execution" as const, evidence: { page: "after" }, effectApplied: true }));
     const result = await runAutomationStudioLlmEvidenceLoop({
       tools: [{ toolId: "press", description: "Press.", inputSchema: { type: "object" }, effect: "mutate" as const }],
-      decide, executeTool, maxIterations: 3, maxToolCalls: 6, minToolCalls: 1, unusableDecisions: { stalled: () => new Error("stalled") }, fullRunRequired: true
+      decide, executeTool, minToolCalls: 1, unusableDecisions: { stalled: () => new Error("stalled") }, fullRunRequired: true
     });
     expect(result.ok).toBe(false);
     expect(executeTool).toHaveBeenCalledTimes(1);

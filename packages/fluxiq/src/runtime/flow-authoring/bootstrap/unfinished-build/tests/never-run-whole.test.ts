@@ -87,7 +87,7 @@ function harness(rounds: Array<(request: AutomationStudioFlowBootstrapRoundReque
     // A read asks for no act: the checklist is empty, as in murwcmx2 (`actsTodo: []`).
     checklist: () => [],
     budget: { maxCostUsd: 0.1, maxDurationMs: 540_000 },
-    maxIterations: 64,
+    
     keep: async (...args) => ({ revision: 1, steps: (args[2] as unknown[]).length }),
     announce: ({ text }) => { announced.push(text); },
     seedSignature: automationStudioFlowDraftReplaySignature(storedFlow()),
@@ -116,7 +116,7 @@ describe("a round whose Flow holds steps that never ran in this build", () => {
   });
 
   it("names none when every step ran in this build", async () => {
-    const judged = await automationStudioFlowBootstrapJudgeUnfinished({ round: 0, stopped: "iterations", steps: [ran(1, "d1"), ran(2, "d2")], lastIssueCodes: [], replayable: () => false, checklist: () => [] });
+    const judged = await automationStudioFlowBootstrapJudgeUnfinished({ round: 0, stopped: "repeat_without_progress", steps: [ran(1, "d1"), ran(2, "d2")], lastIssueCodes: [], replayable: () => false, checklist: () => [] });
     expect(judged.kind === "judged" && judged.judgement.notRunInThisBuild).toBeUndefined();
     expect(judged.kind === "judged" && automationStudioFlowBootstrapJudgementValue(judged.judgement).notRunInThisBuild).toBeUndefined();
   });

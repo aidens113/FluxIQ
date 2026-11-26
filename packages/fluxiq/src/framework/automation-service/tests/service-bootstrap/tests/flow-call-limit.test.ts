@@ -1,9 +1,10 @@
 // @fluxiq-test-group real-sql
-// A build stops at the call count its Flow configures. Live run
-// `run-munnq7vz-98c3481c` saved `llmExecutionSettings.maxCalls: 48`, the host's
-// resolver declared no count, and the build ran 64 decisions, the loop's own
-// backstop, because nothing read the Flow's setting. Driven through the real
-// `generateFlowBootstrapAdaptation`, since the defect was wiring.
+// A build does not stop at a call count its Flow configures (t1056). Live run
+// `run-munnq7vz-98c3481c` saved `llmExecutionSettings.maxCalls: 48` and the build
+// ran 64 decisions, so the setting was wired to end the build at its count
+// (t208). No count of calls ends a round (user, 2026-11-24): the purse, in
+// dollars, ends a build whose model never finishes. Driven through the real
+// `generateFlowBootstrapAdaptation`, since the wiring is what changed.
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -44,18 +45,20 @@ afterEach(async () => {
 });
 
 describe("a Flow build under the Flow's configured call count", () => {
-  it("makes exactly the configured number of decisions when the model never finishes", async () => {
+  it("runs past the configured number of decisions when the model never finishes, and ends on its purse", async () => {
     const configuredCalls = 5;
+    // Each decision costs two cents, so the Flow's 25-cent purse, not its count of five, ends the build.
+    const usage = { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.02 };
     const requests: AutomationStudioLlmTaskRequest[] = [];
-    // The build reads its instruction when it starts (t976, b2ee9ed45). That reading is not a decision, and the
-    // Flow's call count bounds the decisions: it is answered apart, and only decisions are counted here.
+    // The build reads its instruction when it starts (t976, b2ee9ed45). That reading is not a decision: the
+    // reading is answered apart, so only decisions are counted here.
     const provider = mockProvider(automationStudioAnsweringInstructionReading(async (request) => {
       requests.push(request);
       const iteration = request.context.evidenceLoop?.iteration ?? 0;
       // Always a new area, so the loop's no-progress guard never ends it first.
       const decision: JsonObject = { kind: "tool_call", callId: `call.${iteration}`, toolId: "inspect", input: { area: `area.${iteration}` } };
-      return { response: { kind: "evidence_tool_decision", summary: "Looking.", decision }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 } };
-    }, { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }));
+      return { response: { kind: "evidence_tool_decision", summary: "Looking.", decision }, usage };
+    }, usage));
     // What the host's session-key resolver returns since grants went: its defaults and no call count.
     const defaults = AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS;
     const { project, flow } = structuredClone(await copyDataDirSeed(single, tempRoot));
@@ -83,10 +86,10 @@ describe("a Flow build under the Flow's configured call count", () => {
 
     const diagnostic = await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller() }));
 
-    // The Flow's own call count is a budget the whole build is held to: the build ends at it, said as that (t208).
+    // The Flow's call count ends nothing; its money does, said as that.
     expect(diagnostic.code).toBe("flow_bootstrap.evidence_budget_exhausted");
-    expect(diagnostic.ending).toMatchObject({ kind: "budget_exhausted", bound: "calls" });
-    expect(requests).toHaveLength(configuredCalls);
+    expect(diagnostic.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost" });
+    expect(requests.length).toBeGreaterThan(configuredCalls);
     // The Flow's timeout sizes a request, not spending, so the resolver's default stays on every call.
     for (const request of requests) expect(request.timeoutMs).toBe(defaults.timeoutMs);
   });

@@ -168,7 +168,7 @@ async function run(steps: Step[], options: { hook?: boolean; gap?: boolean; rowT
     siteResetSettleMs: 0,
     loop: {
       tools: [runNode], maxIterations: steps.length, maxToolCalls: steps.length + 2,
-      unusableDecisions: { maxConsecutive: steps.length, maxInARow: steps.length, stalled: () => new Error("stalled") },
+      unusableDecisions: { stalled: () => new Error("stalled") },
       executeTool: built.wrapper.executeTool,
       decide: async ({ evidence }) => {
         seen.push(evidence.map((entry) => ({ ...entry })));
@@ -290,9 +290,10 @@ describe("a candidate build runs each trial on the site as it stands and undoes 
     expect(wrapper.request()).toBeUndefined();
     expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[7]!)).toMatchObject({ verdict: "unsure", trialRunId: "trial.2", startedWith: { cannotUndo: [{ act: "act-1" }, { act: "act-2" }] } });
     expect(asked).toHaveLength(2);
-    // The build went on: every scripted decision was asked for, and nothing ended it on the refusals.
-    expect(seen).toHaveLength(8);
-    expect(outcome).toMatchObject({ loop: { code: "llm_evidence_loop.iteration_limit" } });
+    // The build went on: every scripted decision was asked for, and nothing ended it on the refusals or on a count of
+    // turns (t1056); it ended when the script did.
+    expect(seen).toHaveLength(9);
+    expect(outcome).not.toMatchObject({ loop: { code: "llm_evidence_loop.iteration_limit" } });
   });
 
   it("lane D: an undo on the act's own row is admitted but removes nothing unasked; refused, the act is kept and the model is told plainly", async () => {

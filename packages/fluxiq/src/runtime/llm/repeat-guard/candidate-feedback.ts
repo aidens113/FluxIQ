@@ -2,8 +2,9 @@
 // repeat (`./feedback.ts`, `./outcomes.ts`).
 //
 // Candidate mode has no draft (the loop is `discoveryOnly`): nothing can be
-// amended, rerun or marked optional, and a round that stalls is not followed by
-// a test and judgement of a Flow so far -- the build ends, with nothing tested.
+// amended, rerun or marked optional, and there is no Flow so far to test. No
+// count of refused repeats ends a round (t1056): a run of them is caught as a
+// repeat, and the model decides how to go on.
 // The legacy notes say both, which lane C (`run-mv0fuotv-805294d7`, C2) was
 // told three times for one refused script it sent again unchanged, until the
 // build ended with its purse unspent. So in candidate mode no note names the
@@ -198,16 +199,11 @@ const SAME_BUILDER_CALL = "You already made this exact call -- the same tool wit
   + "Do something different instead: read the page below for what you need, or submit a corrected subflow. "
   + "A call that runs after the page has changed is not a repeat.";
 
-/** What happens if a builder sends the same again: this many refused in a row end its brief. */
-function builderEnding(inARow: number, maxInARow: number, what: string): string {
-  if (inARow >= maxInARow - 1) return ` Sending ${what} unchanged again ends this brief where it stands.`;
-  return ` Sending ${what} unchanged again is refused the same way, and ${maxInARow} repeats refused in a row end this brief where it stands.`;
-}
 
 /** The instruction for a builder's own call refused as a repeat (header, t594); undefined for any other call. */
-function builderInstruction(toolId: string, earlier: AutomationStudioLlmEvidenceRepeatedOutcome, inARow: number, maxInARow: number): { instruction: string; issues?: JsonValue[] } | undefined {
+function builderInstruction(toolId: string, earlier: AutomationStudioLlmEvidenceRepeatedOutcome): { instruction: string; issues?: JsonValue[] } | undefined {
   if (toolId !== SUBMIT_SUBFLOW && toolId !== TEST_SUBFLOW) return undefined;
-  const tail = (what: string) => BUILDER_WAY_OUT + builderEnding(inARow, maxInARow, what);
+  const tail = (what: string) => BUILDER_WAY_OUT + ending(what);
   if (earlier.outcome === "same_answer") return { instruction: SAME_REQUEST + tail("the same call") };
   if (earlier.handleUnshown) return { instruction: HANDLE_UNSHOWN + tail("it") };
   if (toolId === TEST_SUBFLOW) return { instruction: SAME_BUILDER_CALL + tail("this call") };
@@ -218,31 +214,28 @@ function builderInstruction(toolId: string, earlier: AutomationStudioLlmEvidence
   return { instruction: refusedSubflowWithoutIssues(earlier.callId) + tail("it") };
 }
 
-/** What happens if the same is sent again: this many refused in a row end the build. */
-function ending(inARow: number, maxInARow: number, what: string): string {
-  if (inARow >= maxInARow - 1) return ` Sending ${what} unchanged again ends this build with nothing tested.`;
-  return ` Sending ${what} unchanged again is refused the same way, and ${maxInARow} repeats refused in a row end this build with nothing tested.`;
+/** What happens if the same is sent again: it is refused the same way, and a run of them is caught as a repeat (t1056: no count ends a round). */
+function ending(what: string): string {
+  return ` Sending ${what} unchanged again is refused the same way, and repeats refused in a row are caught as a repeat, and you decide how to go on.`;
 }
 
 /** The instruction, and for a refused submission its issues, for one repeat refused in candidate mode. */
 export function automationStudioLlmEvidenceCandidateRepeatInstruction(input: {
   toolId: string;
   earlier: AutomationStudioLlmEvidenceRepeatedOutcome;
-  inARow: number;
-  maxInARow: number;
 }): { instruction: string; issues?: JsonValue[] } {
-  const { toolId, earlier, inARow, maxInARow } = input;
-  const builder = builderInstruction(toolId, earlier, inARow, maxInARow);
+  const { toolId, earlier } = input;
+  const builder = builderInstruction(toolId, earlier);
   if (builder) return builder;
   if (toolId === SUBMIT_CANDIDATE) {
-    if (earlier.outcome !== "failed") return { instruction: ACCEPTED_SUBMISSION + ending(inARow, maxInARow, "it") };
-    if (earlier.issues) return { instruction: refusedSubmission(earlier.callId, earlier.issues) + ending(inARow, maxInARow, "it"), issues: structuredClone(earlier.issues) };
+    if (earlier.outcome !== "failed") return { instruction: ACCEPTED_SUBMISSION + ending("it") };
+    if (earlier.issues) return { instruction: refusedSubmission(earlier.callId, earlier.issues) + ending("it"), issues: structuredClone(earlier.issues) };
     const said = earlier.resultCode !== undefined && UNCHANGED_CODES.has(earlier.resultCode) ? unchangedSubmission(earlier.callId, earlier.standing, CANDIDATE_LOOP) : refusedWithoutIssues(earlier.callId);
-    return { instruction: said + ending(inARow, maxInARow, "it") };
+    return { instruction: said + ending("it") };
   }
-  if (earlier.outcome === "same_answer") return { instruction: SAME_REQUEST + ending(inARow, maxInARow, "the same request") };
-  if (earlier.handleUnshown) return { instruction: HANDLE_UNSHOWN + ending(inARow, maxInARow, "this call") };
-  if (automationStudioLlmEvidenceRepeatCoveredRefused(earlier)) return { instruction: COVERED + ending(inARow, maxInARow, "this press") };
-  if (automationStudioLlmEvidenceRepeatPermissionRefused(earlier)) return { instruction: AUTOMATION_STUDIO_LLM_EVIDENCE_PERMISSION_REPEAT_INSTRUCTION + ending(inARow, maxInARow, "this call") };
-  return { instruction: SAME_CALL + ending(inARow, maxInARow, "this call") };
+  if (earlier.outcome === "same_answer") return { instruction: SAME_REQUEST + ending("the same request") };
+  if (earlier.handleUnshown) return { instruction: HANDLE_UNSHOWN + ending("this call") };
+  if (automationStudioLlmEvidenceRepeatCoveredRefused(earlier)) return { instruction: COVERED + ending("this press") };
+  if (automationStudioLlmEvidenceRepeatPermissionRefused(earlier)) return { instruction: AUTOMATION_STUDIO_LLM_EVIDENCE_PERMISSION_REPEAT_INSTRUCTION + ending("this call") };
+  return { instruction: SAME_CALL + ending("this call") };
 }

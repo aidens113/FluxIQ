@@ -54,7 +54,7 @@ function requests(options: { ranWith?: boolean } = {}) {
 
 // The instruction's read names a1 ("confirm everyone ...") lasting, as the service asks it (t174-w83); `lasting: null` is a build with no reading of the instruction.
 const loop = (decide: ReturnType<typeof vi.fn>, executeTool: ReturnType<typeof requests>["executeTool"], lasting: ReadonlySet<string> | null = new Set(["a1"])) => runAutomationStudioLlmEvidenceLoop({
-  tools, decide, executeTool, maxIterations: 12, maxToolCalls: 12, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { maxConsecutive: 8, stalled: () => new Error("stalled") },
+  tools, decide, executeTool, maxIterations: 12, maxToolCalls: 12, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { stalled: () => new Error("stalled") },
   ...(lasting ? { lastingActs: async () => lasting } : {})
 });
 const confirmAmara = { kind: "tool_call", callId: "confirm-amara-1", toolId: "press", input: { target: "Confirm Amara" }, add: true, act: "a1" };

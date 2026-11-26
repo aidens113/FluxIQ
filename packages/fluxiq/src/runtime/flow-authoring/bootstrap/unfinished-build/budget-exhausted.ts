@@ -60,7 +60,6 @@ export type AutomationStudioFlowBootstrapBudgetSizes = {
   maxCostUsd?: number | undefined;
   maxDurationMs?: number | undefined;
   maxTotalTokens?: number | undefined;
-  declaredCalls?: number | undefined;
   maxRounds?: number | undefined;
 };
 
@@ -174,7 +173,8 @@ function budgetSaid(bound: AutomationStudioFlowBootstrapBudgetBound, sizes: Auto
     case "cost": return sizes.maxCostUsd !== undefined ? `its spending limit of $${sizes.maxCostUsd.toFixed(2)}` : "its spending limit";
     case "duration": return sizes.maxDurationMs !== undefined ? `its time limit of ${Math.round(sizes.maxDurationMs / 60_000)} minutes` : "its time limit";
     case "tokens": return sizes.maxTotalTokens !== undefined ? `its budget of ${sizes.maxTotalTokens} tokens` : "its token budget";
-    case "calls": return sizes.declaredCalls !== undefined ? `its limit of ${sizes.declaredCalls} model calls` : "its limit on model calls";
+    // A declared count of calls bounds no build (t1056); only a test-scoped call allowance on the purse can still run out.
+    case "calls": return "its limit on model calls";
     // No build reaches it since t240 -- repairs are bounded by money and progress -- but published records may carry it.
     case "repair_rounds": return "its limit on repairs";
     case "rounds": return sizes.maxRounds !== undefined ? `its limit of ${sizes.maxRounds} live rounds` : "its limit on live rounds";

@@ -28,7 +28,7 @@ function run(rest: readonly unknown[], checkCompletion: ReturnType<typeof vi.fn>
   const record = automationStudioLlmLoopAttemptRecord();
   const ran = runAutomationStudioLlmEvidenceLoop({
     tools, decide, executeTool: executeTool as unknown as AutomationStudioLlmEvidenceLoopInput["executeTool"], maxIterations: 60, maxToolCalls: 60, dryRun: false, propagateDecisionErrors: true,
-    unusableDecisions: { maxConsecutive: 40, stalled: () => stalledError },
+    unusableDecisions: { stalled: () => stalledError },
     loopSignal: (signal: AutomationStudioLlmLoopSignal) => {
       signals.push(signal);
       return "end";
@@ -77,7 +77,7 @@ describe("any decision carried out", () => {
     decide.mockImplementation(async () => steps[decide.mock.calls.length - 1] ?? { kind: "complete", result: { done: true } });
     await runAutomationStudioLlmEvidenceLoop({
       tools, decide, executeTool: covered() as unknown as AutomationStudioLlmEvidenceLoopInput["executeTool"], maxIterations: 60, maxToolCalls: 60, dryRun: false, propagateDecisionErrors: true,
-      unusableDecisions: { maxConsecutive: 40, stalled: () => stalledError },
+      unusableDecisions: { stalled: () => stalledError },
       loopSignal: () => "end",
       attemptRecord: automationStudioLlmLoopAttemptRecord()
     } as AutomationStudioLlmEvidenceLoopInput);

@@ -1,13 +1,10 @@
 // A reply that arrived and could not be read is asked again, with a note of
-// what could not be read, and only an unbroken run of them ends the loop --
-// as `llm_evidence_loop.unreadable_replies`, with how many tries and which
-// kinds. And a reply that was read but is no decision the iteration offered is
+// what could not be read, and no run of them ends the loop (t1056). And a reply that was read but is no decision the iteration offered is
 // asked again too, rather than ending the loop as a bare `invalid_decision`
 // (t211).
 import { describe, expect, it, vi } from "vitest";
 import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID,
-  AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNREADABLE_REPLIES_IN_A_ROW,
   AutomationStudioLlmUnusableDecisionError,
   runAutomationStudioLlmEvidenceLoop
 } from "../../index.ts";
@@ -18,6 +15,8 @@ const look = (callId: string) => ({ kind: "tool_call", callId, toolId: "inspect"
 const usage = { inputTokens: 900, outputTokens: 560, totalTokens: 1460, estimatedCostUsd: 0.002 };
 const malformed = (replyCase = "content_mismatched") => new AutomationStudioLlmUnusableDecisionError(["llm.provider_malformed_response"], { case: replyCase as "content_mismatched", finishReason: "stop", contentChars: 2100, usage });
 const stalledError = new Error("stalled");
+/** The count of unreadable replies in a row that once ended a loop (t1056 removed it). */
+const OLD_UNREADABLE_IN_A_ROW = 6;
 
 type Shown = { evidence: ReadonlyArray<{ toolId: string; value: unknown }> };
 const feedbackOf = (call: [Shown] | undefined) => call?.[0].evidence.find((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID)?.value as Record<string, unknown> | undefined;
@@ -27,7 +26,7 @@ describe("an unreadable reply", () => {
     const explicit = { inputTokens: 100, outputTokens: 10, totalTokens: 110, estimatedCostUsd: 0.001 };
     const error = new AutomationStudioLlmUnusableDecisionError(["llm.provider_malformed_response"], { case: "content_mismatched", finishReason: "stop", contentChars: 2100, usage }, undefined, explicit);
     const decide = vi.fn().mockRejectedValueOnce(error).mockResolvedValueOnce(complete);
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool: async () => ({}), unusableDecisions: { maxConsecutive: 3, stalled: () => new Error("stalled") } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool: async () => ({}), unusableDecisions: { stalled: () => new Error("stalled") } });
     expect(result.ok).toBe(true);
     expect(result.accounting).toMatchObject({ inputTokens: 100, outputTokens: 10, totalTokens: 110, estimatedCostUsd: 0.001 });
     expect(result.trace[0]).toMatchObject({ decision: "unusable", resultReason: "content_mismatched", usage: explicit });
@@ -42,7 +41,7 @@ describe("an unreadable reply", () => {
 
     const result = await runAutomationStudioLlmEvidenceLoop({
       tools, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, maxIterations: 10,
-      unusableDecisions: { maxConsecutive: 3, stalled }
+      unusableDecisions: { stalled }
     });
 
     expect(result).toMatchObject({ ok: true, result: { done: true } });
@@ -58,7 +57,7 @@ describe("an unreadable reply", () => {
       issueCodes: ["llm.provider_malformed_response"],
       unreadable: { case: "content_mismatched", said: expect.stringContaining("brackets did not match") },
       unreadableInARow: 1,
-      maxUnreadableInARow: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNREADABLE_REPLIES_IN_A_ROW,
+      
       instruction: expect.stringContaining("Your previous reply could not be read: its brackets did not match")
     });
     // Paid for and counted: the decision, its tokens and its cost.
@@ -74,7 +73,7 @@ describe("an unreadable reply", () => {
 
     const result = await runAutomationStudioLlmEvidenceLoop({
       tools, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, maxIterations: 10,
-      unusableDecisions: { maxConsecutive: 2, stalled }
+      unusableDecisions: { stalled }
     });
 
     expect(result).toMatchObject({ ok: true });
@@ -101,42 +100,44 @@ describe("an unreadable reply", () => {
 });
 
 describe("unreadable replies that keep coming", () => {
-  it("end the loop after the run's limit, as exactly that, with how many tries and which kinds", async () => {
-    const decide = vi.fn()
-      .mockResolvedValueOnce(look("call.1"))
-      .mockRejectedValueOnce(malformed("content_unclosed"))
-      .mockRejectedValue(malformed());
+  // No count of them ends a loop (t1056): the old six in a row, `llm_evidence_loop.unreadable_replies`, is gone. Each is
+  // asked again on the same model and paid for; the same unreadable reply again is a repeat loop detection steers.
+  it("are each asked again far past the old six in a row, steered, until a readable reply", async () => {
+    const many = OLD_UNREADABLE_IN_A_ROW * 4;
+    let asked = 0;
+    const decide = vi.fn(async () => {
+      asked += 1;
+      if (asked === 1) return look("call.1");
+      if (asked <= 1 + many) throw malformed();
+      return complete;
+    });
     const stalled = vi.fn(() => stalledError);
 
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, maxIterations: 30,
+      tools, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true,
       unusableDecisions: { stalled }
     });
 
-    const limit = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNREADABLE_REPLIES_IN_A_ROW;
-    expect(decide).toHaveBeenCalledTimes(1 + limit);
+    expect(result).toMatchObject({ ok: true, result: { done: true } });
     expect(stalled).not.toHaveBeenCalled();
-    expect(result).toMatchObject({
-      ok: false,
-      code: "llm_evidence_loop.unreadable_replies",
-      unreadable: { inARow: limit, total: limit, cases: ["content_mismatched", "content_unclosed"], said: expect.stringContaining("brackets did not match") },
-      accounting: { iterations: 1 + limit, toolCalls: 1, outputTokens: 560 * limit }
-    });
-    // The draft and the trace travel with the ending, as with any other.
-    expect(result.trace.filter((row) => row.decision === "unusable")).toHaveLength(limit);
+    expect(result.trace.filter((row) => row.decision === "unusable")).toHaveLength(many);
+    // Paid for, every one.
+    expect(result.accounting).toMatchObject({ iterations: many + 2, outputTokens: 560 * many });
+    // The same reply again is caught as a repeat and the model asked to decide; no note counts down to a stop.
+    const shown = (decide.mock.calls as unknown as Array<[Shown]>).flatMap(([call]) => call.evidence);
+    expect(shown.some((entry) => entry.toolId === "core.loop_check")).toBe(true);
+    for (const entry of shown.filter((item) => item.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID)) {
+      expect(entry.value).not.toHaveProperty("maxUnreadableInARow");
+      expect(String((entry.value as { instruction?: unknown }).instruction)).not.toContain("stop this build");
+    }
   });
 
-  it("take the limit a caller sets, held to the loop's own iterations", async () => {
-    const decide = vi.fn().mockRejectedValue(malformed());
-    await expect(runAutomationStudioLlmEvidenceLoop({
-      tools, decide, executeTool: async () => ({}), propagateDecisionErrors: true, maxIterations: 8,
-      unusableDecisions: { maxUnreadableInARow: 2, stalled: () => stalledError }
-    })).resolves.toMatchObject({ ok: false, code: "llm_evidence_loop.unreadable_replies", unreadable: { inARow: 2 } });
-    expect(decide).toHaveBeenCalledTimes(2);
-    await expect(runAutomationStudioLlmEvidenceLoop({
-      tools, decide, executeTool: async () => ({}), maxIterations: 8,
-      unusableDecisions: { maxUnreadableInARow: 9, stalled: () => stalledError }
-    })).resolves.toMatchObject({ ok: false, code: "llm_evidence_loop.invalid_configuration" });
+  it("take no limit from a caller: a figure an old caller passes neither refuses the loop nor bounds it", async () => {
+    let asked = 0;
+    const decide = vi.fn(async () => (asked += 1) <= 10 ? Promise.reject(malformed()) : complete);
+    const input = { tools, decide, executeTool: async () => ({}), propagateDecisionErrors: true, maxIterations: 8, unusableDecisions: { maxUnreadableInARow: 2, stalled: () => stalledError } };
+    await expect(runAutomationStudioLlmEvidenceLoop(input as unknown as Parameters<typeof runAutomationStudioLlmEvidenceLoop>[0])).resolves.toMatchObject({ ok: true });
+    expect(decide).toHaveBeenCalledTimes(11);
   });
 
   it("are not counted as unreadable when nothing arrived: a timeout is the provider not answering", async () => {
@@ -145,7 +146,7 @@ describe("unreadable replies that keep coming", () => {
     const stalled = vi.fn(() => stalledError);
     await expect(runAutomationStudioLlmEvidenceLoop({
       tools, decide, executeTool: async () => ({}), propagateDecisionErrors: true, maxIterations: 20,
-      unusableDecisions: { maxConsecutive: 8, stalled }
+      unusableDecisions: { stalled }
     })).resolves.toMatchObject({ ok: false, code: "llm_evidence_loop.provider_unavailable" });
     expect(decide).toHaveBeenCalledTimes(3);
     expect(stalled).not.toHaveBeenCalled();
@@ -162,7 +163,7 @@ describe("a reply that was read and is no decision this iteration offered", () =
 
     const result = await runAutomationStudioLlmEvidenceLoop({
       tools, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, maxIterations: 10,
-      unusableDecisions: { maxConsecutive: 3, stalled: () => stalledError }
+      unusableDecisions: { stalled: () => stalledError }
     });
 
     expect(result).toMatchObject({ ok: true, accounting: { outputTokens: 560 } });
@@ -181,7 +182,7 @@ describe("a reply that was read and is no decision this iteration offered", () =
 
     const result = await runAutomationStudioLlmEvidenceLoop({
       tools, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, maxIterations: 10, minToolCalls: 1,
-      unusableDecisions: { maxConsecutive: 3, stalled: () => stalledError }
+      unusableDecisions: { stalled: () => stalledError }
     });
 
     expect(result).toMatchObject({ ok: true, result: { done: true } });
@@ -200,12 +201,14 @@ describe("a reply that was read and is no decision this iteration offered", () =
 
   // The same wrong shape again is a step without progress, which ends nothing (t1049); the unusable streak's
   // backstop is what stalls it.
-  it("ends on the caller's stall when the same wrong shape keeps coming, at the unusable streak's backstop", async () => {
-    const decide = vi.fn().mockResolvedValue({ kind: "finish" });
+  // No backstop on a streak (t1056): the same wrong shape is asked again each time, until a decision the loop can use.
+  it("asks again when the same wrong shape keeps coming, however long, and never stalls", async () => {
+    let asked = 0;
+    const decide = vi.fn(async () => (asked += 1) <= 20 ? { kind: "finish" } : complete);
     await expect(runAutomationStudioLlmEvidenceLoop({
       tools, decide, executeTool: async () => ({}), propagateDecisionErrors: true, maxIterations: 10,
-      unusableDecisions: { maxInARow: 3, stalled: () => stalledError }
-    })).rejects.toBe(stalledError);
-    expect(decide).toHaveBeenCalledTimes(3);
+      unusableDecisions: { stalled: () => stalledError }
+    })).resolves.toMatchObject({ ok: true });
+    expect(decide).toHaveBeenCalledTimes(21);
   });
 });

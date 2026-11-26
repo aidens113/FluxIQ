@@ -7,18 +7,20 @@ import { AutomationStudioService } from "../../../index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../../runtime/llm/index.ts";
 import { blankFixture, caller, expectNoTopology, isJudgeRequest, judgeReply, mockProvider, permissionScopedNativeRuntime, rejectedGenerationDiagnostic } from "../../service-bootstrap/index.ts";
 
-it("bounds a fresh service build's reader, decisions and judges before sends and preserves failed aggregate", async () => {
+// A build's purse is dollars, never a count of calls (t1056). The test-scoped call limit this once read
+// (`FLUXIQ_LLM_BUILD_CALL_LIMIT`) is stubbed at three and read by nothing: the build runs past it and its purse ends it.
+it("bounds a fresh service build's reader, decisions and judges by its purse before sends and preserves failed aggregate", async () => {
   vi.stubEnv("FLUXIQ_LLM_BUILD_CALL_LIMIT_SCOPE", "test");
   vi.stubEnv("FLUXIQ_LLM_BUILD_CALL_LIMIT", "3");
   let calls = 0;
   let decisions = 0;
-  const usage = { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 };
+  // Two cents a call: the build's 25-cent purse holds about a dozen.
+  const usage = { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.02 };
   const provider = mockProvider(async (request) => {
     calls += 1;
     if (request.metadata?.source === "instructionAuthority") return { response: { kind: "evidence_tool_decision", decision: { kind: "complete", result: { instructed: [] } } }, usage };
     if (isJudgeRequest(request)) return judgeReply("no");
     decisions += 1;
-    if (decisions > 5) throw new Error("Scripted provider ended");
     return { response: { kind: "evidence_tool_decision", decision: { kind: "tool_call", callId: `read-${decisions}`, toolId: "core.run_node", input: { node: "example.click", parameters: { attempt: decisions }, consequences: [] }, add: true } }, usage };
   });
   const binding: AutomationStudioLlmEvidenceRuntimeBinding = {
@@ -36,10 +38,9 @@ it("bounds a fresh service build's reader, decisions and judges before sends and
     service.bindNativeNodeRuntime(permissionScopedNativeRuntime([]));
     const { project, flow } = await blankFixture(service, "active", "example");
     const diagnostic = await rejectedGenerationDiagnostic(service.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller() }));
-    expect(calls).toBeLessThanOrEqual(3);
-    expect(calls).toBeGreaterThan(0);
+    expect(calls).toBeGreaterThan(3);
     expect(diagnostic.totalProviderCallCount).toBe(calls);
-    expect(diagnostic.ending?.bound).toBe("calls");
+    expect(diagnostic.ending?.bound).toBe("cost");
     expect(diagnostic.evidenceLoop?.decisionCount).toBeLessThanOrEqual(calls);
     await expectNoTopology(service, project.id, flow.flowId);
   } finally {

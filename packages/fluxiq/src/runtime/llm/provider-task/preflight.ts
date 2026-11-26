@@ -3,7 +3,6 @@ import { automationStudioLlmRequestEvidenceRefusal } from "../harness/request-ev
 import { isAutomationStudioLlmRecentActionContext } from "../recent-actions/index.ts";
 import type { AutomationStudioLlmTaskRequest } from "../harness/index.ts";
 import { AutomationStudioLlmProviderError, type AutomationStudioLlmProviderPreflightErrorCode } from "../provider-contract.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/evidence-loop.ts";
 import { automationStudioFlowBootstrapOutputSchema } from "../../flow-authoring/bootstrap/plan/index.ts";
 import { automationStudioFlowBootstrapSizeLimitsOfContext } from "../../flow-authoring/bootstrap/plan/index.ts";
 import { buildAutomationStudioLlmEvidenceLoopDecisionSchema } from "../evidence-loop-decision.ts";
@@ -78,14 +77,15 @@ function validFlowBootstrapContext(context: AutomationStudioLlmTaskRequest["cont
     && selection.missingRequiredTerms.length === 0;
 }
 
-// The iteration bound is the loop's own ceiling. It was a literal sixteen here,
-// left behind when the loop's ceiling was raised, so a real exploration was
-// refused at its seventeenth decision. There is no bound on how many evidence
-// entries a decision carries: it is shown every one (`../context-window.ts`).
+// There is no bound on a decision's iteration (t1056). It was the loop's own
+// ceiling, 64, and a literal sixteen before that, left behind when the ceiling
+// was raised, so a real exploration was refused at its seventeenth decision;
+// no count of turns ends a loop now, so none refuses its request either. There
+// is no bound on how many evidence entries a decision carries: it is shown
+// every one (`../context-window.ts`).
 function validEvidenceLoopContext(context: AutomationStudioLlmTaskRequest["context"]): boolean {
   const loop = context.evidenceLoop;
-  if (!isRecord(loop) || !Number.isInteger(loop.iteration) || (loop.iteration as number) < 1
-    || (loop.iteration as number) > AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations
+  if (!isRecord(loop) || !Number.isSafeInteger(loop.iteration) || (loop.iteration as number) < 1
     || !Array.isArray(loop.tools) || loop.tools.length > 32
     || !Array.isArray(loop.evidence)) return false;
   const ids = new Set<string>();

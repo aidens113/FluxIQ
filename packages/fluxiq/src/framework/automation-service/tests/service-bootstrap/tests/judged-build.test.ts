@@ -19,7 +19,7 @@ import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioActivityHub } from "../../../../../runtime/automation-activity/index.ts";
 import { buildAutomationStudioFlowBootstrapContext } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
@@ -488,21 +488,17 @@ describe("a build the judging reserve stopped, through the service (t254 stage 2
   }, 60_000);
 });
 
-// Actual public generation wiring: a call allowance cannot turn a refused
+// Actual public generation wiring: a purse running out cannot turn a refused
 // completion of the unchanged draft into a whole test. Reuse this file's
-// closed seed and per-test service lifetime; the finite Lab purse is scoped
-// to these readiness cases alone.
+// closed seed and per-test service lifetime. The purse is dollars, never a
+// count of calls (t1056): these cases once ran under a test-scoped allowance
+// of five calls, and now each decision costs five cents of a 25-cent purse.
 describe("completion readiness through the public service", () => {
+  /** What each decision costs: five of them spend the 25-cent purse. */
+  const DECISION_USD = 0.05;
   const NODE = "domain.example.click";
   const REFUSAL = "example.handle.ambiguous:parameters";
 
-  // Four calls for the build's decisions and its judging, and one for its reading of the instruction,
-  // which a build makes when it starts since t976 (b2ee9ed45) and which counts against its allowance.
-  beforeEach(() => {
-    vi.stubEnv("FLUXIQ_LLM_BUILD_CALL_LIMIT_SCOPE", "test");
-    vi.stubEnv("FLUXIQ_LLM_BUILD_CALL_LIMIT", "5");
-  });
-  afterEach(() => { vi.unstubAllEnvs(); });
 
   async function buildReadyDraft(ready: boolean, finish = true) {
     const requests: AutomationStudioLlmTaskRequest[] = [];
@@ -526,7 +522,7 @@ describe("completion readiness through the public service", () => {
         : finish ? { kind: "complete", result: { summary: "Inspect the specimen." } }
           : { kind: "tool_call", callId: `call.look.${decisions}`, toolId: "example.inspect", input: { area: decisions } };
       return { response: { kind: "evidence_tool_decision", summary: "Inspect.", decision },
-        usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 } };
+        usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: DECISION_USD } };
     });
     // This is a scripted provider under the supported test-owned build purse;
     // pricing establishes its reserve without an external provider request.
@@ -553,7 +549,7 @@ describe("completion readiness through the public service", () => {
     };
     const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
     const instance = new AutomationStudioService({ dataDir: tempRoot,
-      llmProviderResolver: () => ({ provider, maxCallsPerRun: 5, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 1 }),
+      llmProviderResolver: () => ({ provider, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 0.25 }),
       llmEvidenceRuntime: replaying
     }).bindNativeNodeRuntime(permissionScopedNativeRuntime(["example.action"]));
     services.add(instance);
@@ -561,18 +557,19 @@ describe("completion readiness through the public service", () => {
     return { instance, project, flow, requests, replays: replaying.replays, events, resolutions: () => resolutions, readings: () => readings, generation };
   }
 
-  it("preserves a refused draft at its call allowance without any fallback replay or judging", async () => {
+  it("preserves a refused draft when its purse runs out, without any fallback replay or judging", async () => {
     const run = await buildReadyDraft(false);
     const diagnostic = await rejectedGenerationDiagnostic(run.generation);
-    // The allowance of five is reached where four was before t976: the reading at the start, the same two
-    // decisions, and the two judge calls kept back; then the build ends on calls, not on anything else.
+    // The reading at the start, then decisions until the purse cannot pay for another (no count of calls ends it):
+    // every completion of the unready draft is refused, and nothing is replayed or judged.
     expect(run.readings()).toBe(1);
-    expect(run.requests.map(isJudgeRequest)).toEqual([false, false]);
-    expect(run.resolutions()).toBe(2);
-    expect(run.events).toEqual(["resolve", "resolve"]);
+    expect(run.requests.length).toBeGreaterThan(1);
+    expect(run.requests.some(isJudgeRequest)).toBe(false);
+    expect(run.resolutions()).toBeGreaterThanOrEqual(2);
+    expect(new Set(run.events)).toEqual(new Set(["resolve"]));
     expect(run.replays).toEqual([]);
     expect(diagnostic).toMatchObject({ code: "flow_bootstrap.evidence_budget_exhausted", issueCodes: [REFUSAL],
-      ending: { kind: "budget_exhausted", bound: "calls", tried: { tested: "not_tested", stepsInFlow: 1 } } });
+      ending: { kind: "budget_exhausted", bound: "cost", tried: { tested: "not_tested", stepsInFlow: 1 } } });
     expect(diagnostic.evidenceLoop?.incompleteDraft).toMatchObject({ steps: 1 });
     await expectNoTopology(run.instance, run.project.id, run.flow.flowId);
   });

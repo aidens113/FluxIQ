@@ -42,7 +42,8 @@ describe("a repeat refused in candidate mode", () => {
     });
     expect(note).toMatchObject({ sameAsCall: "submit-handler", issues });
     expect(JSON.stringify(note)).toContain("which labels no step");
-    expect(note.maxRefusedInARow).toBe(3);
+    // No count of refused repeats ends a round (t1056), so no figure is told.
+    expect(note).not.toHaveProperty("maxRefusedInARow");
   });
 
   it("keeps a refusal's issues, as it listed them, with its outcome", () => {
@@ -56,15 +57,16 @@ describe("a repeat refused in candidate mode", () => {
     expect(instruction).toContain("same script");
     expect(instruction).toContain("not checked again");
     expect(instruction).toContain("Change the lines those issues name");
-    expect(instruction).toContain("nothing tested");
+    expect(instruction).toContain("caught as a repeat, and you decide how to go on");
     expect(instruction).not.toMatch(LEGACY);
   });
 
-  it("says the next identical submission ends the build when it would", () => {
+  it("says the next identical submission is refused and caught as a repeat, never that it ends the build (t1056)", () => {
     const second = String(automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.submit_candidate", earlier: storedRefusal(), inARow: 2, candidate: true }).instruction);
-    expect(second).toContain("Sending it unchanged again ends this build with nothing tested.");
+    expect(second).toContain("Sending it unchanged again is refused the same way, and repeats refused in a row are caught as a repeat, and you decide how to go on.");
     const first = String(automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.submit_candidate", earlier: storedRefusal(), inARow: 1, candidate: true }).instruction);
-    expect(first).toContain("is refused the same way, and 3 repeats refused in a row end this build with nothing tested.");
+    expect(first).toBe(second);
+    expect(first).not.toMatch(/ends? this (build|brief)|nothing tested/u);
   });
 
   it("names no draft in any other candidate-mode note: a call, a look, a handle never shown, an accepted submission", () => {
@@ -76,7 +78,7 @@ describe("a repeat refused in candidate mode", () => {
     ];
     for (const note of notes) {
       expect(String(note.instruction)).not.toMatch(LEGACY);
-      expect(String(note.instruction)).toContain("nothing tested");
+      expect(String(note.instruction)).toContain("caught as a repeat, and you decide how to go on");
       expect(note).not.toHaveProperty("issues");
     }
   });
@@ -96,7 +98,7 @@ describe("a repeat refused in candidate mode", () => {
     expect(instruction).toMatch(/Do not make this call again/u);
     expect(instruction).toMatch(/test or submit the candidate/u);
     expect(instruction).not.toMatch(LEGACY);
-    expect(instruction).toContain("nothing tested");
+    expect(instruction).toContain("caught as a repeat, and you decide how to go on");
   });
 
   it("leaves the legacy note as it was outside candidate mode, issues and all", () => {
@@ -157,10 +159,10 @@ describe("a repeat of a subflow builder's own call", () => {
     expect(instruction).toContain("submit-5");
     expect(instruction).toContain("Write `repeat most: 10` under `repeat while`.");
     expect(instruction).toContain(WAY_OUT);
-    expect(instruction).toContain("3 repeats refused in a row end this brief where it stands.");
+    expect(instruction).toContain("repeats refused in a row are caught as a repeat, and you decide how to go on.");
     expect(instruction).not.toMatch(/candidate|ask the person|nothing tested/u);
     expect(instruction).not.toMatch(LEGACY);
-    expect(String(noteOf("core.submit_subflow", stored(REFUSAL), 2).instruction)).toContain("Sending it unchanged again ends this brief where it stands.");
+    expect(String(noteOf("core.submit_subflow", stored(REFUSAL), 2).instruction)).not.toContain("ends this brief");
   });
 
   it("names the way out for a refusal with no issues, an accepted submission, a handle never shown, and a trial call", () => {

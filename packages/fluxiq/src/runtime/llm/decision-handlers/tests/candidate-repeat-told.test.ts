@@ -38,7 +38,7 @@ function loopWith(executeTool: AutomationStudioLlmEvidenceLoopInput["executeTool
   decide.mockRejectedValue(new Error("script exhausted"));
   const run = runAutomationStudioLlmEvidenceLoop({
     tools: [look, submit], decide, executeTool, maxIterations: 20, maxToolCalls: 20, draft: false, dryRun: false, discoveryOnly: true, propagateDecisionErrors: true,
-    unusableDecisions: { maxConsecutive: 10, stalled: () => stalledError }
+    unusableDecisions: { stalled: () => stalledError }
   });
   return { decide, run };
 }
@@ -46,29 +46,31 @@ const call = (toolId: string, callId: string, input: JsonObject) => ({ kind: "to
 const script = (flow: string) => ({ flow });
 
 describe("candidate mode", () => {
-  it("answers an identical resubmission with the refusal's issues and says it ends the build untested", async () => {
+  it("answers an identical resubmission with the refusal's issues and says repeats are caught, never that the build ends", async () => {
     const same = script("flow: Read\nstep: open\n  node: web.browser-navigate");
     const { decide, run } = loop(call("demo.look", "look", {}), call("core.submit_candidate", "s1", same), call("core.submit_candidate", "s2", same), call("core.submit_candidate", "s3", same), call("core.submit_candidate", "s4", same));
 
-    await expect(run).rejects.toBe(stalledError);
+    // No count ends the build (t1056): the script runs out, and nothing else ended it.
+    await expect(run).rejects.toThrow("script exhausted");
 
     const first = shownAt(decide, 3).find((entry) => entry.toolId === "core.repeat_check")?.value;
     expect(first).toMatchObject({ code: "llm_evidence_loop.repeat_refused", sameAsCall: "s1", issues: ISSUES, refusedInARow: 1 });
     expect(String(first?.instruction)).toContain("not checked again");
     expect(String(first?.instruction)).not.toMatch(LEGACY);
     const second = shownAt(decide, 4).find((entry) => entry.toolId === "core.repeat_check")?.value;
-    expect(String(second?.instruction)).toContain("Sending it unchanged again ends this build with nothing tested.");
+    expect(String(second?.instruction)).toContain("Sending it unchanged again is refused the same way, and repeats refused in a row are caught as a repeat, and you decide how to go on.");
     expect(String(second?.instruction)).not.toMatch(LEGACY);
   });
 
-  it("warns that one more refusal of the same kind ends the build with nothing tested, not a final test", async () => {
+  it("warns that one more refusal of the same kind is caught as a repeat, never that it ends the build", async () => {
     const { decide, run } = loop(call("demo.look", "look", {}), call("core.submit_candidate", "s1", script("flow: A")), call("core.submit_candidate", "s2", script("flow: B")), call("core.submit_candidate", "s3", script("flow: C")));
 
-    await expect(run).rejects.toBe(stalledError);
+    // No count ends the build (t1056): the script runs out, and nothing else ended it.
+    await expect(run).rejects.toThrow("script exhausted");
 
     const warned = shownAt(decide, 3).find((entry) => entry.toolId === "core.refusal_run")?.value;
     expect(warned).toMatchObject({ code: "llm_evidence_loop.refused_in_a_row", inARow: 2 });
-    expect(String(warned?.instruction)).toContain("One more decision refused for it ends this build with nothing tested.");
+    expect(String(warned?.instruction)).toContain("One more refused for it is caught as a repeat, and you decide how to go on.");
     expect(String(warned?.instruction)).not.toMatch(LEGACY);
   });
 
@@ -76,7 +78,8 @@ describe("candidate mode", () => {
     const digested = executor("flow_bootstrap.completion_refused:3fa2b1c9");
     const { decide, run } = loopWith(digested, call("demo.look", "look", {}), call("core.submit_candidate", "s1", script("flow: A")), call("core.submit_candidate", "s2", script("flow: B")), call("core.submit_candidate", "s3", script("flow: C")));
 
-    await expect(run).rejects.toBe(stalledError);
+    // No count ends the build (t1056): the script runs out, and nothing else ended it.
+    await expect(run).rejects.toThrow("script exhausted");
 
     const warned = shownAt(decide, 3).find((entry) => entry.toolId === "core.refusal_run")?.value;
     expect(warned).toMatchObject({ code: "llm_evidence_loop.refused_in_a_row", inARow: 2 });

@@ -202,7 +202,7 @@ describe("forwardRun in an evidence loop", () => {
       draft: { actionId: "web.click", effect: "mutate", proposes: true, ranWith: { target: "Add" }, replay: { from: { location: "https://store.test/p" } } }
     };
   });
-  const offeredAt = (decide: { mock: { calls: unknown[][] } }, index: number): string[] => (decide.mock.calls[index]![0] as { tools: { toolId: string }[] }).tools.map((tool) => tool.toolId);
+  const offeredAt = (decide: { mock: { calls: unknown[][] } }, index: number): string[] => (decide.mock.calls[index]![0] as { tools: { toolId: string }[] }).tools.map((tool) => tool.toolId).filter((id: string) => id !== "core.loop_decision");
 
   it("offers core.run_flow with the dry run off, runs it forward, and a completion is not dry-run", async () => {
     const decide = vi.fn()

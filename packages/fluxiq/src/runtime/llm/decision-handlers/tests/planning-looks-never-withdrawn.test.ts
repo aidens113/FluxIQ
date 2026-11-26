@@ -21,11 +21,11 @@ function page() {
 }
 type Shown = ReadonlyArray<{ callId: string; toolId: string; value: JsonObject }>;
 const shownAt = (decide: { mock: { calls: unknown[][] } }, index: number): Shown => (decide.mock.calls[index]![0] as { evidence: Shown }).evidence;
-const offeredAt = (decide: { mock: { calls: unknown[][] } }, index: number): string[] => (decide.mock.calls[index]![0] as { tools: Array<{ toolId: string }> }).tools.map((entry) => entry.toolId);
+const offeredAt = (decide: { mock: { calls: unknown[][] } }, index: number): string[] => (decide.mock.calls[index]![0] as { tools: Array<{ toolId: string }> }).tools.map((entry) => entry.toolId).filter((id: string) => id !== "core.loop_decision");
 const find = (index: number) => ({ kind: "tool_call", callId: `find.${index}`, toolId: "find", input: { query: `query ${index}` } });
 const loop = (decide: ReturnType<typeof vi.fn>, executeTool: ReturnType<typeof page>) => runAutomationStudioLlmEvidenceLoop({
   tools: [look, plan, brief], decide, executeTool, maxIterations: 30, maxToolCalls: 30, dryRun: false, draft: false,
-  unusableDecisions: { maxConsecutive: 8, stalled: () => new Error("stalled") },
+  unusableDecisions: { stalled: () => new Error("stalled") },
   planning: PLANNING
 });
 

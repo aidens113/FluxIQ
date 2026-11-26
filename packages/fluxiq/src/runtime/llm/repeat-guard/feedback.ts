@@ -18,11 +18,10 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID = "core.repeat_
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_REFUSED_CODE = "llm_evidence_loop.repeat_refused";
 
 /**
- * Decisions in a row refused as repeats after which the round ends as a stall:
- * the Flow so far is then tested, judged and repaired, or the build says why it
- * cannot be done (`../../flow-bootstrap/unfinished-build/phases.ts`). In
- * candidate mode there is no Flow so far: the build ends, with nothing tested
- * (`./candidate-feedback.ts`).
+ * Decisions in a row refused as repeats from which the run is raised on loop
+ * detection's ladder (`../decision-handlers/ladder-top.ts`). It ends no round
+ * (t1056): the model is steered and decides how to go on, and only a caller
+ * that takes loop detection's signal may end the round there.
  */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW = 3;
 
@@ -30,7 +29,7 @@ const INSTRUCTION = "You already made this exact call -- the same tool with the 
   + "Making it again from this page does the same, so it was not run and cost nothing but this decision. "
   + "Do something different instead: amend the draft (rerun a step with a corrected argument, or drop it), "
   + "read the page below for what you need, use a different control or a different input, or ask the person. "
-  + "A call that runs after the page has changed is not a repeat. Repeats refused in a row end this round, and the Flow so far is then tested and judged.";
+  + "A call that runs after the page has changed is not a repeat. Repeats refused in a row are caught as a repeat, and you decide how to go on.";
 
 /**
  * Said instead for a call made again from the page where the identical call
@@ -53,7 +52,7 @@ function sameResultInstruction(recall: "offered" | "unknown" | "absent", timingL
     + (timingLeftOut ? "Changing only how long a call waits does not make it a different call. " : "")
     + "Do something different instead: amend the draft (rerun a step with a corrected argument, or drop it), "
     + "read the page below for what you need, use a different control or a different input, or ask the person. "
-    + "A call that runs after the page has changed is not a repeat. Repeats refused in a row end this round, and the Flow so far is then tested and judged.";
+    + "A call that runs after the page has changed is not a repeat. Repeats refused in a row are caught as a repeat, and you decide how to go on.";
 }
 
 /** How the recall is asked for: the earlier call's id is sameAsCall beside this instruction. */
@@ -63,7 +62,7 @@ const RECALL_CALL = `${AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_TOOL_ID} with {"cal
 const PERMISSION_INSTRUCTION = "You already made this exact call, and it was refused because it needs a person's permission that it does not have (then.resultCode, then.resultReason): "
   + "it would do something gated -- delete, move money, send or publish -- that nobody granted, or that the person declined. "
   + "Sending it again cannot get past that, on this page or any other, so it was not run. Do not make this call again. "
-  + "Go on without it: take a way that needs no such permission, or amend the draft so no step needs it. Repeats refused in a row end this round, and the Flow so far is then tested and judged.";
+  + "Go on without it: take a way that needs no such permission, or amend the draft so no step needs it. Repeats refused in a row are caught as a repeat, and you decide how to go on.";
 
 /**
  * Said instead for a press refused because a layer over the page covered its
@@ -73,13 +72,13 @@ const PERMISSION_INSTRUCTION = "You already made this exact call, and it was ref
 const COVERED_INSTRUCTION = "You already made this exact press, and it was refused because something over the page covers its control (then.resultCode, then.resultReason), so nothing was pressed. "
   + "It is refused the same way until that layer is gone. The earlier answer, under sameAsCall, names the layer and, where it can, the controls that close it. "
   + "Press one of those first, or another control inside that layer -- never a control the page marks as covered by it. "
-  + "Then this press may be made again: a call made after the page has changed is not a repeat. Repeats refused in a row end this round, and the Flow so far is then tested and judged.";
+  + "Then this press may be made again: a call made after the page has changed is not a repeat. Repeats refused in a row are caught as a repeat, and you decide how to go on.";
 
 /** Said instead for a request that already answered the same on this page (`same_answer`). */
 const LOOK_INSTRUCTION = "You already made this exact request -- the same tool with the same input -- on this exact page, and it answered the same twice: its answer is above, under sameAsCall. "
   + "The page has not changed, so asking again answers the same again; it was not run. "
   + "Change your approach: act on what the answers show (press, type into or choose a control the page shows), go to another page, use the page's own search or menus, or ask for something different. "
-  + "Repeats refused in a row end this round, and the Flow so far is then tested and judged.";
+  + "Repeats refused in a row are caught as a repeat, and you decide how to go on.";
 
 /**
  * Said instead for a call that failed only because a handle it names was never
@@ -89,7 +88,7 @@ const LOOK_INSTRUCTION = "You already made this exact request -- the same tool w
 const HANDLE_UNSHOWN_INSTRUCTION = "You already made this exact call -- the same tool with the same input -- on this exact page, and it failed because a handle it names was never shown here (then.resultReason): no call had shown or minted that handle yet, and none has since, so it was not run. "
   + "The call itself may be right. First make the call that shows the handle: read the page below, which lists each control under its handle, "
   + "A read of a list needs no handle minted first: it names its list by a line the page shows, and finds the list itself. "
-  + "Once a call has shown it, this same call may be made again with the handle exactly as shown. Repeats refused in a row end this round, and the Flow so far is then tested and judged.";
+  + "Once a call has shown it, this same call may be made again with the handle exactly as shown. Repeats refused in a row are caught as a repeat, and you decide how to go on.";
 
 /**
  * Said instead for a call that runs the draft, made again on the same draft and
@@ -100,7 +99,7 @@ const DRAFT_INSTRUCTION = "This exact call -- the same tool with the same input 
   + "Running it again on the same draft and page gives the same result, so it was not run. "
   + "If that result, or a refused completion, says something is wrong, change the draft first (amend_draft: rerun with a corrected argument, bind, repeat, drop the steps it names, or keep one left out that it needs), then run it again; "
   + "if nothing is wrong, do the next thing the instruction needs. Completing again over an unchanged draft that was refused is refused the same way. "
-  + "Repeats refused in a row, and completions refused again over the same draft, end this round, and the Flow so far is then tested and judged.";
+  + "Repeats refused in a row, and completions refused again over the same draft, are caught as a repeat, and you decide how to go on.";
 
 /**
  * Said instead for an `amend_draft` decision sent again, word for word, on the
@@ -111,13 +110,13 @@ const AMENDMENT_INSTRUCTION = "You already sent this exact amend_draft -- the sa
   + "and the draft's Flow stayed exactly as it was; any other part of it was refused for the reason the history shows. "
   + "Sending it again on the same draft does the same, so none of it was run: no reset, no replay, no press. "
   + "Do something different: if the step already does what you meant, leave it and do the next act or choice still not done on the checklist, or complete; "
-  + "otherwise rerun it with a different argument, or correct exactly what a refusal names. Decisions in a row that change nothing end this round, and the Flow so far is then tested and judged.";
+  + "otherwise rerun it with a different argument, or correct exactly what a refusal names. Decisions in a row that change nothing are caught as a repeat, and you decide how to go on.";
 
 /** Said instead when that decision's rerun ran and did not work (`same_amendment`, `rerunFailed`). */
 const FAILED_AMENDMENT_INSTRUCTION = "You already sent this exact amend_draft -- the same amendments, word for word -- on this same draft, and its rerun did not work (its result is above, under sameAsCall; then.resultCode says how), so the draft's Flow stayed exactly as it was. "
   + "A rerun resets the page and replays the Flow before it, so sending it again on the same draft fails the same way, and none of it was run: no reset, no replay, no press. "
   + "Do something different: rerun the step with a corrected argument, correct the step before it that left the page wrong, drop it, or do the next act or choice still not done on the checklist. "
-  + "Decisions in a row that change nothing end this round, and the Flow so far is then tested and judged.";
+  + "Decisions in a row that change nothing are caught as a repeat, and you decide how to go on.";
 
 /**
  * The same, naming the step the rerun was of and the rerun that corrects it
@@ -143,14 +142,11 @@ function instructionFor(earlier: AutomationStudioLlmEvidenceRepeatedOutcome, rer
 /**
  * The words a loop that drafts nothing and authors no candidate (`draft:
  * false`: a project's supervisor, a reset) is told in place of the draft
- * mode's (t591, from t587's note): it has no draft to amend, and when its
- * round ends nothing is tested or judged; the loop just ends there, as the
- * refusal run's own warning says (`../decision-handlers/refusal-run.ts`).
+ * mode's (t591, from t587's note): it has no draft to amend.
  */
 const UNDRAFTED_WORDS: ReadonlyArray<readonly [string, string]> = [
   ["amend the draft (rerun a step with a corrected argument, or drop it), ", ""],
-  [", or amend the draft so no step needs it", ""],
-  [" end this round, and the Flow so far is then tested and judged.", " end this work where it stands, with nothing tested or judged."]
+  [", or amend the draft so no step needs it", ""]
 ];
 
 /** `instruction` worded for a loop that drafts nothing (`UNDRAFTED_WORDS`). */
@@ -169,9 +165,9 @@ export function automationStudioLlmEvidenceRepeatRefusalNote(input: {
   inARow: number;
   /** For a refused `amend_draft`, the step its rerun was of. */
   rerunStep?: number | undefined;
-  /** The loop authors a candidate (`discoveryOnly`): no draft, and a stall ends the build untested (`./candidate-feedback.ts`). */
+  /** The loop authors a candidate (`discoveryOnly`): no draft (`./candidate-feedback.ts`). */
   candidate?: boolean | undefined;
-  /** The loop drafts nothing (`draft: false`) and is no candidate: no draft to amend, and nothing tested or judged when its round ends (`UNDRAFTED_WORDS`). */
+  /** The loop drafts nothing (`draft: false`) and is no candidate: no draft to amend (`UNDRAFTED_WORDS`). */
   undrafted?: boolean | undefined;
   /** Whether the loop offers `core.recall_result`, which a `same_result` refusal points at; unsaid, it is named as offered only where it is. */
   recallOffered?: boolean | undefined;
@@ -179,7 +175,7 @@ export function automationStudioLlmEvidenceRepeatRefusalNote(input: {
   const recall = input.recallOffered === undefined ? "unknown" : input.recallOffered ? "offered" : "absent";
   const loop = refusedOnALoop(input.earlier) ? automationStudioLlmLoopRefusalInstruction({ pattern: input.earlier.outcome, repeats: input.earlier.repeats, toolIds: input.earlier.toolIds }, input.candidate === true || input.undrafted === true ? "undrafted" : "drafted") : undefined;
   const candidate = input.candidate === true && !loop
-    ? automationStudioLlmEvidenceCandidateRepeatInstruction({ toolId: input.toolId, earlier: input.earlier, inARow: input.inARow, maxInARow: AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW })
+    ? automationStudioLlmEvidenceCandidateRepeatInstruction({ toolId: input.toolId, earlier: input.earlier })
     : undefined;
   return {
     ok: false,
@@ -195,7 +191,6 @@ export function automationStudioLlmEvidenceRepeatRefusalNote(input: {
     },
     ...(candidate?.issues ? { issues: candidate.issues } : {}),
     refusedInARow: input.inARow,
-    maxRefusedInARow: AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW,
     // A loop that drafts nothing has no draft to change first, though its tools may be keyed on what they test or dispatch (t849).
     instruction: loop ?? (candidate ? candidate.instruction : input.undrafted === true ? undrafted(instructionFor(input.earlier.outcome === "same_draft" ? { ...input.earlier, outcome: "changed_nothing" } : input.earlier, input.rerunStep, recall)) : instructionFor(input.earlier, input.rerunStep, recall))
   };

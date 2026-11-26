@@ -44,7 +44,7 @@ describe("candidate facade uses the actual service", () => {
       if (calls === 5) { stale = ending === "stale"; if (ending === "cancel") service.buildCancellation.cancel(projectId, flowId); }
       return { response: { kind: "evidence_tool_decision", summary: "Scripted candidate authoring", decision }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 } };
     }, { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }));
-    service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 12, maxEstimatedCostUsd: 0.1 }),
+    service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxEstimatedCostUsd: 0.1 }),
       llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect", inputSchema: { type: "object" }, effect: "observe" }], executeTool: async () => {
         discoveries++; return { kind: "llm_evidence_tool_execution", evidence: { area: "wrong", unrelated: true }, effectApplied: false, targetsUnchanged: true };
       } }
@@ -124,8 +124,8 @@ function boundGeneration(store: Pick<AutomationStudioFlowCandidateDraftStore, "s
   const input: Parameters<typeof generateAutomationStudioFlowCandidateDraft>[0] = {
     submission: { projectId: "project.1", flowId: "flow.1", registry, resolution, baseDependencyDigest: "base", instructionText: context.bootstrapInstructionText, originalSource: binding },
     originalSource: binding, sourceInstructionIds: [...binding.originalSources.effectiveInstructionIds], baseSettingsRevision: 1,
-    loop: { propagateDecisionErrors: true, tools: [], maxIterations: 3, maxToolCalls: 2, executeTool: async () => { throw new Error("No discovery/effect expected"); } },
-    maxConsecutiveUnusableDecisions: 3,
+    loop: { propagateDecisionErrors: true, tools: [], maxToolCalls: 2, executeTool: async () => { throw new Error("No discovery/effect expected"); } },
+    
     harness: { projectId: "project.1", flowId: "flow.1", instructions: [sourceFixture.instruction()], provider, deniedEvidenceKeys: [] }, runHarness: runAutomationStudioLlmHarness,
     wrapDecision: decide => decide, beforeDecision: () => undefined, progress: () => undefined, ending: () => undefined,
     authorityUsage: { calls: 0, estimatedInputTokens: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 },

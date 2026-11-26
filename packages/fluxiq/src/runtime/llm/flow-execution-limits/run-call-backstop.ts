@@ -1,18 +1,15 @@
-// A leaf beside the run cost ceiling, so the run budget and a Flow's settings
-// (t583) read one backstop without a module cycle.
+// A leaf beside the run cost ceiling, so a Flow's settings (t583) and a run's budget read one figure without a module
+// cycle.
 
 /**
- * The most provider calls one run may make when nobody says otherwise.
+ * The largest call count a Flow's settings may name, and the count a run's budget was once held to when nobody named
+ * one.
  *
- * A runaway backstop, not a working limit. What bounds a run is its estimated
- * cost ceiling, its token budget, the recovery's wall clock, and the
- * exploration's no-progress guard; a run that is still getting somewhere and
- * still has money, tokens and time is meant to keep going. This number exists
- * for the case none of those catch -- a loop that makes free, instant, ever
- * different calls forever -- and it is set where a working loop never meets it.
- *
- * It is deliberately not a per-mode constant. A host or a setting that
- * wants to allow fewer calls says so through `maxCallsPerRun`; nothing here
- * infers a count from what kind of run it is.
+ * **No run is held to it (t1056).** It was the runaway backstop of the run budget's ledger (`../run-budget.ts`), and it
+ * ended recoveries whose calls were cheap before their money did (user, 2026-11-24: "THERE SHOULDNT BE ANY ARBITRARY
+ * FUCKING CALL LIMIT THAT RANDOMLY JUST RESETS EVERYTHING"). A run ends with its dollar ceiling, its token ceilings, its
+ * clock, or a provider failure that is not transient. It stays only as the bound on what a Flow's call-count setting may
+ * say (`../../../framework/automation-service/service/flow-settings-requests/llm-execution-settings.ts`) and for
+ * `adaptation/recovery/annotation/run-budget.ts`, which still hands the ledger a declared count it reads no more.
  */
 export const AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP = 250;

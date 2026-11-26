@@ -258,7 +258,6 @@ function evidenceLoopExhausted(
 ): NonNullable<NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["evidenceLoop"]>["exhausted"]> {
   return {
     bound: exhaustion.bound,
-    maxIterations: exhaustion.maxIterations,
     iterations: exhaustion.iterations,
     draftSteps: exhaustion.draftSteps,
     proposableSteps: exhaustion.proposableSteps,

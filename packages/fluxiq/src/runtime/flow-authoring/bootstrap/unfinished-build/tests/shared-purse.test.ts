@@ -59,8 +59,7 @@ function refused(purse: AutomationStudioLlmBuildPurse | undefined, projectedCost
 
 function outOfDecisions(steps: AutomationStudioFlowDraftStep[], accounting: AutomationStudioLlmEvidenceLoopAccounting): AutomationStudioLlmEvidenceLoopResult {
   return {
-    ok: false, code: "llm_evidence_loop.iteration_limit", trace: [], steps, accounting,
-    exhaustion: { bound: "iterations", maxIterations: 64, iterations: 64, draftSteps: steps.length, proposableSteps: steps.length, completionAttempts: 1, lastIssueCodes: [], outstandingIssueCodes: [] }
+    ok: false, code: "llm_evidence_loop.repeat_without_progress", trace: [], steps, accounting
   };
 }
 
@@ -68,7 +67,7 @@ function outOfDecisions(steps: AutomationStudioFlowDraftStep[], accounting: Auto
 function stoppedByPurse(steps: AutomationStudioFlowDraftStep[], accounting: AutomationStudioLlmEvidenceLoopAccounting, costRefusal: Extract<AutomationStudioLlmBuildPurseRefusal, { code: "llm_budget.run_cost_limit" }>): AutomationStudioLlmEvidenceLoopResult {
   return {
     ok: false, code: "llm_evidence_loop.iteration_limit", trace: [], steps, accounting,
-    exhaustion: { bound: "budget", budgetBound: "cost", maxIterations: 64, iterations: accounting.iterations, draftSteps: steps.length, proposableSteps: steps.length, completionAttempts: 0, lastIssueCodes: [], outstandingIssueCodes: [], costRefusal }
+    exhaustion: { bound: "budget", budgetBound: "cost", iterations: accounting.iterations, draftSteps: steps.length, proposableSteps: steps.length, completionAttempts: 0, lastIssueCodes: [], outstandingIssueCodes: [], costRefusal }
   };
 }
 
@@ -90,7 +89,7 @@ function harness(purse: AutomationStudioLlmBuildPurse, rounds: Array<(request: A
     checklist: (steps) => automationStudioInstructedActsChecklist({ instructionText: INSTRUCTION, draftSteps: steps }),
     budget: { maxCostUsd: CEILING, maxDurationMs: 540_000 },
     purse,
-    maxIterations: 64,
+    
     keep: async (...args) => ({ revision: 1, steps: (args[2] as unknown[]).length }),
     now: () => 0,
     ...overrides

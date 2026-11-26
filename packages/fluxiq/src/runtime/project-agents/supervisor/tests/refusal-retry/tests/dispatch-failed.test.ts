@@ -136,7 +136,7 @@ describe("project.dispatch_failed", () => {
       expect(built.builders).toEqual(["brief-1"]);
       expect(repeats(run.shown)).toHaveLength(2);
       const stalling = realDispatcher({ returnOf: "brief-1" });
-      await expect(supervise([look(1), call(IDS.writePlan, PLAN), FAILING, FAILING, FAILING, FAILING, FAILING, FAILING, FAILING], stalling, { executeTool: onThePage, propagateDecisionErrors: true })).rejects.toThrow("stalled");
+      await expect(supervise([look(1), call(IDS.writePlan, PLAN), FAILING, FAILING, FAILING, FAILING, FAILING, FAILING, FAILING], stalling, { executeTool: onThePage, propagateDecisionErrors: true, endsOnSignal: true })).rejects.toThrow("stalled");
       expect(stalling.builders).toEqual(["brief-1"]);
     });
 

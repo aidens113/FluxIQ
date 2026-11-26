@@ -44,7 +44,7 @@ async function run(decisions: AutomationStudioLlmEvidenceLoopDecision[]) {
     submission,
     loop: {
       tools: [{ toolId: "demo.look", effect: "observe", description: "Look", inputSchema: { type: "object" } }], maxIterations: decisions.length + 2, maxToolCalls: decisions.length + 2,
-      unusableDecisions: { maxConsecutive: decisions.length + 2, maxInARow: decisions.length + 2, stalled: ({ issueCodes }) => Object.assign(new Error("stalled"), { issueCodes }) },
+      unusableDecisions: { stalled: ({ issueCodes }) => Object.assign(new Error("stalled"), { issueCodes }) },
       executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { looked: true }, effectApplied: false, stateDigests: { before: "page.item", after: "page.item" } }),
       decide: async ({ evidence }) => {
         seen.push(evidence.map((entry) => ({ ...entry })));
@@ -75,12 +75,11 @@ describe("a refused candidate submission", () => {
     expect(String(answer?.next)).toMatch(/drop it/);
   });
 
-  it("ends the round at the third refusal for the same reason in a row, warned at the second, instead of spending the purse", async () => {
+  it("warns at the second refusal for the same reason in a row and catches the third as a repeat, never ending the round", async () => {
     const decisions = [look, submit(["t925", "t478"], "one"), submit(["t925", "t478"], "two"), submit(["t925", "t478"], "three"), submit(["t925", "t478"], "four"), submit(["t925", "t478"], "five")];
-    const { outcome, seen, decided } = await run(decisions);
-    // Three refused submissions and no fourth decision: the round ended as a stall, not on the purse or the no-progress guard.
-    expect(decided()).toBe(4);
-    expect("value" in outcome && outcome.value.loop).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_without_progress" });
+    const { seen, decided } = await run(decisions);
+    // Every refused submission was asked for: no count of refusals ends the round (t1056), the script ending did.
+    expect(decided()).toBe(decisions.length + 1);
     const warning = latestOf("core.refusal_run", seen[3]!);
     // The same refusal is one of the same issues: it is counted under the category and a digest of its codes and
     // places (t378), but the warning the model reads names the category only, never the digest.

@@ -115,7 +115,7 @@ describe("what is not one offered decision is still refused, with misses of its 
   it("run-mwuxd2v9 step 78: a summary and no decision is told the decision is missing, not the word Core writes itself", async () => {
     const failure = thrownBy(() => automationStudioAnthropicTaskAnswer({ summary: "Choose the store, add the item, then read the cart." }, offering(ALL), USAGE, 80));
     expect(failure?.reply?.misses).toEqual([{ path: "response.decision", rule: "is missing, and it must be there" }]);
-    const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes: ["llm.provider_output_invalid"], stepsWithoutProgress: 0, unreadable: { reply: automationStudioLlmProviderReplyAccount(failure?.reply), inARow: 1, maxInARow: Number.POSITIVE_INFINITY } });
+    const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes: ["llm.provider_output_invalid"], stepsWithoutProgress: 0, unreadable: { reply: automationStudioLlmProviderReplyAccount(failure?.reply), inARow: 1} });
     expect(feedback.instruction).toContain("At fault: response.decision is missing, and it must be there.");
   });
 });

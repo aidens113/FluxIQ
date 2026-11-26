@@ -18,11 +18,16 @@ const IMPOSSIBLE = "Asking the person is only for when the task is genuinely imp
 /** Said while `ask_person` is held back (`./options.ts`): the model's own options come first. */
 const LAST_RESORT = "Asking the person is a last resort, offered only once you have changed approach and the repeat still comes back, so it is not offered yet: try your own options first.";
 
+/** Said where nobody can be asked from this loop (`./options.ts`, `no_person`). */
+const NO_PERSON = "No person can be asked from here: what you repeated is yours to change, or finish with the result you have.";
+
 /** The words the decision is asked in, over what is offered (`./options.ts`). */
 function instruction(options: AutomationStudioLlmLoopDecisionOptions): string {
   const choices = options.offered.map((decision) => CHOICES[decision]);
   const list = `${choices.slice(0, -1).join("; ")}; or ${choices.at(-1)}`;
-  return `Decide how to go on before anything else: your next decision is a call to ${AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID}. cameBack says what each repeat came back with. Choose ${list}.${options.askPerson === "offered" ? "" : ` ${LAST_RESORT}`} ${IMPOSSIBLE}`;
+  const head = `Decide how to go on before anything else: your next decision is a call to ${AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID}. cameBack says what each repeat came back with. Choose ${list}.`;
+  if (options.askPerson === "no_person") return `${head} ${NO_PERSON}`;
+  return `${head}${options.askPerson === "offered" ? "" : ` ${LAST_RESORT}`} ${IMPOSSIBLE}`;
 }
 
 /** The ask a steer carries: what came back each time, the decisions on offer and why, and the decision due. */

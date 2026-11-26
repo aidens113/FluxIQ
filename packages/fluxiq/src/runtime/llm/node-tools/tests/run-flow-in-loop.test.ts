@@ -35,7 +35,7 @@ function store() {
 }
 
 const offeredAt = (decide: { mock: { calls: unknown[][] } }, index: number): string[] =>
-  (decide.mock.calls[index]![0] as { tools: { toolId: string }[] }).tools.map((tool) => tool.toolId);
+  (decide.mock.calls[index]![0] as { tools: { toolId: string }[] }).tools.map((tool) => tool.toolId).filter((id: string) => id !== "core.loop_decision");
 
 describe("core.run_flow in an evidence loop", () => {
   it("is offered from the first decision, runs once a step can run again with nothing reset, records no step, and is one tool call", async () => {

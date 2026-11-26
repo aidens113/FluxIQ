@@ -88,7 +88,9 @@ describe("a round that cannot go on is not an ending", () => {
           const note = request.context.evidenceLoop?.evidence.find((entry) => entry.toolId === "core.attempt_note");
           if (request.taskKind === "evidence_tool_decision" && request.metadata?.source !== "instructionAuthority" && !note) {
             unreadable += 1;
-            throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "Mangled.", false);
+            // A reply that arrived and was paid for, as a model's unreadable output is: one the provider never billed is the
+            // provider failing, which ends the task as that (t1056), not the model's loop.
+            throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "Mangled.", false, undefined, undefined, undefined, undefined, undefined, undefined, { inputTokens: 1_000, outputTokens: 40, totalTokens: 1_040, estimatedCostUsd: 0.0004 });
           }
           told ||= JSON.stringify(note?.value ?? "");
           return await provider.runTask(request, execution);

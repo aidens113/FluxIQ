@@ -16,21 +16,29 @@ const LOOK: AutomationStudioLlmEvidenceTool = { toolId: "web.page.read", descrip
 const opening = (evidence: readonly Entry[]) => evidence.find((entry) => entry.callId.startsWith("initial."))?.value as JsonObject | undefined;
 const EXCERPT = "The person opened the catalogue, filtered it to the spring packets and read each packet's name and price.";
 
-/** Builder ports whose model ends every brief blocked, each brief's first request's evidence kept by its brief id. */
+/**
+ * Builder ports whose model ends every brief blocked, each brief's first request's evidence kept by its brief id. Its
+ * ending is refused, and after a few tries the model stops answering: no count of turns ends the loop (t1056).
+ */
 function endingBlocked(seen: Map<string, Entry[]>): (request: { brief: { briefId: string } }) => AutomationStudioProjectBuilderPorts {
-  return (request) => ({
-    loop: {
-      tools: [LOOK], maxToolCalls: 6,
-      unusableDecisions: { maxConsecutive: 3, maxInARow: 3, stalled: () => new Error("stalled") },
-      executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true, page: "The seed catalogue." }, effectApplied: false, targetsUnchanged: true }),
-      decide: async ({ evidence }) => {
-        if (!seen.has(request.brief.briefId)) seen.set(request.brief.briefId, evidence.map((entry) => ({ ...entry })));
-        return { kind: "complete", result: { ended: "blocked", reason: "Nothing to do here." } };
-      }
-    },
-    submission: testSubmission(),
-    deniedEvidenceKeys: []
-  });
+  return (request) => {
+    let decided = 0;
+    return {
+      loop: {
+        tools: [LOOK],
+        unusableDecisions: { stalled: () => new Error("stalled") },
+        executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true, page: "The seed catalogue." }, effectApplied: false, targetsUnchanged: true }),
+        decide: async ({ evidence }) => {
+          if (!seen.has(request.brief.briefId)) seen.set(request.brief.briefId, evidence.map((entry) => ({ ...entry })));
+          decided += 1;
+          if (decided > 4) throw new Error("script exhausted");
+          return { kind: "complete", result: { ended: "blocked", reason: "Nothing to do here." } };
+        }
+      },
+      submission: testSubmission(),
+      deniedEvidenceKeys: []
+    };
+  };
 }
 
 describe("a brief carrying the supervisor's recording excerpt", () => {

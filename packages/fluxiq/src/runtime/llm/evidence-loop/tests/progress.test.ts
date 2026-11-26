@@ -152,7 +152,7 @@ describe("evidence-loop answerability progress", () => {
           ? { ok: false, issueCodes: ["bootstrap.cannot_answer_instruction"], feedback: { issue: "cannot_answer" }, answerability: cannotAnswer }
           : { ok: true, answerability: canAnswer };
       },
-      unusableDecisions: { maxConsecutive: 3, stalled }
+      unusableDecisions: { stalled }
     });
 
     expect(result.ok).toBe(true);

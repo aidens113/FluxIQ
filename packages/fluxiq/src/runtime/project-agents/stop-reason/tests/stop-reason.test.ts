@@ -16,12 +16,13 @@ describe("the supervisor's stop reason", () => {
     expect(automationStudioProjectSupervisorStopReason({ loop: failed("llm_evidence_loop.unreadable_replies") })).toBe(`${OPENING}the AI model's replies kept arriving unreadable.`);
   });
 
-  it("says the no-progress guard and the turns that ran out", () => {
+  // Only a budget runs out (t1056): no count of turns ends a loop, so a loop's exhaustion is always said as its budget.
+  it("says the no-progress guard and the budget that ran out", () => {
     expect(automationStudioProjectSupervisorStopReason({ loop: failed("llm_evidence_loop.repeat_without_progress") })).toBe(`${OPENING}the AI model kept repeating itself without making any progress.`);
-    const turns = { bound: "iterations", maxIterations: 40, iterations: 40, draftSteps: 0, proposableSteps: 0 };
-    expect(automationStudioProjectSupervisorStopReason({ loop: failed("llm_evidence_loop.iteration_limit", { exhaustion: turns }) })).toContain("it used all 40 of the decisions it was allowed.");
-    expect(automationStudioProjectSupervisorStopReason({ loop: failed("llm_evidence_loop.iteration_limit", { exhaustion: { ...turns, bound: "budget" } }) })).toContain("the budget for the AI model's decisions ran out.");
-    expect(automationStudioProjectSupervisorStopReason({ loop: failed("llm_evidence_loop.iteration_limit") })).toContain("it ran out of turns.");
+    const spent = { bound: "budget", iterations: 40, draftSteps: 0, proposableSteps: 0 };
+    expect(automationStudioProjectSupervisorStopReason({ loop: failed("llm_evidence_loop.iteration_limit", { exhaustion: spent }) })).toContain("the budget for the AI model's decisions ran out.");
+    expect(automationStudioProjectSupervisorStopReason({ loop: failed("llm_evidence_loop.iteration_limit", { exhaustion: spent }) })).not.toContain("decisions it was allowed");
+    expect(automationStudioProjectSupervisorStopReason({ loop: failed("llm_evidence_loop.iteration_limit") })).toContain("the budget for the AI model's decisions ran out.");
   });
 
   it("says a guard's stall by its issue code, and a generic sentence for one it does not know", () => {

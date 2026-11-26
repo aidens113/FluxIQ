@@ -102,7 +102,7 @@ export async function runBuilder(steps: Step[], options: { trials?: Trial[]; fro
     loop: {
       // The guards against steps without progress and unusable replies are held to the iteration cap, as the loop's configuration requires.
       tools: [look], maxIterations: cap, maxToolCalls: steps.length + 6,
-      unusableDecisions: { maxConsecutive: cap, maxInARow: cap, stalled: () => new Error("stalled") },
+      unusableDecisions: { stalled: () => new Error("stalled") },
       executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: PAGE, effectApplied: false, targetsUnchanged: true }),
       ...(options.fixedState ? { captureStateDigest: () => "the-same-page" } : {}),
       decide

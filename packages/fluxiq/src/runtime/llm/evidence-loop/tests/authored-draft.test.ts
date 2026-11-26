@@ -172,16 +172,19 @@ describe("progress, where the model authors its draft", () => {
   // Every call applied, and every one used to clear the guard.
   it("is not a call that lands on a state the build was already in, and the redirect names the acts still owed", async () => {
     const states = ["s0", "sA", "sA", "sB", "sB", "sA", "sA", "sB", "sB", "sA", "sA", "sB"];
-    const decide = vi.fn().mockImplementation(async ({ iteration }: { iteration: number }) => call(iteration));
+    // Twenty calls, then the model's script runs out: no count of turns ends the loop (t1056).
+    const decide = vi.fn().mockImplementation(async ({ iteration }: { iteration: number }) => {
+      if (iteration > 20) throw new Error("script exhausted");
+      return call(iteration);
+    });
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools: [go], decide, executeTool: vi.fn().mockResolvedValue(worked), maxIterations: 20, maxToolCalls: 20, dryRun: false, unusableDecisions: { maxConsecutive: 3, stalled },
+      tools: [go], decide, executeTool: vi.fn().mockResolvedValue(worked), dryRun: false, unusableDecisions: { stalled },
       captureStateDigest: () => states.shift(),
       draft: { acts: () => [{ id: "a1", verb: "add", quote: "add the kettle", todo: "no_step_added" }], actsMissing: () => ["a1"] }
     });
-    // Two new states, then revisits: steered from the third, never stopped by their count (t1049), so the loop runs
-    // to its own ceiling of twenty rather than stopping at the fifth call as it once did.
-    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.iteration_limit" });
-    expect(decide).toHaveBeenCalledTimes(20);
+    // Two new states, then revisits: steered from the third, never stopped by a count (t1049, t1056), until the script ends.
+    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.invalid_decision" });
+    expect(decide).toHaveBeenCalledTimes(21);
     // The first redirect, at the third step without progress.
     const redirect = Array.from({ length: 20 }, (_, index) => shownAt(decide, index).find((entry) => entry.toolId === "core.no_progress")?.value).find((value) => value !== undefined);
     expect(redirect).toMatchObject({ actsMissing: ["a1"] });
@@ -195,7 +198,7 @@ describe("progress, where the model authors its draft", () => {
       .mockResolvedValueOnce(call(1)).mockResolvedValueOnce(call(2)).mockResolvedValueOnce(call(3, { act: "a1" })).mockResolvedValueOnce(call(4))
       .mockResolvedValueOnce(complete);
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools: [go], decide, executeTool: vi.fn().mockResolvedValue(worked), maxIterations: 8, maxToolCalls: 8, dryRun: false, unusableDecisions: { maxConsecutive: 3, stalled },
+      tools: [go], decide, executeTool: vi.fn().mockResolvedValue(worked), maxIterations: 8, maxToolCalls: 8, dryRun: false, unusableDecisions: { stalled },
       captureStateDigest: () => states.shift(),
       draft: { actsMissing: (steps) => (steps.some((step) => step.disposition === "kept" && step.acts?.includes("a1")) ? [] : ["a1"]) }
     });
@@ -557,7 +560,10 @@ describe("the draft says which control each step named", () => {
   it("asks for the words before the call runs, while the handle still names its control", async () => {
     let closed = false;
     const describeCall = vi.fn((call: { toolId: string; value: JsonObject }) => (closed ? undefined : named(call)));
-    const executeTool = vi.fn(async () => { closed = true; return worked; });
+    const executeTool = vi.fn(async () => {
+      closed = true;
+      return worked;
+    });
     const decide = vi.fn().mockResolvedValueOnce(press(1, "t1091", { add: true })).mockResolvedValueOnce(complete);
     const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, describeCall: describeCall as never, maxIterations: 4, maxToolCalls: 4, dryRun: false, unusableDecisions: { stalled } });
 

@@ -21,18 +21,19 @@
 // `AUTOMATION_STUDIO_LLM_EVIDENCE_SEARCH_NOTE_AT` the model is told it has been
 // searching without acting, with the looks it made, and pushed to act
 // (`../decision-handlers/searching.ts`); at
-// `AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_LOOKS_IN_A_ROW` the round stalls, as three
-// refused repeats do -- and a stall the caller can recover from, such as a
-// candidate's latest revision with a retest left, runs that instead of ending
-// (`../decision-handlers/stall-recovery.ts`). Information first, then the
-// guard -- never a refusal of the look itself.
+// `AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_LOOKS_IN_A_ROW` the run is a finding on
+// loop detection's ladder, steered and decided by the model; no count of looks
+// ends a round (t1056), and where refusing does not stop it the caller's own move
+// runs, such as a candidate's retest of its latest revision
+// (`../decision-handlers/ladder-top.ts`). Information first, then the ladder --
+// never a refusal of the look itself.
 
 import type { JsonObject } from "../../../core/index.ts";
 
 /** Looks in a row after which the model is told it is searching without acting. */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_SEARCH_NOTE_AT = 5;
 
-/** Looks in a row that stall the round: three more after the note. */
+/** Looks in a row from which the run is a finding on loop detection's ladder, three more after the note (`../decision-handlers/searching.ts`). It ends no round (t1056). */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_LOOKS_IN_A_ROW = 8;
 
 /** One look of the run, as the note lists it. */

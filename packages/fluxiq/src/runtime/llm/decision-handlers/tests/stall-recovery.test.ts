@@ -1,7 +1,7 @@
-// A stall the caller can still recover from runs that move instead of ending
-// (`../stall-recovery.ts`, t477). Lane C round 10 (`run-mv5uu9g1-9d80deea`):
-// a run of eight looks ended a candidate build while its latest revision had
-// two retests left.
+// The caller's own move runs where loop detection's ladder reaches its top (`../stall-recovery.ts`, t477;
+// `../ladder-top.ts`, t1056). Lane C round 10 (`run-mv5uu9g1-9d80deea`): a run of eight looks ended a candidate build
+// while its latest revision had two retests left. No count ends such a loop now: a run of looks is caught as a repeat,
+// and once refusing has not stopped it the caller's move runs, and the loop goes on.
 import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
 import { runAutomationStudioLlmEvidenceLoop } from "../../index.ts";
@@ -29,16 +29,16 @@ function site() {
 function loop(decide: ReturnType<typeof vi.fn>, executeTool: ReturnType<typeof site>, recoverStall?: Parameters<typeof runAutomationStudioLlmEvidenceLoop>[0]["recoverStall"]) {
   const stalled = vi.fn((input: { issueCodes: readonly string[] }) => Object.assign(new Error("stalled"), { issueCodes: [...input.issueCodes] }));
   const ran = runAutomationStudioLlmEvidenceLoop({
-    tools, decide, executeTool, maxIterations: 30, maxToolCalls: 30, dryRun: false, propagateDecisionErrors: true,
-    unusableDecisions: { maxConsecutive: 8, stalled }, ...(recoverStall ? { recoverStall } : {})
+    tools, decide, executeTool, dryRun: false, propagateDecisionErrors: true,
+    unusableDecisions: { stalled }, ...(recoverStall ? { recoverStall } : {})
   });
   return { ran, stalled };
 }
 
 describe("a stall the caller can recover from", () => {
-  it("runs the caller's move at the eighth look in a row, shows the model why and its answer, and the build goes on", async () => {
+  it("runs the caller's move once refusing has not stopped a run of looks, shows the model why and its answer, and the build goes on", async () => {
     const decide = vi.fn();
-    for (let index = 1; index <= 8; index += 1) decide.mockResolvedValueOnce(find(index));
+    for (let index = 1; index <= 20; index += 1) decide.mockResolvedValueOnce(find(index));
     decide.mockResolvedValueOnce({ kind: "complete", result: { done: true } });
     const executeTool = site();
     const recoverStall = vi.fn(() => ({ call: { toolId: "retest", input: { revision: 3, digest: "d3" } } }));
@@ -46,18 +46,21 @@ describe("a stall the caller can recover from", () => {
     const { ran, stalled } = loop(decide, executeTool, recoverStall);
     await expect(ran).resolves.toMatchObject({ ok: true });
 
-    expect(recoverStall).toHaveBeenCalledWith({ issueCodes: ["llm_evidence_loop.searching_without_acting"] });
+    expect(recoverStall).toHaveBeenCalled();
     expect(stalled).not.toHaveBeenCalled();
-    // The loop made the retest itself, after the eighth look, with the caller's input.
+    // The loop made the retest itself, with the caller's input, and every look the model asked for still ran.
     const calls = executeTool.mock.calls.map(([call]) => call);
-    expect(calls.at(-1)).toMatchObject({ toolId: "retest", value: { revision: 3, digest: "d3" }, callId: "core.stall_recovery.8.retest" });
-    // The ninth decision is shown the retest's answer and the note, which rides after every result (t869) and names it.
-    const shown = shownAt(decide, 8);
+    const retest = calls.find((call) => call.toolId === "retest");
+    expect(retest).toMatchObject({ value: { revision: 3, digest: "d3" }, callId: expect.stringMatching(/^core\.stall_recovery\.\d+\.retest$/u) });
+    expect(calls.filter((call) => call.toolId === "find")).toHaveLength(20);
+    // The decision after it is shown the retest's answer and the note, which rides after every result (t869) and names it.
+    const after = decide.mock.calls.findIndex((_, index) => shownAt(decide, index).some((entry) => entry.toolId === "core.stall_recovery"));
+    const shown = shownAt(decide, after);
     const note = shown.find((entry) => entry.toolId === "core.stall_recovery");
-    expect(note?.value).toMatchObject({ code: "llm_evidence_loop.stall_recovered", stalledOn: ["llm_evidence_loop.searching_without_acting"], ran: { toolId: "retest" }, ranAs: "core.stall_recovery.8.retest" });
-    expect(String(note?.value.instruction)).toContain("Instead of ending the build");
-    expect(shown.findIndex((entry) => entry.callId === "core.stall_recovery.8.retest")).toBeGreaterThanOrEqual(0);
-    expect(shown.findIndex((entry) => entry.callId === "core.stall_recovery.8.retest")).toBeLessThan(shown.indexOf(note!));
+    expect(note?.value).toMatchObject({ code: "llm_evidence_loop.stall_recovered", ran: { toolId: "retest" }, ranAs: retest!.callId });
+    expect(String(note?.value.instruction)).toContain("Core made the call in ran for you");
+    expect(shown.findIndex((entry) => entry.callId === retest!.callId)).toBeGreaterThanOrEqual(0);
+    expect(shown.findIndex((entry) => entry.callId === retest!.callId)).toBeLessThan(shown.indexOf(note!));
   });
 
   it("runs it at the third refused repeat in a row too, and the runs start again after it", async () => {
@@ -80,23 +83,30 @@ describe("a stall the caller can recover from", () => {
     expect(executeTool.mock.calls.map(([call]) => call.toolId)).toEqual(["press", "retest"]);
   });
 
-  it("ends as before when the caller has nothing left, with its reason among the stall's codes", async () => {
-    const decide = vi.fn().mockImplementation(async () => find(decide.mock.calls.length + 1));
-    const executeTool = site();
+  /** Finds, `count` of them, then the result. */
+  const looks = (count: number) => {
+    const decide = vi.fn().mockImplementation(async () => decide.mock.calls.length <= count ? find(decide.mock.calls.length) : { kind: "complete", result: { done: true } });
+    return decide;
+  };
 
-    const { ran, stalled } = loop(decide, executeTool, () => ({ endedBecause: "candidate.stall_retests_used" }));
-    await expect(ran).rejects.toMatchObject({ issueCodes: ["llm_evidence_loop.searching_without_acting", "candidate.stall_retests_used"] });
-    expect(stalled).toHaveBeenCalledTimes(1);
+  it("goes on, steered, when the caller has nothing left: no count ends the loop (t1056)", async () => {
+    const executeTool = site();
+    const recoverStall = vi.fn(() => ({ endedBecause: "candidate.stall_retests_used" }));
+
+    const { ran, stalled } = loop(looks(30), executeTool, recoverStall);
+    await expect(ran).resolves.toMatchObject({ ok: true });
+    expect(recoverStall).toHaveBeenCalled();
+    expect(stalled).not.toHaveBeenCalled();
     expect(executeTool.mock.calls.some(([call]) => call.toolId === "retest")).toBe(false);
   });
 
-  it("never runs a tool the loop does not offer, and ends as before without a caller", async () => {
-    const offTheList = vi.fn().mockImplementation(async () => find(offTheList.mock.calls.length + 1));
-    const first = loop(offTheList, site(), () => ({ call: { toolId: "core.run_flow", input: {} } }));
-    await expect(first.ran).rejects.toMatchObject({ issueCodes: ["llm_evidence_loop.searching_without_acting"] });
+  it("never runs a tool the loop does not offer, and goes on without a caller's move", async () => {
+    const first = loop(looks(30), site(), () => ({ call: { toolId: "core.run_flow", input: {} } }));
+    await expect(first.ran).resolves.toMatchObject({ ok: true });
+    expect(first.stalled).not.toHaveBeenCalled();
 
-    const none = vi.fn().mockImplementation(async () => find(none.mock.calls.length + 1));
-    const second = loop(none, site());
-    await expect(second.ran).rejects.toMatchObject({ issueCodes: ["llm_evidence_loop.searching_without_acting"] });
+    const second = loop(looks(30), site());
+    await expect(second.ran).resolves.toMatchObject({ ok: true });
+    expect(second.stalled).not.toHaveBeenCalled();
   });
 });

@@ -43,10 +43,11 @@ describe("the note for a refused repeat", () => {
     { callId: "c4", outcome: "failed", resultReason: "handle_not_in_packet", handleUnshown: true }
   ] as const;
 
-  it("tells a loop that drafts nothing that its work ends with nothing tested or judged, and offers no draft to amend (t591)", () => {
+  it("tells a loop that drafts nothing that repeats are caught, never that its work ends, and offers no draft to amend (t591, t1056)", () => {
     for (const earlier of EARLIER) {
       const said = String(automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.run_node", inARow: 1, earlier, undrafted: true }).instruction);
-      expect(said, earlier.callId).toContain("end this work where it stands, with nothing tested or judged.");
+      expect(said, earlier.callId).toContain("caught as a repeat, and you decide how to go on");
+      expect(said, earlier.callId).not.toContain("end this work");
       expect(said, earlier.callId).not.toMatch(/Flow so far|tested and judged|amend the draft/u);
     }
   });
@@ -54,13 +55,14 @@ describe("the note for a refused repeat", () => {
   it("never tells a loop that drafts nothing to change a draft, when its tool is keyed on the build (t849)", () => {
     const said = String(automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "project.dispatch", inARow: 1, earlier: { callId: "c1", outcome: "same_draft" }, undrafted: true }).instruction);
     expect(said).not.toMatch(/draft/u);
-    expect(said).toContain("end this work where it stands, with nothing tested or judged.");
+    expect(said).toContain("caught as a repeat, and you decide how to go on");
   });
 
   it("words a drafting loop's note as before, and a candidate's byte for byte whatever the flag (t591)", () => {
     for (const earlier of EARLIER) {
       const drafting = String(automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.run_node", inARow: 1, earlier }).instruction);
-      expect(drafting).toContain("end this round, and the Flow so far is then tested and judged.");
+      expect(drafting).toContain("caught as a repeat, and you decide how to go on");
+      expect(drafting).not.toContain("tested and judged");
       expect(automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.run_node", inARow: 1, earlier, undrafted: false })).toEqual(automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.run_node", inARow: 1, earlier }));
       const candidate = automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.run_node", inARow: 1, earlier, candidate: true });
       expect(automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.run_node", inARow: 1, earlier, candidate: true, undrafted: true })).toEqual(candidate);
@@ -84,7 +86,7 @@ describe("the note for a refused repeat", () => {
     const undrafted = automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.run_node", inARow: 1, earlier, recallOffered: true, undrafted: true });
     expect(String(undrafted.instruction)).toMatch(/recall_result/u);
     expect(String(undrafted.instruction)).not.toMatch(/amend the draft/u);
-    expect(String(undrafted.instruction)).toMatch(/end this work where it stands/u);
+    expect(String(undrafted.instruction)).toContain("caught as a repeat, and you decide how to go on");
   });
 
   it("keeps recall out of the note for a call that failed or changed nothing", () => {

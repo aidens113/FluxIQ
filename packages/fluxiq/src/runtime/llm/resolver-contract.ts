@@ -9,6 +9,11 @@ import type { AutomationStudioLlmModelCaller } from "./model-caller.ts";
 export type AutomationStudioLlmProviderResolution = {
   provider: AutomationStudioLlmProvider;
   tokenLimits?: Partial<AutomationStudioLlmTokenLimits>;
+  /**
+   * @deprecated Read by nothing that ends a run (t1056): no count of calls ends a round, and the run's budget strips it
+   * (`./run-budget.ts`). Kept only because `adaptation/recovery/annotation/run-budget.ts` and
+   * `result-verification/run-outcome.ts` still pass it on.
+   */
   maxCallsPerRun?: number;
   /** The whole run's token budget, when the resolver sets one. It caps the run however many calls it may make. */
   maxTotalTokensPerRun?: number;

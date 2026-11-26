@@ -24,7 +24,7 @@ function harness(overrides: Partial<AutomationStudioFlowBootstrapBuildPhasesInpu
       ? { verdict: "no", findings: ["result.missing_row"], spent: SPENT }
       : { ...await judge({ summary: inspectionFixture.summary() }), flowSignature: automationStudioFlowDraftFlowSignature(loop.steps) },
     test: async () => undefined, replayable: () => true, checklist: () => undefined, keep: async () => undefined,
-    maxIterations: 20, budget: { maxCostUsd: 1, maxDurationMs: 60_000 }, now: () => 0, ...overrides
+    budget: { maxCostUsd: 1, maxDurationMs: 60_000 }, now: () => 0, ...overrides
   };
   return { input, requests };
 }
