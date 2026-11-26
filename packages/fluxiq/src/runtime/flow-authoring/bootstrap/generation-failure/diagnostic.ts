@@ -103,7 +103,14 @@ export type AutomationStudioFlowBootstrapFailureDiagnostic = {
      * is told (`flow-bootstrap/incomplete-draft/`), and while the last attempt
      * was the one refused they are the same codes as `issueCodes`.
      */
-    exhausted?: Omit<AutomationStudioLlmEvidenceLoopExhaustion, "lastIssueCodes" | "outstandingIssueCodes">;
+    exhausted?: Omit<AutomationStudioLlmEvidenceLoopExhaustion, "lastIssueCodes" | "outstandingIssueCodes" | "bound" | "budgetBound"> & {
+      /** `budget`. `iterations` and `tool_calls` appear only in a diagnostic recorded before t1056, when a count of turns or calls could end a loop. */
+      bound: AutomationStudioLlmEvidenceLoopExhaustion["bound"] | "iterations" | "tool_calls";
+      /** As the loop records it; `iterations` only in a diagnostic recorded before t1056. */
+      budgetBound?: NonNullable<AutomationStudioLlmEvidenceLoopExhaustion["budgetBound"]> | "iterations";
+      /** The turns a loop was allowed: only in a diagnostic recorded before t1056. */
+      maxIterations?: number;
+    };
     /**
      * Present when the build kept its draft as an incomplete record
      * (`flow-bootstrap/incomplete-draft/`): which revision was written, and how

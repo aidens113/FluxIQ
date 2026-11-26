@@ -153,6 +153,8 @@ describe("a single-path build whose last read keeps every row after an act over 
     const flag = judgedSummary.reads!.find((read) => read.nodeId === LAST)!.keptEveryRow!;
     const told = automationStudioCandidateTrialFeedback.judged({ verdict: { verdict: "yes", spent: { calls: 2, inputTokens: 1, outputTokens: 1, totalTokens: 2, estimatedCostUsd: 0 }, firstAskConfirmed: false }, summary: judgedSummary, trialRunId: "trial.1", start: "reset" });
     expect(told.feedback).toMatchObject({ firstAskConfirmed: false, reads: expect.arrayContaining([expect.objectContaining({ nodeId: LAST, kept: 7, keptEveryRow: flag })]) });
+    // t1056: the whole gate held this yes as a yes, so once the supervisor's loop stopped short (its script ends where a
+    // turn count once ended it) the build was handed back as a candidate on a yes its builder held unsure. It must not be.
     const { run, built } = await supervised(async () => told);
     expect(built.tested.map((answer) => answer.resultCode)).toEqual(["subflow.trial_unsure"]);
     expect(built.tested[0]!.evidence).toMatchObject({ verdict: "unsure", feedback: { code: "subflow.trial_rows_unaccounted", keptEveryRow: [{ read: LAST, said: flag.said }] } });

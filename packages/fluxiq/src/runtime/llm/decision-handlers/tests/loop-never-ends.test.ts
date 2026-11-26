@@ -33,7 +33,7 @@ async function run(draft: { loopNeverEnds?: AutomationStudioFlowDraftLoopNeverEn
   const executeTool = vi.fn()
     .mockResolvedValueOnce(pressed("Open", "s1", "s2"))
     .mockResolvedValueOnce(pressed("More", "s2", "s3"));
-  const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, maxIterations: 6, maxToolCalls: 6, dryRun: false, unusableDecisions: { stalled }, draft });
+  const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, dryRun: false, unusableDecisions: { stalled }, draft });
   return { decide, result };
 }
 

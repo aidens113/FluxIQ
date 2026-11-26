@@ -46,8 +46,7 @@ const changed = (seed: AutomationStudioFlowDraftStep[]) => [...seed.slice(0, 2),
 const finished = (steps: AutomationStudioFlowDraftStep[]): AutomationStudioLlmEvidenceLoopResult => ({ ok: true, result: { summary: "Adds and saves." }, trace: [], steps, accounting: spent(2) });
 const repeatsRefused = (steps: AutomationStudioFlowDraftStep[]): AutomationStudioLlmEvidenceLoopResult => ({ ok: false, code: "llm_evidence_loop.repeat_without_progress", trace: [], steps, accounting: spent(3) });
 const outOfDecisions = (steps: AutomationStudioFlowDraftStep[]): AutomationStudioLlmEvidenceLoopResult => ({
-  ok: false, code: "llm_evidence_loop.iteration_limit", trace: [], steps, accounting: spent(3),
-  exhaustion: { bound: "iterations", maxIterations: 64, iterations: 64, draftSteps: steps.length, proposableSteps: steps.length, completionAttempts: 0, lastIssueCodes: [], outstandingIssueCodes: [] }
+  ok: false, code: "llm_evidence_loop.repeat_without_progress", trace: [], steps, accounting: spent(3)
 });
 
 /** Round 0's judge: no, still achievable, with the fix named. */
@@ -83,7 +82,7 @@ async function build(rounds: Array<(request: AutomationStudioFlowBootstrapRoundR
     replayable: (steps) => steps.length > 0 && steps.every((each) => each.replay !== undefined),
     checklist: (steps) => automationStudioInstructedActsChecklist({ instructionText: INSTRUCTION, draftSteps: steps }),
     budget: { maxCostUsd: 0.1, maxDurationMs: 540_000 },
-    maxIterations: 64,
+    
     keep: async (...args) => ({ revision: 1, steps: (args[2] as unknown[]).length }),
     now: () => 0,
     ...overrides
@@ -94,8 +93,9 @@ async function build(rounds: Array<(request: AutomationStudioFlowBootstrapRoundR
 describe("a round that stopped short with a clean test of a changed Flow (run-musp474o-e0ed7432)", () => {
   it("preflights a stopped-short draft and skips its whole test when it cannot be built", async () => {
     const accepted: string[][] = [];
+    // The one round's $0.005 spends the purse, so no second round opens.
     const { outcome, tests, judged } = await build([() => repeatsRefused(firstFlow())], [], {
-      maxRounds: 1,
+      budget: { maxCostUsd: 0.005, maxDurationMs: 540_000 },
       acceptStopped: async (loop) => {
         accepted.push(loop.steps.map((item) => item.id ?? ""));
         return false;

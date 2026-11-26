@@ -33,7 +33,7 @@ describe("an amendment's answer step", () => {
       .mockResolvedValueOnce({ kind: "tool_call", callId: "c1", toolId: "press", input: { target: "#a" }, add: true })
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 9, change: "drop" }] })
       .mockResolvedValueOnce({ kind: "complete", result: { flow: "ready" } });
-    await runAutomationStudioLlmEvidenceLoop({ tools: [press], decide, executeTool: vi.fn().mockResolvedValue(worked), maxIterations: 5, maxToolCalls: 5, dryRun: false, unusableDecisions: { stalled: () => new Error("stalled") } });
+    await runAutomationStudioLlmEvidenceLoop({ tools: [press], decide, executeTool: vi.fn().mockResolvedValue(worked), dryRun: false, unusableDecisions: { stalled: () => new Error("stalled") } });
 
     const shown = (decide.mock.calls[2]![0] as { evidence: Array<{ toolId: string; value: unknown }> }).evidence.find((entry) => entry.toolId === "core.amendment_check")?.value;
     expect(shown).toMatchObject({ code: "llm_evidence_loop.draft_amendments_refused", refused: [{ step: 9, reason: "no_such_step" }] });

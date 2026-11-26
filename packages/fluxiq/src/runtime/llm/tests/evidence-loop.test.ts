@@ -75,15 +75,17 @@ describe("Automation Studio LLM evidence loop", () => {
     expect(decide.mock.calls[1]![0].evidence[0]).toEqual({ callId: "call.1", toolId: "inspect", value: page });
   });
 
-  it("rejects malformed decisions and enforces cancellation and iteration limits", async () => {
+  // No count of turns ends a loop (t1056): `maxIterations` is read by nothing, and a loop runs on to its result.
+  it("rejects malformed decisions and enforces cancellation, and no count of turns", async () => {
     await expect(runAutomationStudioLlmEvidenceLoop({ tools, decide: async () => ({ kind: "complete", result: {}, extra: true }), executeTool: async () => ({}) }))
       .resolves.toMatchObject({ ok: false, code: "llm_evidence_loop.invalid_decision" });
     const controller = new AbortController();
     controller.abort();
     await expect(runAutomationStudioLlmEvidenceLoop({ tools, signal: controller.signal, decide: async () => ({ kind: "complete", result: {} }), executeTool: async () => ({}) }))
       .resolves.toMatchObject({ ok: false, code: "llm_evidence_loop.cancelled", accounting: { iterations: 0 } });
-    await expect(runAutomationStudioLlmEvidenceLoop({ tools, maxIterations: 1, decide: async () => ({ kind: "tool_call", callId: "call.1", toolId: "inspect", input: {} }), executeTool: async () => ({ ok: true }) }))
-      .resolves.toMatchObject({ ok: false, code: "llm_evidence_loop.iteration_limit", accounting: { iterations: 1, toolCalls: 1 } });
+    let asked = 0;
+    await expect(runAutomationStudioLlmEvidenceLoop({ tools, decide: async () => (asked += 1) <= 3 ? { kind: "tool_call", callId: `call.${asked}`, toolId: "inspect", input: { at: asked } } : { kind: "complete", result: {} }, executeTool: async () => ({ ok: true }) }))
+      .resolves.toMatchObject({ ok: true, accounting: { iterations: 4, toolCalls: 3 } });
   });
 
   it("requires a successful mutation before repeating a protected observation", async () => {
@@ -103,7 +105,7 @@ describe("Automation Studio LLM evidence loop", () => {
     const blocked = await runAutomationStudioLlmEvidenceLoop({ tools: progressTools, decide: blockedDecide, executeTool: blockedExecute });
     expect(blocked).toMatchObject({ ok: true, accounting: { iterations: 5, toolCalls: 1 } });
     expect(blockedExecute).toHaveBeenCalledTimes(1);
-    expect(blockedDecide.mock.calls[1]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["act", "core.run_flow"]); // `core.run_flow` is offered from the first decision (page-diff D11), refused by name until a step can run again.
+    expect(blockedDecide.mock.calls[1]?.[0].tools.map((tool: { toolId: string }) => tool.toolId).filter((id: string) => id !== "core.loop_decision")).toEqual(["act", "core.run_flow"]); // `core.run_flow` is offered from the first decision (page-diff D11), refused by name until a step can run again.
     expect(JSON.stringify(blockedDecide.mock.calls[1]?.[0].decisionSchema)).not.toContain('"inspect"');
     expect(blockedDecide.mock.calls[2]?.[0].evidence).toEqual([
       { callId: "call.observe.1", toolId: "inspect", value: { observed: true } },
@@ -128,8 +130,8 @@ describe("Automation Studio LLM evidence loop", () => {
       ? { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true, targetsUnchanged: true }
       : { observed: true } }))
       .resolves.toMatchObject({ ok: true, result: { ready: true }, accounting: { iterations: 4, toolCalls: 3 } });
-    expect(progressiveDecide.mock.calls[1]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["act", "core.run_flow"]);
-    expect(progressiveDecide.mock.calls[2]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["inspect", "act", "core.run_flow"]);
+    expect(progressiveDecide.mock.calls[1]?.[0].tools.map((tool: { toolId: string }) => tool.toolId).filter((id: string) => id !== "core.loop_decision")).toEqual(["act", "core.run_flow"]);
+    expect(progressiveDecide.mock.calls[2]?.[0].tools.map((tool: { toolId: string }) => tool.toolId).filter((id: string) => id !== "core.loop_decision")).toEqual(["inspect", "act", "core.run_flow"]);
 
     const recoverableDecide = vi.fn()
       .mockResolvedValueOnce({ kind: "tool_call", callId: "call.observe.1", toolId: "inspect", input: {} })
@@ -151,7 +153,7 @@ describe("Automation Studio LLM evidence loop", () => {
     expect(recoverable).toMatchObject({ ok: true, accounting: { iterations: 4, toolCalls: 3 } });
     expect(recoverable.trace[2]).toMatchObject({ iteration: 3, toolId: "inspect", callId: "call.observe.2" });
     expect(recoverable.trace[2]?.resultCode).toBeUndefined();
-    expect(recoverableDecide.mock.calls[2]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["inspect", "act", "core.run_flow"]);
+    expect(recoverableDecide.mock.calls[2]?.[0].tools.map((tool: { toolId: string }) => tool.toolId).filter((id: string) => id !== "core.loop_decision")).toEqual(["inspect", "act", "core.run_flow"]);
     expect(recoverableDecide.mock.calls[2]?.[0].evidence).toEqual(expect.arrayContaining([
       expect.objectContaining({ toolId: "act", value: { ok: false, code: "action.recoverable" } })
     ]));
@@ -181,7 +183,7 @@ describe("Automation Studio LLM evidence loop", () => {
     expect(executeTool).toHaveBeenCalledWith({ callId: "initial.inspect", toolId: "inspect", value: {} });
     expect(decide).toHaveBeenCalledTimes(1);
     expect(decide.mock.calls[0]?.[0]).toMatchObject({ iteration: 1, canComplete: true, evidence: [{ callId: "initial.inspect", toolId: "inspect", value: { facts: ["ready"] } }] });
-    expect(decide.mock.calls[0]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["act", "core.run_flow"]); // `core.run_flow` is offered from the first decision (page-diff D11), refused by name until a step can run again.
+    expect(decide.mock.calls[0]?.[0].tools.map((tool: { toolId: string }) => tool.toolId).filter((id: string) => id !== "core.loop_decision")).toEqual(["act", "core.run_flow"]); // `core.run_flow` is offered from the first decision (page-diff D11), refused by name until a step can run again.
     expect(JSON.stringify(decide.mock.calls[0]?.[0].decisionSchema)).not.toContain('"inspect"');
     expect(result.trace).toMatchObject([{ iteration: 0, decision: "tool_call", toolId: "inspect" }, { iteration: 1, decision: "complete" }]);
   });
@@ -206,7 +208,7 @@ describe("Automation Studio LLM evidence loop", () => {
     });
 
     expect(result).toMatchObject({ ok: true, result: { ready: true }, accounting: { iterations: 3, toolCalls: 2 } });
-    expect(decide.mock.calls[0]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["inspect"]);
+    expect(decide.mock.calls[0]?.[0].tools.map((tool: { toolId: string }) => tool.toolId).filter((id: string) => id !== "core.loop_decision")).toEqual(["inspect"]);
     expect(JSON.stringify(decide.mock.calls[0]?.[0].decisionSchema)).toContain('"tool_call"');
     // The free look still ran, the repeat of it was answered from the evidence
     // already held, and only the question with a new input reached the tool.
@@ -303,7 +305,7 @@ describe("the total the loop gathers", () => {
     const calls: object[] = [];
     let call = 0;
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, maxIterations: 26, maxToolCalls: 27,
+      tools, 
       decide: async ({ evidence }) => {
         shown.push(evidence);
         call += 1;
@@ -327,7 +329,7 @@ describe("the total the loop gathers", () => {
   it("never ends evidence_limit, however much is gathered", async () => {
     let call = 0;
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, maxIterations: 12, maxToolCalls: 12, unusableDecisions: { stalled: () => new Error("stalled") },
+      tools, unusableDecisions: { stalled: () => new Error("stalled") },
       decide: async () => (call += 1) <= 11 ? pageCall(call) : { kind: "complete", result: {} },
       executeTool: async ({ value }) => ({ page: value.page ?? null, text: "x".repeat(200_000) })
     });
@@ -626,7 +628,7 @@ describe("the opening arrival (F31)", () => {
       const executeTool = vi.fn(async (call: { callId: string }) => { order.push(`run:${call.callId}`); return arrived; });
       const decide = vi.fn(async () => { order.push("decide"); return complete; });
       const result = await runAutomationStudioLlmEvidenceLoop({
-        tools: [runNode({ input: look, arrival })], decide, executeTool, maxIterations: 3, maxToolCalls: 3, dryRun: false, unusableDecisions: { stalled }
+        tools: [runNode({ input: look, arrival })], decide, executeTool, dryRun: false, unusableDecisions: { stalled }
       });
       // The arrival, not the look, and no provider call before it.
       expect(executeTool).toHaveBeenCalledTimes(1);
@@ -645,7 +647,7 @@ describe("the opening arrival (F31)", () => {
       const decide = vi.fn().mockResolvedValueOnce({ kind: "tool_call", callId: "call.1", toolId: "core.run_node", input: look }).mockResolvedValueOnce(complete);
       await runAutomationStudioLlmEvidenceLoop({
         tools: [runNode({ input: look, arrival })], decide, executeTool: vi.fn().mockResolvedValueOnce(arrived).mockResolvedValueOnce(looked),
-        maxIterations: 3, maxToolCalls: 3, dryRun: false, unusableDecisions: { stalled }
+        dryRun: false, unusableDecisions: { stalled }
       });
       const history = JSON.stringify(shownAt(decide, 1).find((entry) => entry.toolId === "core.evidence_history")?.value ?? null);
       expect(history).toContain("initial.core.run_node");
@@ -656,7 +658,7 @@ describe("the opening arrival (F31)", () => {
       const decide = vi.fn().mockResolvedValueOnce(complete);
       const result = await runAutomationStudioLlmEvidenceLoop({
         tools: [runNode({ input: look, arrival })], decide, executeTool: vi.fn().mockRejectedValue(new Error("offline")),
-        maxIterations: 3, maxToolCalls: 3, dryRun: false, toolFailures: "observe", unusableDecisions: { stalled }
+        dryRun: false, toolFailures: "observe", unusableDecisions: { stalled }
       });
       expect(result.steps.filter((step) => step.disposition === "kept")).toEqual([]);
       expect(result.trace[0]).toMatchObject({ iteration: 0, callId: "initial.core.run_node", resultCode: "llm_evidence_loop.tool_failed" });
@@ -666,7 +668,7 @@ describe("the opening arrival (F31)", () => {
     it("takes the free look exactly as before when no arrival is declared", async () => {
       const executeTool = vi.fn().mockResolvedValue({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: false, draft: { actionId: "web.output.dom-capture", effect: "observe", proposes: false } });
       const result = await runAutomationStudioLlmEvidenceLoop({
-        tools: [runNode({ input: look })], decide: vi.fn().mockResolvedValueOnce(complete), executeTool, maxIterations: 3, maxToolCalls: 3, dryRun: false, unusableDecisions: { stalled }
+        tools: [runNode({ input: look })], decide: vi.fn().mockResolvedValueOnce(complete), executeTool, dryRun: false, unusableDecisions: { stalled }
       });
       expect(executeTool.mock.calls[0]![0]).toMatchObject({ callId: "initial.core.run_node", value: look });
       expect(result.steps.map((step) => step.disposition)).toEqual(["taken"]);
@@ -716,8 +718,8 @@ describe("the route the person named, in the loop", () => {
     const seen: string[] = [];
     const unsubscribe = automationStudioActivityHub.subscribe((event) => seen.push(event.label));
     const result = await runWithAutomationStudioActivity({ kind: "build", id: "b1", projectId: "p1" }, () => runAutomationStudioLlmEvidenceLoop(observeAutomationStudioEvidenceLoop(automationStudioLlmEvidenceLoopRouteChecked({
-      tools: routeTools, decide, executeTool: routePressing, maxIterations: 8, maxToolCalls: 8, dryRun: false, propagateDecisionErrors: true, checkCompletion,
-      unusableDecisions: { maxConsecutive: 3, stalled: () => new Error("stalled") },
+      tools: routeTools, decide, executeTool: routePressing, dryRun: false, propagateDecisionErrors: true, checkCompletion,
+      unusableDecisions: { stalled: () => new Error("stalled") },
       draft: { route, routeCheck }
     })))).finally(unsubscribe);
     expect(seen).toContain("The proposed Flow was sent back to be fixed");
@@ -752,7 +754,7 @@ describe("the route the person named, in the loop", () => {
   it("is never asked by the loop itself: only a caller's composition asks it", async () => {
     const routeCheck = vi.fn(async () => undefined);
     const decide = vi.fn().mockResolvedValueOnce(routePress(1, "r1")).mockResolvedValue(routeComplete);
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: routeTools, decide, executeTool: routePressing, maxIterations: 4, maxToolCalls: 4, dryRun: false, propagateDecisionErrors: true, draft: { routeCheck } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: routeTools, decide, executeTool: routePressing, dryRun: false, propagateDecisionErrors: true, draft: { routeCheck } });
     expect(result.ok).toBe(true);
     expect(routeCheck).not.toHaveBeenCalled();
   });

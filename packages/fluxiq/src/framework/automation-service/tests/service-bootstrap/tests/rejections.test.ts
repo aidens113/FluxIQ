@@ -44,7 +44,6 @@ function createService(input: {
   const resolver = input.resolver ?? (() => ({
     provider,
     tokenLimits: { maxInputTokens: 992_000, maxOutputTokens: 8_000, maxTotalTokens: 1_000_000 },
-    maxCallsPerRun: 1,
     maxEstimatedCostUsd: 0.1,
     timeoutMs: 20_000
   }));
@@ -131,19 +130,22 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
   ])("feeds back, then reports a content-free failure for, invalid %s", async (_label, expectedRefusal, expectedIssue, completion) => {
     const requests: AutomationStudioLlmTaskRequest[] = [];
     // The build reads its instruction when it starts (t976, b2ee9ed45): answered apart from the decisions
-    // counted here, and paid for at a decision's price, so the build's accounting holds four calls.
+    // counted here, and paid for at a tenth of a cent. Each decision costs eight cents, so the build's 25-cent purse,
+    // not a count of calls (t1056), ends it after a few. This provider prices nothing, so once a decision has reported
+    // eight cents each later one is held at that (`llm/build-purse/priced.ts`), beside the judging pair kept back at
+    // the default model's price: the purse pays for three decisions and refuses the fourth.
     const provider = mockProvider(automationStudioAnsweringInstructionReading(async (request) => (requests.push(request), {
       response: {
         kind: "evidence_tool_decision",
         summary: "Complete candidate.",
         decision: { kind: "complete", result: completion() }
       },
-      usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }
+      usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.08 }
     }), { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }));
     const { project, flow } = await seeded(single);
     const instance = createService({
       provider,
-      resolver: () => ({ provider, maxCallsPerRun: 3 }),
+      resolver: () => ({ provider }),
       evidenceRuntime: {
         domainId: "test.domain", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect bounded evidence.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } }],
         executeTool: vi.fn().mockResolvedValue({ factCount: 1 })
@@ -157,13 +159,14 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       evidenceGuided: true
     }));
 
-    expect(requests).toHaveLength(3);
+    const n = requests.length;
+    expect(n).toBeGreaterThanOrEqual(2);
     const feedback = requests[1]?.context.evidenceLoop?.evidence.find((item) => item.toolId === "core.completion_check")?.value;
     expect(feedback).toMatchObject({ ok: false, refusal: expectedRefusal, issues: expect.arrayContaining([expect.objectContaining({ code: expectedIssue })]) });
-    // The three calls the run declares are spent with nothing in the Flow: a budget hit, said with its message (t208).
+    // The purse is spent with nothing in the Flow: a budget hit, said with its message (t208).
     expect(diagnostic).toMatchObject({
       code: "flow_bootstrap.evidence_budget_exhausted",
-      ending: { kind: "budget_exhausted", bound: "calls", message: expect.stringContaining("its limit of 3 model calls") },
+      ending: { kind: "budget_exhausted", bound: "cost", message: expect.stringContaining("spending limit") },
       stage: "provider_output_validation",
       retryable: true,
       providerInvocation: "attempted",
@@ -171,22 +174,25 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       accounting: {
         provider: "mock-production",
         model: "mock-bootstrap",
-        inputTokens: 40,
-        outputTokens: 20,
-        totalTokens: 60
+        inputTokens: 10 * n + 10,
+        outputTokens: 5 * n + 5,
+        totalTokens: 15 * n + 15
       },
       evidenceLoop: {
-        iterationCount: 3,
-        // Three decisions and four trace rows: the opening observation is
+        iterationCount: n,
+        // n decisions and n + 1 trace rows: the opening observation is
         // iteration 0 and was never a provider call.
-        decisionCount: 3,
-        toolCallCount: 1,
-        // The opening observation, then each refused plan and the first code that refused it.
-        steps: [{ toolId: "inspect" }, ...Array.from({ length: 3 }, () => ({ toolId: "core.decision_unusable", resultCode: expect.any(String) }))]
+        decisionCount: n,
+        toolCallCount: 1
       },
       issueCodes: expect.arrayContaining([expectedIssue])
     });
-    expect(diagnostic.accounting?.estimatedCostUsd).toBeCloseTo(0.004, 9);
+    // The opening observation, then each refused plan and the first code that refused it. Loop detection may add its own
+    // row where it steers the repeat (`loop_steered`): a note on the trace, not a decision, and never an ending.
+    const steps = (diagnostic.evidenceLoop as unknown as { steps: { toolId: string; resultCode?: string }[] }).steps;
+    expect(steps.filter((step) => step.resultCode !== "llm_evidence_loop.loop_steered")).toMatchObject([{ toolId: "inspect" }, ...Array.from({ length: n }, () => ({ toolId: "core.decision_unusable", resultCode: expect.any(String) }))]);
+    expect(n).toBe(3);
+    expect(diagnostic.accounting?.estimatedCostUsd).toBeCloseTo(0.08 * n + 0.001, 9);
     expect(Object.keys(diagnostic)).toEqual(expect.arrayContaining(["code", "stage", "accounting"]));
     expect(JSON.stringify(diagnostic)).not.toMatch(/Candidate|missing\.definition|unexpected/);
     await expectNoTopology(instance, project.id, flow.flowId);

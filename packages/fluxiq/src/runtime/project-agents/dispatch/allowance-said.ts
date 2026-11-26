@@ -14,8 +14,6 @@ const MAX_GRANTS_NAMED = 5;
 export type AutomationStudioProjectDispatchSizedAtStart = {
   allowanceUsd: number;
   dispatchedUsd: number;
-  maxCalls?: number;
-  dispatchedCalls?: number;
 };
 
 const usd = (value: number): string => `$${value.toFixed(4)}`;
@@ -24,8 +22,7 @@ const usd = (value: number): string => `$${value.toFixed(4)}`;
 export function automationStudioProjectDispatchAllowanceSaid(sized: AutomationStudioProjectDispatchSizedAtStart | undefined, topUps: readonly AutomationStudioLlmBuildPurseTopUp[]): string {
   const said: string[] = [];
   if (sized) {
-    const calls = sized.maxCalls !== undefined && sized.dispatchedCalls !== undefined && sized.maxCalls !== sized.dispatchedCalls ? ` and ${sized.maxCalls} calls of ${sized.dispatchedCalls}` : "";
-    said.push(`It started after its predecessor with an allowance of ${usd(sized.allowanceUsd)} of the ${usd(sized.dispatchedUsd)} it was sized at${calls}: its share of what the build's purse could then give.`);
+    said.push(`It started after its predecessor with an allowance of ${usd(sized.allowanceUsd)} of the ${usd(sized.dispatchedUsd)} it was sized at: its share of what the build's purse could then give.`);
   }
   if (topUps.length) {
     const total = topUps.reduce((sum, grant) => sum + grant.usd, 0);

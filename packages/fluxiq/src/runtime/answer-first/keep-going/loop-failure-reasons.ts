@@ -17,6 +17,5 @@ export const AUTOMATION_STUDIO_ANSWER_FIRST_LOOP_FAILURE_REASONS = Object.freeze
   "llm_evidence_loop.evidence_limit": "the round gathered all the evidence it may hold",
   "llm_evidence_loop.iteration_limit": "the round ran out of turns",
   "llm_evidence_loop.cancelled": "the round was cancelled without a Stop from the person",
-  "llm_evidence_loop.unreadable_replies": "the model's replies kept arriving unreadable",
   "llm_evidence_loop.provider_unavailable": "the model service stopped answering"
 } as const satisfies Record<AutomationStudioLlmEvidenceLoopFailureCode, string>);

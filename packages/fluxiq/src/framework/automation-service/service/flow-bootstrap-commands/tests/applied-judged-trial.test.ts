@@ -56,7 +56,7 @@ async function appliedCandidate() {
       : { kind: "complete", result: { revision: latest?.revision, digest: latest?.digest } };
     return { response: { kind: "evidence_tool_decision", summary: "Scripted", decision }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 } };
   });
-  const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 12, maxEstimatedCostUsd: 0.1 }),
+  const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxEstimatedCostUsd: 0.1 }),
     llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect", inputSchema: { type: "object" }, effect: "observe" }],
       executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { looked: true }, effectApplied: false, targetsUnchanged: true }) } });
   cleanups.push(async () => {

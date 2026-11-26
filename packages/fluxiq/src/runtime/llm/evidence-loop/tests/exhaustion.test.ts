@@ -18,21 +18,22 @@ const draftSteps = [
 ];
 const refusal = { code: "llm_budget.run_cost_limit" as const, projectedCostUsd: 0.14, estimatedInputTokens: 475_714, maxOutputTokens: 8_000, spentUsd: 0.154, pendingUsd: 0, ceilingUsd: 0.25 };
 const base = {
-  maxIterations: 26, iterations: 26, draftSteps, completionAttempts: 2,
+  iterations: 26, draftSteps, completionAttempts: 2,
   unusableInARow: 0, lastIssueCodes: ["flow.unreachable_step"], lastRemaining: undefined, purseRefusal: undefined, outstandingIssueCodes: ["flow.unreachable_step"]
 };
 
 describe("the record an exhausted evidence loop ends with", () => {
   it("counts the draft, and of it only the kept steps a Flow could be proposed from", () => {
-    expect(automationStudioLlmEvidenceLoopExhaustion({ ...base, bound: "iterations" })).toEqual({
-      bound: "iterations", maxIterations: 26, iterations: 26, draftSteps: 5, proposableSteps: 2, completionAttempts: 2,
+    // Only a budget runs out (t1056): no count of turns or calls ends a loop, and the record names none.
+    expect(automationStudioLlmEvidenceLoopExhaustion({ ...base, bound: "budget" })).toEqual({
+      bound: "budget", iterations: 26, draftSteps: 5, proposableSteps: 2, completionAttempts: 2,
       lastIssueCodes: [], outstandingIssueCodes: ["flow.unreachable_step"]
     });
   });
 
   it("carries the last refusal's issues only while the run of refusals is unbroken, as a copy", () => {
     const lastIssueCodes = ["flow.unreachable_step"];
-    const record = automationStudioLlmEvidenceLoopExhaustion({ ...base, bound: "tool_calls", unusableInARow: 3, lastIssueCodes });
+    const record = automationStudioLlmEvidenceLoopExhaustion({ ...base, bound: "budget", unusableInARow: 3, lastIssueCodes });
     expect(record.lastIssueCodes).toEqual(lastIssueCodes);
     expect(record.lastIssueCodes).not.toBe(lastIssueCodes);
     expect(record).not.toHaveProperty("budgetBound");
@@ -41,7 +42,7 @@ describe("the record an exhausted evidence loop ends with", () => {
   it("names the budget bound that ran out, and only for a budget ending", () => {
     expect(automationStudioLlmEvidenceLoopExhaustion({ ...base, bound: "budget", lastRemaining: { limitedBy: "tokens" } })).toMatchObject({ bound: "budget", budgetBound: "tokens" });
     expect(automationStudioLlmEvidenceLoopExhaustion({ ...base, bound: "budget" })).not.toHaveProperty("budgetBound");
-    expect(automationStudioLlmEvidenceLoopExhaustion({ ...base, bound: "iterations", lastRemaining: { limitedBy: "tokens" } })).not.toHaveProperty("budgetBound");
+    expect(automationStudioLlmEvidenceLoopExhaustion({ ...base, bound: "budget", lastRemaining: {} })).not.toHaveProperty("budgetBound");
   });
 
   it("names cost, and carries a copy of the purse's refusal, when the purse is what refused the next decision", () => {
@@ -54,9 +55,6 @@ describe("the record an exhausted evidence loop ends with", () => {
     // A loop given the build's purse and no budget of its own has no count, and the refusal still ends it on cost.
     expect(automationStudioLlmEvidenceLoopExhaustion({ ...base, bound: "budget", purseRefusal: { ...refusal, carriedUsd: 0.05 } }))
       .toMatchObject({ budgetBound: "cost", costRefusal: { ...refusal, carriedUsd: 0.05 } });
-    // Any other ending carries no cost figures, whatever the purse last refused.
-    expect(automationStudioLlmEvidenceLoopExhaustion({ ...base, bound: "iterations", lastRemaining: { limitedBy: "cost" }, purseRefusal: refusal })).not.toHaveProperty("costRefusal");
-    expect(automationStudioLlmEvidenceLoopExhaustion({ ...base, bound: "tool_calls", purseRefusal: refusal })).not.toHaveProperty("budgetBound");
     // Without a refusal a budget ending is the bound the count ran out of, with no figures (the count never runs out of cost).
     const tokens = automationStudioLlmEvidenceLoopExhaustion({ ...base, bound: "budget", lastRemaining: { limitedBy: "tokens" } });
     expect(tokens).toMatchObject({ budgetBound: "tokens" });

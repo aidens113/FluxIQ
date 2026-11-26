@@ -72,8 +72,8 @@ export async function automationStudioFlowBootstrapCreationPurse(input: {
   interpretationCostUsd?: number | undefined;
   /** How many priced calls that reading was: the record's `chat` calls in a Lab-scoped run. */
   interpretationCalls?: number | undefined;
+  /** The build's purse, in dollars. It counts no calls (t1056: "A purse is dollars, never a count of calls"). */
   ceilingUsd: number;
-  maxCalls?: number;
 }): Promise<AutomationStudioFlowBootstrapCreationPurse> {
   const { store, projectId, flowId, repair } = input;
   const flowPurse = input.flowPurse ?? resolveAutomationStudioLlmTestRunCostCeilingUsd() !== undefined;
@@ -83,7 +83,7 @@ export async function automationStudioFlowBootstrapCreationPurse(input: {
   const labCreation = flowPurse && !repair;
   if (labCreation && interpretationUsd > 0) await store.add(projectId, flowId, interpretationUsd, { phase: "chat", calls: input.interpretationCalls ?? 0 });
   const carriedUsd = labCreation ? store.spentNowUsd(projectId, flowId) : (creation?.spentUsd ?? 0) + interpretationUsd;
-  const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: input.ceilingUsd, ...(input.maxCalls === undefined ? {} : { maxCalls: input.maxCalls }), carriedUsd });
+  const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: input.ceilingUsd, carriedUsd });
   const part = repair ? "reauthor" : "creation";
   let creationEnded = false; // A Flow proposed, or the build ended not doable: the creation is over, and its record goes with it.
   // A call the purse refused, never sent: its own figures, read off the harness's refusal.

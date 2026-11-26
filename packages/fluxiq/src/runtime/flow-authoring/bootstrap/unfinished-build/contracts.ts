@@ -16,12 +16,9 @@ import type { AutomationStudioFlowBootstrapBudgetBound } from "../generation-fai
 
 /** Why a live round stopped without the model saying the Flow was ready, where no budget was the reason. */
 export type AutomationStudioFlowBootstrapUnfinishedStop =
-  /** It used the decisions or tool calls a round is allowed. */
-  | "iterations"
-  | "tool_calls"
-  /** Its decisions kept coming back unusable: most often completions the check kept refusing. */
+  /** Its caller ended it on loop detection's signal over decisions that kept coming back unusable, or the model asked the person. No count of decisions or tool calls ends a round (t1056). */
   | "unusable_decisions"
-  /** Its no-progress guard stopped it. */
+  /** Its caller ended it on loop detection's signal over a run of repeats. */
   | "repeat_without_progress"
   /**
    * It finished: the model said the Flow was ready and its test passed, but
@@ -168,6 +165,8 @@ export type AutomationStudioFlowBootstrapRoundProgress = {
   accounting: Readonly<AutomationStudioLlmEvidenceLoopAccounting>;
   /** Which allowance ran out, where the round ran out of one. */
   exhaustion?: AutomationStudioLlmEvidenceLoopExhaustion;
+  /** The unreadable replies a budget ran out during: what the money last went on, said by the budget's ending (t1056). */
+  unreadable?: AutomationStudioLlmEvidenceLoopUnreadable;
 };
 
 /** How one live round ended, read for what the build does next. */
@@ -180,21 +179,6 @@ export type AutomationStudioFlowBootstrapRoundEnding =
   | {
     kind: "unfinished";
     stopped: AutomationStudioFlowBootstrapUnfinishedStop;
-    steps: AutomationStudioFlowDraftStep[];
-    lastIssueCodes: readonly string[];
-    completionAttempts: number;
-    progress: AutomationStudioFlowBootstrapRoundProgress;
-  }
-  /**
-   * The provider's replies kept arriving unreadable, each asked again with a
-   * note of what could not be read, until an unbroken run of them reached its
-   * limit (`../../llm/unreadable-reply.ts`): ended as exactly that, with how
-   * many tries it took. `stopped` is the stop a later build is told.
-   */
-  | {
-    kind: "unreadable";
-    stopped: "unusable_decisions";
-    unreadable: AutomationStudioLlmEvidenceLoopUnreadable;
     steps: AutomationStudioFlowDraftStep[];
     lastIssueCodes: readonly string[];
     completionAttempts: number;

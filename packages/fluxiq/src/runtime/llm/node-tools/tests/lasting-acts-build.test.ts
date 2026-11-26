@@ -82,7 +82,7 @@ describe("a build whose step declares [] and claims an instructed lasting act", 
       .mockResolvedValueOnce({ kind: "tool_call", callId: "add.towels", toolId: "press", input: { target: "towels", consequences: [] }, add: true, act: "a1" })
       .mockResolvedValueOnce({ kind: "tool_call", callId: "add.napkins", toolId: "press", input: { target: "napkins", consequences: [] }, add: true, act: "a2" })
       .mockResolvedValueOnce({ kind: "complete", result: { done: true } });
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool: permissions.executeTool, maxIterations: 5, maxToolCalls: 5, propagateDecisionErrors: true, fullRunRequired: true, lastingActs });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool: permissions.executeTool, propagateDecisionErrors: true, fullRunRequired: true, lastingActs });
     expect(result.ok).toBe(true);
     expect(Object.fromEntries(counts)).toEqual({ towels: 1, napkins: 1 });
     const test = automationStudioFlowDraftDryRunGate({ enabled: true, steps: result.steps.map((step) => ({ ...step })), executeTool: permissions.executeTool, accountEvidence: () => 0, showEvidence: () => undefined, targetMoved: () => undefined, lastingActs });
@@ -104,7 +104,7 @@ describe("a build whose step declares [] and claims an instructed lasting act", 
       .mockResolvedValueOnce({ kind: "complete", result: { done: true } });
 
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, executeTool: run.permissions.executeTool, maxIterations: 4, maxToolCalls: 4, propagateDecisionErrors: true, fullRunRequired: true, lastingActs: run.lastingActs
+      tools, decide, executeTool: run.permissions.executeTool, propagateDecisionErrors: true, fullRunRequired: true, lastingActs: run.lastingActs
     });
 
     expect(result).toMatchObject({ ok: true });
@@ -132,7 +132,7 @@ describe("a build whose step declares [] and claims an instructed lasting act", 
   it("makes no read for a build that never reaches a test", async () => {
     const run = build();
     const decide = vi.fn().mockResolvedValueOnce({ kind: "complete", result: { done: true } });
-    await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool: run.permissions.executeTool, maxIterations: 2, maxToolCalls: 2, propagateDecisionErrors: true, lastingActs: run.lastingActs });
+    await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool: run.permissions.executeTool, propagateDecisionErrors: true, lastingActs: run.lastingActs });
     expect(run.lastingActs).not.toHaveBeenCalled();
     expect(run.derived()).toBe(0);
   });

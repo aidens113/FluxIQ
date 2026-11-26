@@ -8,7 +8,6 @@
 // work that extends Flow Bootstrap; the service imports both through this
 // directory's barrel.
 import type { AutomationStudioFlowAdaptation } from "../../../flows/authoring/model/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS } from "../../loop-limits/index.ts";
 import {
   assertAutomationStudioBootstrapHasNoRecordingProvenance,
   type AutomationStudioBootstrapAccounting,
@@ -21,7 +20,8 @@ export function sanitizedBootstrapAccounting(value: AutomationStudioBootstrapAcc
     return item.trim();
   };
   const boundedInteger = (item: unknown, label: string): number => {
-    if (!Number.isSafeInteger(item) || (item as number) < 0 || (item as number) > AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS) throw new Error(`Flow Bootstrap ${label} is invalid.`);
+    // A build's totals have no ceiling: no count of its calls has one (t1056).
+    if (!Number.isSafeInteger(item) || (item as number) < 0) throw new Error(`Flow Bootstrap ${label} is invalid.`);
     return item as number;
   };
   const boundedCost = (item: unknown): number => {

@@ -3,12 +3,11 @@
 // 2026-11-24: "THERE SHOULDNT BE ANY ARBITRARY FUCKING CALL LIMIT THAT RANDOMLY JUST RESETS EVERYTHING"). Now each re-ask
 // names what could not be read and where the reply parted from the schema; two in a row that failed the same way are a
 // loop finding for the deciding role, steered with the model's own decision, as a judge's are (t1000); and only loop
-// detection's last rung ends the round. A caller that does not take the signal keeps its count.
+// detection's last rung ends the round. A caller that does not take the signal has no count either (t1056).
 import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID,
-  AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNREADABLE_REPLIES_IN_A_ROW,
   AutomationStudioLlmUnusableDecisionError,
   runAutomationStudioLlmEvidenceLoop,
   type AutomationStudioLlmEvidenceLoopInput
@@ -24,6 +23,8 @@ const offShape = (path = "response.decision.input") => new AutomationStudioLlmUn
 const CASES = ["content_mismatched", "content_unclosed", "content_fenced", "content_prefixed", "content_trailing", "content_invalid", "content_not_object", "content_empty"] as const;
 const differently = (index: number) => new AutomationStudioLlmUnusableDecisionError(["llm.provider_malformed_response"], { case: CASES[index % CASES.length]!, finishReason: "stop", contentChars: 900, usage });
 const stalledError = new Error("stalled");
+/** The count of unreadable replies in a row that once ended a loop (t1056 removed it). */
+const OLD_UNREADABLE_IN_A_ROW = 6;
 
 type Shown = ReadonlyArray<{ toolId: string; value: JsonObject }>;
 const shownAt = (decide: ReturnType<typeof vi.fn>, index: number): Shown => (decide.mock.calls[index]![0] as { evidence: Shown }).evidence;
@@ -36,7 +37,7 @@ function round(decide: ReturnType<typeof vi.fn>, extra: Partial<AutomationStudio
   const ran = runAutomationStudioLlmEvidenceLoop({
     tools, decide, executeTool: async () => ({ seen: true }),
     maxIterations: 8, maxToolCalls: 8, dryRun: false, propagateDecisionErrors: true, attemptRecord: record,
-    unusableDecisions: { maxConsecutive: 8, stalled: () => stalledError },
+    unusableDecisions: { stalled: () => stalledError },
     loopSignal: (signal: AutomationStudioLlmLoopSignal) => {
       signals.push(signal);
       return "end";
@@ -49,7 +50,7 @@ function round(decide: ReturnType<typeof vi.fn>, extra: Partial<AutomationStudio
 describe("unreadable decision replies where no count ends the round (t1014)", () => {
   it("are asked again past the old count when each fails a different way, and the round goes on to its result", async () => {
     const decide = vi.fn();
-    const unreadable = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNREADABLE_REPLIES_IN_A_ROW + 4;
+    const unreadable = OLD_UNREADABLE_IN_A_ROW + 4;
     decide.mockImplementation(async () => {
       const at = decide.mock.calls.length;
       if (at <= unreadable) throw differently(at);
@@ -117,12 +118,16 @@ describe("unreadable decision replies where no count ends the round (t1014)", ()
     expect(shownAt(decide, decide.mock.calls.length - 1).some((entry) => entry.toolId === "core.loop_check")).toBe(false);
   });
 
-  it("still end on their count for a caller that does not take the signal", async () => {
+  it("end on no count for a caller that does not take the signal either: asked again, steered, until a readable reply", async () => {
+    const many = OLD_UNREADABLE_IN_A_ROW * 4;
     const decide = vi.fn();
     decide.mockImplementation(async () => {
-      throw offShape();
+      if (decide.mock.calls.length <= many) throw offShape();
+      return complete;
     });
     const { ran } = round(decide, { loopSignal: undefined });
-    await expect(ran).resolves.toMatchObject({ ok: false, code: "llm_evidence_loop.unreadable_replies" });
+    await expect(ran).resolves.toMatchObject({ ok: true, result: { done: true } });
+    expect(decide).toHaveBeenCalledTimes(many + 1);
+    expect(latest(decide, many, "core.loop_check")).toMatchObject({ code: "llm_evidence_loop.loop_steered" });
   });
 });

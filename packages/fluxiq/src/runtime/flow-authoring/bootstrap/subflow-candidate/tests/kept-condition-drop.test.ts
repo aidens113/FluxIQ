@@ -110,6 +110,8 @@ describe("the resend a brief's kept-condition refusal invites, through the build
       if (iteration === 4) return call("look-2", look.toolId, { again: true });
       if (iteration === 5) return call("submit-drop", AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, dropped);
       if (iteration === 6) return call("submit-again", AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, dropped);
+      // A completion the check refuses, then the script ends: no count of turns ends the loop (t1056).
+      if (iteration > 7) throw new Error("script exhausted");
       return { kind: "complete", result: { subflowKey: scope.subflowKey, revision: 0, digest: "none" } };
     };
     await runAutomationStudioSubflowBuilderLoop({
@@ -117,12 +119,12 @@ describe("the resend a brief's kept-condition refusal invites, through the build
       trial: { port: async (request: AutomationStudioSubflowTrialRequest) => answered(request, await judge(request.proposal.subflows)) },
       accepted: (proposal) => accepted.push(proposal.revision),
       loop: {
-        tools: [look], maxIterations: 8, maxToolCalls: 10,
-        unusableDecisions: { maxConsecutive: 8, maxInARow: 8, stalled: () => new Error("stalled") },
+        tools: [look],
+        unusableDecisions: { stalled: () => new Error("stalled") },
         executeTool: async () => ({ kind: "llm_evidence_tool_execution", stateDigests: { before: PAGE, after: PAGE }, evidence: { ok: true, sites: 12 }, effectApplied: false, draft: { actionId: "demo.look", effect: "observe", proposes: false } }),
         decide
       }
-    });
+    }).catch(() => undefined);
 
     // The refusal carries the mark the guard reads beside Core's feedback, as the inner controller wrote it.
     expect(entry(shown, "submit-drop")).toMatchObject({ ok: false, diagnostics: { code: AUTOMATION_STUDIO_CANDIDATE_KEPT_CONDITION_DROPPED_CODE, resend: "accepted_once" } });

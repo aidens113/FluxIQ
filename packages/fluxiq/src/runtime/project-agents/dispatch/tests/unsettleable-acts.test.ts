@@ -76,7 +76,7 @@ describe("a return while an act no call can settle is on the site", () => {
     const ports: AutomationStudioProjectResetPorts = {
       loop: {
         tools: [LOOK],
-        unusableDecisions: { maxConsecutive: 2, maxInARow: 2, stalled: () => new Error("the reset stalled") },
+        unusableDecisions: { stalled: () => new Error("the reset stalled") },
         executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: false, targetsUnchanged: true }),
         decide: async () => {
           decisions += 1;

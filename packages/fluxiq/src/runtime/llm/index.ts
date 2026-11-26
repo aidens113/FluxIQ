@@ -61,10 +61,9 @@ export {
 export { releaseAutomationStudioSessionDeepSeekKey, type AutomationStudioSessionKeyOptions, type AutomationStudioSessionKeyPorts } from "./deepseek/index.ts";
 export * from "./failure-disposition.ts";
 export * from "./evidence-loop.ts";
-// How a loop that asks again counts the replies it could not read, and what the
-// build's ending is told of them (`unreadable-reply.ts`).
+// What a reply that could not be read is said as, and what the build's ending is told of them (`unreadable-reply.ts`).
+// No count of them ends a loop (t1056).
 export {
-  AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNREADABLE_REPLIES_IN_A_ROW,
   automationStudioLlmUnreadableReplySaid,
   type AutomationStudioLlmEvidenceLoopUnreadable
 } from "../models/failures/index.ts";

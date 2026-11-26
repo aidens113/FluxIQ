@@ -15,7 +15,6 @@ import { automationStudioLlmProviderPaidUsage } from "../provider-contract.ts";
 import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID,
   AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID,
-  AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW,
   AutomationStudioLlmUnusableDecisionError,
   automationStudioLlmTaskResultSpentWithoutDecision,
   automationStudioLlmUnusableDecisionError,
@@ -65,7 +64,7 @@ describe("screened field feedback from the actual provider schema", () => {
     const decision = await schemaDecision({ ...look("cost-only"), write: true }, paid);
     const error = automationStudioLlmUnusableDecisionError(decision)!;
     expect(error.usage).toEqual(paid);
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide: vi.fn().mockRejectedValueOnce(error).mockResolvedValueOnce(complete), executeTool: async () => ({}), unusableDecisions: { maxConsecutive: 3, stalled: () => new Error("stalled") } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide: vi.fn().mockRejectedValueOnce(error).mockResolvedValueOnce(complete), executeTool: async () => ({}), unusableDecisions: { stalled: () => new Error("stalled") } });
     expect(result.accounting.estimatedCostUsd).toBe(0.001);
     expect(result.trace[0]?.usage).toEqual(paid);
     expect(result.trace[0]?.usage).not.toHaveProperty("outputTokens");
@@ -89,7 +88,7 @@ describe("screened field feedback from the actual provider schema", () => {
     let asked = 0;
     const result = await runAutomationStudioLlmEvidenceLoop({
       tools, executeTool: host, propagateDecisionErrors: true,
-      unusableDecisions: { maxConsecutive: 3, stalled: () => new Error("stalled") },
+      unusableDecisions: { stalled: () => new Error("stalled") },
       decide: async () => {
         asked += 1;
         const decision = await schemaDecision(asked === 1 ? { ...look("bad-paid"), write: true } : complete, asked === 1 ? paid : completed);
@@ -121,7 +120,7 @@ describe("screened field feedback from the actual provider schema", () => {
     const decide = vi.fn()
       .mockRejectedValueOnce(new AutomationStudioLlmUnusableDecisionError(["llm.provider_timeout"], undefined, undefined, usage))
       .mockResolvedValueOnce(complete);
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool: host, unusableDecisions: { maxConsecutive: 3, stalled: () => new Error("stalled") } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool: host, unusableDecisions: { stalled: () => new Error("stalled") } });
     expect(result.ok).toBe(true);
     expect(host).not.toHaveBeenCalled();
     expect(result.accounting).toMatchObject({ inputTokens: 10, outputTokens: 1, totalTokens: 11, estimatedCostUsd: 0.001 });
@@ -179,7 +178,7 @@ describe("screened field feedback from the actual provider schema", () => {
     let asked = 0;
     const result = await runAutomationStudioLlmEvidenceLoop({
       tools, executeTool: host, propagateDecisionErrors: true,
-      unusableDecisions: { maxConsecutive: 3, stalled: () => new Error("stalled") },
+      unusableDecisions: { stalled: () => new Error("stalled") },
       decide: async ({ evidence }) => {
         asked += 1;
         if (asked === 1) throw automationStudioLlmUnusableDecisionError(await schemaDecision({ ...look("call.bad"), write: true }));
@@ -263,7 +262,7 @@ describe("the evidence loop after an unusable decision", () => {
 
     const result = await runAutomationStudioLlmEvidenceLoop({
       tools, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true,
-      unusableDecisions: { maxConsecutive: 3, stalled }
+      unusableDecisions: { stalled }
     });
 
     // Two in a row, then a usable decision: the streak never reached three.
@@ -278,31 +277,39 @@ describe("the evidence loop after an unusable decision", () => {
     expect(stalled).not.toHaveBeenCalled();
   });
 
-  it("ends on the caller's own error once the streak is reached, with the progress so far", async () => {
+  // No streak ends the loop (t1056): the caller's stall is never reached by unusable decisions in a row.
+  it("asks again on every unusable decision of a streak, counting each, and goes on to the model's result", async () => {
     const decide = vi.fn()
       .mockResolvedValueOnce(look("call.1"))
-      .mockRejectedValue(unusable());
-    const stalledError = new Error("named outcome");
-    const stalled = vi.fn((_progress: unknown) => stalledError);
+      .mockRejectedValueOnce(unusable())
+      .mockRejectedValueOnce(unusable())
+      .mockRejectedValueOnce(unusable())
+      .mockResolvedValueOnce(complete);
+    const stalled = vi.fn((_progress: unknown) => new Error("named outcome"));
 
-    await expect(runAutomationStudioLlmEvidenceLoop({
-      tools, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, maxIterations: 20,
-      unusableDecisions: { maxInARow: 3, stalled }
-    })).rejects.toBe(stalledError);
+    const result = await runAutomationStudioLlmEvidenceLoop({
+      tools, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true,
+      unusableDecisions: { stalled }
+    });
 
-    expect(decide).toHaveBeenCalledTimes(4);
-    expect(stalled).toHaveBeenCalledTimes(1);
-    const progress = stalled.mock.calls[0]![0] as { issueCodes: string[]; trace: Array<{ decision: string }>; accounting: { iterations: number; toolCalls: number } };
-    expect(progress.issueCodes).toEqual(["llm_output.kind_mismatch"]);
-    expect(progress.trace.map((step) => step.decision)).toEqual(["tool_call", "unusable", "unusable", "unusable"]);
-    expect(progress.accounting).toMatchObject({ iterations: 4, toolCalls: 1 });
+    expect(result).toMatchObject({ ok: true, accounting: { iterations: 5, toolCalls: 1 } });
+    expect(stalled).not.toHaveBeenCalled();
+    // The third identical one is a repeat loop detection catches and steers (t1056), told as a row of its own; the
+    // model then goes on.
+    expect(result.trace.map((step) => step.decision)).toEqual(["tool_call", "unusable", "unusable", "unusable", "tool_call", "complete"]);
+    expect(result.trace[4]).toMatchObject({ resultCode: "llm_evidence_loop.loop_steered" });
   });
 
-  it("returns invalid_decision on the streak when errors are not propagated", async () => {
+  // No streak ends a loop (t1056): each unusable decision is asked again, errors propagated or not.
+  it("asks again however long the streak, when errors are not propagated", async () => {
+    let asked = 0;
     await expect(runAutomationStudioLlmEvidenceLoop({
-      tools, decide: async () => { throw unusable(); }, executeTool: async () => ({}),
-      unusableDecisions: { maxInARow: 2, stalled: () => new Error("stalled") }
-    })).resolves.toMatchObject({ ok: false, code: "llm_evidence_loop.invalid_decision", accounting: { iterations: 2 } });
+      tools, decide: async () => {
+        if ((asked += 1) <= 20) throw unusable();
+        return complete;
+      }, executeTool: async () => ({}),
+      unusableDecisions: { stalled: () => new Error("stalled") }
+    })).resolves.toMatchObject({ ok: true, accounting: { iterations: 21 } });
   });
 
   // **The conflation this loop was published with, held shut.** An exhausted
@@ -313,46 +320,55 @@ describe("the evidence loop after an unusable decision", () => {
   // decision been a tool call the identical run would have said
   // `iteration_limit`, which is how `run-mulryg6h-ff241a12` sent a debug of a
   // real build down the wrong path for hours.
-  it("ends as the iteration limit when its iterations are spent, never as the last refusal", async () => {
+  it("ends as its budget when the budget is spent, never as the last refusal", async () => {
+    // Each decision takes 600 ms of a 1,500 ms budget: the third is never asked for.
+    let now = 0;
     const decide = vi.fn()
-      .mockRejectedValueOnce(unusable())
-      .mockResolvedValueOnce(look("call.1"))
-      .mockRejectedValueOnce(unusable());
+      .mockImplementationOnce(async () => {
+        now += 600;
+        return look("call.1");
+      })
+      .mockImplementationOnce(async () => {
+        now += 600;
+        throw unusable();
+      });
     const stalled = vi.fn(() => new Error("stalled"));
     await expect(runAutomationStudioLlmEvidenceLoop({
-      tools, decide, executeTool: async () => ({}), propagateDecisionErrors: true, maxIterations: 3,
-      unusableDecisions: { maxConsecutive: 3, stalled }
+      tools, decide, executeTool: async () => ({}), propagateDecisionErrors: true,
+      budget: { maxDurationMs: 1_500, now: () => now },
+      unusableDecisions: { stalled }
     })).resolves.toMatchObject({
       ok: false,
       code: "llm_evidence_loop.iteration_limit",
-      accounting: { iterations: 3 },
+      accounting: { iterations: 2 },
       // The refusal is not lost. It travels as context for the ending, with the
-      // numbers that say the ending was an allowance running out.
-      exhaustion: { bound: "iterations", maxIterations: 3, iterations: 3, completionAttempts: 0, lastIssueCodes: ["llm_output.kind_mismatch"] }
+      // numbers that say the ending was a budget running out.
+      exhaustion: { bound: "budget", budgetBound: "duration", iterations: 2, completionAttempts: 0, lastIssueCodes: ["llm_output.kind_mismatch"] }
     });
-    expect(decide).toHaveBeenCalledTimes(3);
-    // Neither guard fired, so the stall callback must not have been reached.
+    expect(decide).toHaveBeenCalledTimes(2);
+    // No stall: the budget is what ran out.
     expect(stalled).not.toHaveBeenCalled();
   });
 
-  // The other half of the same rule: a loop that really did stall still ends on
-  // the stall, so the fix above cannot be read as "exhaustion swallows
-  // everything".
-  it("still ends on the stall when a guard fires before the iterations run out", async () => {
-    const stopped = new Error("stopped on the streak");
-    const stalled = vi.fn(() => stopped);
+  // No guard on a streak fires any more (t1056): a loop whose every reply is unusable is asked again, never stalled.
+  it("never ends on a streak of unusable decisions: each is asked again, and the stall is not reached", async () => {
+    const stalled = vi.fn(() => new Error("stopped on the streak"));
+    let asked = 0;
     await expect(runAutomationStudioLlmEvidenceLoop({
-      tools, decide: async () => { throw unusable(); }, executeTool: async () => ({}), propagateDecisionErrors: true, maxIterations: 6,
-      unusableDecisions: { maxInARow: 2, stalled }
-    })).rejects.toBe(stopped);
-    expect(stalled).toHaveBeenCalledWith(expect.objectContaining({ issueCodes: ["llm_output.kind_mismatch"], accounting: expect.objectContaining({ iterations: 2 }) }));
+      tools, decide: async () => {
+        if ((asked += 1) <= 30) throw unusable();
+        return complete;
+      }, executeTool: async () => ({}), propagateDecisionErrors: true,
+      unusableDecisions: { stalled }
+    })).resolves.toMatchObject({ ok: true });
+    expect(stalled).not.toHaveBeenCalled();
   });
 
   it("treats every other decision error as before, and the unusable error too when not configured", async () => {
     const final = new Error("key gone");
     await expect(runAutomationStudioLlmEvidenceLoop({
       tools, decide: async () => { throw final; }, executeTool: async () => ({}), propagateDecisionErrors: true,
-      unusableDecisions: { maxConsecutive: 3, stalled: () => new Error("stalled") }
+      unusableDecisions: { stalled: () => new Error("stalled") }
     })).rejects.toBe(final);
     const once = unusable();
     const decide = vi.fn().mockRejectedValue(once);
@@ -368,19 +384,11 @@ describe("the evidence loop after an unusable decision", () => {
     });
     await expect(runAutomationStudioLlmEvidenceLoop({
       tools, decide, executeTool: async () => ({}), propagateDecisionErrors: true, signal: controller.signal,
-      unusableDecisions: { maxConsecutive: 3, stalled: () => new Error("stalled") }
+      unusableDecisions: { stalled: () => new Error("stalled") }
     })).resolves.toMatchObject({ ok: false, code: "llm_evidence_loop.cancelled" });
     expect(decide).toHaveBeenCalledTimes(1);
   });
 
-  it.each([0, 1.5, 9])("refuses a streak of %s it cannot honour", async (maxInARow) => {
-    const decide = vi.fn();
-    await expect(runAutomationStudioLlmEvidenceLoop({
-      tools, decide, executeTool: async () => ({}), maxIterations: 8,
-      unusableDecisions: { maxInARow, stalled: () => new Error("stalled") }
-    })).resolves.toMatchObject({ ok: false, code: "llm_evidence_loop.invalid_configuration" });
-    expect(decide).not.toHaveBeenCalled();
-  });
 });
 
 describe("the evidence loop after a completed result its caller refuses", () => {
@@ -396,7 +404,7 @@ describe("the evidence loop after a completed result its caller refuses", () => 
 
     const result = await runAutomationStudioLlmEvidenceLoop({
       tools: initial, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, checkCompletion,
-      unusableDecisions: { maxConsecutive: 3, stalled: () => new Error("stalled") }
+      unusableDecisions: { stalled: () => new Error("stalled") }
     });
 
     expect(result).toMatchObject({ ok: true, result: { attempt: 2 }, accounting: { iterations: 2, inputTokens: 20 } });
@@ -425,35 +433,40 @@ describe("the evidence loop after a completed result its caller refuses", () => 
     expect(checkCompletion).toHaveBeenCalledTimes(2);
   });
 
-  it("ends on the caller's error after refusals in a row, with the last refusal's codes", async () => {
+  // A completion refused the same way over the same draft is a repeat loop detection catches; a caller that takes the
+  // signal and ends the round there gets the stall with the last refusal's codes (t1014, t1056).
+  it("ends on the caller's error where its caller ends the round on refusals in a row, with the last refusal's codes", async () => {
     const decide = vi.fn(async () => ({ kind: "complete", result: { attempt: "again" } }));
     const stalled = vi.fn((_progress: unknown) => new Error("named outcome"));
     await expect(runAutomationStudioLlmEvidenceLoop({
-      tools: initial, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, maxIterations: 10,
+      tools: initial, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, loopSignal: () => "end",
       checkCompletion: () => refusal("bootstrap.missing_parameter"),
-      unusableDecisions: { maxInARow: 3, stalled }
+      unusableDecisions: { stalled }
     })).rejects.toThrow("named outcome");
-    expect(decide).toHaveBeenCalledTimes(3);
-    expect(stalled.mock.calls[0]![0]).toMatchObject({ issueCodes: ["bootstrap.missing_parameter"], accounting: { iterations: 3, evidenceBytes: expect.any(Number) } });
+    expect(decide.mock.calls.length).toBeGreaterThan(3);
+    expect(stalled.mock.calls[0]![0]).toMatchObject({ issueCodes: ["bootstrap.missing_parameter"], accounting: { evidenceBytes: expect.any(Number) } });
   });
 
-  it("shares the unusable streak with bad replies", async () => {
+  it("asks again after bad replies and refusals alike, a streak that ends nothing", async () => {
     // A reply that arrived and is no decision. A timeout was the example until
     // 2026-10-01; nothing arrives with one, and it is counted on its own
     // (`../evidence-loop/tests/provider-unavailable.test.ts`).
     const badReply = () => new AutomationStudioLlmUnusableDecisionError(["llm_output.decision_invalid"]);
+    const stalled = vi.fn((progress: { issueCodes: readonly string[] }) => new Error(`stalled on ${progress.issueCodes.join(",")}`));
     const decide = vi.fn()
       .mockRejectedValueOnce(badReply())
       .mockResolvedValueOnce({ kind: "complete", result: {} })
       .mockRejectedValueOnce(badReply())
-      .mockResolvedValueOnce({ kind: "complete", result: {} });
+      .mockResolvedValueOnce({ kind: "complete", result: {} })
+      .mockRejectedValue(new Error("script exhausted"));
     await expect(runAutomationStudioLlmEvidenceLoop({
-      tools: initial, decide, executeTool: async () => ({}), propagateDecisionErrors: true, maxIterations: 10,
+      tools: initial, decide, executeTool: async () => ({}), propagateDecisionErrors: true,
       checkCompletion: () => refusal("bootstrap.invalid_plan"),
-      unusableDecisions: { maxInARow: 4, stalled: (progress) => new Error(`stalled on ${progress.issueCodes.join(",")}`) }
-    })).rejects.toThrow("stalled on bootstrap.invalid_plan");
-    // Bad reply, refusal, bad reply, refusal: four unusable decisions in a row.
-    expect(decide).toHaveBeenCalledTimes(4);
+      unusableDecisions: { stalled }
+    })).rejects.toThrow("script exhausted");
+    // Bad reply, refusal, bad reply, refusal: four unusable decisions in a row, each asked again (t1056).
+    expect(decide).toHaveBeenCalledTimes(5);
+    expect(stalled).not.toHaveBeenCalled();
   });
 
   it("ends invalid_decision on a refusal when it is not asking again, and on an answer that is not a check", async () => {
@@ -465,7 +478,7 @@ describe("the evidence loop after a completed result its caller refuses", () => 
       await expect(runAutomationStudioLlmEvidenceLoop({
         tools: initial, decide: async () => ({ kind: "complete", result: {} }), executeTool: async () => ({}),
         checkCompletion: () => answer as never,
-        unusableDecisions: { maxConsecutive: 3, stalled: () => new Error("stalled") }
+        unusableDecisions: { stalled: () => new Error("stalled") }
       })).resolves.toMatchObject({ ok: false, code: "llm_evidence_loop.invalid_decision" });
     }
   });
@@ -475,7 +488,7 @@ describe("the evidence loop after a completed result its caller refuses", () => 
     await expect(runAutomationStudioLlmEvidenceLoop({
       tools: initial, decide: async () => ({ kind: "complete", result: {} }), executeTool: async () => ({}), propagateDecisionErrors: true,
       checkCompletion: () => { throw thrown; },
-      unusableDecisions: { maxConsecutive: 3, stalled: () => new Error("stalled") }
+      unusableDecisions: { stalled: () => new Error("stalled") }
     })).rejects.toBe(thrown);
   });
 
@@ -498,18 +511,17 @@ describe("the evidence loop after a completed result its caller refuses", () => 
 describe("which unusable decisions are progress", () => {
   const initial = [{ toolId: "inspect", description: "Collect bounded evidence.", inputSchema: { type: "object" }, effect: "observe" as const, initialObservation: { input: {} } }];
   const refusal = (...codes: string[]) => ({ ok: false as const, issueCodes: codes, feedback: { ok: false, code: "completion_refused", issues: codes.map((code) => ({ code })) } });
-  const run = (refusals: string[][], options: { maxInARow?: number; maxIterations?: number } = {}) => {
+  const run = (refusals: string[][]) => {
     let attempt = 0;
     const stalled = vi.fn((progress: { issueCodes: readonly string[] }) => new Error(`stalled on ${progress.issueCodes.join(",")}`));
     const decide = vi.fn(async () => ({ kind: "complete", result: { attempt: attempt += 1 } }));
     const promise = runAutomationStudioLlmEvidenceLoop({
       tools: initial, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true,
-      maxIterations: options.maxIterations ?? 64,
       checkCompletion: (result) => {
         const codes = refusals[(result.attempt as number) - 1];
         return codes ? refusal(...codes) : { ok: true as const };
       },
-      unusableDecisions: { ...(options.maxInARow !== undefined ? { maxInARow: options.maxInARow } : {}), stalled }
+      unusableDecisions: { stalled }
     });
     return { promise, decide, stalled };
   };
@@ -563,14 +575,16 @@ describe("which unusable decisions are progress", () => {
     await expect(promise).resolves.toMatchObject({ ok: true, result: { attempt: 5 } });
   });
 
-  // Not the count of steps without progress, which ends nothing (t1049): the repeat guard, which refuses a completion
-  // refused the same way over the same draft before, three times in a row (`../repeat-guard/`).
-  it("stops a model that keeps alternating between the same two mistakes on the same draft, on the repeat guard", async () => {
-    const { promise, decide } = run([["a.issue"], ["b.issue"], ["a.issue"], ["b.issue"], ["a.issue"]]);
+  // Not ended on the repeat guard either (t1056): a completion refused the same way over the same draft, three times in
+  // a row, is a repeat loop detection catches and steers (`../evidence-loop/refused-again.ts`), and the loop goes on.
+  it("steers a model that keeps alternating between the same two mistakes on the same draft, and goes on to its answer", async () => {
+    const { promise, decide, stalled } = run([["a.issue"], ["b.issue"], ["a.issue"], ["b.issue"], ["a.issue"], ["b.issue"], ["a.issue"]]);
 
-    // New, new, refused again (one), again (two), again (three).
-    await expect(promise).rejects.toThrow("stalled on a.issue");
-    expect(decide).toHaveBeenCalledTimes(5);
+    await expect(promise).resolves.toMatchObject({ ok: true, result: { attempt: 8 } });
+    expect(stalled).not.toHaveBeenCalled();
+    const steered = (decide.mock.calls as unknown as Array<[{ evidence: ReadonlyArray<{ toolId: string; value: Record<string, unknown> }> }]>)
+      .flatMap(([call]) => call.evidence).filter((entry) => entry.toolId === "core.loop_check");
+    expect(steered[0]?.value).toMatchObject({ code: "llm_evidence_loop.loop_steered", pattern: "near_repeat" });
   });
 
   it("forgets what it has seen once a tool brings new evidence", async () => {
@@ -586,36 +600,25 @@ describe("which unusable decisions are progress", () => {
     })).resolves.toMatchObject({ ok: true });
   });
 
-  it("stops at the far backstop when every reply fails for a new reason", async () => {
-    const { promise, decide, stalled } = run(Array.from({ length: 30 }, (_, index) => [`demo.issue_${index}`]), { maxInARow: 7 });
+  // No far backstop (t1056): twelve unusable replies in a row once ended the loop however their issues differed. Each is
+  // asked again on the same model and paid from the purse, which ends a loop that never gets a usable reply.
+  it("keeps asking when every reply fails for a new reason, far past the old backstop of twelve", async () => {
+    const { promise, decide, stalled } = run(Array.from({ length: 40 }, (_, index) => [`demo.issue_${index}`]));
 
-    await expect(promise).rejects.toThrow("stalled on demo.issue_6");
-    expect(decide).toHaveBeenCalledTimes(7);
-    expect(stalled).toHaveBeenCalledTimes(1);
+    await expect(promise).resolves.toMatchObject({ ok: true, result: { attempt: 41 } });
+    expect(decide).toHaveBeenCalledTimes(41);
+    expect(stalled).not.toHaveBeenCalled();
   });
 
-  it("has a far backstop by default, and it is held to the loop's own iterations", async () => {
-    const endless = Array.from({ length: 64 }, (_, index) => [`demo.issue_${index}`]);
-    const far = run(endless);
-    await expect(far.promise).rejects.toThrow(`stalled on demo.issue_${AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW - 1}`);
-    expect(far.decide).toHaveBeenCalledTimes(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW);
-    expect(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW).toBeGreaterThanOrEqual(12);
-
-    const short = run(endless, { maxIterations: 5 });
-    await expect(short.promise).rejects.toThrow("stalled on demo.issue_4");
-  });
-
-  it.each([
-    ["zero", 0],
-    ["a fraction", 2.5],
-    ["more than the loop's iterations", 9]
-  ])("refuses a backstop of %s", async (_label, maxInARow) => {
-    const decide = vi.fn();
-    await expect(runAutomationStudioLlmEvidenceLoop({
-      tools, decide, executeTool: async () => ({}), maxIterations: 8,
-      unusableDecisions: { maxInARow, stalled: () => new Error("stalled") }
-    })).resolves.toMatchObject({ ok: false, code: "llm_evidence_loop.invalid_configuration" });
-    expect(decide).not.toHaveBeenCalled();
+  it("takes no backstop from a caller: a figure an old caller passes neither refuses the loop nor bounds it", async () => {
+    let attempt = 0;
+    const decide = vi.fn(async () => ({ kind: "complete", result: { attempt: attempt += 1 } }));
+    const input = {
+      tools, decide, executeTool: async () => ({}), propagateDecisionErrors: true, 
+      checkCompletion: (result: { attempt?: unknown }) => (result.attempt as number) <= 20 ? refusal(`demo.issue_${String(result.attempt)}`) : { ok: true as const },
+      unusableDecisions: { stalled: () => new Error("stalled") }
+    };
+    await expect(runAutomationStudioLlmEvidenceLoop(input as unknown as Parameters<typeof runAutomationStudioLlmEvidenceLoop>[0])).resolves.toMatchObject({ ok: true, result: { attempt: 21 } });
   });
 });
 
@@ -641,7 +644,7 @@ describe("repeated requests beside unusable decisions", () => {
         // Every look after the first asks for the first look's area again.
         return decision.callId && decision.callId !== "call.1" ? { ...decision, input: { area: "call.1" } } : decision;
       },
-      executeTool, propagateDecisionErrors: true, maxIterations: 20,
+      executeTool, propagateDecisionErrors: true, 
       unusableDecisions: { stalled }
     });
     expect(result).toMatchObject({ ok: true, result: { done: true } });
@@ -662,7 +665,7 @@ describe("repeated requests beside unusable decisions", () => {
       .mockResolvedValueOnce(complete);
 
     await expect(runAutomationStudioLlmEvidenceLoop({
-      tools, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, maxIterations: 20,
+      tools, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, 
       unusableDecisions: { stalled: () => new Error("stalled") }
     })).resolves.toMatchObject({ ok: true, accounting: { iterations: 5, toolCalls: 1 } });
   });
@@ -678,7 +681,7 @@ describe("what the model is told after an unusable reply", () => {
 
     const result = await runAutomationStudioLlmEvidenceLoop({
       tools, decide, executeTool: async () => ({}), propagateDecisionErrors: true,
-      unusableDecisions: { maxConsecutive: 3, stalled: () => new Error("stalled") }
+      unusableDecisions: { stalled: () => new Error("stalled") }
     });
 
     expect(result).toMatchObject({ ok: true });
@@ -706,15 +709,7 @@ describe("what the model is told after an unusable reply", () => {
     });
   });
 
-  it("is not told anything once the loop has stopped", async () => {
-    const decide = vi.fn().mockRejectedValue(new AutomationStudioLlmUnusableDecisionError(["llm_output.kind_mismatch"]));
-    const stalled = vi.fn((_progress: { accounting: { evidenceBytes: number } }) => new Error("stalled"));
-    await expect(runAutomationStudioLlmEvidenceLoop({
-      tools, decide, executeTool: async () => ({}), propagateDecisionErrors: true,
-      unusableDecisions: { maxInARow: 1, stalled }
-    })).rejects.toThrow("stalled");
-    expect(stalled.mock.calls[0]![0].accounting.evidenceBytes).toBe(0);
-  });
+
 });
 
 // `run-munw7ffn-fe1cecd2`: 14 of 35 re-author decisions were stored as
@@ -746,7 +741,7 @@ describe("the account of an unreadable reply on an unusable decision", () => {
 
     const result = await runAutomationStudioLlmEvidenceLoop({
       tools, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, minToolCalls: 0,
-      unusableDecisions: { maxConsecutive: 3, stalled: () => new Error("stalled") }
+      unusableDecisions: { stalled: () => new Error("stalled") }
     });
 
     expect(result.trace[0]).toMatchObject({ iteration: 1, decision: "unusable", resultCode: "llm.provider_malformed_response", resultReason: "content_unclosed", usage });

@@ -159,8 +159,8 @@ describe("the loop's gate over a lasting step", () => {
         for (const entry of request.evidence) if (entry.toolId === "core.dry_run") shown.set(entry.callId, entry.value as JsonObject);
         return decide(request);
       }),
-      executeTool, maxIterations: 8, maxToolCalls: 8, minToolCalls: 1,
-      unusableDecisions: { maxConsecutive: 4, stalled: () => new Error("stalled") }
+      executeTool, minToolCalls: 1,
+      unusableDecisions: { stalled: () => new Error("stalled") }
     });
     // The save ran once, while exploring, and never again.
     expect(dispatched.filter((entry) => entry.includes("save_for_later"))).toEqual(["explore:node.save_for_later"]);

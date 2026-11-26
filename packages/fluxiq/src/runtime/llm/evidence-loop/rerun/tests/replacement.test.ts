@@ -33,7 +33,7 @@ describe("a rerun and the step it replaces", () => {
   it("keeps the original when the rerun's action did not take effect", async () => {
     const executeTool = vi.fn().mockResolvedValueOnce(ran(true)).mockResolvedValueOnce(ran(false));
 
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide: decisions(), executeTool, maxIterations: 6, maxToolCalls: 6, unusableDecisions: { stalled } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide: decisions(), executeTool, unusableDecisions: { stalled } });
 
     expect(executeTool).toHaveBeenCalledTimes(2);
     expect(result.steps.map((step) => [step.id, step.disposition, step.effectApplied])).toEqual([["d1", "kept", true], ["d2", "taken", false]]);
@@ -42,7 +42,7 @@ describe("a rerun and the step it replaces", () => {
   it("keeps the original when the rerun threw", async () => {
     const executeTool = vi.fn().mockResolvedValueOnce(ran(true)).mockRejectedValueOnce(new Error("page gone"));
 
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide: decisions(), executeTool, maxIterations: 6, maxToolCalls: 6, unusableDecisions: { stalled } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide: decisions(), executeTool, unusableDecisions: { stalled } });
 
     expect(result.steps.map((step) => [step.id, step.disposition])).toEqual([["d1", "kept"], ["d2", "taken"]]);
     expect(result.steps[1]).toMatchObject({ effectApplied: false });
@@ -51,7 +51,7 @@ describe("a rerun and the step it replaces", () => {
   it("withdraws the original once the rerun worked, and the rerun stands in its place", async () => {
     const executeTool = vi.fn().mockResolvedValueOnce(ran(true)).mockResolvedValueOnce(ran(true));
 
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide: decisions(), executeTool, maxIterations: 6, maxToolCalls: 6, unusableDecisions: { stalled } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide: decisions(), executeTool, unusableDecisions: { stalled } });
 
     // In the Flow as the original was, and at its position; the original stays listed at the end, withdrawn, as the rerun's receipt.
     // Where the framework drafts the Flow (t1037) the original is out as replaced, in its word.
@@ -217,7 +217,7 @@ describe("a rerun taking the replaced step's place", () => {
     const executeTool = vi.fn()
       .mockResolvedValueOnce({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true, draft: { actionId: "web.dom.list", proposes: true } })
       .mockResolvedValueOnce(ran(true));
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [list, go], decide, executeTool, maxIterations: 6, maxToolCalls: 6, dryRun: false, unusableDecisions: { stalled } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [list, go], decide, executeTool, dryRun: false, unusableDecisions: { stalled } });
     expect(result.steps.map((entry) => [entry.id, entry.effect, entry.disposition, entry.acts])).toEqual([["d1", "observe", "kept", undefined], ["d2", "mutate", "kept", ["a1"]]]);
   });
 

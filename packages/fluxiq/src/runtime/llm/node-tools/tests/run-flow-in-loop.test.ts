@@ -35,7 +35,7 @@ function store() {
 }
 
 const offeredAt = (decide: { mock: { calls: unknown[][] } }, index: number): string[] =>
-  (decide.mock.calls[index]![0] as { tools: { toolId: string }[] }).tools.map((tool) => tool.toolId);
+  (decide.mock.calls[index]![0] as { tools: { toolId: string }[] }).tools.map((tool) => tool.toolId).filter((id: string) => id !== "core.loop_decision");
 
 describe("core.run_flow in an evidence loop", () => {
   it("is offered from the first decision, runs once a step can run again with nothing reset, records no step, and is one tool call", async () => {
@@ -45,7 +45,7 @@ describe("core.run_flow in an evidence loop", () => {
       .mockResolvedValueOnce({ kind: "complete", result: { done: true } });
     const executeTool = store();
 
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, maxIterations: 6, maxToolCalls: 6, propagateDecisionErrors: true });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, propagateDecisionErrors: true });
 
     expect(result).toMatchObject({ ok: true });
     expect(offeredAt(decide, 0)).toEqual(["press", "core.run_flow"]);
@@ -71,7 +71,7 @@ describe("core.run_flow in an evidence loop", () => {
       .mockResolvedValueOnce({ kind: "tool_call", callId: "add.1", toolId: "press", input: { target: "Add" } })
       .mockResolvedValueOnce({ kind: "complete", result: { done: true } });
     const executeTool = store();
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, maxIterations: 6, maxToolCalls: 6, propagateDecisionErrors: true });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, propagateDecisionErrors: true });
     expect(result).toMatchObject({ ok: true });
     expect(offeredAt(decide, 1)).toEqual(["press", "core.run_flow"]);
     expect(executeTool.mock.calls[0]![0]).toMatchObject({ callId: "add.1" });
@@ -86,7 +86,7 @@ describe("core.run_flow in an evidence loop", () => {
       const decide = vi.fn()
         .mockResolvedValueOnce({ kind: "tool_call", callId: "add.1", toolId: "press", input: { target: "Add" }, add: true })
         .mockResolvedValueOnce({ kind: "complete", result: { done: true } });
-      await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool: store(), maxIterations: 4, maxToolCalls: 4, propagateDecisionErrors: true, ...off });
+      await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool: store(), propagateDecisionErrors: true, ...off });
       expect(offeredAt(decide, 1)).toEqual(["press"]);
     }
   });

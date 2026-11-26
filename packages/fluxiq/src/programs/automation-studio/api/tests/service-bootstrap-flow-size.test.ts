@@ -95,7 +95,7 @@ async function fixture(options: { provider?: ReturnType<typeof mockProvider>; ev
   const provider = options.provider ?? mockProvider();
   const instance = new AutomationStudioService({
     dataDir: tempRoot,
-    llmProviderResolver: (() => ({ provider, maxCallsPerRun: 3 })) as any,
+    llmProviderResolver: (() => ({ provider })) as any,
     ...(options.evidence ? {
       llmEvidenceRuntime: {
         domainId: "example", deniedEvidenceKeys: [],

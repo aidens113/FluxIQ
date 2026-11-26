@@ -39,9 +39,8 @@ function loopInput(overrides: Partial<AutomationStudioLlmEvidenceLoopInput> = {}
 
 describe("observeAutomationStudioEvidenceLoop", () => {
   it("passes every other field through", () => {
-    const input = loopInput({ maxIterations: 7 });
+    const input = loopInput({ });
     const observed = observeAutomationStudioEvidenceLoop(input);
-    expect(observed.maxIterations).toBe(7);
     expect(observed.tools).toBe(input.tools);
     expect(observed.checkCompletion).toBeUndefined();
   });
@@ -531,7 +530,7 @@ describe("a completion the test refused after the check passed", () => {
         tools: [{ toolId: "press", description: "Press a control.", inputSchema: { type: "object" }, effect: "mutate", perCallEffect: true }],
         decide: async () => ({ kind: "complete", result: { done: true } }),
         checkCompletion: async () => ({ ok: true }),
-        draft: { seed: [carried(1), carried(2)] }, fullRunRequired: true, maxIterations: 1
+        draft: { seed: [carried(1), carried(2)] }, fullRunRequired: true
       }));
       await inScope(() => runAutomationStudioLlmEvidenceLoop(observed)).catch(() => undefined);
       const sentBack = seen.filter((event) => event.label === "The proposed Flow was sent back to be fixed");

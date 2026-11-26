@@ -87,7 +87,7 @@ function harness(rounds: Array<(request: AutomationStudioFlowBootstrapRoundReque
     // A read asks for no act: the checklist is empty, as in murwcmx2 (`actsTodo: []`).
     checklist: () => [],
     budget: { maxCostUsd: 0.1, maxDurationMs: 540_000 },
-    maxIterations: 64,
+    
     keep: async (...args) => ({ revision: 1, steps: (args[2] as unknown[]).length }),
     announce: ({ text }) => { announced.push(text); },
     seedSignature: automationStudioFlowDraftReplaySignature(storedFlow()),
@@ -116,7 +116,7 @@ describe("a round whose Flow holds steps that never ran in this build", () => {
   });
 
   it("names none when every step ran in this build", async () => {
-    const judged = await automationStudioFlowBootstrapJudgeUnfinished({ round: 0, stopped: "iterations", steps: [ran(1, "d1"), ran(2, "d2")], lastIssueCodes: [], replayable: () => false, checklist: () => [] });
+    const judged = await automationStudioFlowBootstrapJudgeUnfinished({ round: 0, stopped: "repeat_without_progress", steps: [ran(1, "d1"), ran(2, "d2")], lastIssueCodes: [], replayable: () => false, checklist: () => [] });
     expect(judged.kind === "judged" && judged.judgement.notRunInThisBuild).toBeUndefined();
     expect(judged.kind === "judged" && automationStudioFlowBootstrapJudgementValue(judged.judgement).notRunInThisBuild).toBeUndefined();
   });
@@ -156,19 +156,20 @@ describe("a round whose Flow holds steps that never ran in this build", () => {
     expect(outcome).toMatchObject({ kind: "finished", rounds: 2 });
   });
 
-  it("ends at the round limit, saying the Flow as it stands was never run whole, never not doable", async () => {
+  // No count of rounds ends it (t1056): three rounds at $0.02 each spend the $0.06 purse.
+  it("ends on its money, saying the Flow as it stands was never run whole, never not doable", async () => {
     const { input, requests } = harness([
       (request) => stall(request, fixRerun()),
       (request) => stall(request, request.repair!.seed.map((each) => structuredClone(each))),
       (request) => stall(request, request.repair!.seed.map((each) => structuredClone(each)))
-    ], { maxRounds: 3 });
+    ], { budget: { maxCostUsd: 0.06, maxDurationMs: 540_000 } });
 
     const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
 
     expect(requests).toHaveLength(3);
     expect(outcome.kind).toBe("unfinished");
     if (outcome.kind !== "unfinished") return;
-    expect(outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "rounds", tried: { tested: "not_tested", stepsInFlow: 3 } });
+    expect(outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost", tried: { tested: "not_tested", stepsInFlow: 3 } });
     expect(outcome.ending.message).toContain("The Flow as it stands (3 steps) was never run whole from its start: 2 of its steps came from the Flow being changed and were not run again in this build, so it was never tested or judged.");
   });
 

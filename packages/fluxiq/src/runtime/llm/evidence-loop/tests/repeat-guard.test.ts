@@ -21,6 +21,10 @@ const shownAt = (decide: { mock: { calls: unknown[][] } }, index: number): Shown
 const stalledError = new Error("stalled");
 const press = (index: number, target: string) => ({ kind: "tool_call", callId: `press.${index}`, toolId: "press", input: { target } });
 const complete = { kind: "complete", result: { done: true } };
+/** How long a scripted model keeps repeating itself before it finishes: far past every count that once ended a round (t1056). */
+const REPEATS = 12;
+/** What a scripted model whose completions are always refused throws once its script is done: nothing else ends such a loop but its purse (t1056). */
+const scriptDone = new Error("script done");
 
 /**
  * A page in state `s<n>`. "Next" moves it on; "X" is a covered close button,
@@ -35,55 +39,58 @@ function site(busy = 0) {
     const before = page;
     if (toolId === "read") return result({ evidence: { rows: 3 }, effectApplied: true, resultCode: "web.inspect.succeeded", draft: { actionId: "web.read", effect: "observe", proposes: true } }, before);
     const click = { draft: { actionId: "web.click", effect: "mutate", proposes: true } };
-    if (value.target === "Next") { page += 1; return result({ evidence: { ok: true }, effectApplied: true, resultCode: "web.action.succeeded", ...click }, before); }
-    if (value.target === "Busy" && busyLeft > 0) { busyLeft -= 1; return result({ evidence: { ok: false, code: "rate_limited" }, effectApplied: false, resultCode: "web.action.rejected.rate_limited", failure: { category: "action_failed", code: "client.capacity", retryable: true, effect: "unacted", transient: true }, ...click }, before); }
-    if (value.target === "Busy") { page += 1; return result({ evidence: { ok: true }, effectApplied: true, resultCode: "web.action.succeeded", ...click }, before); }
+    if (value.target === "Next") {
+      page += 1;
+      return result({ evidence: { ok: true }, effectApplied: true, resultCode: "web.action.succeeded", ...click }, before);
+    }
+    if (value.target === "Busy" && busyLeft > 0) {
+      busyLeft -= 1;
+      return result({ evidence: { ok: false, code: "rate_limited" }, effectApplied: false, resultCode: "web.action.rejected.rate_limited", failure: { category: "action_failed", code: "client.capacity", retryable: true, effect: "unacted", transient: true }, ...click }, before);
+    }
+    if (value.target === "Busy") {
+      page += 1;
+      return result({ evidence: { ok: true }, effectApplied: true, resultCode: "web.action.succeeded", ...click }, before);
+    }
     return result({ evidence: { ok: false, code: "target_unobserved" }, effectApplied: false, resultCode: "web.action.rejected.target_unobserved", resultReason: "handle_not_in_packet", ...click }, before);
   });
 }
 
 const loop = (decide: ReturnType<typeof vi.fn>, executeTool: ReturnType<typeof site>) => runAutomationStudioLlmEvidenceLoop({
-  tools, decide, executeTool, maxIterations: 30, maxToolCalls: 30, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { maxConsecutive: 8, stalled: () => stalledError }
+  tools, decide, executeTool, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { stalled: () => stalledError }
 });
 
 describe("a call already tried on this same page", () => {
-  it("the cookie close button pressed again and again: run once, refused unrun after, and the round stalls at the third refusal", async () => {
-    const decide = vi.fn().mockImplementation(async () => press(decide.mock.calls.length, "X"));
+  it("the cookie close button pressed again and again: run once, refused unrun after, and no count of refusals ends the round", async () => {
+    const decide = vi.fn().mockImplementation(async () => decide.mock.calls.length <= REPEATS ? press(decide.mock.calls.length, "X") : complete);
     const executeTool = site();
 
-    await expect(loop(decide, executeTool)).rejects.toBe(stalledError);
+    await expect(loop(decide, executeTool)).resolves.toMatchObject({ ok: true });
 
-    // Twenty in the live run; here one ran, three were refused, and the round stalled.
+    // Twenty in the live run; here one ran, and every one after it was refused unrun until the model finished (t1056).
     expect(executeTool).toHaveBeenCalledTimes(1);
-    expect(decide).toHaveBeenCalledTimes(4);
+    expect(decide).toHaveBeenCalledTimes(REPEATS + 1);
     const note = shownAt(decide, 2).find((entry) => entry.toolId === "core.repeat_check")?.value;
     expect(note).toMatchObject({
       ok: false, code: "llm_evidence_loop.repeat_refused", toolId: "press", sameAsCall: "press.1",
       then: { outcome: "failed", resultCode: "web.action.rejected.target_unobserved", resultReason: "handle_not_in_packet" },
-      refusedInARow: 1, maxRefusedInARow: 3
+      refusedInARow: 1
     });
+    expect(note).not.toHaveProperty("maxRefusedInARow");
     expect(String(note?.instruction)).toContain("on this exact page");
   });
 
-  it("t227's list read rerun eight times on an unchanged page: the same argument runs once, then is refused, and the round stalls", async () => {
+  it("t227's list read rerun eight times on an unchanged page: the same argument runs once, then is refused, and the round goes on", async () => {
     const rerun = { kind: "amend_draft", amendments: [{ step: 1, change: "rerun", input: { where: "price < 50" } }] };
     const decide = vi.fn()
       .mockResolvedValueOnce({ kind: "tool_call", callId: "read.1", toolId: "read", input: { list: "results" }, add: true })
-      .mockResolvedValue(rerun);
+      .mockImplementation(async () => decide.mock.calls.length <= REPEATS ? rerun : complete);
     const executeTool = site();
 
-    await expect(loop(decide, executeTool)).rejects.toBe(stalledError);
+    await expect(loop(decide, executeTool)).resolves.toMatchObject({ ok: true });
 
+    // The first rerun found exactly the rows the read had found (R3-2, `../../decision-handlers/rerun-result.ts`); every
+    // one after it was refused unrun, however many there were.
     expect(executeTool.mock.calls.map(([call]) => call.value)).toEqual([{ list: "results" }, { list: "results", where: "price < 50" }]);
-    // The first rerun found exactly the rows the read had found (R3-2, `../../decision-handlers/rerun-result.ts`), so it
-    // is the first of the three that changed nothing, and the round stalls one decision sooner than it did.
-    expect(decide).toHaveBeenCalledTimes(4);
-    const feedback = shownAt(decide, 3).find((entry) => entry.toolId === "core.amendment_check")?.value;
-    expect(feedback).toMatchObject({ refused: [{ step: 1, reason: "changes_nothing" }] });
-    // t262's wording (`../../draft-amendment-feedback/index.ts`): the identical request was not sent, and the model
-    // is told to inspect the result it already has rather than to take a listing's rows as right.
-    expect(JSON.stringify(feedback)).toContain("identical request was not sent again");
-    expect(JSON.stringify(feedback)).toContain("only if it actually returned the intended rows");
   });
 
   it("passes both authoring guards for a validated temporary unacted failure", async () => {
@@ -102,13 +109,13 @@ describe("a call already tried on this same page", () => {
 
   it("blocks a legacy temporary word or malformed signal before executing an identical call again", async () => {
     for (const failure of [undefined, { category: "action_failed", code: "client.capacity", retryable: true, effect: "unacted", transient: "true" }]) {
-      const decide = vi.fn().mockImplementation(async () => press(decide.mock.calls.length, "Busy"));
+      const decide = vi.fn().mockImplementation(async () => decide.mock.calls.length <= REPEATS ? press(decide.mock.calls.length, "Busy") : complete);
       const executeTool = vi.fn(async () => ({
         kind: "llm_evidence_tool_execution", stateDigests: { before: "s1", after: "s1" },
         evidence: { ok: false, code: "retry_allowed" }, effectApplied: false, resultCode: "client.timeout", resultReason: "retry_allowed",
         ...(failure ? { failure } : {}), draft: { effect: "mutate", proposes: true }
       }));
-      await expect(runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, maxIterations: 10, maxToolCalls: 10, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { stalled: () => stalledError } })).rejects.toBe(stalledError);
+      await expect(runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { stalled: () => stalledError } })).resolves.toMatchObject({ ok: true });
       expect(executeTool).toHaveBeenCalledTimes(1);
     }
   });
@@ -140,21 +147,19 @@ describe("a call already tried on this same page", () => {
     expect(executeTool.mock.calls.map(([call]) => call.value.target)).toEqual(["X", "Next", "X"]);
   });
 
-  it("run 36: the same refused amendment sent again and again stalls the round at the third refusal in a row", async () => {
+  it("run 36: the same refused amendment sent again and again is refused each time, and no count of refusals ends the round", async () => {
     // `25 keep act a1` seven times, each refused `already_in_flow` in the run -- `act_already_named` since lane D's F36, which
     // tells the model the name stands: the first is a refusal, the next three are repeats of it.
     const keep = { kind: "amend_draft", amendments: [{ step: 1, change: "keep", act: "a1" }] };
     const decide = vi.fn()
       .mockResolvedValueOnce({ kind: "tool_call", callId: "press.1", toolId: "press", input: { target: "Next" }, add: true, act: "a1" })
-      .mockResolvedValue(keep);
+      .mockImplementation(async () => decide.mock.calls.length <= REPEATS ? keep : complete);
     const executeTool = site();
 
-    await expect(loop(decide, executeTool)).rejects.toBe(stalledError);
+    await expect(loop(decide, executeTool)).resolves.toMatchObject({ ok: true });
     // Where the framework drafts the Flow (t1037) the first keep makes the framework's step the model's, and is applied
-    // (`../../../flow-authoring/draft/amendment/apply.ts`, `pins`); every keep after it is refused.
-    // Three decisions in a row refused `act_already_named` end the round (W2, `../../decision-handlers/refusal-run.ts`):
-    // the refusal and two repeats of it, one sooner than the third repeat did.
-    expect(decide).toHaveBeenCalledTimes(5);
+    // (`../../../flow-authoring/draft/amendment/apply.ts`, `pins`); every keep after it is refused, and no count of the
+    // refusals ends the round (t1056; three in a row did, W2).
     const feedback = shownAt(decide, 3).find((entry) => entry.toolId === "core.amendment_check")?.value;
     expect(feedback).toMatchObject({ refused: [{ step: 1, reason: "act_already_named" }] });
   });
@@ -189,8 +194,8 @@ const builtDraft = [
   { kind: "tool_call", callId: "press.1", toolId: "press", input: { target: "Confirm" }, add: true, act: "a1" }
 ];
 const partLoop = (decide: ReturnType<typeof vi.fn>, executeTool: ReturnType<typeof requests>) => runAutomationStudioLlmEvidenceLoop({
-  tools, decide, executeTool, maxIterations: 40, maxToolCalls: 40, propagateDecisionErrors: true, checkCompletion: refusingPlan,
-  unusableDecisions: { maxConsecutive: 30, stalled: () => stalledError }
+  tools, decide, executeTool, propagateDecisionErrors: true, checkCompletion: refusingPlan,
+  unusableDecisions: { stalled: () => stalledError }
 });
 const replays = (executeTool: ReturnType<typeof requests>) => executeTool.mock.calls.filter(([call]) => (call as { value: JsonObject }).value.replay !== undefined);
 
@@ -200,15 +205,18 @@ describe("an identical call on an unchanged draft and page (run-musr9pv3-f4bf625
     const cycle = [partRun(0), complete, partRun(0)];
     const decide = vi.fn();
     for (const decision of builtDraft) decide.mockResolvedValueOnce(decision);
-    decide.mockImplementation(async () => { const next = cycle[(decide.mock.calls.length - 3) % cycle.length]!; return next.kind === "tool_call" ? { ...next, callId: `d${decide.mock.calls.length}` } : next; });
+    decide.mockImplementation(async () => {
+      if (decide.mock.calls.length > 2 + REPEATS) throw scriptDone;
+      const next = cycle[(decide.mock.calls.length - 3) % cycle.length]!;
+      return next.kind === "tool_call" ? { ...next, callId: `d${decide.mock.calls.length}` } : next;
+    });
     const executeTool = requests();
 
-    await expect(partLoop(decide, executeTool)).rejects.toBe(stalledError);
+    await expect(partLoop(decide, executeTool)).rejects.toBe(scriptDone);
 
-    // One part run reached the target (its read and its checked press); the next two were refused unrun, and the
-    // completion refused again over the same draft was the third in a row.
+    // One part run reached the target (its read and its checked press); every one after it was refused unrun, and no
+    // count of refused repeats or of completions refused again ended the round (t1056).
     expect(replays(executeTool).map(([call]) => [call.callId, call.value.replay])).toEqual([["d3.1", "step"], ["d3.2", "verify"]]);
-    expect(decide).toHaveBeenCalledTimes(7);
     const note = shownAt(decide, 5).find((entry) => entry.toolId === "core.repeat_check")?.value;
     expect(note).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_refused", toolId: "core.run_flow", sameAsCall: "d3", then: { outcome: "same_draft", resultCode: "core.run_flow.ran" }, refusedInARow: 1 });
     expect(String(note?.instruction)).toContain("unchanged draft");
@@ -218,17 +226,23 @@ describe("an identical call on an unchanged draft and page (run-musr9pv3-f4bf625
   it("runs the same part again once the draft has changed, and when the run pressed something", async () => {
     const decide = vi.fn();
     for (const decision of [...builtDraft, partRun(1), { kind: "amend_draft", amendments: [{ step: 2, change: "repeat", over: 1 }] }, partRun(2), complete]) decide.mockResolvedValueOnce(decision);
-    decide.mockResolvedValue(complete);
+    decide.mockImplementation(async () => {
+      if (decide.mock.calls.length > 12) throw scriptDone;
+      return complete;
+    });
     const executeTool = requests();
-    await expect(partLoop(decide, executeTool)).rejects.toBe(stalledError);
+    await expect(partLoop(decide, executeTool)).rejects.toBe(scriptDone);
     expect(replays(executeTool)).toHaveLength(4);
     expect(shownAt(decide, 5).some((entry) => entry.toolId === "core.repeat_check")).toBe(false);
 
     const pressed = vi.fn();
     for (const decision of [...builtDraft, partRun(1), partRun(2), partRun(3)]) pressed.mockResolvedValueOnce(decision);
-    pressed.mockResolvedValue(complete);
+    pressed.mockImplementation(async () => {
+      if (pressed.mock.calls.length > 12) throw scriptDone;
+      return complete;
+    });
     const pressing = requests(true);
-    await expect(partLoop(pressed, pressing)).rejects.toBe(stalledError);
+    await expect(partLoop(pressed, pressing)).rejects.toBe(scriptDone);
     expect(replays(pressing)).toHaveLength(6);
   });
 });
@@ -292,8 +306,8 @@ function itemPage() {
 }
 
 const rerunLoop = (decide: ReturnType<typeof vi.fn>, executeTool: ReturnType<typeof itemPage>, stalled = true) => runAutomationStudioLlmEvidenceLoop({
-  tools: nodeTools, decide, executeTool, maxIterations: 30, maxToolCalls: 60, dryRun: false, propagateDecisionErrors: stalled,
-  ...(stalled ? { unusableDecisions: { maxConsecutive: 8, stalled: () => stalledError } } : {})
+  tools: nodeTools, decide, executeTool, dryRun: false, propagateDecisionErrors: stalled,
+  ...(stalled ? { unusableDecisions: { stalled: () => stalledError } } : {})
 });
 
 /** Iteration 1 is the quantity typed and added (as step 14 stood at 17); then the live run's A A B B A B, then completing. */
@@ -331,16 +345,15 @@ describe("a rerun that changed nothing, sent again", () => {
     expect(second[8]).toBe(2);
   });
 
-  it("refuses the identical decision unrun once it changed nothing, and stalls the round at the third no-change decision in a row", async () => {
+  it("refuses the identical decision unrun once it changed nothing, and no count of no-change decisions ends the round", async () => {
     const decide = liveShape();
     const executeTool = itemPage();
 
-    await expect(rerunLoop(decide, executeTool)).rejects.toBe(stalledError);
+    await expect(rerunLoop(decide, executeTool)).resolves.toMatchObject({ ok: true });
 
     // A ran twice and B once, each a press; B sent again (as 21) was refused before its rerun ran, so no reset, no replay
-    // and no press -- and A (as 22) and B (as 23) were never asked for.
+    // and no press; A (as 22) and B (as 23) were refused the same way, and the model finished (t1056).
     expect(clicks(executeTool)).toBe(3);
-    expect(decide).toHaveBeenCalledTimes(5);
     const rows = historyRows(shownAt(decide, 4));
     expect(amendmentRow(rows, 4)?.[6]).toBe("no");
   });
@@ -367,26 +380,26 @@ describe("a rerun that changed nothing, sent again", () => {
     expect(refused[8]).toBe(2);
   });
 
-  it("ends the round as repeat_without_progress where no stall is configured", async () => {
+  it("goes on where no stall is configured, too", async () => {
     const decide = liveShape();
     const executeTool = itemPage();
 
     const result = await rerunLoop(decide, executeTool, false);
 
-    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_without_progress" });
+    expect(result).toMatchObject({ ok: true });
     expect(clicks(executeTool)).toBe(3);
   });
 
-  it("never loops: the live run's two decisions, sent without end (the purse ended it live), stop at the limit after three presses", async () => {
+  it("presses nothing more however long the live run's two decisions are sent (the purse ended it live)", async () => {
     const decide = vi.fn().mockResolvedValueOnce({ kind: "tool_call", callId: "type-quantity", toolId: "core.run_node", input: quantity, add: true, act: "a1.quantity" });
-    decide.mockImplementation(async () => (decide.mock.calls.length % 2 === 0 ? decisionA : decisionB));
+    decide.mockImplementation(async () => decide.mock.calls.length > 2 * REPEATS ? complete : (decide.mock.calls.length % 2 === 0 ? decisionA : decisionB));
     const executeTool = itemPage();
 
     const result = await rerunLoop(decide, executeTool, false);
 
-    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_without_progress" });
+    // Steered and refused, never ended by a count (t1056): three presses, then nothing more ran however often it was asked.
+    expect(result).toMatchObject({ ok: true });
     expect(clicks(executeTool)).toBeLessThanOrEqual(3);
-    expect(decide.mock.calls.length).toBeLessThanOrEqual(6);
   });
 
   it("refuses unrun the identical decision whose rerun did not work on this same draft, even after a look moved the page, and says so", async () => {
@@ -433,7 +446,7 @@ describe("a rerun that changed nothing, sent again", () => {
       .mockResolvedValueOnce(rerun)
       .mockResolvedValueOnce(rerun)
       .mockResolvedValue(complete);
-    await expect(runAutomationStudioLlmEvidenceLoop({ tools: nodeTools, decide, executeTool, maxIterations: 12, maxToolCalls: 20, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { stalled: () => stalledError } })).resolves.toMatchObject({ ok: true });
+    await expect(runAutomationStudioLlmEvidenceLoop({ tools: nodeTools, decide, executeTool, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { stalled: () => stalledError } })).resolves.toMatchObject({ ok: true });
     expect(attempted).toBe(3);
     expect(executeTool.mock.calls.filter(([request]) => request.value.node === "web.output.dom-click")).toHaveLength(3);
     for (const index of [2, 3]) expect(shownAt(decide, index).some((entry) => entry.toolId === "core.repeat_check")).toBe(false);
@@ -452,7 +465,7 @@ describe("a rerun that changed nothing, sent again", () => {
       .mockResolvedValueOnce({ kind: "tool_call", callId: "look.1", toolId: "look", input: {} })
       .mockResolvedValueOnce(rerun)
       .mockResolvedValue(complete);
-    await expect(runAutomationStudioLlmEvidenceLoop({ tools: nodeTools, decide, executeTool, maxIterations: 12, maxToolCalls: 20, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { stalled: () => stalledError } })).resolves.toMatchObject({ ok: true });
+    await expect(runAutomationStudioLlmEvidenceLoop({ tools: nodeTools, decide, executeTool, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { stalled: () => stalledError } })).resolves.toMatchObject({ ok: true });
     expect(executeTool.mock.calls.filter(([request]) => request.value.node === "web.output.dom-click")).toHaveLength(1);
     expect(shownAt(decide, 4).find((entry) => entry.toolId === "core.repeat_check")?.value).toMatchObject({ then: { outcome: "same_amendment", resultCode: "client.declined", resultReason: "retry_allowed", rerunFailed: true } });
   });
@@ -494,8 +507,8 @@ describe("a rerun sent as a check, then the same input as a plain call", () => {
       .mockResolvedValue(complete);
 
     await runAutomationStudioLlmEvidenceLoop({
-      tools: nodeTools, decide, executeTool, maxIterations: 12, maxToolCalls: 12, dryRun: false, propagateDecisionErrors: true,
-      unusableDecisions: { maxConsecutive: 8, stalled: () => stalledError }, lastingActs: async () => new Set(["a1"])
+      tools: nodeTools, decide, executeTool, dryRun: false, propagateDecisionErrors: true,
+      unusableDecisions: { stalled: () => stalledError }, lastingActs: async () => new Set(["a1"])
     }).catch(() => undefined);
 
     // The rerun was the check, never the typing; the plain call then typed for real.
@@ -513,12 +526,15 @@ describe("a completion refused again over the same draft, where the caller takes
   const signal: AutomationStudioLlmLoopSignal = { kind: "change_approach", pattern: "near_repeat", repeats: 3, toolIds: ["core.completion_check"], unchanged: [], approaches: 1 };
   const ctx = (loopSignal: boolean, due?: AutomationStudioLlmLoopSignal) => ({ input: loopSignal ? { loopSignal: () => "end" } : {}, loops: { due: () => due } }) as unknown as Ctx;
 
-  it("ends nothing below the count, and keeps the old ending for a caller with no signal", () => {
+  it("ends nothing below the count, and nothing for a caller with no signal either (t1056)", () => {
     const caught = vi.fn();
     const raise = vi.fn(() => "end" as const);
     expect(automationStudioLlmEvidenceRefusedAgainEnds(ctx(true), 4, 2, { caught, raise })).toBe(false);
-    expect(automationStudioLlmEvidenceRefusedAgainEnds(ctx(false), 4, 3, { caught, raise })).toBe(true);
     expect(caught).not.toHaveBeenCalled();
+    // With no signal it is caught on the ladder as any other; nothing is due yet, so nothing is raised and nothing ends.
+    expect(automationStudioLlmEvidenceRefusedAgainEnds(ctx(false), 4, 3, { caught, raise })).toBe(false);
+    expect(caught).toHaveBeenCalledTimes(1);
+    expect(raise).not.toHaveBeenCalled();
   });
 
   it("is caught on the ladder instead of ending the round, and ends it only on the ladder's own rung", () => {
@@ -544,7 +560,7 @@ describe("a completion refused again over the same draft, where the caller takes
     const signals: AutomationStudioLlmLoopSignal[] = [];
     const ran = runAutomationStudioLlmEvidenceLoop({
       tools, decide, executeTool: requests(), maxIterations: 40, maxToolCalls: 40, propagateDecisionErrors: true, checkCompletion: refusingPlan,
-      unusableDecisions: { maxConsecutive: 30, stalled: () => stalledError },
+      unusableDecisions: { stalled: () => stalledError },
       loopSignal: (raised: AutomationStudioLlmLoopSignal) => {
         signals.push(raised);
         return "end";

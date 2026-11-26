@@ -306,10 +306,11 @@ describe("an ending while a failed subflow has had no changed brief", () => {
     expect(run.outcome).toMatchObject({ status: "ended", ending: { outcome: "blocked" } });
   });
 
-  // t743: turns pay for a brief as money does. With too few decisions left to dispatch the repair, send a reset and end
-  // again, a held ending would only run the turns out and end the build on a guard instead of the supervisor's words.
+  // t743: decisions left pay for a brief as money does. With too few left to dispatch the repair, send a reset and end
+  // again, a held ending would only run the budget out and end the build on a guard instead of the supervisor's words.
+  // No count of turns sets how many are left (t1056); a token budget of six decisions' worth leaves three at the ending, one past the dispatch.
   it("is not held when the loop has too few decisions left to send the repair and end again", async () => {
-    const run = await supervise([call(IDS.writePlan, ONE_PART), dispatch([brief("main", ["p1"])]), end("blocked"), end("blocked")], project({ builder: () => "blocked", purse: money() }), { spareTurns: 1 });
+    const run = await supervise([call(IDS.writePlan, ONE_PART), dispatch([brief("main", ["p1"])]), end("blocked"), end("blocked")], project({ builder: () => "blocked", purse: money() }), { budget: { maxTotalTokens: 6_000, maxTokensPerDecision: 1_000 } });
     expect(run.feedback).toEqual([]);
     expect(run.outcome).toMatchObject({ status: "ended", ending: { outcome: "blocked" } });
   });

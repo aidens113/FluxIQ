@@ -32,12 +32,19 @@ export async function supervise(steps: Step[], built = project(), options: {
   executeTool?: AutomationStudioLlmEvidenceLoopInput["executeTool"];
   /** A stall is thrown out of the loop, as a project build's is (`service.ts`). */
   propagateDecisionErrors?: boolean;
+  /**
+   * The round ends where loop detection's last rung is raised, as a caller that takes the signal ends it (`loopSignal`
+   * answering `end`): the one way a run of refusals still stalls a loop, since no count ends one (t1056).
+   */
+  endsOnSignal?: boolean;
   /** The run's time limit, when a test sets one short (`../supervisor-loop.ts`, t592). */
   timeLimit?: { maxMs: number; endingMs: number };
   /** The clock that time limit is kept on, when a test holds its own (`./supervisor-time-limit.test.ts`, t644). */
   clock?: AutomationStudioProjectSupervisorClock;
-  /** Decisions the loop may make beyond the script, so a rule that holds an ending only with turns to spare can hold it (`../completion.ts`, t743). */
+  /** Decisions the loop may make beyond the script. No count of turns ends a loop (t1056), so this sizes nothing the loop reads. */
   spareTurns?: number;
+  /** The loop's budget, when a test needs decisions left to count down (`../completion.ts`, t743): no turn count does (t1056). */
+  budget?: AutomationStudioLlmEvidenceLoopInput["budget"];
   /** Wraps the loop's input, to read what a tool hands the loop rather than what the model is shown (t849). */
   observe?: (loop: AutomationStudioLlmEvidenceLoopInput) => AutomationStudioLlmEvidenceLoopInput;
 } = {}) {
@@ -53,10 +60,10 @@ export async function supervise(steps: Step[], built = project(), options: {
     ...(options.observe ? { observe: options.observe } : {}),
     loop: {
       tools: options.tools ?? HOST_TOOLS,
-      maxIterations: steps.length + (options.spareTurns ?? 0),
-      maxToolCalls: steps.length + 2,
-      unusableDecisions: { maxInARow: steps.length, stalled: () => new Error("stalled") },
+      unusableDecisions: { stalled: () => new Error("stalled") },
       ...(options.propagateDecisionErrors ? { propagateDecisionErrors: true } : {}),
+      ...(options.endsOnSignal ? { loopSignal: () => "end" as const } : {}),
+      ...(options.budget ? { budget: options.budget } : {}),
       executeTool: options.executeTool ?? (async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: false, targetsUnchanged: true })),
       decide: async ({ evidence, tools }) => {
         offered.push(tools.map((tool) => tool.toolId));

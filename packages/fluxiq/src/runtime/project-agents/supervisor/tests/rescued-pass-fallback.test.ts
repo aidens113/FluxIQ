@@ -86,7 +86,7 @@ describe("a rescued pass whose repair came back done and whose re-assembly never
 
   it("is completed on when a guard stalls the loop, with no reset brief of Core's though its purse could pay one", async () => {
     const misshapen: Step = () => ({ kind: "complete", result: { ended: "partial", reason: REASON, revision: 2 } });
-    const run = await supervise([...UP_TO_REASSEMBLY, misshapen, misshapen, misshapen, misshapen, misshapen, misshapen], built("unsure", { purse: new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.5 }) }), { propagateDecisionErrors: true });
+    const run = await supervise([...UP_TO_REASSEMBLY, ...Array.from({ length: 16 }, () => misshapen)], built("unsure", { purse: new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.5 }) }), { propagateDecisionErrors: true, endsOnSignal: true });
     // t775: Core sends no cleanup reset before completing; revision 2's trial act stays on the site.
     expect(run.dispatched.map((request) => request.briefs.map((sent) => sent.kind))).toEqual([["build"], ["repair"]]);
     expect(run.ledger.snapshot().acts.filter((act) => act.inPlace)).toEqual([expect.objectContaining({ act: "act-2", owner: "supervisor" })]);
@@ -97,7 +97,7 @@ describe("a rescued pass whose repair came back done and whose re-assembly never
 
   it("names what is still on the target after the person's words when a guard stalls the loop", async () => {
     const misshapen: Step = () => ({ kind: "complete", result: { ended: "partial", reason: REASON, revision: 2 } });
-    const run = await supervise([...UP_TO_REASSEMBLY, misshapen, misshapen, misshapen, misshapen, misshapen, misshapen], built("unsure"), { propagateDecisionErrors: true });
+    const run = await supervise([...UP_TO_REASSEMBLY, ...Array.from({ length: 16 }, () => misshapen)], built("unsure"), { propagateDecisionErrors: true, endsOnSignal: true });
     expect(run.dispatched.map((request) => request.briefs.map((sent) => sent.kind))).toEqual([["build"], ["repair"]]);
     expect(run.outcome).toMatchObject({ status: "candidate", candidate: { revision: 1 }, reliesOnRecovery: { why: "stalled" } });
     expect(run.outcome.reliesOnRecovery!.told).toMatch(/The build then stopped making progress\. Still on the target from this build: .+\.$/u);
@@ -111,7 +111,7 @@ describe("a rescued pass whose repair came back done and whose re-assembly never
       person.abort();
       return end("partial", REASON)(evidence);
     };
-    const run = await supervise([...UP_TO_REASSEMBLY, cancel], made, { propagateDecisionErrors: true });
+    const run = await supervise([...UP_TO_REASSEMBLY, cancel], made, { propagateDecisionErrors: true, endsOnSignal: true });
     expect(run.outcome.status).toBe("ended");
     expect(run.outcome).not.toHaveProperty("reliesOnRecovery");
     expect(run.outcome.candidate).toBeUndefined();
@@ -195,7 +195,7 @@ describe("a guard end while the latest assembly's own whole test passed outright
   const purse = () => new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.5 });
 
   it("completes on that revision when a stall ends the loop, naming its trial's act still on the target", async () => {
-    const run = await supervise([...PASSED, misshapen, misshapen, misshapen, misshapen, misshapen, misshapen], project({ trialActs: true, purse: purse() }), { propagateDecisionErrors: true });
+    const run = await supervise([...PASSED, ...Array.from({ length: 16 }, () => misshapen)], project({ trialActs: true, purse: purse() }), { propagateDecisionErrors: true, endsOnSignal: true });
     // t775: Core sends no cleanup reset before completing; the passing trial's act stays on the site and is named.
     expect(run.dispatched.map((request) => request.briefs.map((sent) => sent.kind))).toEqual([["build"]]);
     expect(run.ledger.snapshot().acts.filter((act) => act.inPlace)).toEqual([expect.objectContaining({ act: "act-1", owner: "supervisor" })]);
@@ -237,7 +237,7 @@ describe("a guard end while the latest assembly's own whole test passed outright
       person.abort();
       return misshapen(evidence);
     };
-    const run = await supervise([...PASSED, cancel], made, { propagateDecisionErrors: true });
+    const run = await supervise([...PASSED, cancel], made, { propagateDecisionErrors: true, endsOnSignal: true });
     expect(run.outcome.status).toBe("ended");
     expect(run.outcome.candidate).toBeUndefined();
     expect(run.outcome).not.toHaveProperty("completedOnPass");

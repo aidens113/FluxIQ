@@ -5,7 +5,7 @@ import { automationStudioResultRunAccounting } from "../accounting.ts";
 describe("canonical run accounting projection", () => {
   it("preserves recovery evidence while projecting the same ledger repeatedly without addition", () => {
     const purse = new AutomationStudioLlmRunPurse();
-    const ledger = purse.open("run.one", { ledger: { maxCallsPerRun: 4, maxTotalTokensPerRun: 100, maxOutputTokensPerRun: 50, maxEstimatedCostUsdPerRun: 0.1 }, maxEstimatedCostUsdPerCall: 0.01, maxEstimatedCostUsdPerCallAt: () => 0.01 })!;
+    const ledger = purse.open("run.one", { ledger: { maxTotalTokensPerRun: 100, maxOutputTokensPerRun: 50, maxEstimatedCostUsdPerRun: 0.1 }, maxEstimatedCostUsdPerCall: 0.01, maxEstimatedCostUsdPerCallAt: () => 0.01 })!;
     const hold = ledger.reserve({ runId: "run.one", requestId: "request.one", estimatedInputTokens: 10, maxOutputTokens: 10, maxEstimatedCostUsd: 0.01 });
     if (hold.ok) hold.lease.complete();
     const previous = { repairAuthority: { status: "funded" }, diagnostics: [{ code: "repair.saved" }], ok: true };
@@ -17,7 +17,7 @@ describe("canonical run accounting projection", () => {
   it("preserves unknown paid history and adds only a closed accounting refusal", () => {
     const previous = { costAccounting: { calls: 3 }, providerCallsOmitted: 3, repairAuthority: { status: "funded" } };
     const purse = new AutomationStudioLlmRunPurse({ runId: "run.one", gate: previous });
-    purse.open("run.one", { ledger: { maxCallsPerRun: 4, maxTotalTokensPerRun: 100, maxOutputTokensPerRun: 50, maxEstimatedCostUsdPerRun: 0.1 }, maxEstimatedCostUsdPerCall: 0.01, maxEstimatedCostUsdPerCallAt: () => 0.01 });
+    purse.open("run.one", { ledger: { maxTotalTokensPerRun: 100, maxOutputTokensPerRun: 50, maxEstimatedCostUsdPerRun: 0.1 }, maxEstimatedCostUsdPerCall: 0.01, maxEstimatedCostUsdPerCallAt: () => 0.01 });
     expect(automationStudioResultRunAccounting(purse, "run.one", previous)).toMatchObject({ ...previous, accountingDiagnostic: { code: "llm_budget.accounting_history_unavailable" } });
     expect(automationStudioResultRunAccounting(new AutomationStudioLlmRunPurse(), "run.new", undefined)).toBeUndefined();
   });

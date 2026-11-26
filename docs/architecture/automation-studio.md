@@ -321,8 +321,9 @@ retried there. Requests use a concrete output
 allowance, a bounded timeout and abort signal, request/idempotency identifiers,
 and an opaque scoped secret resolver. A per-run reservation ledger is shared by
 every call a recovery makes (the diagnosis, each evidence decision, and the
-patch), so the total-token, output-token, and estimated-cost budgets, and a
-250-call runaway backstop, are reserved before transport dispatch. Each call is
+patch), so the total-token, output-token, and estimated-cost budgets are
+reserved before transport dispatch. No count of calls is (t1056): the 250-call
+runaway backstop ended cheap recoveries before their money did. Each call is
 reserved at its own measured input tokens and, when the provider prices calls
 (`estimateCostUsd`), at its own worst-case price under the call's cost ceiling,
 never at its window-sized limit. Failed or usage-less calls are charged
@@ -2583,10 +2584,17 @@ its own name:
    calls are left, and the patch still runs. The exploration has no call
    ceiling of its own (t1057).
 
-The run ledger still stops at 250 calls (`llm_budget.run_call_limit`), or at the
-resolution's call limit when it declares one. The 250 is Core's run backstop in
-`runtime/llm/flow-execution-limits/run-call-backstop.ts`, outside the recovery;
-an exploration has no count of its own.
+No count of calls ends a run (t1056; user, 2026-11-24: no count of calls,
+steps or iterations ends a round). The run ledger refuses a call only on its
+dollar ceiling or its token ceilings (`llm_budget.run_cost_limit`,
+`llm_budget.run_total_limit`, `llm_budget.run_output_limit`); a declared
+`maxCallsPerRun` is stripped before the ledger sees it, and the 250-call
+backstop no longer applies. A provider failure that is not transient
+(authentication, an empty balance, a refused request) ends the run at its first
+occurrence as a provider failure, named by its code; a reply the provider never
+billed and that cannot be read joins the unanswered-calls outage rule. An
+exploration has no count of decisions or actions either: loop detection steers
+a repeating one, and the purse ends it.
 
 Every call is itemized. The run ledger writes one record at the moment it
 counts a call, so the records and the totals cannot disagree, and a recovered
@@ -2600,7 +2608,8 @@ codes. It also carries `reported`, the provider's own figures with `null`
 wherever the provider gave none, and `charged`, what the ledger put on the
 run's account, whose `tokens` and `cost` say whether each came from the report
 or from the reservation. A record never holds prompt text, response text, or a
-diagnostic message. The receipt lists at most 250 calls, and
+diagnostic message. The receipt lists at most 250 calls (a bound on the record,
+never on the run), and
 `metadata.llmGate.providerCallsOmitted` counts any beyond that.
 
 Routine result checks, their rechecks, and in-run or detached runtime recovery
@@ -2624,9 +2633,8 @@ part costs prevent further parts. Provider-reported usage is never invented
 from these charges, and these build receipts are not part of the runtime
 ledger's itemized call list.
 
-Evidence-guided Flow Bootstrap follows the same model. Its loop makes at most
-64 decisions, or fewer when the resolution declares a call count, with at most
-one more tool call than decisions. No decision has a cost share: each is held
+Evidence-guided Flow Bootstrap follows the same model. No count of its
+decisions or tool calls ends its loop (t1056). No decision has a cost share: each is held
 at its own worst case against the Flow creation's one purse
 ([One purse per Flow creation](automation-studio/llm-flow-bootstrap.md#one-purse-per-flow-creation)),
 whose ceiling is `FLUXIQ_LLM_RUN_COST_CEILING_USD` ($0.10 by default), lowered

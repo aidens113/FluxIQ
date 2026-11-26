@@ -8,7 +8,6 @@ import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../../_sha
 
 import { AUTOMATION_STUDIO_ENDPOINTS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, parseAutomationStudioFlowBootstrapGenerationReadiness } from "../../../../../api-contracts/automation.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS } from "../../../../../framework/automation-service/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS } from "../../../../../runtime/loop-limits/index.ts";
 import { readAutomationStudioFlowBootstrapGenerationRequest } from "../../../../../framework/automation-service/service/flow-bootstrap-commands/index.ts";
 import { registerAutomationStudioApi } from "../index.ts";
 import { automationStudioConversationEffectiveCaller } from "../../../../../runtime/conversations/commands/index.ts";
@@ -472,9 +471,9 @@ describe("Automation Studio LLM execution API", () => {
       sourceInstructionIds: [],
       baseDependencyDigest: "digest.one",
       baseSettingsRevision: 7,
-      // Past what a whole build may account for: every call it may make, each
-      // at the most one request may carry.
-      accounting: { requestId: "request.one", estimatedInputTokens: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS + 1 }
+      // Past any whole number a total can be read as: no count of a build's calls has a ceiling (t1056), so its totals
+      // have none but that.
+      accounting: { requestId: "request.one", estimatedInputTokens: Number.MAX_SAFE_INTEGER + 2 }
     });
     const registry = new GlobalProgramApiRegistry();
     registerAutomationStudioApi(registry, readyLlmApiService({ generateFlowBootstrapAdaptation }) as any);

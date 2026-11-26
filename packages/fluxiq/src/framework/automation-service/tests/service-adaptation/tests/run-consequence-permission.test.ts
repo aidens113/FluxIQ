@@ -111,7 +111,7 @@ async function recover(permittedConsequences?: AutomationStudioActionConsequence
     llmProviderResolver: (input) => {
       resolved.push(input);
       // Resolves only for a caller, as the host's session-key resolver does.
-      return input.caller ? { provider, maxCallsPerRun: 6 } : undefined;
+      return input.caller ? { provider } : undefined;
     },
     llmEvidenceRuntime: {
       domainId: "test.domain",

@@ -3,7 +3,6 @@
 // reaching a client.
 
 import type { GenerateFlowBootstrapAdaptationResponse } from "../../../../api-contracts/automation.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS } from "../../../../runtime/loop-limits/index.ts";
 import type { AutomationStudioCandidateDraftTrial, AutomationStudioGeneratedCandidateTrial } from "../flow-bootstrap-commands/index.ts";
 import { boundedWholeNumber } from "../flow-settings-requests/index.ts";
 import { boundedIdentifier } from "./bounded-identifier.ts";
@@ -78,8 +77,9 @@ function boundedAccountingInteger(value: unknown, label: string): number {
   // every call it made, so it is bounded as the service and the failure
   // diagnostic bound it. One request's ceiling refused any build longer than
   // a few calls after its proposal was stored, and answered it with a bare
-  // failure that carried no diagnostic.
-  if (!Number.isInteger(value) || (value as number) < 0 || (value as number) > AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS) throw new Error(`Flow bootstrap generation ${label} are invalid.`);
+  // failure that carried no diagnostic. No count of a build's calls has a
+  // ceiling (t1056), so its totals have none either.
+  if (!Number.isSafeInteger(value) || (value as number) < 0) throw new Error(`Flow bootstrap generation ${label} are invalid.`);
   return value as number;
 }
 

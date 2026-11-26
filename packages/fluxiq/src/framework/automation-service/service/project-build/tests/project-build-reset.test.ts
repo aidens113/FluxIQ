@@ -222,7 +222,7 @@ async function recipeBuild(options: { ends?: boolean; undeclaredFirst?: boolean;
   });
   const provider = options.resetSentAs ? throughDeepSeek(scripted, { only: isResetRequest, altered: options.resetSentAs }) : scripted;
   const serviceOptions: AutomationStudioServiceOptions = {
-    dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 80, maxEstimatedCostUsd: 0.1 }),
+    dataDir, llmProviderResolver: () => ({ provider, maxEstimatedCostUsd: 0.1 }),
     llmEvidenceRuntime: {
       domainId: "isolated", deniedEvidenceKeys: [], runsNodes: {},
       resolvePlanNodeParameters: (input: Parameters<typeof automationStudioTestDeclaredStepResolution>[0]) => automationStudioTestDeclaredStepResolution(input, { name: "Save", kind: "button", scope: "p:box", resource: "r:recipes", subject: String(input.parameters.recipe), page: "s:recipes" }),
@@ -577,7 +577,7 @@ async function cartBuild(resetScript: ResetScript = UNDO_THE_ADD, options: { sta
   });
   const provider = options.preflight ? throughDeepSeek(scripted) : scripted;
   const domain = shopDomain(cart);
-  const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 80, maxEstimatedCostUsd: 0.1 }), llmEvidenceRuntime: domain.binding });
+  const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxEstimatedCostUsd: 0.1 }), llmEvidenceRuntime: domain.binding });
   service.bindNativeNodeRuntime(shopRuntime());
   service.bindHostRuntime(boxDiffs(cart));
   const builds = automationStudioTestSettledBuilds(service, dataDir);

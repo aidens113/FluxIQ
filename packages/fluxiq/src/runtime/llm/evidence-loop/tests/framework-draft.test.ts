@@ -36,7 +36,7 @@ describe("the Flow the evidence loop drafts", () => {
       kind: "llm_evidence_tool_execution", evidence: { ok: true, read: { extracted: [{ title: "One" }] } }, effectApplied: true,
       draft: { actionId: "web.read", effect: "observe", proposes: true, input: stored, ranWith: binding, reads: "list.1" }
     });
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [read], decide, executeTool, maxIterations: 4, maxToolCalls: 4, dryRun: false, unusableDecisions: { stalled } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [read], decide, executeTool, dryRun: false, unusableDecisions: { stalled } });
     expect(result.steps).toHaveLength(1);
     expect(result.steps[0]).toMatchObject({ disposition: "kept", drafted: "in", input: stored, ranWith: binding });
     expect(JSON.stringify(result.steps[0]!.input)).not.toContain("t12");
@@ -51,7 +51,7 @@ describe("the Flow the evidence loop drafts", () => {
       .mockResolvedValueOnce(readAnswer([{ item: "Kettle", quantity: "1", price: "$20" }], "cart"))
       .mockResolvedValueOnce(readAnswer([{ name: "Toaster", rating: "4" }], "offers"));
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools: [read], decide, executeTool, maxIterations: 4, maxToolCalls: 4, dryRun: false, unusableDecisions: { stalled },
+      tools: [read], decide, executeTool, dryRun: false, unusableDecisions: { stalled },
       namedColumns: ["item", "quantity", "price"], readRowsKey: "read.extracted"
     });
     expect(result.steps.map((step) => [step.callId, step.drafted])).toEqual([["r1", "in"], ["r2", "not_the_result"]]);
@@ -60,7 +60,7 @@ describe("the Flow the evidence loop drafts", () => {
     const executePlain = vi.fn()
       .mockResolvedValueOnce(readAnswer([{ item: "Kettle", quantity: "1", price: "$20" }], "cart"))
       .mockResolvedValueOnce(readAnswer([{ name: "Toaster", rating: "4" }], "offers"));
-    const last = await runAutomationStudioLlmEvidenceLoop({ tools: [read], decide: plain, executeTool: executePlain, maxIterations: 4, maxToolCalls: 4, dryRun: false, unusableDecisions: { stalled }, readRowsKey: "read.extracted" });
+    const last = await runAutomationStudioLlmEvidenceLoop({ tools: [read], decide: plain, executeTool: executePlain, dryRun: false, unusableDecisions: { stalled }, readRowsKey: "read.extracted" });
     expect(last.steps.map((step) => [step.callId, step.drafted])).toEqual([["r1", "not_the_result"], ["r2", "in"]]);
   });
 
@@ -71,7 +71,7 @@ describe("the Flow the evidence loop drafts", () => {
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 2, change: "rerun", input: { target: "#right" } }] })
       .mockResolvedValueOnce(complete);
     const executeTool = vi.fn().mockResolvedValueOnce(worked).mockResolvedValueOnce(failed).mockResolvedValueOnce(worked);
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [press], decide, executeTool, maxIterations: 6, maxToolCalls: 6, dryRun: false, unusableDecisions: { stalled } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [press], decide, executeTool, dryRun: false, unusableDecisions: { stalled } });
     expect(result.ok).toBe(true);
     expect(result.steps.map((step) => [step.id, step.position, step.disposition, step.drafted, step.input])).toEqual([
       ["d1", 1, "kept", "in", { target: "#a" }],
@@ -87,14 +87,14 @@ describe("the Flow the evidence loop drafts", () => {
       .mockResolvedValueOnce(call("c2", "press", { target: "#elsewhere" }))
       .mockResolvedValueOnce(complete);
     const executeTool = vi.fn().mockResolvedValueOnce(readAnswer([{ name: "One" }], "rows")).mockResolvedValueOnce(worked).mockResolvedValueOnce(worked);
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [read, press], decide, executeTool, maxIterations: 6, maxToolCalls: 6, dryRun: false, unusableDecisions: { stalled } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [read, press], decide, executeTool, dryRun: false, unusableDecisions: { stalled } });
     // The press with the act is lasting and stays in; the press after it that nothing lasting follows leads nowhere.
     expect(result.steps.map((step) => [step.callId, step.drafted, step.acts])).toEqual([["r1", "in", undefined], ["c1", "in", ["a1"]], ["c2", "dead_end", undefined]]);
   });
 
   it("offers the framework's seven edits and shows the framework's telling", async () => {
     const decide = vi.fn().mockResolvedValueOnce(call("c1", "press", { target: "#a" })).mockResolvedValueOnce(complete);
-    await runAutomationStudioLlmEvidenceLoop({ tools: [press], decide, executeTool: vi.fn().mockResolvedValue(worked), maxIterations: 4, maxToolCalls: 4, dryRun: false, unusableDecisions: { stalled }, draft: { maxAmendments: 4 } });
+    await runAutomationStudioLlmEvidenceLoop({ tools: [press], decide, executeTool: vi.fn().mockResolvedValue(worked), dryRun: false, unusableDecisions: { stalled }, draft: { } });
     const schema = (decide.mock.calls[1]![0] as { decisionSchema: { oneOf: JsonObject[] } }).decisionSchema;
     const amend = schema.oneOf.find((variant) => ((variant.properties as JsonObject).kind as JsonObject).const === "amend_draft")!;
     const items = ((amend.properties as JsonObject).amendments as JsonObject).items as { properties: { change: { enum: string[] } } };
@@ -148,7 +148,7 @@ describe("a step that observes and reads no list", () => {
     const executeTool = vi.fn()
       .mockResolvedValueOnce(readAnswer([{ title: "One", url: "library://loan/one" }], "loans"))
       .mockResolvedValueOnce({ kind: "llm_evidence_tool_execution", evidence: { ok: true, page: { heading: "One" } }, effectApplied: true, draft: { actionId: "web.open", effect: "observe", proposes: true } });
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [read, open], decide, executeTool, maxIterations: 4, maxToolCalls: 4, dryRun: false, unusableDecisions: { stalled }, readRowsKey: "read.extracted" });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [read, open], decide, executeTool, dryRun: false, unusableDecisions: { stalled }, readRowsKey: "read.extracted" });
     expect(result.steps.map((each) => [each.callId, each.drafted])).toEqual([["r1", "in"], ["o1", "in"]]);
   });
 });

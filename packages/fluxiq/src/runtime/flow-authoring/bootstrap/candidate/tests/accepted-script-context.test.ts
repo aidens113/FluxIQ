@@ -53,8 +53,8 @@ async function shown(decisions: AutomationStudioLlmEvidenceLoopDecision[]): Prom
   await runAutomationStudioFlowCandidateAuthoringLoop({
     submission: refusalTestSubmission(),
     loop: {
-      tools: [{ toolId: "demo.look", effect: "observe", description: "Look", inputSchema: { type: "object" } }], maxIterations: decisions.length + 2, maxToolCalls: decisions.length + 2,
-      unusableDecisions: { maxConsecutive: decisions.length + 2, maxInARow: decisions.length + 2, stalled: ({ issueCodes }) => Object.assign(new Error("stalled"), { issueCodes }) },
+      tools: [{ toolId: "demo.look", effect: "observe", description: "Look", inputSchema: { type: "object" } }], 
+      unusableDecisions: { stalled: ({ issueCodes }) => Object.assign(new Error("stalled"), { issueCodes }) },
       executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { looked: true }, effectApplied: false, stateDigests: { before: "page.archive", after: "page.archive" } }),
       decide: async ({ evidence }) => {
         seen.push(evidence.map((entry) => structuredClone(entry)));

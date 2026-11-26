@@ -34,7 +34,7 @@ function site() {
 }
 
 const loop = (decide: ReturnType<typeof vi.fn>, executeTool: ReturnType<typeof site>) => runAutomationStudioLlmEvidenceLoop({
-  tools, decide, executeTool, maxIterations: 30, maxToolCalls: 30, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { maxConsecutive: 8, stalled: () => stalledError }
+  tools, decide, executeTool, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { stalled: () => stalledError }
 });
 
 describe("a look that answered the same twice on one page", () => {
@@ -60,18 +60,23 @@ describe("a look that answered the same twice on one page", () => {
 });
 
 describe("looks in a row with nothing done between them", () => {
-  it("run 41's varied finds: told at the fifth that it is searching without acting, and the round stalls at the eighth", async () => {
-    const decide = vi.fn().mockImplementation(async () => find(decide.mock.calls.length, `query ${decide.mock.calls.length}`));
+  // No count of looks ends a round (t1056): the eighth once stalled it. Now the run is caught as a repeat from the
+  // eighth on, and the loop goes on to the model's result.
+  it("run 41's varied finds: told at the fifth that it is searching without acting, caught as a repeat from the eighth, and never stalled", async () => {
+    const looks = 24;
+    const decide = vi.fn().mockImplementation(async () => decide.mock.calls.length <= looks ? find(decide.mock.calls.length, `query ${decide.mock.calls.length}`) : { kind: "complete", result: { done: true } });
     const executeTool = site();
 
-    await expect(loop(decide, executeTool)).rejects.toBe(stalledError);
+    await expect(loop(decide, executeTool)).resolves.toMatchObject({ ok: true });
 
-    expect(executeTool).toHaveBeenCalledTimes(8);
+    expect(executeTool).toHaveBeenCalledTimes(looks);
     const note = shownAt(decide, 5).find((entry) => entry.toolId === "core.search_check")?.value;
     expect(note).toMatchObject({ code: "llm_evidence_loop.searching_without_acting", looksInARow: 5, maxLooksInARow: 8 });
     expect((note?.looks as JsonObject[]).map((look) => look.input)).toEqual([1, 2, 3, 4, 5].map((index) => ({ query: `query ${index}` })));
     expect(String(note?.instruction)).toContain("Act on what you found");
+    expect(String(note?.instruction)).toContain("caught as a repeat, and you decide how to go on");
     expect(shownAt(decide, 4).some((entry) => entry.toolId === "core.search_check")).toBe(false);
+    expect(shownAt(decide, 8).find((entry) => entry.toolId === "core.loop_check")?.value).toMatchObject({ code: "llm_evidence_loop.loop_steered", pattern: "no_progress" });
   });
 
   it("starts counting again after anything that is not a look", async () => {

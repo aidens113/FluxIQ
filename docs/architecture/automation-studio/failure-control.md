@@ -180,24 +180,29 @@ a validated temporary failure, a trial whose gate bounds its own re-tests, a rer
 (measured as its amendment), a check, a written step and a member of a prior-node
 batch are never counted as repeats, though what they bring still counts as progress.
 
-**No count ends a loop with a `loopSignal`** (user, 2026-11-24: "THERE SHOULDNT BE ANY
-ARBITRARY FUCKING CALL LIMIT THAT RANDOMLY JUST RESETS EVERYTHING"; t1008). The answer-first
-rounds are such loops, and a round that ended on a count started the next with an empty
-evidence window: run-mwufisf0-5535f5f5 ended four rounds in a row on its eighth look, and each
-fresh round looked at the same things again. So `resolveLimits` (`../../../packages/fluxiq/src/runtime/llm/loop-configuration.ts`,
-`uncounted`) lifts the turns, calls, edits and unusable replies in a row for such a loop, after
-checking them as given. Steps without progress end no loop at all, with or without a signal
-(t1049): `maxStepsWithoutProgress` is gone, and the no-progress redirect only steers, never
-counting down to a stop. Eight looks in a row are no stall there: the run of looks is caught as a `no_progress`
+**No count ends a loop** (user, 2026-11-24: "THERE SHOULDNT BE ANY
+ARBITRARY FUCKING CALL LIMIT THAT RANDOMLY JUST RESETS EVERYTHING"; t1008 for the answer-first
+rounds, t1056 for every loop). A round that ended on a count started the next with an empty
+evidence window -- run-mwufisf0-5535f5f5 ended four rounds in a row on its eighth look, and each
+fresh round looked at the same things again -- or ended a build that still had money. So
+`resolveLimits` (`../../../packages/fluxiq/src/runtime/llm/loop-configuration.ts`) holds no
+count of turns, calls, edits, or unusable or unreadable replies in a row, for any loop:
+`maxIterations` and `maxToolCalls` are read by nothing (only `adaptation/recovery/` still
+passes them), the provider's preflight no longer refuses a decision past the 64th, and the readers
+of a recorded build bound its counts by nothing but being whole numbers. Steps without progress
+end no loop either (t1049): the no-progress redirect only steers. Eight looks in a row are no stall: the run of looks is caught as a `no_progress`
 finding (`decision-handlers/searching.ts`), steered with the model's loop decision, and each
 further look that brings nothing climbs the ladder. Where the model chose `change_approach` on
 a stretch of looks alone, each further look that brings nothing, run or answered from memory,
 counts as a refusal does (`watch.ts`); an act or an edit is the different kind of step and ends
-that. Only the result, the purse, a person's Stop and loop detection's own last rung end a round.
+that. Only the result, the purse (or the tokens or the clock of the loop's budget), a person's
+Stop, and a caller that takes the signal ending the round on loop detection's last rung end a
+round.
 
 **Unreadable decision replies go through loop detection** (t1014), exactly as a judge's do
-(t1000). Where the loop takes a `loopSignal`, no count of unreadable replies in a row ends it
-(the old six, `maxUnreadableRepliesInARow`, still holds for a loop without one). Each re-ask
+(t1000). No count of unreadable replies in a row ends any loop (t1056: the old six,
+`maxUnreadableRepliesInARow`, is gone, and `llm_evidence_loop.unreadable_replies` is produced by
+nothing). Each re-ask
 names what could not be read and, for a reply off the schema, each path and rule it missed
 (`unusable-decision.ts`); the note no longer counts down. Two or more in a row that failed the
 same way (the same clause, `automationStudioLlmUnreadableDecisionSaid`) are an `exact_repeat`
@@ -208,25 +213,29 @@ and only the ladder's last rung ends the round, recorded as `stoppedOn` so the n
 what repeated. Replies that fail in different ways are no repeat: each is asked again until the
 purse ends the task. A reply that is read breaks the run.
 
-**Refusal runs go through loop detection too** (t1014). With a `loopSignal`, three decisions
-refused (or changing nothing) for one reason no longer end the round (the 2026-10-06 rule still
-holds for a loop without one, `decision-handlers/refusal-run.ts`): the run is a `no_progress`
+**Refusal runs go through loop detection too** (t1014, t1056). Three decisions refused (or
+changing nothing) for one reason no longer end any round (`decision-handlers/refusal-run.ts`): the run is a `no_progress`
 finding under `core.refusal_run`, steered with the model's loop decision, and each further one
 refused for that reason is caught again and climbs the ladder; the warning at the second says it
 will be caught, not that it ends anything. A completion refused again over the same draft beside
 three refused repeats (`evidence-loop/refused-again.ts`) is a `near_repeat` finding under
-`core.completion_check` in the same way. In both, only the ladder's last rung, raised through
-`automationStudioLlmEvidenceLoopRaise` as every rung is, ends the round.
+`core.completion_check` in the same way. In both, the ladder's last rung is raised through
+`automationStudioLlmEvidenceLoopRaise` as every rung is, and ends the round only where a caller
+that takes the signal says so.
 
 **A fresh round keeps what the run learned** (t1014). A round may still end (loop detection's
 last rung, the completion check's own ladder, a throw), and the next one's evidence window is
 its own, but it no longer starts empty. From the second round on, and in a carried-on attempt's
 first round (its trail is held across the restart), the attempt shows, right after the round's note and constant for the round, the state the earlier rounds established (`core.earlier_rounds`, `answer-first/earlier-rounds/`, t1036): each read as its call, row count and columns, and every other call as one short line (number, id, what it was on, how it ended), grouped by what ran and how it ended, oldest first. No call's result is carried whole and no page view travels: the rows are the attempt's result's (`core.result`), the acts, rows kept, last check and tried list are the round's note, the Flow so far is `core.flow_draft`, and every call stays named by its id for `core.recall_result`. It is screened as a judge's trail is, with no member under a denied key. The note beside it still carries the tried list, what the loop stopped on, the model's decisions and the judge's defects, in Core's words only.
 
-**With no `loopSignal`** a loop keeps steer and refuse, and no signal is raised. It
-ends only the ways it always could: a ladder refusal counts in the existing run of
-refused repeats, which stalls as it always has at three in a row. No lane adds a new
-way for a task to end in failure.
+**With no `loopSignal`** (a recovery, a candidate or subflow build, the project supervisor) a
+loop is steered and refused as any other, and offered `core.loop_decision` too, without
+`ask_person`, since nobody can be asked from it (`loop-decision/offered.ts`, `options.ts`). Its
+ladder's last rung is raised with nobody to answer, and the loop goes on
+(`decision-handlers/ladder-top.ts`, t1056): the caller's own move runs first where it names one
+(`recoverStall`, a candidate build's retest of its latest revision), and refused repeats in a row
+count again from nothing. Such a loop ends with its result, its purse, its budget's tokens or
+clock, or a person's Stop. No lane adds a new way for a task to end in failure.
 
 **The attempt's record** (`attempt-record.ts`, `attemptRecord` on the loop). The
 caller owns one record per attempt and hands it to each loop and stage. It holds

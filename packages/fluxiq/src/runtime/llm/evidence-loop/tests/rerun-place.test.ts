@@ -48,7 +48,7 @@ function site(options: { unreachable?: boolean; noReplay?: boolean; startAt?: nu
 }
 
 const loop = (decide: ReturnType<typeof vi.fn>, executeTool: ReturnType<typeof site>, draft?: { seed: AutomationStudioFlowDraftStep[]; seedStartedOn?: Record<string, JsonObject> }) => runAutomationStudioLlmEvidenceLoop({
-  tools, decide, executeTool, maxIterations: 12, maxToolCalls: 12, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { maxConsecutive: 8, stalled: () => new Error("stalled") },
+  tools, decide, executeTool, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { stalled: () => new Error("stalled") },
   ...(draft ? { draft } : {})
 });
 const read = { kind: "tool_call", callId: "read.1", toolId: "read", input: { list: "results" }, add: true };
@@ -144,7 +144,7 @@ describe("a rerun of a read that paged to the end", () => {
 // a repeat of the rerun that never ran.
 describe("a rerun for a caller that puts no page back", () => {
   const forward = (decide: ReturnType<typeof vi.fn>, executeTool: ReturnType<typeof site>) => runAutomationStudioLlmEvidenceLoop({
-    tools, decide, executeTool, maxIterations: 12, maxToolCalls: 12, dryRun: false, rerunsInPlace: true, propagateDecisionErrors: true, unusableDecisions: { maxConsecutive: 8, stalled: () => new Error("stalled") }
+    tools, decide, executeTool, dryRun: false, rerunsInPlace: true, propagateDecisionErrors: true, unusableDecisions: { stalled: () => new Error("stalled") }
   });
 
   it("runs once where the page stands, with no reset, says where its step started, and the step records that it ran in place", async () => {
@@ -205,7 +205,7 @@ describe("the model's own call after a rerun whose place could not be reached", 
       .mockResolvedValueOnce({ kind: "complete", result: { done: true } });
 
     await runAutomationStudioLlmEvidenceLoop({
-      tools: [go], decide, executeTool, maxIterations: 12, maxToolCalls: 12, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { maxConsecutive: 8, stalled: () => new Error("stalled") }
+      tools: [go], decide, executeTool, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { stalled: () => new Error("stalled") }
     }).catch(() => undefined);
 
     expect(executeTool.mock.calls.map(([call]) => call.callId)).toEqual(["go.1", "go.2", "rerun.1.place", "go.3"]);
@@ -367,7 +367,7 @@ describe("a rerun of the read a judged test blamed", () => {
     });
   }
   const repair = (decide: ReturnType<typeof vi.fn>, executeTool: ReturnType<typeof host>) => runAutomationStudioLlmEvidenceLoop({
-    tools, decide, executeTool, maxIterations: 12, maxToolCalls: 12, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { maxConsecutive: 8, stalled: () => new Error("stalled") },
+    tools, decide, executeTool, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { stalled: () => new Error("stalled") },
     // Where the domain declares a live read keeps its records (the web domain's `read.extracted`): Core names no domain's key.
     readRowsKey: "read.extracted",
     draft: { seed: [], resume: { revision: 2, stopped: "judged_wrong", outstandingIssueCodes: [], judgement } }
@@ -391,7 +391,7 @@ describe("a rerun of the read a judged test blamed", () => {
   it("compares nothing when the domain declared no place for a live read's kept rows", async () => {
     const decide = decisions();
     await expect(runAutomationStudioLlmEvidenceLoop({
-      tools, decide, executeTool: host([...OTHERS, ...NAMED]), maxIterations: 12, maxToolCalls: 12, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { maxConsecutive: 8, stalled: () => new Error("stalled") },
+      tools, decide, executeTool: host([...OTHERS, ...NAMED]), dryRun: false, propagateDecisionErrors: true, unusableDecisions: { stalled: () => new Error("stalled") },
       draft: { seed: [], resume: { revision: 2, stopped: "judged_wrong", outstandingIssueCodes: [], judgement } }
     })).resolves.toMatchObject({ ok: true });
     expect(shownAt(decide, 2).find((entry) => entry.callId === "rerun.1")?.value).not.toHaveProperty("checkedRowsNow");

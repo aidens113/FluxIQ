@@ -223,7 +223,10 @@ describe("a re-author whose build fails", () => {
     expect(marker(result).attempts[0]).toMatchObject({ code: "flow_bootstrap.provider_timeout", retryable: true });
   });
 
-  it.each([true, false])("distinguishes genuinely reported free retries from unpriced unreported zero charges (reported=%j)", async (reported) => {
+  // An unpriced provider is held and charged as priced at Core's default model, never as free (t1056,
+  // `runtime/llm/build-purse/priced.ts`): its answered call with no usage is charged at that hold, a known charge, so
+  // the repair may build again, as after a genuinely reported free call.
+  it.each([true, false])("lets a repair build again after genuinely reported free retries, and after an unpriced provider's calls charged as priced (reported=%j)", async (reported) => {
     let calls = 0;
     const generate = vi.fn<AutomationStudioRefutedResultRepairPortDependencies["generate"]>(async (_request, _brief, costLeftUsd, _pages, _ending, onCharged) => {
       calls += 1;
@@ -258,11 +261,10 @@ describe("a re-author whose build fails", () => {
       }
     });
     const result = await automationStudioRefutedResultRepairPort(deps({ generate }))(request);
-    expect(generate).toHaveBeenCalledTimes(reported ? 2 : 1);
-    if (reported) {
-      expect(marker(result)).toMatchObject({ adaptationId: "adaptation.free", held: true, purse: { spentUsd: 0, averagedCalls: 2 } });
-      expect(marker(result).purse.unreportedParts).toBeUndefined();
-    } else expect(marker(result).purse).toMatchObject({ unreportedParts: 1 });
+    expect(generate).toHaveBeenCalledTimes(2);
+    expect(marker(result).purse.unreportedParts).toBeUndefined();
+    if (reported) expect(marker(result)).toMatchObject({ adaptationId: "adaptation.free", held: true, purse: { spentUsd: 0, averagedCalls: 2 } });
+    else expect(marker(result).purse.spentUsd).toBeGreaterThan(0);
   });
 
   it.each([

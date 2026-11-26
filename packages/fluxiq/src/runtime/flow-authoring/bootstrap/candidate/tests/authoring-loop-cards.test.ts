@@ -41,7 +41,7 @@ async function build(port: AutomationStudioCandidateTrialPort, options: { stale?
   const tests = options.tests ?? 1;
   await runWithAutomationStudioActivity({ kind: "build", id: "b1", projectId: "p1" }, () => runAutomationStudioFlowCandidateAuthoringLoop({
     submission, trial: { candidateId: "candidate.cards", port }, observe: observeAutomationStudioEvidenceLoop,
-    loop: { tools: [], maxIterations: tests + 2, maxToolCalls: tests + 2, executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: {}, effectApplied: false }),
+    loop: { tools: [], executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: {}, effectApplied: false }),
       decide: async ({ iteration, evidence }) => {
         if (iteration === 1) return { kind: "tool_call", toolId: "core.submit_candidate", callId: "submit", input: flow };
         receipt = [...evidence].reverse().find((entry) => entry.toolId === "core.submit_candidate")!.value as JsonObject;

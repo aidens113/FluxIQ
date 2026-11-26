@@ -133,7 +133,11 @@ export async function fluxNodeLane(cleanups: (() => Promise<void>)[], options: {
     const usage = decision.callId === DECLARE_CALL && current.declarationUsd !== undefined ? { ...USAGE, estimatedCostUsd: current.declarationUsd } : USAGE;
     return { response: { kind: "evidence_tool_decision", summary: "Scripted.", decision }, usage };
   };
-  const provider = mockProvider(answer);
+  // The scripted model prices every call at what a call reports costing (`USAGE`), so a purse holds each call at what
+  // it is then charged. A model that priced nothing used to be held at the most a call had reported, nothing before the
+  // first; it is now held at Core's default model's rates for the request it sends (`runtime/llm/build-purse/priced.ts`,
+  // t1056), which would tie these purses' boundaries to the size of each request rather than to the calls they pay for.
+  const provider: ReturnType<typeof mockProvider> = { ...mockProvider(answer), estimateCostUsd: () => USAGE.estimatedCostUsd };
   const priced = options.models ? fluxNodePricedModels(options.models, answer) : undefined;
   const byHand = fakeLibraryBinding(library, ({ value }) => (value.node === FIND_LOANS ? foundByHand(library, value) : undefined));
   const makeService = () => {

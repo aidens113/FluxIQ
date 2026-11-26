@@ -65,7 +65,7 @@ async function requestsOfALoop(declared: { draft?: Record<string, never> } = { d
   await runAutomationStudioLlmEvidenceLoop({
     // It declares a draft, as a build's and an attempt's rounds do: only such a loop holds the amending vocabulary in its head, and a loop that builds no Flow offers it once a step can be amended (`../../evidence-loop.ts`, f34f16d74), which the test below holds apart.
     ...declared,
-    tools, decide, maxIterations: 30, maxToolCalls: 30, completionSchema: { type: "object" }, budget: { maxTotalTokens: 10_000_000 },
+    tools, decide, completionSchema: { type: "object" }, budget: { maxTotalTokens: 10_000_000 },
     unusableDecisions: { stalled: () => new Error("stalled") },
     checkCompletion: () => (completions += 1) < 3 ? { ok: false, issueCodes: ["plan.cannot_answer"], feedback: { issue: "plan.cannot_answer" } } : { ok: true },
     executeTool: async ({ value }) => ({ kind: "llm_evidence_tool_execution" as const, evidence: { page: value.page ?? null, text: "x".repeat(600) }, effectApplied: true, draft: { actionId: "inspect", input: value, effect: "mutate" as const, proposes: true } })

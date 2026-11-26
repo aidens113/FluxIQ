@@ -70,7 +70,7 @@ async function appliedProjectBuild() {
     if (tested?.verdict !== "yes") return decision({ kind: "tool_call", callId: "test-main", toolId: "core.test_subflow", input: { revision: submitted.revision as number, digest: submitted.digest as string } });
     return decision({ kind: "complete", result: { subflowKey: "main", revision: submitted.revision as number, digest: submitted.digest as string } });
   });
-  const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 60, maxEstimatedCostUsd: 0.1 }),
+  const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxEstimatedCostUsd: 0.1 }),
     llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect", inputSchema: { type: "object" }, effect: "observe" }],
       executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { seen: true }, effectApplied: false, targetsUnchanged: true }) } });
   const builds = automationStudioTestSettledBuilds(service, dataDir);

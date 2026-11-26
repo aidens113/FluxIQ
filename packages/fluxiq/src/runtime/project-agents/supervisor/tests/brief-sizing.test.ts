@@ -6,7 +6,8 @@
 import { describe, expect, it } from "vitest";
 import { AUTOMATION_STUDIO_SUBFLOW_BRIEF_MIN_CALLS } from "../../../flow-authoring/bootstrap/subflow-candidate/index.ts";
 import { AutomationStudioLlmBuildPurse } from "../../../llm/build-purse/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../loop-limits/index.ts";
+/** The most turns a brief may name (`../brief-sizing.ts`); it ends nothing (t1056). */
+const BRIEF_MAX_ITERATIONS = 64;
 import { automationStudioProjectStructurePlan, type AutomationStudioProjectStructurePlan } from "../../contracts/index.ts";
 import { gardenBuild, REF } from "../../dispatch/tests/dispatch-fixture.ts";
 import { automationStudioProjectSupervisorBriefSizing } from "../brief-sizing.ts";
@@ -59,7 +60,7 @@ describe("Core's sizing of a dispatch's briefs", () => {
     purse.keepBackCallsFromAllowances(10);
     const sized = automationStudioProjectSupervisorBriefSizing({ sent: [{ kind: "build", subflowKey: "plant_packet", maxIterations: 200 }], purse, structure, done: new Set(["list_seeds", "open_packet"]), supervisorCalls: 4 });
     // One brief and the finishing share of 240 calls: 120 calls, but the loop refuses more than its own turns.
-    expect(sized).toEqual({ ok: true, sizes: [{ allowanceUsd: 0.125, maxIterations: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations, maxCalls: 120 }] });
+    expect(sized).toEqual({ ok: true, sizes: [{ allowanceUsd: 0.125, maxIterations: BRIEF_MAX_ITERATIONS, maxCalls: 120 }] });
   });
 
   it("gives a reset the calls kept back for the finishing, less the supervisor's own last decisions", async () => {

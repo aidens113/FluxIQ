@@ -26,7 +26,6 @@
 import {
   AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST,
   AUTOMATION_STUDIO_LLM_DEFAULT_TOKEN_LIMITS,
-  AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP,
   AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL,
   AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD,
   automationStudioLlmRunCostCeilingUsd,
@@ -62,7 +61,6 @@ export type AutomationStudioRecoveryRunBudgetInput = {
   explicitRunBudget: boolean;
   /** What the provider resolver said, when it said anything beyond a provider. */
   resolution?: {
-    maxCallsPerRun?: number | undefined;
     /** The whole run's token exposure, when the resolver states one. It caps
      * the pot however many calls the run makes. */
     maxTotalTokensPerRun?: number | undefined;
@@ -98,16 +96,9 @@ export type AutomationStudioRecoveryRunBudget = AutomationStudioLlmRunBudgetProf
 /** The limits one recovery runs under. */
 export function resolveAutomationStudioRecoveryRunBudget(input: AutomationStudioRecoveryRunBudgetInput): AutomationStudioRecoveryRunBudget {
   const resolution = input.resolution;
-  // A resolver that says how many calls a run makes is taken at its word, and
-  // failing at the budget names the reason. An intervention limit counts
-  // interventions, not provider calls, and no longer stands in for one.
-  const declaredCalls = positiveInteger(resolution?.maxCallsPerRun);
-  const maxCallsPerRun = declaredCalls ?? AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP;
-  // The purse is divided among exactly the calls the resolver declared. The
-  // ledger reserves each call's share before it knows what it will spend, so a
-  // share larger than purse / declared calls would refuse the last few calls on
-  // cost while the run still had money.
-  const costShares = declaredCalls ?? AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES;
+  // No count of calls bounds a run (t1056): a resolver no longer declares one, and the ledger counts none. The purse is
+  // divided into Core's shares only to size one call's least reservation and the token pot.
+  const costShares = AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES;
   // The token pot is the per-call limit times the shares, lowered by a
   // `maxTokensPerRun` a person set or a resolver's whole-run exposure. There is
   // no smaller default of Core's own any more: it was 6,000 tokens per share
@@ -160,10 +151,9 @@ export function resolveAutomationStudioRecoveryRunBudget(input: AutomationStudio
     return Math.floor(reservation * 1_000_000_000) / 1_000_000_000;
   };
   return {
-    ledger: { maxCallsPerRun, maxTotalTokensPerRun, maxOutputTokensPerRun, maxEstimatedCostUsdPerRun },
+    ledger: { maxTotalTokensPerRun, maxOutputTokensPerRun, maxEstimatedCostUsdPerRun },
     maxEstimatedCostUsdPerCall: maxEstimatedCostUsdPerCallAt(),
-    maxEstimatedCostUsdPerCallAt,
-    ...(declaredCalls !== undefined ? { declaredCallsPerRun: declaredCalls } : {})
+    maxEstimatedCostUsdPerCallAt
   };
 }
 

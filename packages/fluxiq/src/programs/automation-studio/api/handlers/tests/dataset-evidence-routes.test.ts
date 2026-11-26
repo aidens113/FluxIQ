@@ -61,7 +61,7 @@ function startService(judged: AutomationStudioLlmTaskRequest[]): AutomationStudi
   };
   const service = new AutomationStudioService({
     dataDir: tempRoot,
-    llmProviderResolver: () => ({ provider, maxCallsPerRun: 4, maxEstimatedCostUsd: 0.1 }),
+    llmProviderResolver: () => ({ provider, maxEstimatedCostUsd: 0.1 }),
     llmEvidenceRuntime: { domainId: "example", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect", inputSchema: { type: "object" }, effect: "observe" }],
       executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { looked: true }, effectApplied: false, targetsUnchanged: true }) }
   } as ConstructorParameters<typeof AutomationStudioService>[0]).bindIoRuntime(io, "example");

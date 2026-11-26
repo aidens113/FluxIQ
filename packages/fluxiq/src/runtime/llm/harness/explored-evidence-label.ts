@@ -13,16 +13,17 @@
 // builder, and `runtime/recovery` takes it from here (that direction of import
 // is the legal one).
 //
-// The ordinal has at most three digits. An exploration returns at most one
-// packet per tool call, and `tests/explored-evidence-label.test.ts` fails if
-// the evidence loop's ceiling on tool calls ever outgrows that.
+// The ordinal is any whole number from one. An exploration returns at most one
+// packet per tool call, and no count of tool calls ends a loop any more (t1056),
+// so the label is not held to three digits: an exploration that made a
+// thousandth call would have had nothing to number its packet with.
 
 const LABEL_PREFIX = "explored.";
-const LABEL = /^explored\.[1-9][0-9]{0,2}$/u;
-const QUALIFIED_HANDLE = /^(explored\.[1-9][0-9]{0,2}):(.+)$/u;
+const LABEL = /^explored\.[1-9][0-9]*$/u;
+const QUALIFIED_HANDLE = /^(explored\.[1-9][0-9]*):(.+)$/u;
 
 /** The largest ordinal a label can carry. */
-export const AUTOMATION_STUDIO_EXPLORED_EVIDENCE_MAX_ORDINAL = 999;
+export const AUTOMATION_STUDIO_EXPLORED_EVIDENCE_MAX_ORDINAL = Number.MAX_SAFE_INTEGER;
 
 /** The label of the `ordinal`th packet an exploration returned, counting from one. */
 export function automationStudioExploredEvidenceLabel(ordinal: number): string {

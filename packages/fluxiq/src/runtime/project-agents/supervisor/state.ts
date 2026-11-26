@@ -31,7 +31,7 @@ export type AutomationStudioProjectSupervisorRescuedTest = { key: string; revisi
  * model gave an honest ending while the pass stood (`ended`, `./completion.ts`),
  * or completed naming the build's fallback (`completed`, t637).
  */
-export type AutomationStudioProjectSupervisorRecoveryShortfall = "short" | "money" | "time" | "turns" | "stalled" | "provider" | "ended" | "completed";
+export type AutomationStudioProjectSupervisorRecoveryShortfall = "short" | "money" | "time" | "stalled" | "provider" | "ended" | "completed";
 
 /** What the person is told when the supervisor completes on a rescued test (t603, below). */
 export type AutomationStudioProjectSupervisorReliesOnRecovery = {
@@ -77,7 +77,6 @@ const SHORTFALL_WORDS: Readonly<Record<AutomationStudioProjectSupervisorRecovery
   short: "A repair to add that came back without it.",
   money: "The build's spending limit could not pay for a repair to add that.",
   time: "The build reached its time limit before a repair to add that was made.",
-  turns: "The build ran out of turns before a repair to add that was made.",
   stalled: "The build stopped making progress before it could add that.",
   provider: "The AI model provider stopped answering before the build could add that.",
   ended: "The supervisor ended the build before a repair to add that was made.",
@@ -89,7 +88,6 @@ const FALLBACK_STOP_WORDS: Readonly<Record<AutomationStudioProjectSupervisorReco
   short: "A later repair came back without the change.",
   money: "The build's spending limit then ran out.",
   time: "The build then reached its time limit.",
-  turns: "The build then ran out of turns.",
   stalled: "The build then stopped making progress.",
   provider: "The AI model provider then stopped answering.",
   ended: "The supervisor then ended the build.",

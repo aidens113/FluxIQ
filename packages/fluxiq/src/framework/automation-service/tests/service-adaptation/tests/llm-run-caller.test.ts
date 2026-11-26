@@ -44,7 +44,6 @@ describe("a run a person asked the model into, with no grant", () => {
         return {
           provider: { metadata: { provider: "mock", model: "caller-model" }, runTask: async (request) => { taskKinds.push(request.taskKind); expect(request).toMatchObject({ tokenLimits: { maxInputTokens: 4000, maxOutputTokens: 1000, maxTotalTokens: 5000 }, maxEstimatedCostUsd: 0.1, timeoutMs: 10000 }); return { response: { kind: "diagnosis", summary: "safe" }, usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } }; } },
           tokenLimits: { maxInputTokens: 4000, maxOutputTokens: 1000, maxTotalTokens: 5000 },
-          maxCallsPerRun: 1,
           maxEstimatedCostUsd: 0.1,
           timeoutMs: 10000
         };
@@ -117,7 +116,6 @@ describe("a run a person asked the model into, with no grant", () => {
           }
         },
         tokenLimits: { maxInputTokens: 4000, maxOutputTokens: 1000, maxTotalTokens: 5000 },
-        maxCallsPerRun: 1,
         maxEstimatedCostUsd: 0.1,
         timeoutMs: 10000
       }),
@@ -209,7 +207,6 @@ describe("a run a person asked the model into, with no grant", () => {
           }
         },
         tokenLimits: { maxInputTokens: 4000, maxOutputTokens: 1000, maxTotalTokens: 5000 },
-        maxCallsPerRun: 1,
         maxEstimatedCostUsd: 0.1,
         timeoutMs: 10000
       })
@@ -231,7 +228,11 @@ describe("a run a person asked the model into, with no grant", () => {
 
     expect(run.status).toBe("failed");
     expect(nativeExecutionCount).toBe(1);
+    // A diagnosis_only run ends with its diagnosis: the plan's patch is never bought, whatever the purse could pay
+    // (t1056: no count of calls stops it any more), and the record says why.
     expect(taskKinds).toEqual(["runtime_diagnosis"]);
+    const detail = await service.getFlowRunDetail(project.id, run.runId);
+    expect(detail?.metadata?.llmGate).toMatchObject({ patchSkippedCode: "llm.runtime_patch_grant_scope_refused", patchSkippedRung: "plan", patchSkipped: expect.stringContaining("diagnosis_only") });
   });
 
   it("runs a model run attached to a pre-staged session exactly as a run with no model would", async () => {
@@ -275,25 +276,29 @@ describe("a run a person asked the model into, with no grant", () => {
     expect(dispatchCount).toBe(1);
   });
 
-  // One call count still applies to a run: the one its provider resolver
-  // declares, as a plain budget limit. The
-  // training settings' intervention limit used to be read as a provider-call
-  // cap too, and no longer is -- it counts interventions -- so the single call
-  // here is declared where a real host declares it.
-  it("shares one atomic call budget across diagnosis and patch requests", async () => {
+  // No call count applies to a run (t1056), and the training settings'
+  // intervention limit counts interventions. The run's one dollar ceiling is
+  // what the diagnosis and the patch share. This run's purse is one cent; its
+  // provider prices nothing, so each call is reserved at an even share of the
+  // purse (`adaptation/recovery/annotation/run-budget.ts`, a twenty-fourth). The
+  // diagnosis reports costing 0.99 cents, and what it leaves is too little to
+  // reserve the patch's share, so the patch is refused unsent. Under a declared
+  // count of one, which once sized each share at the whole purse, the
+  // diagnosis's hold was what left nothing; no count sizes it now.
+  it("shares one atomic budget across diagnosis and patch requests", async () => {
     const taskKinds: string[] = [];
     const service = createService({
       dataDir: tempRoot,
       seedFixture: false,
       llmProviderResolver: () => ({
-        maxCallsPerRun: 1,
+        maxTotalEstimatedCostUsd: 0.01,
         provider: {
           metadata: { provider: "mock", model: "one-call-model" },
           runTask: async (request) => {
             taskKinds.push(request.taskKind);
             return request.taskKind === "runtime_patch"
               ? { response: { kind: "runtime_patch", summary: "Should be blocked.", riskLevel: "low", patches: [{ kind: "temporary_wait_retry", targetNodeId: "divide", reason: "Blocked by run budget." }] }, usage: { inputTokens: 5, outputTokens: 5, totalTokens: 10 } }
-              : { response: { kind: "diagnosis", summary: "The denominator is zero." }, usage: { inputTokens: 5, outputTokens: 3, totalTokens: 8 } };
+              : { response: { kind: "diagnosis", summary: "The denominator is zero." }, usage: { inputTokens: 5, outputTokens: 3, totalTokens: 8, estimatedCostUsd: 0.0099 } };
           }
         }
       })
@@ -311,7 +316,7 @@ describe("a run a person asked the model into, with no grant", () => {
     expect(taskKinds).toEqual(["runtime_diagnosis"]);
     expect(detail?.adaptationIds).toEqual([]);
     expect(detail?.interventions).toEqual(expect.arrayContaining([
-      expect.objectContaining({ kind: "runtime_patch", validation: { ok: false, issues: [expect.stringContaining("llm_budget.run_call_limit")] } })
+      expect.objectContaining({ kind: "runtime_patch", validation: { ok: false, issues: [expect.stringContaining("llm_budget.run_cost_limit")] } })
     ]));
   });
 });

@@ -166,7 +166,7 @@ describe("the account of a reply that does not fit", () => {
 
   it("tells the model the field and why, in the loop's feedback, by path and rule alone", async () => {
     const failure = await failureOf(provider(envelope({ kind: "diagnosis", summary: "Speckled mug", decision: STEP_67.decision })).runTask(amendingRequest()));
-    const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes: ["llm.provider_output_invalid"], stepsWithoutProgress: 0, unreadable: { reply: automationStudioLlmProviderReplyAccount(failure?.reply), inARow: 1, maxInARow: 6 } });
+    const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes: ["llm.provider_output_invalid"], stepsWithoutProgress: 0, unreadable: { reply: automationStudioLlmProviderReplyAccount(failure?.reply), inARow: 1} });
     expect(feedback).toMatchObject({ code: "llm_evidence_loop.reply_unreadable", unreadable: { case: "content_off_shape", said: "it was JSON, but it did not fit the answer asked for", misses: [{ path: "response.kind", rule: 'must be exactly "evidence_tool_decision"' }] } });
     expect(feedback.instruction).toContain('At fault: response.kind must be exactly "evidence_tool_decision".');
     expect(JSON.stringify(feedback)).not.toContain("Speckled");

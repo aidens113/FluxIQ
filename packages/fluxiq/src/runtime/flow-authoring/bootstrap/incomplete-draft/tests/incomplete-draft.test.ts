@@ -8,7 +8,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowDraftStep } from "../../../draft/index.ts";
 import type { AutomationStudioLlmEvidenceLoopResult } from "../../../../llm/evidence-loop/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../../loop-limits/index.ts";
 import { automationStudioFlowBootstrapLargestSizeLimits } from "../../plan/index.ts";
 import {
   AutomationStudioFlowBootstrapGenerationError,
@@ -56,7 +55,7 @@ function exhaustedLoop(steps: AutomationStudioFlowDraftStep[], outstanding: stri
     trace: [],
     steps,
     accounting: { iterations: 34, toolCalls: 20, evidenceBytes: 1_000, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 } as never,
-    exhaustion: { bound: "budget", maxIterations: 34, iterations: 34, draftSteps: steps.length, proposableSteps: 3, completionAttempts: 4, lastIssueCodes: [], budgetBound: "tokens", outstandingIssueCodes: outstanding }
+    exhaustion: { bound: "budget", iterations: 34, draftSteps: steps.length, proposableSteps: 3, completionAttempts: 4, lastIssueCodes: [], budgetBound: "tokens", outstandingIssueCodes: outstanding }
   };
 }
 
@@ -186,11 +185,13 @@ describe("a stored record read back", () => {
     expect(parseAutomationStudioFlowBootstrapIncompleteDraft(record, OWNER)?.steps).toHaveLength(count);
   });
 
-  it("refuses a kept draft longer than any Flow could hold", () => {
-    const beyond = automationStudioFlowBootstrapLargestSizeLimits().maxTotalNodes + AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 2;
+  // A loop appends a step for every action and no count of its turns has a ceiling (t1056): a kept draft past the old
+  // bound of the largest Flow and sixty-four appended steps reads back whole.
+  it("reads back a kept draft longer than the old bound of turns allowed", () => {
+    const beyond = automationStudioFlowBootstrapLargestSizeLimits().maxTotalNodes + 64 + 2;
     const record = JSON.parse(JSON.stringify(kept())) as { steps: Array<Record<string, unknown>> };
     record.steps = Array.from({ length: beyond }, (_, index) => ({ ...record.steps[0], position: index + 1 }));
-    expect(parseAutomationStudioFlowBootstrapIncompleteDraft(record, OWNER)).toBeNull();
+    expect(parseAutomationStudioFlowBootstrapIncompleteDraft(record, OWNER)?.steps).toHaveLength(beyond);
   });
 });
 

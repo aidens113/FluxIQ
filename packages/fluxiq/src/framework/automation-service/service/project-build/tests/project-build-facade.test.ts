@@ -214,7 +214,7 @@ async function projectBuild(options: { shape?: Shape; whole?: "yes" | "no"; capa
   }, decision({ kind: "complete", result: {} }).usage));
   const host = options.capacity === undefined ? undefined : new CountingHost(options.capacity);
   const serviceOptions: AutomationStudioServiceOptions = {
-    dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 60, maxEstimatedCostUsd: 0.1 }),
+    dataDir, llmProviderResolver: () => ({ provider, maxEstimatedCostUsd: 0.1 }),
     llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect", inputSchema: { type: "object" }, effect: "observe" }],
       executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { seen: true }, effectApplied: false, targetsUnchanged: true }),
       ...(options.domainText ? { systemInstructions: { version: "isolated.v1", text: options.domainText } } : {}) },

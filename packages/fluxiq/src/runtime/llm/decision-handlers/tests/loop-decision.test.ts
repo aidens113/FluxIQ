@@ -35,7 +35,7 @@ function run(decide: ReturnType<typeof vi.fn>, extra: Partial<AutomationStudioLl
   const record = extra.attemptRecord ?? automationStudioLlmLoopAttemptRecord();
   const ran = runAutomationStudioLlmEvidenceLoop({
     tools, decide, executeTool: executeTool as unknown as AutomationStudioLlmEvidenceLoopInput["executeTool"], maxIterations: 60, maxToolCalls: 60, dryRun: false, propagateDecisionErrors: true,
-    unusableDecisions: { maxConsecutive: 40, stalled: () => stalledError },
+    unusableDecisions: { stalled: () => stalledError },
     loopSignal: (signal: AutomationStudioLlmLoopSignal) => {
       signals.push(signal);
       return "end";
@@ -61,11 +61,15 @@ describe("a caught repeat asks the model to decide", () => {
     ] });
   });
 
-  it("is not offered where nobody can carry an ask_person out", async () => {
+  // Every loop is offered its own decision now (t1056): no count ends a loop with no loop signal either, so it is
+  // steered and decides how to go on. Only asking the person, which nobody can carry out from there, is left out.
+  it("is offered where nobody can carry an ask_person out, without ask_person", async () => {
     const decide = script([]);
     await run(decide, { loopSignal: undefined }).ran.catch(() => undefined);
-    expect((decide.mock.calls[0]![0] as { tools: { toolId: string }[] }).tools.map((tool) => tool.toolId)).not.toContain("core.loop_decision");
-    expect(noteAt(decide, 2, "core.loop_check")?.decide).toBeUndefined();
+    expect((decide.mock.calls[0]![0] as { tools: { toolId: string }[] }).tools.map((tool) => tool.toolId)).toContain("core.loop_decision");
+    const ask = noteAt(decide, 2, "core.loop_check")?.decide as { offered?: unknown; instruction?: unknown } | undefined;
+    expect(ask?.offered).not.toContain("ask_person");
+    expect(String(ask?.instruction)).toContain("No person can be asked from here");
   });
 });
 

@@ -93,7 +93,7 @@ export function automationStudioLlmLoopRepeatedWords(finding: Pick<AutomationStu
 
 /** What a call refused on a finding is told, in place of the exact repeat's words. */
 export function automationStudioLlmLoopRefusalInstruction(finding: { pattern: AutomationStudioLlmLoopPattern; repeats?: number | undefined; toolIds?: readonly string[] | undefined; replays?: true | undefined }, audience: AutomationStudioLlmLoopAudience): string {
-  return `${repeated({ pattern: finding.pattern, repeats: finding.repeats ?? 2, toolIds: finding.toolIds ?? [], unchanged: ["page", "rows", "acts", "draft"], ...(finding.replays ? { replays: true as const } : {}) })} So this one was not run, and it cost nothing but this decision. ${DO_INSTEAD[audience]} Refusals in a row end this work where it stands.`;
+  return `${repeated({ pattern: finding.pattern, repeats: finding.repeats ?? 2, toolIds: finding.toolIds ?? [], unchanged: ["page", "rows", "acts", "draft"], ...(finding.replays ? { replays: true as const } : {}) })} So this one was not run, and it cost nothing but this decision. ${DO_INSTEAD[audience]} Refusals in a row are caught as a repeat, and you decide how to go on.`;
 }
 
 /** The chat step for a steer: a person's words, with no code in them. */

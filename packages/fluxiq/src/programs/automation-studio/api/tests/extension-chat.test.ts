@@ -192,7 +192,6 @@ async function createWorld(options: { unlocked: string | null }) {
         // fit, so a smaller made-up window refuses the build's second decision
         // (`flow_bootstrap.pre_provider_request_total_exceeded`).
         tokenLimits: AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS.tokenLimits,
-        maxCallsPerRun: 6,
         maxEstimatedCostUsd: 0.1,
         timeoutMs: 20_000
       };
@@ -364,10 +363,11 @@ describe("the extension's chat, end to end in Core", () => {
       SEARCH_THEN_COMPLETE[0]!,
       ...Array.from({ length: 8 }, (_, index) => ({ kind: "tool_call", callId: `look.${index}`, toolId: "example.inspect", input: {} }))
     ]);
-    // A round that stopped short is judged (t195 C2); judged no, the creation stays unfinished with its draft kept.
+    // The build is judged no every time it asks (t195 C2), so the creation stays unfinished with its draft kept.
     // Each no names a defect, so it is read (t979: a no naming none is asked again until one is read), and every
-    // re-ask of a no is answered no too; the continuation below is judged as before, yes.
-    world.scriptJudge(["no", "no", "no", "no", "no", "no"]);
+    // re-ask of a no is answered no too; the continuation below is judged as before, yes. No count of calls stops
+    // the first round short any more (t1056): its repeated looks run, it completes, and the judge's no keeps it open.
+    world.scriptJudge(Array.from({ length: 40 }, () => "no" as const));
     await world.say("Find the kettles here", { do: "flow.createHere", with: { instruction: "Search the catalog for kettles." } });
     await automationStudioConversationCommandWork.idle();
     const flow = await onlyFlow(world.service, world.project.id);

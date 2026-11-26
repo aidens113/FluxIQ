@@ -41,7 +41,7 @@ describe("what a repair may explore with", () => {
   it("withholds every mutating option while the policy denies side effects, and offers all six when it allows them", () => {
     const registry = domainRegistry();
     expect(registry.tools(denying()).map((tool) => tool.toolId)).toEqual(OBSERVATIONS);
-    expect(registry.tools(allowing()).map((tool) => tool.toolId)).toEqual([...OBSERVATIONS, ...MUTATIONS]);
+    expect(registry.tools(allowing()).map((tool) => tool.toolId).filter((id: string) => id !== "core.loop_decision")).toEqual([...OBSERVATIONS, ...MUTATIONS]);
   });
 
   it("keeps the free first look and lets the model look again when nothing offered can mutate", async () => {
@@ -79,7 +79,7 @@ describe("what a repair may explore with", () => {
     await runAutomationStudioLlmEvidenceLoop({
       tools,
       decide: async (decision) => {
-        offered.push(decision.tools.map((tool) => tool.toolId));
+        offered.push(decision.tools.map((tool) => tool.toolId).filter((id: string) => id !== "core.loop_decision"));
         iterations += 1;
         if (iterations === 1) return { kind: "tool_call", callId: "call.1", toolId: REVEAL, input: {} };
         return { kind: "complete", result: {} };
@@ -99,7 +99,7 @@ async function offeredPerIteration(tools: ReturnType<AutomationStudioHarnessOpti
   await runAutomationStudioLlmEvidenceLoop({
     tools,
     decide: async (decision) => {
-      offered.push(decision.tools.map((tool) => tool.toolId));
+      offered.push(decision.tools.map((tool) => tool.toolId).filter((id: string) => id !== "core.loop_decision"));
       if (offered.length >= count) return { kind: "complete", result: {} };
       return { kind: "tool_call", callId: `call.${offered.length}`, toolId: WAIT, input: {} };
     },

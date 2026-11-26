@@ -59,7 +59,7 @@ async function build(options: {
       const steps = options.repaired(request.repair!.seed);
       return {
         ok: false, code: "llm_evidence_loop.iteration_limit", trace: [], steps, accounting: accounting(0, 0),
-        exhaustion: { bound: "budget", budgetBound: "cost", costRefusal: { ...refusal }, maxIterations: 64, iterations: 0, draftSteps: steps.length, proposableSteps: steps.length, completionAttempts: 0, lastIssueCodes: [], outstandingIssueCodes: [] }
+        exhaustion: { bound: "budget", budgetBound: "cost", costRefusal: { ...refusal }, iterations: 0, draftSteps: steps.length, proposableSteps: steps.length, completionAttempts: 0, lastIssueCodes: [], outstandingIssueCodes: [] }
       };
     },
     judge: async ({ round, loop }) => {
@@ -78,7 +78,7 @@ async function build(options: {
     checklist: (steps) => automationStudioInstructedActsChecklist({ instructionText: INSTRUCTION, draftSteps: steps }),
     budget: { maxCostUsd: 0.1, maxDurationMs: 540_000 },
     purse,
-    maxIterations: 64,
+    
     keep: async (...args) => ({ revision: 1, steps: (args[2] as unknown[]).length }),
     now: () => 0
   });
@@ -175,7 +175,7 @@ async function squeezed(options: { purse: AutomationStudioLlmBuildPurse; stop: "
         : { budgetBound: "calls" as const, callRefusal: { code: "llm_budget.run_call_limit" as const, maxCalls: 4, spentCalls: purse.spentCalls(), pendingCalls: 0, keptBackCalls: 2 } };
       return {
         ok: false, code: "llm_evidence_loop.iteration_limit", trace: [], steps, accounting: accounting(0, 0),
-        exhaustion: { bound: "budget", ...stopped, maxIterations: 64, iterations: 0, draftSteps: steps.length, proposableSteps: steps.length, completionAttempts: 0, lastIssueCodes: [], outstandingIssueCodes: [] }
+        exhaustion: { bound: "budget", ...stopped, iterations: 0, draftSteps: steps.length, proposableSteps: steps.length, completionAttempts: 0, lastIssueCodes: [], outstandingIssueCodes: [] }
       };
     },
     judge: async ({ round, loop }) => {
@@ -195,7 +195,7 @@ async function squeezed(options: { purse: AutomationStudioLlmBuildPurse; stop: "
     checklist: (steps) => automationStudioInstructedActsChecklist({ instructionText: INSTRUCTION, draftSteps: steps }),
     budget: { maxCostUsd: 0.1, maxDurationMs: 540_000 },
     purse,
-    maxIterations: 64,
+    
     keep: async (...args) => ({ revision: 1, steps: (args[2] as unknown[]).length }),
     now: () => 0
   });

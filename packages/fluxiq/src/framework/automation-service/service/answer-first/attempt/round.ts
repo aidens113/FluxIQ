@@ -96,7 +96,6 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
     signal,
     propagateDecisionErrors: true,
     unusableDecisions: {
-      maxConsecutive: input.limits.maxConsecutiveUnusableDecisions,
       stalled: ({ trace }) => new AutomationStudioAnswerFirstRoundStalled(trace)
     },
     dryRun: false,
@@ -121,7 +120,6 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
     // The columns the person named: a forward run's read declares them as the saved Flow's does (`runtime/llm/node-tools/replay/replay.ts`).
     namedColumns: automationStudioFlowBootstrapInstructionColumns(input.instructionText),
     draft: {
-      maxAmendments: input.limits.loop.maxIterations,
       ...(run.steps.length ? { seed: run.steps } : {}),
       // The steps the attempt started with, from the saved Flow or an earlier attempt: the model's word, never drafted again (t1037).
       carried: run.startedWith.map(automationStudioFlowDraftStepId),

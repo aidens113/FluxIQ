@@ -150,7 +150,7 @@ describe("an act the person asked for several times", () => {
       permittedConsequences: ["modify_existing"],
       taskProcessing: null,
       before: noWaiting(),
-      resolver: { maxCallsPerRun: 12 },
+      resolver: {},
       script: Array.from({ length: 60 }, () => decide)
     }, cleanups);
     expect(pressedAgain).toBe(true);

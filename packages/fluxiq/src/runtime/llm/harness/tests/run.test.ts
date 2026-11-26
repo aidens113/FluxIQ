@@ -42,7 +42,8 @@ const PRIVATE_INSTRUCTION: AutomationStudioFlowInstruction = {
 
 describe("what the harness claims about reaching the provider", () => {
   it("says no request was made when the run's budget refuses the reservation, and names no provider", async () => {
-    const budget = new AutomationStudioLlmRunBudgetLedger({ maxCallsPerRun: 1, maxTotalTokensPerRun: 100_000, maxOutputTokensPerRun: 100_000, maxEstimatedCostUsdPerRun: 1 });
+    // A purse that holds one call's reservation and no more (t1056: a call count no longer refuses anything).
+    const budget = runBudget(0.15);
     let asked = 0;
     const provider: AutomationStudioLlmProvider = {
       metadata: { provider: "deepseek", model: "deepseek-flash" },
@@ -52,7 +53,7 @@ describe("what the harness claims about reaching the provider", () => {
     const refused = await harness({ provider, runBudget: budget, requestId: "request.second" });
 
     expect(answered.providerInvocation).toBe("attempted");
-    expect(refused.diagnostics.map((diagnostic) => diagnostic.code)).toContain("llm_budget.run_call_limit");
+    expect(refused.diagnostics.map((diagnostic) => diagnostic.code)).toContain("llm_budget.run_cost_limit");
     // The fact, stated. The three absences below cannot carry it: each one is
     // equally consistent with a call that failed.
     expect(refused.providerInvocation).toBe("not_attempted");
@@ -168,7 +169,7 @@ describe("what the harness claims about reaching the provider", () => {
 
 describe("what the harness claims about retrying a temporary fault", () => {
   it("absorbs a rate limit, counts one call against the run's budget, and says what it did", async () => {
-    const budget = runBudget(2);
+    const budget = runBudget(1);
     const provider = rateLimitedUntil(2);
     const result = await harness({ provider: provider.provider, runBudget: budget, requestId: "request.retried" });
 
@@ -193,7 +194,7 @@ describe("what the harness claims about retrying a temporary fault", () => {
   });
 
   it("reports a fault that outlived its retries as the provider's fault, never as a budget refusal", async () => {
-    const budget = runBudget(2);
+    const budget = runBudget(1);
     let asked = 0;
     const result = await harness({
       provider: {
@@ -218,15 +219,15 @@ describe("what the harness claims about retrying a temporary fault", () => {
   });
 
   it("reports an exhausted run budget as an exhausted run budget, and asks the provider nothing", async () => {
-    const budget = runBudget(1);
+    const budget = runBudget(0.15);
     const provider = rateLimitedUntil(0);
     await harness({ provider: provider.provider, runBudget: budget, requestId: "request.first" });
     const refused = await harness({ provider: provider.provider, runBudget: budget, requestId: "request.second" });
 
-    // The one call the run was authorized, and nothing after it: a spent
-    // allowance is not a fault a retry can absorb.
+    // The one call the run's purse held, and nothing after it: a spent purse is
+    // not a fault a retry can absorb.
     expect(provider.asked).toBe(1);
-    expect(refused.diagnostics.map((diagnostic) => diagnostic.code)).toContain("llm_budget.run_call_limit");
+    expect(refused.diagnostics.map((diagnostic) => diagnostic.code)).toContain("llm_budget.run_cost_limit");
     expect(refused.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain("llm.provider_retried");
     expect(refused.providerInvocation).toBe("not_attempted");
     expect(refused.providerRetry).toBeUndefined();
@@ -330,8 +331,9 @@ function harness(input: Partial<AutomationStudioLlmHarnessInput>): Promise<Autom
   });
 }
 
-function runBudget(maxCallsPerRun: number): AutomationStudioLlmRunBudgetLedger {
-  return new AutomationStudioLlmRunBudgetLedger({ maxCallsPerRun, maxTotalTokensPerRun: 100_000, maxOutputTokensPerRun: 100_000, maxEstimatedCostUsdPerRun: 1 });
+/** A run's budget whose purse is `maxEstimatedCostUsdPerRun`; each call here reserves ten cents. */
+function runBudget(maxEstimatedCostUsdPerRun: number): AutomationStudioLlmRunBudgetLedger {
+  return new AutomationStudioLlmRunBudgetLedger({ maxTotalTokensPerRun: 100_000, maxOutputTokensPerRun: 100_000, maxEstimatedCostUsdPerRun });
 }
 
 /** A provider that meets a temporary fault for its first `failures` attempts, then answers. */

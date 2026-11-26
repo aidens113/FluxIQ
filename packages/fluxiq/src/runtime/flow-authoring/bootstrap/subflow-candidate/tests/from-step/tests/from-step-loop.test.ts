@@ -58,8 +58,8 @@ async function build(steps: Array<(evidence: readonly Entry[]) => JsonObject>, t
       return loop;
     },
     loop: {
-      tools: [look], maxIterations: steps.length, maxToolCalls: steps.length + 4,
-      unusableDecisions: { maxConsecutive: steps.length, maxInARow: steps.length, stalled: () => new Error("stalled") },
+      tools: [look], 
+      unusableDecisions: { stalled: () => new Error("stalled") },
       executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: false, targetsUnchanged: true }),
       decide
     }

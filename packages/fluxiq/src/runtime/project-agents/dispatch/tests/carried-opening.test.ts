@@ -34,8 +34,8 @@ function ports(briefs: Decide[][], seen: Entry[][], received: Entry[], verdict: 
     let step = 0;
     return {
       loop: {
-        tools: [LOOK], maxToolCalls: 12,
-        unusableDecisions: { maxConsecutive: 3, maxInARow: 3, stalled: () => new Error("stalled") },
+        tools: [LOOK], 
+        unusableDecisions: { stalled: () => new Error("stalled") },
         executeTool: async (call) => {
           received.push({ callId: call.callId, toolId: call.toolId, value: structuredClone(call.value) });
           return { kind: "llm_evidence_tool_execution", evidence: { ok: true, page: "The seed catalogue." }, effectApplied: false, targetsUnchanged: true };

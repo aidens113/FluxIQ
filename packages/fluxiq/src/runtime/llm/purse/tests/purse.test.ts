@@ -3,7 +3,7 @@ import { AutomationStudioLlmRunPurse } from "../purse.ts";
 import type { AutomationStudioLlmRunBudgetProfile } from "../profile.ts";
 
 const profile: AutomationStudioLlmRunBudgetProfile = {
-  ledger: { maxCallsPerRun: 8, maxTotalTokensPerRun: 1000, maxOutputTokensPerRun: 500, maxEstimatedCostUsdPerRun: 0.1 },
+  ledger: { maxTotalTokensPerRun: 1000, maxOutputTokensPerRun: 500, maxEstimatedCostUsdPerRun: 0.1 },
   maxEstimatedCostUsdPerCall: 0.02, maxEstimatedCostUsdPerCallAt: () => 0.02
 };
 
@@ -20,9 +20,8 @@ describe("a run-owned canonical purse", () => {
   it("shares one ledger without widening limits or making a later per-call grant global", () => {
     const purse = new AutomationStudioLlmRunPurse();
     const first = purse.open("run.one", profile);
-    expect(purse.open("run.one", { ...profile, maxEstimatedCostUsdPerCall: 0.0001, ledger: { ...profile.ledger, maxCallsPerRun: 20 } })).toBe(first);
-    expect(purse.current?.budget.ledger.maxCallsPerRun).toBe(8);
-    expect(purse.open("run.one", { ...profile, ledger: { ...profile.ledger, maxCallsPerRun: 7 } })).toBeUndefined();
+    expect(purse.open("run.one", { ...profile, maxEstimatedCostUsdPerCall: 0.0001, ledger: { ...profile.ledger} })).toBe(first);
+    expect(purse.open("run.one", { ...profile, ledger: { ...profile.ledger, maxTotalTokensPerRun: Math.floor(profile.ledger.maxTotalTokensPerRun / 2) } })).toBeUndefined();
     expect(purse.diagnostic?.code).toBe("llm_budget.accounting_profile_incompatible");
   });
 

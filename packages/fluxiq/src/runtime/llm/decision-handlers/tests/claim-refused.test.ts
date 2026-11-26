@@ -36,7 +36,7 @@ describe("run mux74k5q: a1 claimed on the press of Spain", () => {
       .mockResolvedValueOnce(pressed("Spain", "s2", "s3"))
       .mockResolvedValueOnce(pressed("Add to cart", "s3", "s4"));
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools: [go], decide, executeTool, maxIterations: 8, maxToolCalls: 8, dryRun: false, unusableDecisions: { stalled },
+      tools: [go], decide, executeTool, dryRun: false, unusableDecisions: { stalled },
       draft: automationStudioFlowBootstrapDraftActs({ instructionText: HUB })
     });
 
@@ -65,7 +65,7 @@ describe("run mux74k5q: a1 claimed on the press of Spain", () => {
       .mockResolvedValueOnce(press("c1", "t-spain", { add: true, act: "a1" }))
       .mockResolvedValueOnce({ kind: "complete", result: { flow: "ready" } });
     const executeTool = vi.fn().mockResolvedValueOnce(pressed("Spain", "s1", "s2"));
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, maxIterations: 4, maxToolCalls: 4, dryRun: false, unusableDecisions: { stalled } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, dryRun: false, unusableDecisions: { stalled } });
     expect(result.steps[0]!.acts).toEqual(["a1"]);
   });
 });

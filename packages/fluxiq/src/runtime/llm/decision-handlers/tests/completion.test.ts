@@ -55,8 +55,8 @@ describe("a completion's test in the decision history", () => {
     const checkCompletion = vi.fn(async (result: JsonObject) => result.attempt === 2 ? refusal("recorded.first") : { ok: true as const });
 
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools: [tool], decide, executeTool, checkCompletion, propagateDecisionErrors: true, maxIterations: 6, maxToolCalls: 6, minToolCalls: 1,
-      unusableDecisions: { maxConsecutive: 4, stalled: () => new Error("stalled") }
+      tools: [tool], decide, executeTool, checkCompletion, propagateDecisionErrors: true, minToolCalls: 1,
+      unusableDecisions: { stalled: () => new Error("stalled") }
     });
 
     expect(result.ok).toBe(true);
@@ -83,8 +83,8 @@ describe("a completion's test in the decision history", () => {
     executeTool.mockClear();
 
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools: [tool], decide, executeTool, checkCompletion, propagateDecisionErrors: true, maxIterations: 6, maxToolCalls: 6, minToolCalls: 1,
-      unusableDecisions: { maxConsecutive: 4, stalled: () => new Error("stalled") }
+      tools: [tool], decide, executeTool, checkCompletion, propagateDecisionErrors: true, minToolCalls: 1,
+      unusableDecisions: { stalled: () => new Error("stalled") }
     });
 
     expect(result.ok).toBe(true);
@@ -116,8 +116,8 @@ describe("a completion check's own sent-again words", () => {
     const read = vi.fn(async (): Promise<AutomationStudioLlmEvidenceToolExecutionResult> => ({ kind: "llm_evidence_tool_execution", evidence: { page: "same" }, effectApplied: false, targetsUnchanged: true }));
 
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools: [{ ...tool, effect: "observe" as const, perCallEffect: false }], decide, executeTool: read, checkCompletion, propagateDecisionErrors: true, maxIterations: 6, maxToolCalls: 6, minToolCalls: 1,
-      unusableDecisions: { maxConsecutive: 4, stalled: () => new Error("stalled") }
+      tools: [{ ...tool, effect: "observe" as const, perCallEffect: false }], decide, executeTool: read, checkCompletion, propagateDecisionErrors: true, minToolCalls: 1,
+      unusableDecisions: { stalled: () => new Error("stalled") }
     });
 
     expect(result.ok).toBe(true);

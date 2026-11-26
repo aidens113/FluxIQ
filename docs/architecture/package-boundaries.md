@@ -201,6 +201,34 @@ commercial contract templates remain separate owner-controlled release work.
 
 ## Migration Notes
 
+### Next minor (unreleased): no count of calls or rounds ends a run (`fluxiq`)
+
+Only a run's result, its purse (dollars), its clock or Stop end it (t1056; user,
+2026-11-24). A repeat is caught by loop detection, not by a count.
+
+- `maxCallsPerRun` is removed from `AutomationStudioLlmRunBudgetLimits` and the
+  resolution (`resolver-contract.ts`). A host that still sets it is ignored: the
+  Studio run ledger drops the field before the generic ledger sees it. The
+  250-call backstop is gone.
+- The evidence loop's `maxIterations`, `maxToolCalls` and
+  `unusableDecisions.maxConsecutive`, and `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS`,
+  are removed. Its byte bound survives as
+  `AUTOMATION_STUDIO_LLM_EVIDENCE_ACCOUNTED_BYTES_MAX`.
+- `AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS` and the bootstrap's `maxRounds`
+  input are removed. A build's round stops are recorded within a byte bound
+  (`flow-bootstrap-stops-bytes.ts`). A published ending may still carry the
+  bound `"rounds"` from an older record. No build produces it now.
+- The loop code `llm_evidence_loop.unreadable_replies` is removed. An unreadable
+  reply that was billed is asked again, and the purse ends the run. One that
+  was not billed, whose issues are all `llm.provider_*`, counts toward the
+  provider-stopped-answering ending.
+- A build's loop takes `loopSignal` and `personReachable`. A build that cannot
+  ask a person ends a stalled round at the top of the loop-detection ladder and
+  repairs it in a new round.
+- A provider that prices no call is held, and has judging kept back, at the
+  larger of Core's default model's rate and the most a call on the purse has
+  cost. It is never treated as free.
+
 ### Next minor (unreleased): a Flow's standing result-check authorization names its grantor, not a key unlock (`fluxiq`)
 
 A Flow's standing result-check authorization no longer depends on a held key

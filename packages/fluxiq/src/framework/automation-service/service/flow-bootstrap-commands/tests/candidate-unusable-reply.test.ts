@@ -11,16 +11,14 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { AutomationStudioService } from "../../../service.ts";
 import type { AutomationStudioFlowBootstrapCreationSpendStore } from "../../index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW } from "../../../../../runtime/llm/index.ts";
-import { automationStudioConversationCallCause } from "../../../../../runtime/conversations/commands/index.ts";
 import { automationStudioAnsweringInstructionReading } from "../../../tests/service-bootstrap/tests/instruction-reading.ts";
 import { blankFixture, caller, judgeReply, mockProvider, plan } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 
 const DECISION_USD = 0.001;
 /** What the build's reading of its instruction at the start costs (t976). */
 const READING_USD = DECISION_USD;
-/** Room for the unusable streak's backstop to be reached before the decision allowance is (t1049). */
-const MAX_CALLS = 20;
+/** The build's purse: dollars, never a count of calls (t1056). */
+const PURSE_USD = 0.03;
 
 type Reply = (call: number, latest: { revision?: number; digest?: string } | undefined) => Record<string, unknown>;
 
@@ -43,7 +41,7 @@ async function candidateBuild(reply: Reply) {
     const latest = [...evidence].reverse().find((entry) => entry.toolId === "core.submit_candidate")?.value as { revision?: number; digest?: string } | undefined;
     return { response: { kind: "evidence_tool_decision", summary: "Scripted candidate authoring", decision: reply(calls, latest) }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: DECISION_USD } };
   }, { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: READING_USD }));
-  const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: MAX_CALLS, maxEstimatedCostUsd: 0.1 }),
+  const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxEstimatedCostUsd: 0.1, maxTotalEstimatedCostUsd: PURSE_USD }),
     llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect", inputSchema: { type: "object" }, effect: "observe" }],
       executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { area: "item" }, effectApplied: false, targetsUnchanged: true }) } });
   const { project, flow } = await blankFixture(service);
@@ -68,22 +66,25 @@ describe("a candidate build survives an unusable reply and accounts for its spen
     } finally { await build.close(); }
   }, 60_000);
 
-  // The bound is the unusable streak's backstop, not the count of steps without progress, which ends nothing (t1049).
-  it("unusable replies in a row stop at the unusable streak's backstop, staged and worded as an unusable answer, with the build's spend", async () => {
+  // No count of unusable replies in a row ends the loop (t1056; it was twelve). The same unusable reply sent again and
+  // again is a repeat with no new evidence, so loop detection steers it and, at its ladder's top, ends the round as a
+  // build's `loopSignal` says (`../loop-signal.ts`). A candidate build has no repair round, so its stall is its ending,
+  // reported with every call it paid for (`../../candidate-failure/stall-code.ts`).
+  it("the same unusable reply again and again is steered by loop detection, which ends the round at its ladder's top, with its spend", async () => {
     const build = await candidateBuild((call) => call === 1 ? { kind: "tool_call", callId: "look", toolId: "inspect", input: { area: "item" } } : malformedSubmission);
     try {
       if (build.settled.ok) throw new Error(`expected the build to end, got ${build.settled.result.status}`);
-      // The loop's own backstop on unusable decisions in a row, the same in every mode.
-      const bound = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW;
-      expect(build.calls()).toBe(1 + bound);
       // The decisions and the start's reading (t976).
-      const spent = (1 + bound) * DECISION_USD + READING_USD;
+      const spent = build.calls() * DECISION_USD + READING_USD;
       const diagnostic = (build.settled.error as { diagnostic?: Record<string, unknown> }).diagnostic;
-      expect(diagnostic).toMatchObject({ code: "flow_bootstrap.evidence_unusable_decision", stage: "provider_output_validation", providerInvocation: "attempted", providerResponse: "received",
-        accounting: { estimatedCostUsd: expect.closeTo(spent, 6) }, issueCodes: ["llm_output.invalid_evidence_decision"] });
-      // What the chat says: the answer could not be used, never that the model could not be reached.
-      const said = automationStudioConversationCallCause("The build", { ok: false, payload: { diagnostic } } as Parameters<typeof automationStudioConversationCallCause>[1]);
-      expect(said).toBe("The build failed: the model's answer could not be used");
+      expect(diagnostic).toMatchObject({ code: "flow_bootstrap.evidence_unusable_decision", providerInvocation: "attempted", issueCodes: ["llm_output.invalid_evidence_decision"],
+        accounting: { estimatedCostUsd: expect.closeTo(spent, 6) } });
+      const checks = (diagnostic?.evidenceLoop as { steps: { toolId: string; resultCode?: string }[] }).steps
+        .filter((step) => step.toolId === "core.decision_check").map((step) => step.resultCode);
+      // Steered first, then the ladder's top: never ended on a first repeat, and never by a count of replies.
+      expect(checks[0]).toBe("llm_evidence_loop.loop_steered");
+      expect(checks.at(-1)).toBe("llm_evidence_loop.loop_change_approach");
+      expect(build.calls()).toBeLessThan(PURSE_USD / DECISION_USD);
       // The creation's purse, the per-build ceiling, holds the same spend the failure reports.
       expect(build.creationSpend?.spentUsd).toBeCloseTo(spent, 6);
     } finally { await build.close(); }

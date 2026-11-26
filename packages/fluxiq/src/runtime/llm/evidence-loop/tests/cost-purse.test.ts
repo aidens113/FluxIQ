@@ -42,7 +42,7 @@ function provider(answers: Array<{ decision: Record<string, unknown>; costUsd: n
 /** The loop as a build runs it: each decision asked through the harness, a failed one thrown. The first look is small; each after it returns `pageBytes`. */
 function build(llm: AutomationStudioLlmProvider, pageBytes: number) {
   return runAutomationStudioLlmEvidenceLoop({
-    tools: [look], maxIterations: 20, maxToolCalls: 21, completionSchema, propagateDecisionErrors: true,
+    tools: [look], completionSchema, propagateDecisionErrors: true,
     budget: { maxCostUsd: 0.25 },
     executeTool: async ({ callId }) => ({ text: "x".repeat(callId.startsWith("initial.") ? 3_000 : pageBytes) }),
     decide: async ({ iteration, tools, evidence, decisionSchema, canComplete }) => {
@@ -134,7 +134,7 @@ function flatProvider(worstCaseUsd: number, answers: Array<{ decision: Record<st
 function buildUnder(llm: AutomationStudioLlmProvider, purse: AutomationStudioLlmBuildPurse, budget: AutomationStudioLlmEvidenceLoopBudget) {
   const budgets: Array<Record<string, unknown> | undefined> = [];
   const result = runAutomationStudioLlmEvidenceLoop({
-    tools: [look], maxIterations: 20, maxToolCalls: 20, completionSchema, propagateDecisionErrors: true, purse, budget,
+    tools: [look], completionSchema, propagateDecisionErrors: true, purse, budget,
     executeTool: async ({ value }) => ({ page: value.page ?? null }),
     decide: async ({ iteration, tools, evidence, decisionSchema, canComplete }) => {
       const last = evidence.at(-1);

@@ -202,7 +202,7 @@ describe("forwardRun in an evidence loop", () => {
       draft: { actionId: "web.click", effect: "mutate", proposes: true, ranWith: { target: "Add" }, replay: { from: { location: "https://store.test/p" } } }
     };
   });
-  const offeredAt = (decide: { mock: { calls: unknown[][] } }, index: number): string[] => (decide.mock.calls[index]![0] as { tools: { toolId: string }[] }).tools.map((tool) => tool.toolId);
+  const offeredAt = (decide: { mock: { calls: unknown[][] } }, index: number): string[] => (decide.mock.calls[index]![0] as { tools: { toolId: string }[] }).tools.map((tool) => tool.toolId).filter((id: string) => id !== "core.loop_decision");
 
   it("offers core.run_flow with the dry run off, runs it forward, and a completion is not dry-run", async () => {
     const decide = vi.fn()
@@ -211,7 +211,7 @@ describe("forwardRun in an evidence loop", () => {
       .mockResolvedValueOnce({ kind: "complete", result: { done: true } });
     const executeTool = store();
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, executeTool, maxIterations: 6, maxToolCalls: 6, propagateDecisionErrors: true,
+      tools, decide, executeTool, propagateDecisionErrors: true,
       dryRun: false, forwardRun: { rowDone: () => false, stepDone: () => false }
     });
     expect(result).toMatchObject({ ok: true });
@@ -228,7 +228,7 @@ describe("forwardRun in an evidence loop", () => {
     const decide = vi.fn()
       .mockResolvedValueOnce({ kind: "tool_call", callId: "add.1", toolId: "press", input: { target: "Add" }, add: true })
       .mockResolvedValueOnce({ kind: "complete", result: { done: true } });
-    await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool: store(), maxIterations: 4, maxToolCalls: 4, propagateDecisionErrors: true, dryRun: false });
+    await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool: store(), propagateDecisionErrors: true, dryRun: false });
     expect(offeredAt(decide, 1)).toEqual(["press"]);
   });
 });

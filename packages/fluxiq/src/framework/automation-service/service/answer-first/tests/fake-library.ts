@@ -205,7 +205,7 @@ export type ScriptedAttemptOptions = {
   /** Replaces the scripted provider's call, for a test of a provider that is silent or refuses. */
   wrapProvider?: (provider: AutomationStudioLlmProvider, requests: AutomationStudioLlmTaskRequest[]) => AutomationStudioLlmProvider;
   /** The resolver's extras: a total, or a per-call limit. */
-  resolver?: { maxTotalEstimatedCostUsd?: number; maxCallsPerRun?: number; timeoutMs?: number; tokenLimits?: { maxInputTokens: number; maxOutputTokens: number; maxTotalTokens: number } };
+  resolver?: { maxTotalEstimatedCostUsd?: number; maxEstimatedCostUsd?: number; timeoutMs?: number; tokenLimits?: { maxInputTokens: number; maxOutputTokens: number; maxTotalTokens: number } };
   over?: Partial<AutomationStudioServiceOptions>;
   /** Called with the service before the attempt, to set ports (`../attempt/ports.ts`). */
   before?: (service: AutomationStudioService, project: { projectId: string; flowId: string }) => void | Promise<void>;

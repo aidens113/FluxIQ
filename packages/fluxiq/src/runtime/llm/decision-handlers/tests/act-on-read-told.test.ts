@@ -23,7 +23,7 @@ const run = async (decisions: JsonObject[], results: JsonObject[]) => {
   decide.mockResolvedValueOnce(complete);
   const executeTool = vi.fn();
   for (const result of results) executeTool.mockResolvedValueOnce(result);
-  const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go, read], decide, executeTool, maxIterations: 8, maxToolCalls: 8, dryRun: false, unusableDecisions: { stalled } });
+  const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go, read], decide, executeTool, dryRun: false, unusableDecisions: { stalled } });
   return { result, decide };
 };
 

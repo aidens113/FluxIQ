@@ -9,7 +9,6 @@ import type { AutomationStudioLlmModelCaller } from "./model-caller.ts";
 export type AutomationStudioLlmProviderResolution = {
   provider: AutomationStudioLlmProvider;
   tokenLimits?: Partial<AutomationStudioLlmTokenLimits>;
-  maxCallsPerRun?: number;
   /** The whole run's token budget, when the resolver sets one. It caps the run however many calls it may make. */
   maxTotalTokensPerRun?: number;
   maxEstimatedCostUsd?: number;

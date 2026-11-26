@@ -115,7 +115,7 @@ const CLOSED_CODE = /^[a-z0-9_.:-]{1,100}$/iu;
 const HANDLE_ISSUE = /^[a-z]+\.handle\.([a-z_]+)(?::|$)/u;
 
 /** What ends a run of refusals, said after every way out. */
-const RESUBMIT = "Sending the same refused script, or one refused for the same reason, a third decision in a row ends this build.";
+const RESUBMIT = "Sending the same refused script, or one refused for the same reason, will not get further: a third decision in a row refused for it is caught as a repeat, and you decide how to go on.";
 // A refusal stays in evidence for every later decision, so this says only what
 // stays true of it: once a revision is accepted, its script is the one to edit,
 // and a refused script is never the current Flow (t498, `./authoring-loop.ts`);

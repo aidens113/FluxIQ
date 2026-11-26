@@ -22,9 +22,14 @@ const stalledError = new Error("stalled");
 const shownAt = (decide: ReturnType<typeof vi.fn>, index: number): Shown => (decide.mock.calls[index]![0] as { evidence: Shown }).evidence;
 const noteAt = (decide: ReturnType<typeof vi.fn>, index: number, toolId: string): JsonObject | undefined => shownAt(decide, index).find((entry) => entry.toolId === toolId)?.value;
 const call = (index: number, toolId: string, input: JsonObject) => ({ kind: "tool_call", callId: `${toolId}.${index}`, toolId, input });
+/**
+ * The model's script: `next` for its first `SCRIPTED` decisions, then it finishes. No count ends a loop (t1056), so a
+ * model that would repeat itself for ever is shown here repeating far past every old bound and then finishing.
+ */
+const SCRIPTED = 60;
 const scripted = (next: (index: number) => unknown) => {
   const decide = vi.fn();
-  decide.mockImplementation(async () => next(decide.mock.calls.length));
+  decide.mockImplementation(async () => decide.mock.calls.length > SCRIPTED ? { kind: "complete", result: { done: true } } : next(decide.mock.calls.length));
   return decide;
 };
 const click = { draft: { actionId: "web.click", effect: "mutate", proposes: true } };
@@ -37,8 +42,8 @@ const answer = (before: string, after: string, fields: JsonObject) => ({ kind: "
 const coveredButton = () => vi.fn(async () => answer("s1", "s1", { evidence: { ok: false, code: "target_unobserved" }, effectApplied: false, resultCode: "web.action.rejected.target_covered", resultReason: "target_covered", ...click }));
 
 const loop = (decide: ReturnType<typeof vi.fn>, executeTool: unknown, extra: Record<string, unknown> = {}) => runAutomationStudioLlmEvidenceLoop({
-  tools, decide, executeTool: executeTool as AutomationStudioLlmEvidenceLoopInput["executeTool"], maxIterations: 60, maxToolCalls: 60, dryRun: false, propagateDecisionErrors: true,
-  unusableDecisions: { maxConsecutive: 40, stalled: () => stalledError }, ...extra
+  tools, decide, executeTool: executeTool as AutomationStudioLlmEvidenceLoopInput["executeTool"], dryRun: false, propagateDecisionErrors: true,
+  unusableDecisions: { stalled: () => stalledError }, ...extra
 });
 
 describe("a near repeat: the same call with only its words changed", () => {
@@ -46,9 +51,9 @@ describe("a near repeat: the same call with only its words changed", () => {
     const decide = scripted((index) => call(index, "press", { target: "Close", reason: `attempt number ${index}` }));
     const executeTool = coveredButton();
 
-    await expect(loop(decide, executeTool)).rejects.toBe(stalledError);
+    await expect(loop(decide, executeTool)).resolves.toMatchObject({ ok: true });
 
-    // Two ran: the first, and the first rewording. Everything after was refused unrun, and three in a row stalled the round.
+    // Two ran: the first, and the first rewording. Everything after was refused unrun, and no count of refusals ended the round (t1056).
     expect(executeTool).toHaveBeenCalledTimes(2);
     const steer = noteAt(decide, 2, "core.loop_check");
     expect(steer).toMatchObject({ code: "llm_evidence_loop.loop_steered", pattern: "near_repeat", repeats: 2, toolIds: ["press"], unchanged: ["page", "rows", "acts", "draft"] });
@@ -87,7 +92,7 @@ describe("a cycle: the same calls in the same order, across pages", () => {
     const decide = scripted((index) => call(index, "press", { target: index % 2 === 1 ? "Open" : "Close", reason: `because ${index}` }));
     const executeTool = menu();
 
-    await expect(loop(decide, executeTool)).rejects.toBe(stalledError);
+    await expect(loop(decide, executeTool)).resolves.toMatchObject({ ok: true });
 
     expect(noteAt(decide, 4, "core.loop_check")).toMatchObject({ pattern: "cycle", repeats: 2, toolIds: ["press"] });
     expect(executeTool).toHaveBeenCalledTimes(4);
@@ -124,18 +129,18 @@ describe("no progress: a window of calls that each ran and brought nothing new",
 
     const result = await loop(decide, executeTool);
 
-    // No count of steps without progress ends it (t1049): steered, it runs on to the loop's own ceiling of sixty.
-    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.iteration_limit" });
+    // No count ends it (t1049, t1056): steered, it runs on to the model's result. The ladder's last rung is raised with
+    // nobody to answer it, and the loop goes on.
+    expect(result).toMatchObject({ ok: true });
     expect(executeTool.mock.calls.length).toBeGreaterThan(16);
     expect(noteAt(decide, 12, "core.loop_check")).toMatchObject({ pattern: "no_progress" });
-    expect(result.trace.some((row) => row.resultCode === "llm_evidence_loop.loop_change_approach")).toBe(false);
   });
 
   it("refuses a call already made in the window, not one that is new", async () => {
     const decide = scripted((index) => call(index, "press", { target: `control ${index <= 12 ? index : 3}`, reason: `because ${index}` }));
     const executeTool = vi.fn(async ({ value }: { value: JsonObject }) => answer("s1", "s1", { evidence: { ok: true, target: value.target as JsonValue }, effectApplied: true, resultCode: "web.action.succeeded", ...click }));
 
-    await expect(loop(decide, executeTool)).rejects.toBe(stalledError);
+    await expect(loop(decide, executeTool)).resolves.toMatchObject({ ok: true });
 
     expect(executeTool).toHaveBeenCalledTimes(12);
   });
@@ -216,7 +221,8 @@ describe("the same lasting act again: the page changes each time, and that is no
     expect(executeTool).toHaveBeenCalledTimes(5);
     const told = decide.mock.calls.flatMap((_, index) => shownAt(decide, index)).filter((entry) => entry.toolId === "core.loop_check");
     expect(told.at(-1)?.value).toMatchObject({ pattern: "same_act", repeats: 5 });
-    expect(String(told.at(-1)?.value.instruction)).not.toContain("refused");
+    // The steer's own words say nothing is refused; the loop decision it asks for (offered to every loop, t1056) follows them.
+    expect(String(told.at(-1)?.value.instruction).split("Decide how to go on")[0]).not.toContain("refused");
     expect(decide.mock.calls.flatMap((_, index) => shownAt(decide, index)).some((entry) => entry.toolId === "core.repeat_check")).toBe(false);
     expect(automationStudioLlmLoopsCaught(result.trace).same_act).toMatchObject({ steered: 4, refused: 0 });
   });
@@ -386,7 +392,7 @@ describe("the same control under a renumbered handle", () => {
     const decide = scripted((index) => call(index, "press", { handle: `t${index}` }));
     const executeTool = resolved("button.close");
 
-    await expect(loop(decide, executeTool)).rejects.toBe(stalledError);
+    await expect(loop(decide, executeTool)).resolves.toMatchObject({ ok: true });
 
     expect(noteAt(decide, 2, "core.loop_check")).toMatchObject({ pattern: "near_repeat", repeats: 2 });
   });
@@ -444,7 +450,7 @@ describe("the same fix again", () => {
       ? answer("s1", "s1", { evidence: { ok: true, digest: "d1" }, effectApplied: false, resultCode: "candidate.accepted" })
       : answer("s1", "s1", { evidence: { ok: false, code: "candidate.trial_no" }, effectApplied: true, resultCode: "candidate.trial_no" }));
     const record = automationStudioLlmLoopAttemptRecord();
-    const run = (decide: ReturnType<typeof vi.fn>) => runAutomationStudioLlmEvidenceLoop({ tools: submitTools, decide, executeTool: executeTool as unknown as AutomationStudioLlmEvidenceLoopInput["executeTool"], maxIterations: 20, maxToolCalls: 20, dryRun: false, draft: false, discoveryOnly: true, finishingTools: finishing, attemptRecord: record });
+    const run = (decide: ReturnType<typeof vi.fn>) => runAutomationStudioLlmEvidenceLoop({ tools: submitTools, decide, executeTool: executeTool as unknown as AutomationStudioLlmEvidenceLoopInput["executeTool"], dryRun: false, draft: false, discoveryOnly: true, finishingTools: finishing, attemptRecord: record });
     const script = (flow: string) => vi.fn().mockResolvedValueOnce(call(1, "submit", { flow, summary: "first words" })).mockResolvedValueOnce(call(2, "test", { revision: 1 })).mockResolvedValue({ kind: "complete", result: { done: true } });
 
     await run(script("step one"));
@@ -498,15 +504,19 @@ describe("the ladder's last steps: a signal the caller answers", () => {
     expect(signals.map((signal) => signal.kind)).toEqual(["change_approach"]);
   });
 
-  it("a loop with no caller to ask ends with the very ending today's callers already handle", async () => {
+  // No count ends a round (t1056): with nobody to answer the ladder's last rung, the loop goes on to the model's result,
+  // and the stall a caller would end it with is never reached.
+  it("a loop with no caller to ask goes on past the ladder's last rung, and never stalls", async () => {
     const decide = rewording();
     const issueCodes: string[][] = [];
     const stalled = (stall: { issueCodes: string[] }): Error => {
       issueCodes.push(stall.issueCodes);
       return stalledError;
     };
-    await expect(loop(decide, coveredButton(), { unusableDecisions: { maxConsecutive: 40, stalled } })).rejects.toBe(stalledError);
-    expect(issueCodes[0]?.[0]).toBe("llm_evidence_loop.repeat_refused");
+    const result = await loop(decide, coveredButton(), { unusableDecisions: { stalled } });
+    expect(result).toMatchObject({ ok: true });
+    expect(issueCodes).toEqual([]);
+    expect(result.trace.some((row) => row.resultCode === "llm_evidence_loop.loop_change_approach")).toBe(true);
   });
 
   it("a fresh loop on the same record goes on counting fresh approaches", async () => {
@@ -532,7 +542,7 @@ describe("what the ladder never touches", () => {
     const gate = vi.fn(async () => answer("s1", "s1", { evidence: { ok: false, code: "permission_required" }, effectApplied: false, resultCode: "web.action.rejected.permission_required", resultReason: "permission_required", ...click }));
     const decide = scripted((index) => call(index, "press", { target: "Delete", reason: `I am sure ${index}`, granted: index > 99 }));
 
-    await expect(loop(decide, gate)).rejects.toBe(stalledError);
+    await expect(loop(decide, gate)).resolves.toMatchObject({ ok: true });
 
     // Twice to the gate, both refused; nothing the ladder did let a third through or marked anything as granted.
     expect(gate).toHaveBeenCalledTimes(2);
@@ -550,7 +560,7 @@ describe("what the ladder never touches", () => {
         : answer(before, page, { evidence: { ok: true }, effectApplied: true, resultCode: "web.action.succeeded", ...click });
     });
 
-    await expect(loop(decide, executeTool)).rejects.toBe(stalledError);
+    await expect(loop(decide, executeTool)).resolves.toMatchObject({ ok: true });
     // The act landed once; what followed were refusals by the site's own answer, and then by the ladder before anything ran.
     expect(executeTool).toHaveBeenCalledTimes(3);
     expect(noteAt(decide, 4, "core.repeat_check")).toMatchObject({ then: { outcome: "near_repeat" } });
@@ -577,16 +587,18 @@ describe("what the person and the Lab see", () => {
     const secretWords = "zebra-control-words";
     const decide = scripted((index) => call(index, "press", { target: secretWords, reason: `attempt ${index}` }));
 
-    const stalled = await runWithAutomationStudioActivity({ kind: "build", id: "b1", projectId: "p1" }, () => loop(decide, coveredButton()).catch((error: unknown) => error));
-    expect(stalled).toBe(stalledError);
+    const ended = await runWithAutomationStudioActivity({ kind: "build", id: "b1", projectId: "p1" }, () => loop(decide, coveredButton()));
+    expect(ended).toMatchObject({ ok: true });
 
     const steps = seen.filter((event) => event.detail?.kind === "thought");
-    expect(steps).toHaveLength(1);
+    // One step for each steer: once the ladder's top is passed with nobody to end the round, the loop goes on and a new
+    // approach that repeats again is steered again (t1056).
+    expect(steps.length).toBeGreaterThanOrEqual(1);
     expect(steps[0]?.detail).toMatchObject({ title: "Noticed it was repeating itself", status: "succeeded" });
     expect(steps[0]?.detail?.text).toBe("FluxIQ tried the same thing 2 times and nothing changed, so it is trying something else.");
 
     const folders = readdirSync(directory.path).filter((name) => /^\d{4,}-loop$/u.test(name));
-    expect(folders).toHaveLength(1);
+    expect(folders.length).toBeGreaterThanOrEqual(1);
     const meta = JSON.parse(readFileSync(join(directory.path, folders[0]!, "meta.json"), "utf8")) as JsonObject;
     expect(meta).toMatchObject({ kind: "loop", rung: "steer", pattern: "near_repeat", repeats: 2, toolIds: ["press"] });
     expect(JSON.stringify(meta)).not.toContain(secretWords);

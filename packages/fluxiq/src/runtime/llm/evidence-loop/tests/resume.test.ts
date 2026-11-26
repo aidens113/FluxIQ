@@ -155,11 +155,11 @@ describe("a continued build", () => {
   it("replays nothing before its first decision, and is told the page is where it stands", async () => {
     const replayable = (position: number): AutomationStudioFlowDraftStep => step(position, { id: `s${position}`, toolId: "press", ranWith: { target: `t.${position}` }, proposes: true, replay: { from: { location: "https://store.test/start" } } });
     const executeTool = vi.fn(async (): Promise<AutomationStudioLlmEvidenceToolExecutionResult> => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true, resultCode: "core.replay.replayed" }));
-    const decide = vi.fn().mockResolvedValue({ kind: "recorded_run_ended" });
+    const decide = vi.fn().mockRejectedValue(new Error("recorded run ended"));
     await runAutomationStudioLlmEvidenceLoop({
       tools: [{ toolId: "press", description: "Press.", inputSchema: { type: "object" }, effect: "mutate" }],
-      decide, executeTool, maxIterations: 1, maxToolCalls: 1,
-      unusableDecisions: { maxConsecutive: 1, stalled: () => new Error("stalled") },
+      decide, executeTool, 
+      unusableDecisions: { stalled: () => new Error("stalled") },
       draft: { seed: [replayable(1), replayable(2)], resume: { revision: 1, stopped: "iterations", outstandingIssueCodes: [] } }
     });
     expect(executeTool).not.toHaveBeenCalled();
@@ -195,8 +195,8 @@ describe("the opening of a round whose draft already holds the Flow", () => {
   const round = async (draft: Parameters<typeof runAutomationStudioLlmEvidenceLoop>[0]["draft"]) => {
     const executeTool = vi.fn(async (_call: { callId: string; toolId: string; value: JsonObject }) => arrived);
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools: [runNode], decide: vi.fn().mockResolvedValue({ kind: "recorded_run_ended" }), executeTool, maxIterations: 1, maxToolCalls: 2, dryRun: false,
-      unusableDecisions: { maxConsecutive: 1, stalled: () => new Error("stalled") },
+      tools: [runNode], decide: vi.fn().mockRejectedValue(new Error("recorded run ended")), executeTool, dryRun: false,
+      unusableDecisions: { stalled: () => new Error("stalled") },
       ...(draft === undefined ? {} : { draft })
     });
     return { result, executeTool };
@@ -205,10 +205,10 @@ describe("the opening of a round whose draft already holds the Flow", () => {
   const looked = { kind: "llm_evidence_tool_execution", evidence: { ok: true, page: { url: "https://social.example/friends/requests/", title: "Requests" } }, effectApplied: false };
   const heldRound = async (draft: NonNullable<Parameters<typeof runAutomationStudioLlmEvidenceLoop>[0]["draft"]>) => {
     const executeTool = vi.fn(async (_call: { callId: string; toolId: string; value: JsonObject }) => looked);
-    const decide = vi.fn().mockResolvedValue({ kind: "recorded_run_ended" });
+    const decide = vi.fn().mockRejectedValue(new Error("recorded run ended"));
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools: [runNode], decide, executeTool, maxIterations: 1, maxToolCalls: 2, dryRun: false,
-      unusableDecisions: { maxConsecutive: 1, stalled: () => new Error("stalled") }, draft
+      tools: [runNode], decide, executeTool, dryRun: false,
+      unusableDecisions: { stalled: () => new Error("stalled") }, draft
     });
     return { result, executeTool, decide };
   };
@@ -275,8 +275,8 @@ describe("the opening of a round whose draft already holds the Flow", () => {
     const lookOnly: AutomationStudioLlmEvidenceTool = { ...runNode, initialObservation: { input: look } };
     const executeTool = vi.fn(async (_call: { callId: string; toolId: string; value: JsonObject }) => looked);
     await runAutomationStudioLlmEvidenceLoop({
-      tools: [lookOnly], decide: vi.fn().mockResolvedValue({ kind: "recorded_run_ended" }), executeTool, maxIterations: 1, maxToolCalls: 2, dryRun: false,
-      unusableDecisions: { maxConsecutive: 1, stalled: () => new Error("stalled") }, draft: { seed: [] }
+      tools: [lookOnly], decide: vi.fn().mockRejectedValue(new Error("recorded run ended")), executeTool, dryRun: false,
+      unusableDecisions: { stalled: () => new Error("stalled") }, draft: { seed: [] }
     });
 
     expect(executeTool.mock.calls[0]![0].value).toEqual(look);

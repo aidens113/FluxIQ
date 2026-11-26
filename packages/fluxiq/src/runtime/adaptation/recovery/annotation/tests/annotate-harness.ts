@@ -124,7 +124,7 @@ export async function annotateRepair(options: { handles: Record<string, string>;
   run.detail = await annotateAutomationStudioRunDetailWithRuntimeLlm({
     ports: {
       ...ports(base),
-      resolveLlmProvider: () => ({ provider: patchingProvider, maxCallsPerRun: 6, maxTotalTokensPerRun: 100_000, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2, tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 } }),
+      resolveLlmProvider: () => ({ provider: patchingProvider, maxTotalTokensPerRun: 100_000, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2, tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 } }),
       llmEvidenceRuntime: pages
     },
     detail: runDetail(),
@@ -140,8 +140,6 @@ type Options = {
   executed: string[];
   /** What is left of a larger repair's purse, when the recovery is one part of one. */
   costLeftUsd?: number;
-  /** The call count the resolver declares; `undeclared` leaves it to Core's backstop. */
-  maxCallsPerRun?: number | "undeclared";
   /** The parent Flow's stored metadata, as `flowForRecovery` reads it -- its `llmExecutionSettings` among it. */
   flowMetadata?: JsonObject;
   /** The policy's and the settings' intervention limit, when one is set. */
@@ -207,9 +205,7 @@ function traceStage(detail: AutomationStudioFlowRunDetail, stage: string): JsonO
 function ports(options: Options): AutomationStudioRuntimeRecoveryPorts {
   const scope: AutomationStudioFlowScope | undefined = "scope" in options ? options.scope : { kind: "domain", domainId: "test.domain" };
   return {
-    resolveLlmProvider: () => options.maxCallsPerRun === "undeclared"
-      ? { provider: provider(options) }
-      : { provider: provider(options), maxCallsPerRun: options.maxCallsPerRun ?? 4 },
+    resolveLlmProvider: () => ({ provider: provider(options) }),
     llmEvidenceRuntime: binding(options),
     reusableLlmContextEnabled: false,
     flowInstructionSet: async () => [],

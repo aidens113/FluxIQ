@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../loop-limits/index.ts";
 import type { AutomationStudioFlowBootstrapEvidenceTraceRow } from "../evidence-loop-steps.ts";
 import { automationStudioFlowBootstrapLargestSizeLimits } from "../plan/index.ts";
 import {
@@ -13,7 +12,8 @@ import {
  * the Flow size setting allows, one appended step per iteration, and the
  * iteration-zero observation. A published step is read with no Flow in hand.
  */
-const MAX_REPRESENTED = automationStudioFlowBootstrapLargestSizeLimits().maxTotalNodes + AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations + 1;
+/** The bound the represented draft was once held to, the largest Flow and sixty-four appended steps; there is none now (t1056). */
+const MAX_REPRESENTED = automationStudioFlowBootstrapLargestSizeLimits().maxTotalNodes + 64 + 1;
 
 function amendRow(row: Partial<AutomationStudioFlowBootstrapEvidenceTraceRow> = {}): AutomationStudioFlowBootstrapEvidenceTraceRow {
   return { iteration: 3, decision: "amend_draft", resultCode: "llm_evidence_loop.draft_unchanged", amended: 0, ...row };
@@ -187,37 +187,31 @@ describe("Flow Bootstrap evidence steps: content-free progress", () => {
     expect(parseAutomationStudioFlowBootstrapEvidenceSteps([step])).toEqual([step]);
   });
 
-  it("drops and refuses represented draft counts above the supported seed-plus-append maximum", () => {
-    const aboveBoundary = {
+  // No count of a loop's turns has a ceiling (t1056), so neither has the draft a loop appends to: a count past the old
+  // seed-plus-sixty-four bound reads back whole, and only a count that is no whole number is refused.
+  it("keeps represented draft counts past the old seed-plus-append bound, and refuses one that is no whole number", () => {
+    const pastOld = {
       ...instrumentation,
       draftChange: { ...instrumentation.draftChange, keptStepCount: MAX_REPRESENTED + 1 },
       draft: { ...instrumentation.draft, steps: MAX_REPRESENTED + 1, unlisted: 0, withoutInput: 0, inputTooLarge: 0 }
     };
-    const [sanitized] = automationStudioFlowBootstrapEvidenceSteps([amendRow(aboveBoundary)]);
+    const [sanitized] = automationStudioFlowBootstrapEvidenceSteps([amendRow(pastOld)]);
 
-    expect(sanitized).not.toHaveProperty("draftChange");
-    expect(sanitized).not.toHaveProperty("draft");
+    expect(sanitized).toHaveProperty("draftChange");
+    expect(sanitized).toHaveProperty("draft");
     expect(parseAutomationStudioFlowBootstrapEvidenceSteps([{
       toolId: "core.decision_amend_draft",
-      draftChange: aboveBoundary.draftChange
-    }])).toBeNull();
-    expect(parseAutomationStudioFlowBootstrapEvidenceSteps([{
-      toolId: "core.decision_amend_draft",
-      draft: aboveBoundary.draft
+      draftChange: { ...pastOld.draftChange, keptStepCount: 1.5 }
     }])).toBeNull();
   });
 
-  it("bounds the combined listed and unlisted draft count at the represented maximum", () => {
-    const [boundary] = automationStudioFlowBootstrapEvidenceSteps([amendRow({
-      draft: { ...instrumentation.draft, steps: 64, unlisted: MAX_REPRESENTED - 64, withoutInput: 0, inputTooLarge: 0 }
-    })]);
-    const [aboveBoundary] = automationStudioFlowBootstrapEvidenceSteps([amendRow({
+  it("keeps a combined listed and unlisted draft count past the old represented bound", () => {
+    const [pastOld] = automationStudioFlowBootstrapEvidenceSteps([amendRow({
       draft: { ...instrumentation.draft, steps: 64, unlisted: MAX_REPRESENTED - 63, withoutInput: 0, inputTooLarge: 0 }
     })]);
 
-    expect(boundary?.draft).toMatchObject({ steps: 64, unlisted: MAX_REPRESENTED - 64 });
-    expect(parseAutomationStudioFlowBootstrapEvidenceSteps([boundary])).toEqual([boundary]);
-    expect(aboveBoundary).not.toHaveProperty("draft");
+    expect(pastOld?.draft).toMatchObject({ steps: 64, unlisted: MAX_REPRESENTED - 63 });
+    expect(parseAutomationStudioFlowBootstrapEvidenceSteps([pastOld])).toEqual([pastOld]);
   });
 
   it.each([

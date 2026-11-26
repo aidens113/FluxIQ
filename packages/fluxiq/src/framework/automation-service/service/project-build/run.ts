@@ -27,7 +27,6 @@ import { automationStudioCandidateStallCode } from "../candidate-failure/index.t
 import type { AutomationStudioFlowCandidateDraftRecord } from "../candidate-drafts/index.ts";
 import { automationStudioFlowBootstrapUnusableDecisions, type generateAutomationStudioFlowCandidateDraft } from "../flow-bootstrap-commands/index.ts";
 import { AutomationStudioProjectBuildActsRecord } from "./acts-record.ts";
-import { automationStudioProjectBuildBriefCalls } from "./brief-calls.ts";
 import { automationStudioProjectBuildBriefPorts } from "./brief-ports.ts";
 import { AutomationStudioProjectBuildDecisions } from "./decisions.ts";
 import { automationStudioProjectBuildDraftRecord } from "./draft-record.ts";
@@ -272,19 +271,17 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
   const dispatch = createAutomationStudioProjectDispatcher({
     record: { store: records, ref }, purse, cancellation: project.cancellation, host, leaseBinding: project.leaseBinding, ledger: project.ledger,
     ports: automationStudioProjectBuildBriefPorts({ project, draft, decisions, subflowTrial: subflowTrials.port, proposals, accounting, acts }),
-    maxCalls: automationStudioProjectBuildBriefCalls,
     // A single-subflow brief's trials, which never reach the scoped trial port, are the proposals' too (t679).
     trialled: (scope, proposal, verdict) => proposals.trialled(scope, proposal, verdict)
   });
   const sources = automationStudioProjectActiveInstructionSources(project.instructions);
   const { purse: _purse, signal: _signal, budget: _budget, ...loop } = draft.loop;
-  const maxIterations = loop.maxIterations;
   // The supervisor's decisions carry its own system instructions, never the domain's operating text (`./supervisor-provider.ts`, t569).
   const supervisorProvider = automationStudioProjectBuildSupervisorProvider(draft.harness.provider, binding.domainId);
   const runSupervisorHarness: typeof draft.runHarness = async (request) => await draft.runHarness({ ...request, provider: supervisorProvider });
   const decide = (completionSchema: Parameters<AutomationStudioProjectBuildDecisions["decide"]>[0]["completionSchema"]) => decisions.decide({ runHarness: runSupervisorHarness, wrapDecision: draft.wrapDecision, completionSchema });
   const unusableDecisions = automationStudioFlowBootstrapUnusableDecisions({
-    maxConsecutiveUnusableDecisions: draft.maxConsecutiveUnusableDecisions, maxIterations, callerEnding: (progress) => draft.ending(progress, accounting()),
+    callerEnding: (progress) => draft.ending(progress, accounting()),
     stalled: (progress) => flowBootstrapEvidenceUnusableDecisionFailure(progress, accounting(), automationStudioCandidateStallCode(progress.issueCodes))
   });
   // The judged whole run's witnesses are read through Core's own look, where its arrival exists (header, t775 D5).

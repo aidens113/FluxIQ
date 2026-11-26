@@ -11,7 +11,6 @@
 // surface is unchanged and every existing consumer still reads it from there.
 
 import type { JsonObject, JsonValue } from "../../core/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
 import type { AutomationStudioLlmEvidenceFinishingTools, AutomationStudioLlmEvidenceLoopBudget } from "./loop-budget.ts";
 import { automationStudioLlmEvidenceLoopBudgetValid } from "./loop-budget.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness/index.ts";
@@ -26,14 +25,12 @@ import type { AutomationStudioLlmEvidenceLoopResume } from "./evidence-loop/inde
 import { automationStudioLlmEvidenceLoopConfigurationIssue as issue, type AutomationStudioLlmEvidenceLoopConfigurationIssue } from "./configuration-issue/index.ts";
 import type { AutomationStudioLlmEvidencePlanningTools } from "./evidence-progress/index.ts";
 import type { AutomationStudioLlmPageChannel } from "./view-channel/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNREADABLE_REPLIES_IN_A_ROW } from "../models/failures/index.ts";
-import {
-  AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW,
-  type AutomationStudioLlmEvidenceCompletionCheck,
-  type AutomationStudioLlmEvidenceLoopAccounting,
-  type AutomationStudioLlmEvidenceLoopTrace,
-  type AutomationStudioLlmEvidenceTool,
-  type AutomationStudioLlmEvidenceToolExecutionResult
+import type {
+  AutomationStudioLlmEvidenceCompletionCheck,
+  AutomationStudioLlmEvidenceLoopAccounting,
+  AutomationStudioLlmEvidenceLoopTrace,
+  AutomationStudioLlmEvidenceTool,
+  AutomationStudioLlmEvidenceToolExecutionResult
 } from "./evidence-loop.ts";
 
 /** What a call names, in words a person reads: the control it acts on, and the words it types or looks for. */
@@ -70,6 +67,12 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * for the person. Absent, every loop ends as a stall always has.
    */
   loopSignal?: ((signal: AutomationStudioLlmLoopSignal) => AutomationStudioLlmLoopSignalAnswer) | undefined;
+  /**
+   * Whether the model's loop decision may ask a person (`ask_person`). Absent, it may wherever a `loopSignal` is
+   * given. A build ends its round on loop detection's signal but has nobody to ask mid-build, so it says `false`
+   * (t1056, `framework/.../flow-bootstrap-commands/loop-signal.ts`).
+   */
+  personReachable?: boolean | undefined;
   /**
    * How many times the task asks for this lasting act, for the new path: the
    * caller fills it from the attempt's act record. With a `loopSignal`, a stated
@@ -130,12 +133,15 @@ export type AutomationStudioLlmEvidenceLoopInput = {
   readRowsKey?: string | undefined;
   /** Explicit bound-domain screening authority for authored rerun path diagnostics. Absent, omit paths. */
   deniedEvidenceKeys?: readonly string[] | undefined;
-  maxIterations?: number;
-  maxToolCalls?: number;
+  // There is no count of turns or of calls that ends a loop (t1056). `maxIterations` and `maxToolCalls` ended every
+  // loop with no `loopSignal` at their figure, eight by default, and the readers of a recorded run were held to a ceiling of
+  // 64 of each; none of that stands (user, 2026-11-24: "THERE SHOULDNT BE ANY ARBITRARY FUCKING CALL LIMIT THAT RANDOMLY
+  // JUST RESETS EVERYTHING"). A loop ends with its result, its purse, its clock, a person's Stop, or the round its caller
+  // ends on loop detection's signal; a repeat is steered and decided (`loopSignal`). The loop input has no
+  // `maxIterations` or `maxToolCalls` any more.
   /**
    * The run's own bounds -- tokens, cost, time -- from which the loop works out
-   * before each decision how many it has left, the iteration count being only
-   * the backstop among them. With one given, the model is shown what is left
+   * before each decision how many it has left. With one given, the model is shown what is left
    * as the newest entry (`AUTOMATION_STUDIO_LLM_EVIDENCE_BUDGET_TOOL_ID`); the
    * last decision is offered only completion; and with none left the loop ends
    * `llm_evidence_loop.iteration_limit`. Absent, none of that happens.
@@ -181,45 +187,29 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * Ask again after an unusable decision instead of ending.
    *
    * When set, a `decide` that throws `AutomationStudioLlmUnusableDecisionError`
-   * spends that iteration -- one provider call, so `maxIterations` still bounds
-   * every call the loop makes -- is recorded as an `unusable` step, the model
-   * is told the issue codes and the decision shape as evidence under
+   * spends that iteration -- one provider call, paid from the purse like any
+   * other -- is recorded as an `unusable` step, the model is told the issue
+   * codes and the decision shape as evidence under
    * `AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID`, and the loop
-   * asks again. The `maxInARow`-th unusable decision in a row ends it, and
-   * `stalled` builds the error that does, which is then handled exactly as if
-   * `decide` had thrown it (thrown under `propagateDecisionErrors`, otherwise
-   * `llm_evidence_loop.invalid_decision`); a loop with `loopSignal` has no such
-   * count. A usable decision resets it. Unusable decisions refused for the same
-   * issues again are steps without progress, which steer and never end (t1049).
+   * asks again on the same model. No count of them in a row ends the loop
+   * (t1056): unusable decisions refused for the same issues again are steps
+   * without progress, which steer, and the same unreadable reply again is a
+   * finding on loop detection's ladder (`./evidence-loop/unreadable-reply.ts`).
+   * A loop that cannot get a usable reply ends when its purse does.
+   *
+   * `stalled` builds the error a round ends with where its caller ends it on
+   * loop detection's signal (`loopSignal` answering `end`) or the model asked
+   * the person (`./decision-handlers/model-decision.ts`): it is thrown under
+   * `propagateDecisionErrors`, otherwise the loop ends
+   * `llm_evidence_loop.repeat_without_progress`.
    *
    * Absent, the error is an ordinary decision error, as it always was. Any
    * other error `decide` throws is unaffected either way.
    *
    * A completed result that `checkCompletion` refuses is an unusable decision
-   * too, and joins the same counts.
+   * too, and is told and asked again the same way.
    */
   unusableDecisions?: {
-    /**
-     * @deprecated Read by nothing (t1049). It was the length of the guard on
-     * steps without progress, and no such count ends a loop now. Still accepted
-     * only because many callers pass it; remove it with them.
-     */
-    maxConsecutive?: number;
-    /**
-     * The far backstop: unusable decisions in a row that end the loop however
-     * much their issues differ. At least 1 and at most `maxIterations`; absent,
-     * `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW`
-     * held to `maxIterations`.
-     */
-    maxInARow?: number;
-    /**
-     * Replies in a row that arrived and could not be read after which the loop
-     * ends `llm_evidence_loop.unreadable_replies` (`./unreadable-reply.ts`).
-     * They are asked again with a note of what could not be read and never
-     * move the count of steps without progress or the far backstop. At most `maxIterations`;
-     * absent, `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNREADABLE_REPLIES_IN_A_ROW`.
-     */
-    maxUnreadableInARow?: number;
     stalled(input: {
       issueCodes: readonly string[];
       trace: readonly AutomationStudioLlmEvidenceLoopTrace[];
@@ -233,15 +223,17 @@ export type AutomationStudioLlmEvidenceLoopInput = {
     }): unknown;
   };
   /**
-   * What a stall runs instead of ending, while the caller still has a move
-   * that may get the build further (t477; user: a build never gives up on a
-   * recoverable failure). Asked when a run of looks or of refused repeats
-   * would stall the round (`decision-handlers/stall-recovery.ts`), with the
-   * issue codes it would stall under. `call` is run as the loop's own call --
-   * a candidate build's retest of its latest revision -- its answer is shown to
-   * the model with a note saying why, and the round goes on. `endedBecause`
-   * says why nothing was left, and joins the stall's issue codes. Absent, or
-   * answering neither, the stall ends the round as before.
+   * The caller's own move for a loop that keeps repeating, while it still has
+   * one that may get the build further (t477; user: a build never gives up on a
+   * recoverable failure). Asked when loop detection's ladder reaches its top
+   * rung -- refusing has not stopped a run of looks, of refused repeats or of
+   * refusals of one kind -- with the issue codes of that run
+   * (`decision-handlers/stall-recovery.ts`). `call` is run as the loop's own
+   * call -- a candidate build's retest of its latest revision -- its answer is
+   * shown to the model with a note saying why, and the round goes on.
+   * `endedBecause` says why nothing was left. Absent, or answering neither, a
+   * loop with no `loopSignal` goes on steered; one with a caller that ends the
+   * round on the signal ends it as that caller says.
    */
   recoverStall?(stall: { issueCodes: readonly string[] }): { call: { toolId: string; input: JsonObject } } | { endedBecause: string } | undefined;
   /**
@@ -313,11 +305,10 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * The draft the loop accrues and shows the model beside its evidence
    * (`runtime/flow-draft/`), with `amend_draft` decisions to correct it.
    * `false` turns both off; `steps` is returned either way. The draft is always
-   * shown whole: every step with its argument. `maxAmendments` is how many
-   * edits the run may spend, absent sixteen.
+   * shown whole: every step with its argument. No count of edits withdraws
+   * amending (t1056): editing the draft is the authoring, and the purse bounds it.
    */
   draft?: false | {
-    maxAmendments?: number;
     /**
      * Steps the draft already holds before the loop takes its first one.
      *
@@ -543,14 +534,8 @@ export function automationStudioLlmEvidenceLoopRouteChecked(input: AutomationStu
 }
 
 export type EvidenceLoopLimits = {
-  maxIterations: number;
-  maxToolCalls: number;
+  /** Calls that must have run before the model may complete. A floor, never an ending. */
   minToolCalls: number;
-  maxUnusableDecisionsInARow: number;
-  /** Unreadable replies in a row that end the loop (`./unreadable-reply.ts`). */
-  maxUnreadableRepliesInARow: number;
-  /** Amendment decisions the run may spend before the kind is withdrawn. */
-  maxDraftAmendments: number;
 };
 
 /** Limits the loop cannot run on: the check that refused them, by name (`./configuration-issue/`, t584). */
@@ -560,69 +545,32 @@ export type EvidenceLoopLimitsRefused = { issue: AutomationStudioLlmEvidenceLoop
  * The loop's limits, or the first check they fail. Each refusal names its
  * check and the figures it held, so a loop that ends
  * `llm_evidence_loop.invalid_configuration` says which (t584).
+ *
+ * **No count ends a loop (t1056).** Not its turns, its calls, its edits, its looks, its unusable or unreadable replies in
+ * a row, nor its steps without progress (t1049) -- with or without a `loopSignal` (user, 2026-11-24: "THERE SHOULDNT BE
+ * ANY ARBITRARY FUCKING CALL LIMIT THAT RANDOMLY JUST RESETS EVERYTHING"). Each such ending either threw a round's
+ * evidence away (t1008, run-mwufisf0-5535f5f5: four rounds of looks in a row) or ended a build that still had money. A
+ * task ends with its result or its purse (user, 2026-11-03), and a repeat is caught by loop detection, steered, and
+ * decided by the model (2026-11-19).
  */
 export function resolveLimits(input: AutomationStudioLlmEvidenceLoopInput): EvidenceLoopLimits | EvidenceLoopLimitsRefused {
-  const maxIterations = input.maxIterations ?? 8;
-  const unusable = input.unusableDecisions;
-  const draft = input.draft === false ? undefined : input.draft;
-  const limits: EvidenceLoopLimits = {
-    maxIterations,
-    maxToolCalls: input.maxToolCalls ?? 8,
-    minToolCalls: input.minToolCalls ?? 0,
-    maxUnusableDecisionsInARow: unusable?.maxInARow ?? Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW, maxIterations),
-    maxUnreadableRepliesInARow: unusable?.maxUnreadableInARow ?? Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNREADABLE_REPLIES_IN_A_ROW, maxIterations),
-    // Editing the draft *is* the authoring, now that the draft is what the
-    // result is built from, so an allowance of four was an allowance of four
-    // corrections for a whole Flow. The run's own budget is what bounds it.
-    maxDraftAmendments: Math.min(draft?.maxAmendments ?? 16, maxIterations)
-  };
+  const limits: EvidenceLoopLimits = { minToolCalls: input.minToolCalls ?? 0 };
   const issue = limitsIssue(input, limits);
-  return issue ? { issue } : uncounted(input, limits);
-}
-
-/**
- * A loop whose caller takes loop detection's signal (`loopSignal`, the answer-first attempt's rounds) is ended by no
- * count of its own: not its turns, its calls, its edits or its unusable replies in a row; and no loop at all is ended by
- * its steps without progress (t1049, `maxStepsWithoutProgress` is gone) (user, 2026-11-24: "THERE SHOULDNT BE ANY ARBITRARY FUCKING CALL LIMIT THAT RANDOMLY JUST RESETS EVERYTHING"). Each
- * such ending started a fresh round with an empty evidence window, so the model lost everything it had seen and did it
- * again (t1008, run-mwufisf0-5535f5f5: four rounds of looks in a row). A task ends with its result or its purse
- * (user, 2026-11-03), and a repeat is caught by loop detection and decided by the model (2026-11-19). The figures are
- * checked as given first, so a configuration is refused for the same reasons whoever runs it.
- */
-function uncounted(input: AutomationStudioLlmEvidenceLoopInput, limits: EvidenceLoopLimits): EvidenceLoopLimits {
-  if (input.loopSignal === undefined) return limits;
-  const none = Number.POSITIVE_INFINITY;
-  return { ...limits, maxIterations: none, maxToolCalls: none, maxUnusableDecisionsInARow: none, maxDraftAmendments: none };
+  return issue ? { issue } : limits;
 }
 
 /** The first check `limits` fail, in the order the loop has always asked them, or none. */
 function limitsIssue(input: AutomationStudioLlmEvidenceLoopInput, limits: EvidenceLoopLimits): EvidenceLoopLimitsRefused["issue"] | undefined {
-  const { maxIterations, maxToolCalls, minToolCalls, maxUnusableDecisionsInARow, maxUnreadableRepliesInARow, maxDraftAmendments } = limits;
+  const { minToolCalls } = limits;
   const unusable = input.unusableDecisions;
-  const ceiling = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS;
   if (unusable && typeof unusable.stalled !== "function") return issue("limits.unusable_stalled", {}, "unusableDecisions.stalled is not a function.");
-  if (unusable && (!Number.isInteger(maxUnusableDecisionsInARow) || maxUnusableDecisionsInARow < 1 || maxUnusableDecisionsInARow > maxIterations)) {
-    return issue("limits.max_unusable_decisions_in_a_row", { maxUnusableDecisionsInARow, maxIterations }, `maxUnusableDecisionsInARow ${maxUnusableDecisionsInARow} must be a whole number from 1 to maxIterations ${maxIterations}.`);
-  }
-  if (unusable && (!Number.isInteger(maxUnreadableRepliesInARow) || maxUnreadableRepliesInARow < 1 || maxUnreadableRepliesInARow > maxIterations)) {
-    return issue("limits.max_unreadable_replies_in_a_row", { maxUnreadableRepliesInARow, maxIterations }, `maxUnreadableRepliesInARow ${maxUnreadableRepliesInARow} must be a whole number from 1 to maxIterations ${maxIterations}.`);
-  }
-  if (!Number.isInteger(maxIterations) || maxIterations <= 0 || maxIterations > ceiling.maxIterations) {
-    return issue("limits.max_iterations", { maxIterations, ceiling: ceiling.maxIterations }, `maxIterations ${maxIterations} must be a whole number from 1 to the loop's ceiling of ${ceiling.maxIterations}.`);
-  }
-  if (!Number.isInteger(maxToolCalls) || maxToolCalls <= 0 || maxToolCalls > ceiling.maxToolCalls) {
-    return issue("limits.max_tool_calls", { maxToolCalls, ceiling: ceiling.maxToolCalls }, `maxToolCalls ${maxToolCalls} must be a whole number from 1 to the loop's ceiling of ${ceiling.maxToolCalls}.`);
-  }
   const budget = input.budget;
   if (budget && !automationStudioLlmEvidenceLoopBudgetValid(budget)) {
     return issue("limits.budget", { maxTotalTokens: budget.maxTotalTokens, maxTokensPerDecision: budget.maxTokensPerDecision, maxCostUsd: budget.maxCostUsd, maxDurationMs: budget.maxDurationMs, keptForFinishing: budget.countCalls?.keptForFinishing },
       "The budget is refused: each bound given must be a positive finite number, its clock a function, and countCalls.keptForFinishing a whole number of at least 0.");
   }
-  if (!Number.isInteger(minToolCalls) || minToolCalls < 0 || minToolCalls > maxToolCalls || minToolCalls >= maxIterations) {
-    return issue("limits.min_tool_calls", { minToolCalls, maxToolCalls, maxIterations }, `minToolCalls ${minToolCalls} must be a whole number from 0 to maxToolCalls ${maxToolCalls}, and below maxIterations ${maxIterations}.`);
-  }
-  if (!Number.isInteger(maxDraftAmendments) || maxDraftAmendments < 0 || maxDraftAmendments > maxIterations) {
-    return issue("limits.max_draft_amendments", { maxDraftAmendments, maxIterations }, `maxDraftAmendments ${maxDraftAmendments} must be a whole number from 0 to maxIterations ${maxIterations}.`);
+  if (!Number.isSafeInteger(minToolCalls) || minToolCalls < 0) {
+    return issue("limits.min_tool_calls", { minToolCalls }, `minToolCalls ${minToolCalls} must be a whole number of at least 0.`);
   }
   return undefined;
 }

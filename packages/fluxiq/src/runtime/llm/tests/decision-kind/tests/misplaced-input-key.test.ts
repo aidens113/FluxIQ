@@ -81,7 +81,7 @@ describe("an unreadable reply whose brackets were miscounted", () => {
   const nesting = "A tool call is {kind, callId, toolId, input: {...}}: every key of the tool's input goes inside input, and input closes before the decision does.";
   const told = (replyCase: "content_mismatched" | "content_unclosed" | "content_fenced", offers?: { tools: boolean; complete: boolean; amend: boolean }) => String(automationStudioLlmUnusableDecisionFeedback({
     issueCodes: ["llm.provider_malformed_response"], stepsWithoutProgress: 0,
-    ...(offers ? { offers } : {}), unreadable: { reply: { case: replyCase }, inARow: 1, maxInARow: 6 }
+    ...(offers ? { offers } : {}), unreadable: { reply: { case: replyCase }, inARow: 1}
   }).instruction);
 
   it("is told how a tool call nests, for a reply whose brackets did not match or never closed", () => {

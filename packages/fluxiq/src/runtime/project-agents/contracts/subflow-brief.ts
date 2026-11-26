@@ -2,7 +2,6 @@ import type { JsonObject } from "../../../core/index.ts";
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, type AutomationStudioActionConsequence } from "../../action-permission-requests/index.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS, type AutomationStudioCandidateTrialVerdict } from "../../flow-authoring/bootstrap/candidate/index.ts";
 import type { AutomationStudioFlowBootstrapInterface } from "../../flow-authoring/bootstrap/plan/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
 import { automationStudioProjectAskedActs } from "./asked-acts.ts";
 import { automationStudioProjectDigest } from "./digest.ts";
 import { automationStudioProjectEarlierAttempt, type AutomationStudioProjectEarlierAttempt } from "./earlier-attempt.ts";
@@ -157,8 +156,10 @@ export type AutomationStudioProjectCarriedProposal = {
   routerRun?: true;
 };
 
-/** `iterations` is the builder loop's own most, so no brief can carry a length its loop refuses (t577). `said`, `step` and `scalar` bound a failing trial, in JSON characters. */
-const LIMITS = { parts: 50, predecessors: 40, excerpt: 20_000, iterations: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations, calls: 10_000, said: 8_000, step: 3_000, scalar: 500, interruptions: 10 } as const;
+/** The most turns a brief may name: a bound on what it says, which ends nothing, since no count of turns ends a loop (t1056; it was the loop's own most, t577). */
+const BRIEF_MAX_ITERATIONS = 64;
+/** `iterations` bounds what a brief may say (above). `said`, `step` and `scalar` bound a failing trial, in JSON characters. */
+const LIMITS = { parts: 50, predecessors: 40, excerpt: 20_000, iterations: BRIEF_MAX_ITERATIONS, calls: 10_000, said: 8_000, step: 3_000, scalar: 500, interruptions: 10 } as const;
 const FAILED_VERDICTS = AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS.filter((verdict): verdict is FailedVerdict => verdict !== "yes");
 
 export const automationStudioProjectSubflowBrief = Object.freeze({

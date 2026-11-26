@@ -7,8 +7,10 @@
 // stops lived only in the loop's locals (`./phases.ts`), and the no-route case
 // only in the not-doable sentence, so a debug could not tell which bound ended
 // which round. They are recorded here as closed words, which the run record
-// and the Lab publish as they are.
+// and the Lab publish as they are. A build's rounds are counted by nothing (t1056), so the record keeps the most
+// recent stops that fit it by size (`../generation-failure/stops-within.ts`).
 import type { AutomationStudioFlowBootstrapBuildEnding, AutomationStudioFlowBootstrapEndingRoute } from "../generation-failure/index.ts";
+import { automationStudioFlowBootstrapStopsWithin } from "../generation-failure/stops-within.ts";
 import type { AutomationStudioFlowBootstrapJudgement } from "./contracts.ts";
 
 /** The ending's `tried`: live rounds, decisions, the Flow's steps, the last test, each round's stop and, for "not doable" and "not finished", which case ended the build. */
@@ -24,7 +26,7 @@ export function automationStudioFlowBootstrapTried(input: {
     decisions: input.decisions,
     stepsInFlow: input.judgement.stepsInFlow,
     tested: input.judgement.tested,
-    ...(input.stops?.length ? { stops: input.stops.map(({ round, stopped }) => ({ round, stopped })) } : {}),
+    ...(input.stops?.length ? { stops: automationStudioFlowBootstrapStopsWithin(input.stops.map(({ round, stopped }) => ({ round, stopped }))) } : {}),
     ...(input.noRoute ? { noRoute: { kind: input.noRoute.kind } } : {})
   };
 }

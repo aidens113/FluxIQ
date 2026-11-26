@@ -37,9 +37,12 @@ import type {
   AutomationStudioLlmEvidenceLoopTrace,
   AutomationStudioLlmUsageSummary
 } from "../../llm/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_ACCOUNTED_BYTES_MAX } from "../../loop-limits/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS } from "./decision-step-ids.ts";
 import { automationStudioFlowBootstrapLargestSizeLimits } from "./plan/index.ts";
+
+// No count of a loop's turns or calls has a ceiling (t1056), so a count a record carries is bounded by nothing but being a whole number.
+const UNCOUNTED = Number.POSITIVE_INFINITY;
 
 /**
  * A trace row as a reader of the loop's record sees one.
@@ -347,14 +350,14 @@ export function parseAutomationStudioFlowBootstrapEvidenceSteps(value: readonly 
     if (!isStepRecord(step) || !hasExactFields(step, EVIDENCE_STEP_FIELDS)
       || typeof step.toolId !== "string" || !EVIDENCE_STEP_ID.test(step.toolId)
       // A build that could not finish numbers its decisions across every live round it ran (`./unfinished-build/phases.ts`).
-      || (step.iteration !== undefined && !boundedInteger(step.iteration, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations * AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS))
+      || (step.iteration !== undefined && !boundedInteger(step.iteration, UNCOUNTED))
       || (step.callId !== undefined && (typeof step.callId !== "string" || !EVIDENCE_STEP_ID.test(step.callId)))
       || (step.effectApplied !== undefined && typeof step.effectApplied !== "boolean")
       || (step.resultCode !== undefined && (typeof step.resultCode !== "string" || !EVIDENCE_STEP_CODE.test(step.resultCode)))
       || (step.resultReason !== undefined && (typeof step.resultReason !== "string" || !EVIDENCE_STEP_CODE.test(step.resultReason)))
       || (step.nodeId !== undefined && (typeof step.nodeId !== "string" || !EVIDENCE_STEP_ID.test(step.nodeId)))
-      || (step.evidenceBytes !== undefined && !boundedInteger(step.evidenceBytes, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes))
-      || (step.amended !== undefined && !boundedInteger(step.amended, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations))
+      || (step.evidenceBytes !== undefined && !boundedInteger(step.evidenceBytes, AUTOMATION_STUDIO_LLM_EVIDENCE_ACCOUNTED_BYTES_MAX))
+      || (step.amended !== undefined && !boundedInteger(step.amended, UNCOUNTED))
       || (step.at !== undefined && !boundedInteger(step.at, EVIDENCE_STEP_MAX_TIMESTAMP_MS))) return null;
     const usage = parseStepUsage(step.usage);
     const diagnostic = automationStudioLlmEvidenceDiagnostic(step.diagnostic);
@@ -407,7 +410,7 @@ const ANSWERABILITY_FIELDS = ["recordsRequested", "recordProducerPresent", "reco
 const MAX_DRAFT_CHANGE_TARGETS = 16;
 // One decision may withdraw a rerun target and then append its replacement,
 // producing two legitimate draft revisions inside one iteration.
-const MAX_DRAFT_REVISIONS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations * 2;
+const MAX_DRAFT_REVISIONS = UNCOUNTED;
 // A seeded extend build may retain the full supported Flow, append one action
 // in every loop iteration, and also carry the deterministic iteration-zero
 // observation. This bounds represented draft positions, not revisions or the
@@ -419,8 +422,7 @@ const MAX_DRAFT_REVISIONS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterat
 // diagnostic). A record written while a Flow's setting was higher must still
 // read after it is lowered, so the bound is whatever any Flow could have held.
 const MAX_REPRESENTED_DRAFT_STEPS = automationStudioFlowBootstrapLargestSizeLimits().maxTotalNodes
-  + AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations
-  + 1;
+  + UNCOUNTED;
 
 /**
  * A withdrawn step the completion check put back, as a row or a published step
@@ -461,8 +463,8 @@ export function evidenceStepDraftChange(value: unknown): AutomationStudioLlmEvid
     || !Array.isArray(value.targetedStepIds) || value.targetedStepIds.length > MAX_DRAFT_CHANGE_TARGETS
     || !value.targetedStepIds.every((id) => typeof id === "string" && EVIDENCE_STEP_ID.test(id))
     || new Set(value.targetedStepIds).size !== value.targetedStepIds.length
-    || !boundedInteger(value.appliedCount, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations)
-    || !boundedInteger(value.refusedCount, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations)
+    || !boundedInteger(value.appliedCount, UNCOUNTED)
+    || !boundedInteger(value.refusedCount, UNCOUNTED)
     || !boundedInteger(value.keptStepCount, MAX_REPRESENTED_DRAFT_STEPS)
     || (value.rerunStepId !== undefined && (typeof value.rerunStepId !== "string" || !EVIDENCE_STEP_ID.test(value.rerunStepId)))) return undefined;
   return {
@@ -476,10 +478,10 @@ export function evidenceStepDraftChange(value: unknown): AutomationStudioLlmEvid
 
 export function evidenceStepDraft(value: unknown): AutomationStudioLlmEvidenceLoopDraftShown | undefined {
   if (!isStepRecord(value) || !hasExactFields(value, DRAFT_FIELDS)
-    || !boundedInteger(value.bytes, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes)
-    || !boundedInteger(value.budget, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes)
+    || !boundedInteger(value.bytes, AUTOMATION_STUDIO_LLM_EVIDENCE_ACCOUNTED_BYTES_MAX)
+    || !boundedInteger(value.budget, AUTOMATION_STUDIO_LLM_EVIDENCE_ACCOUNTED_BYTES_MAX)
     || !boundedInteger(value.steps, MAX_REPRESENTED_DRAFT_STEPS)
-    || !boundedInteger(value.instructionBytes, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes)
+    || !boundedInteger(value.instructionBytes, AUTOMATION_STUDIO_LLM_EVIDENCE_ACCOUNTED_BYTES_MAX)
     || (value.unlisted !== undefined && !boundedInteger(value.unlisted, MAX_REPRESENTED_DRAFT_STEPS))
     || (value.withoutInput !== undefined && !boundedInteger(value.withoutInput, value.steps as number))
     || (value.inputTooLarge !== undefined && !boundedInteger(value.inputTooLarge, value.steps as number))
@@ -522,7 +524,7 @@ function parseStepUsage(value: unknown): AutomationStudioLlmUsageSummary | null 
   if (value === undefined) return null;
   if (!isStepRecord(value) || !hasExactFields(value, [...EVIDENCE_STEP_USAGE_TOKEN_FIELDS, "estimatedCostUsd"])) return null;
   for (const field of EVIDENCE_STEP_USAGE_TOKEN_FIELDS) {
-    if (value[field] !== undefined && !boundedInteger(value[field], AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS)) return null;
+    if (value[field] !== undefined && !boundedInteger(value[field], UNCOUNTED)) return null;
   }
   if (value.estimatedCostUsd !== undefined && (typeof value.estimatedCostUsd !== "number" || !Number.isFinite(value.estimatedCostUsd) || value.estimatedCostUsd < 0 || value.estimatedCostUsd > 10)) return null;
   const usage: AutomationStudioLlmUsageSummary = {};
@@ -566,6 +568,7 @@ function hasExactFields(value: Record<string, unknown>, allowed: readonly string
   const fields = new Set(allowed);
   return Object.keys(value).every((key) => fields.has(key));
 }
+
 
 function boundedInteger(value: unknown, maximum: number): boolean {
   return Number.isInteger(value) && (value as number) >= 0 && (value as number) <= maximum;

@@ -216,6 +216,7 @@ export type AutomationStudioLlmEvidenceLoopSpending = {
 
 /** What is left, this decision included. Only the bounds the budget names appear. */
 export type AutomationStudioLlmEvidenceLoopRemaining = {
+  /** Infinite where the budget names no bound that counts down (t1056: no count of turns stands behind them). */
   decisionsLeft: number;
   /**
    * The bound that left the fewest decisions, and so the one that ends the
@@ -225,7 +226,7 @@ export type AutomationStudioLlmEvidenceLoopRemaining = {
    * tokens and time it was (`./evidence-loop/exhaustion.ts`). Never shown to
    * the model.
    */
-  limitedBy: AutomationStudioLlmEvidenceLoopBudgetBound;
+  limitedBy?: AutomationStudioLlmEvidenceLoopBudgetBound | undefined;
   tokensLeft?: number;
   costLeftUsd?: number;
   secondsLeft?: number;
@@ -282,12 +283,16 @@ export function automationStudioLlmEvidenceLoopWrapUp<Tool extends { toolId: str
   return { wrappingUp, offered, withholds: (toolId, call) => wrappingUp && !runs.has(toolId) && !(input.candidate && undoesAnAct(toolId, call)) };
 }
 
-/** How many decisions each bound still allows, and the smallest of them with `decisionsLeft` from the iteration backstop. */
-export function automationStudioLlmEvidenceLoopRemaining(budget: AutomationStudioLlmEvidenceLoopBudget, spent: AutomationStudioLlmEvidenceLoopSpending, iterationsLeft: number): AutomationStudioLlmEvidenceLoopRemaining {
+/**
+ * How many decisions each bound still allows, and the smallest of them as `decisionsLeft`. There is no iteration
+ * backstop among them (t1056): a budget that names no bound that counts down leaves the decisions uncounted.
+ */
+export function automationStudioLlmEvidenceLoopRemaining(budget: AutomationStudioLlmEvidenceLoopBudget, spent: AutomationStudioLlmEvidenceLoopSpending): AutomationStudioLlmEvidenceLoopRemaining {
   const unreported = Math.max(0, spent.decisions - spent.reportedDecisions);
   const averageTokens = spent.reportedDecisions ? spent.totalTokens / spent.reportedDecisions : budget.maxTokensPerDecision ?? 0;
   const averageCost = spent.reportedDecisions ? spent.estimatedCostUsd / spent.reportedDecisions : 0;
-  const counts: Array<[AutomationStudioLlmEvidenceLoopBudgetBound, number]> = [["iterations", iterationsLeft]];
+  const counts: Array<[AutomationStudioLlmEvidenceLoopBudgetBound, number]> = [];
+  const uncounted = Number.POSITIVE_INFINITY;
   const remaining: Omit<AutomationStudioLlmEvidenceLoopRemaining, "decisionsLeft" | "limitedBy"> = {};
   if (budget.maxTotalTokens !== undefined) {
     // Unreported decisions at the average, and one more held back.
@@ -310,7 +315,7 @@ export function automationStudioLlmEvidenceLoopRemaining(budget: AutomationStudi
     // reported, the worst case is the only price known.
     const worstCase = Math.max(averageCost, spent.nextDecisionCostUsd !== undefined && Number.isFinite(spent.nextDecisionCostUsd) ? spent.nextDecisionCostUsd : 0);
     const perDecision = spent.reportedDecisions ? averageCost : worstCase;
-    const counted = costLeft <= 0 || costLeft + COST_EPSILON_USD < worstCase ? 0 : perDecision > 0 ? 1 + Math.floor((costLeft - worstCase + COST_EPSILON_USD) / perDecision) : iterationsLeft;
+    const counted = costLeft <= 0 || costLeft + COST_EPSILON_USD < worstCase ? 0 : perDecision > 0 ? 1 + Math.floor((costLeft - worstCase + COST_EPSILON_USD) / perDecision) : uncounted;
     // Never none: the decision is sent and the purse decides. At one, the loop
     // offers finishing, never exploration; it does not end there
     // (`./evidence-loop.ts`).
@@ -326,13 +331,13 @@ export function automationStudioLlmEvidenceLoopRemaining(budget: AutomationStudi
   if (budget.maxDurationMs !== undefined) {
     const msLeft = budget.maxDurationMs - spent.elapsedMs;
     const averageMs = spent.decisions ? spent.elapsedMs / spent.decisions : 0;
-    counts.push(["duration", msLeft <= 0 ? 0 : averageMs > 0 ? Math.floor(msLeft / averageMs) : iterationsLeft]);
+    counts.push(["duration", msLeft <= 0 ? 0 : averageMs > 0 ? Math.floor(msLeft / averageMs) : uncounted]);
     remaining.secondsLeft = Math.max(0, Math.floor(msLeft / 1_000));
   }
-  // The first of the smallest, so the backstop is named only when it is the
-  // bound that binds and no budget ties it.
+  // The first of the smallest; none where no bound counts down.
+  if (!counts.length) return { decisionsLeft: uncounted, ...remaining };
   const [limitedBy, fewest] = counts.reduce((least, entry) => entry[1] < least[1] ? entry : least);
-  return { decisionsLeft: Math.max(0, fewest), limitedBy, ...remaining };
+  return { decisionsLeft: Math.max(0, fewest), ...(Number.isFinite(fewest) ? { limitedBy } : {}), ...remaining };
 }
 
 /** The entry the model reads its remaining budget from: closed numbers and Core's words. */
@@ -346,7 +351,9 @@ export function automationStudioLlmEvidenceBudgetEntry(
   /** The candidate loop's finishing tools, named in its words; the candidate's own when absent. */
   finishing: AutomationStudioLlmEvidenceFinishingTools = AUTOMATION_STUDIO_LLM_EVIDENCE_CANDIDATE_FINISHING_TOOLS
 ): { callId: string; toolId: string; value: JsonObject } {
-  const { limitedBy: _limitedBy, ...shown } = remaining;
+  // A count no bound gives is left out: an infinite figure is no number to show (t1056).
+  const { limitedBy: _limitedBy, decisionsLeft, ...rest } = remaining;
+  const shown = Number.isFinite(decisionsLeft) ? { decisionsLeft, ...rest } : rest;
   const wrapping = wrappingUp ?? remaining.decisionsLeft <= wrapUpDecisions(candidate);
   const instruction = candidate
     ? remaining.decisionsLeft <= 1 ? candidateFinalInstruction(finishing) : wrapping ? candidateWrapUpInstruction(finishing) : CANDIDATE_BUDGET_INSTRUCTION

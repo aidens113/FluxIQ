@@ -65,7 +65,7 @@ describe("a Flow build that runs out, and the build after it", () => {
         return { response: { kind: "evidence_tool_decision", summary: "Gather.", decision: {
           kind: "tool_call", callId, toolId: "example.act", input: { press: calls }, add: true
         } }, usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 } };
-      }, { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 })), maxCallsPerRun: 4, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 })) as never,
+      }, { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 })), maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 })) as never,
       llmEvidenceRuntime: automationStudioReplayingBinding({ domainId: "example", deniedEvidenceKeys: [],
         tools: [{ toolId: "example.act", description: "Change target.", inputSchema: { type: "object" }, effect: "mutate" }],
         executeTool: async (input) => ({ kind: "llm_evidence_tool_execution", evidence: { changed: input.callId }, effectApplied: true, resultCode: "example.acted" }) })
@@ -131,7 +131,7 @@ describe("a Flow build that runs out, and the build after it", () => {
     }, { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 }));
     const instance = new AutomationStudioService({
       dataDir: tempRoot,
-      llmProviderResolver: (() => ({ provider, maxCallsPerRun: 4, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 })) as never,
+      llmProviderResolver: (() => ({ provider, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 })) as never,
       // A stand-in that says how to run its steps again, so the continued build's test can run the whole Flow from its start.
       llmEvidenceRuntime: automationStudioReplayingBinding({
         domainId: "example",
@@ -144,10 +144,12 @@ describe("a Flow build that runs out, and the build after it", () => {
 
     // The first build never finishes.
     const diagnostic = await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller() }));
-    // Its four calls are the Flow's declared count, a budget the whole build is held to, so no repair can start (t208):
-    // reported as that budget, with the Flow so far kept.
+    // No count of calls ends it (t1056; the declared count of four this once ran under is read by nothing): it acts until
+    // its purse cannot pay for another decision beside the judging it keeps back. Its acts name no node a plan can be
+    // written from, so the stopped draft is not tested or judged, and the build ends at that budget, in dollars, with the
+    // Flow so far kept.
     expect(diagnostic.code).toBe("flow_bootstrap.evidence_budget_exhausted");
-    expect(diagnostic.ending).toMatchObject({ kind: "budget_exhausted", bound: "calls", message: expect.stringContaining("limit of 4 model calls") });
+    expect(diagnostic.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost", message: expect.stringContaining("spending limit of $0.25"), tried: { tested: "not_tested" } });
     const kept = diagnostic.evidenceLoop?.incompleteDraft;
     expect(kept?.revision).toBe(1);
     expect(kept?.steps).toBeGreaterThan(0);
@@ -185,7 +187,7 @@ describe("a Flow build that runs out, and the build after it", () => {
     });
     const instance = new AutomationStudioService({
       dataDir: tempRoot,
-      llmProviderResolver: (() => ({ provider, maxCallsPerRun: 4, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 })) as never,
+      llmProviderResolver: (() => ({ provider, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 })) as never,
       llmEvidenceRuntime: {
         domainId: "example",
         deniedEvidenceKeys: [],

@@ -119,7 +119,7 @@ async function allowance(input: AutomationStudioLlmRunNodesInput): Promise<Autom
     const read = await input.ports.allowance();
     if (input.signal?.aborted) return "cancelled";
     if (read.allowed === true) return undefined;
-    return read.allowed === false && ["cancelled", "tool_calls", "time", "purse", "unavailable"].includes(read.reason) ? read.reason : "allowance_unreadable";
+    return read.allowed === false && ["cancelled", "time", "purse", "unavailable"].includes(read.reason) ? read.reason : "allowance_unreadable";
   } catch {
     return "allowance_unreadable";
   }

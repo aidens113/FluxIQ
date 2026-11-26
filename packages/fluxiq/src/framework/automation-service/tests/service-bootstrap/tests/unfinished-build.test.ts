@@ -95,25 +95,32 @@ async function build(repairs: "finish" | "refuse") {
 
 /**
  * A model that acts but adds nothing to its Flow, then says it is ready with a
- * result the check refuses, until the round stops. Told to explore again, it
- * adds the step and finishes when `again` says so, or goes on the same way.
- * Since t1037 the framework drafts every call that worked, so an act that adds
- * nothing is one that changed nothing (`lands` absent).
+ * result the check refuses. No count ends its round (t1056): once it is told it
+ * keeps repeating, it adds the step and finishes when `again` says so, or goes
+ * on the same way until its purse (`purseUsd`) is gone. Since t1037 the
+ * framework drafts every call that worked, so an act that adds nothing is one
+ * that changed nothing (`lands` absent).
  */
-async function buildEmpty(again: "finish" | "same", maxCallsPerRun?: number) {
+async function buildEmpty(again: "finish" | "same", purseUsd = 2) {
   const requests: AutomationStudioLlmTaskRequest[] = [];
   let exploringAgain = 0;
+  let steered = 0;
+  let landed = false;
   const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
   // The build reads its instruction when it starts (t976, b2ee9ed45): not one of the model's decisions either.
   const provider = mockProvider(automationStudioAnsweringInstructionReading(async (request) => {
     // The judge of a test of the Flow says yes; it is not one of the model's decisions.
     if (isJudgeRequest(request)) return judgeReply();
     requests.push(request);
-    const entry = request.context.evidenceLoop?.evidence.find((item) => item.toolId === "core.resumed")?.value as JsonObject | undefined;
+    const evidence = request.context.evidenceLoop?.evidence ?? [];
+    const entry = evidence.find((item) => item.toolId === "core.resumed")?.value as JsonObject | undefined;
     if (entry?.code === "llm_evidence_loop.explore_again") exploringAgain += 1;
-    const finishing = again === "finish" && exploringAgain > 0;
-    // Every round acts before it may finish: this domain gives no free first look.
-    const acts = request.context.evidenceLoop?.iteration === 1;
+    // Told that it keeps repeating itself (the no-progress redirect or loop detection's steer): the way out it takes.
+    if (evidence.some((item) => item.toolId === "core.no_progress" || item.toolId === "core.loop_check")) steered += 1;
+    const finishing = again === "finish" && (exploringAgain > 0 || steered > 0);
+    // Every round acts before it may finish, and a model that changes approach acts first: this domain gives no free first look.
+    const acts = request.context.evidenceLoop?.iteration === 1 || (finishing && !landed);
+    if (acts && finishing) landed = true;
     const decision: JsonObject = acts
       ? { kind: "tool_call", callId: `call.${requests.length}`, toolId: "example.act", input: { press: requests.length, ...(finishing ? { lands: true } : {}) }, ...(finishing ? { add: true } : {}) }
       : finishing
@@ -123,7 +130,7 @@ async function buildEmpty(again: "finish" | "same", maxCallsPerRun?: number) {
   }, { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 }));
   const instance = new AutomationStudioService({
     dataDir: tempRoot,
-    llmProviderResolver: (() => ({ provider, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2, ...(maxCallsPerRun ? { maxCallsPerRun } : {}) })) as never,
+    llmProviderResolver: (() => ({ provider, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: purseUsd })) as never,
     llmEvidenceRuntime: automationStudioReplayingBinding({
       domainId: "example",
       deniedEvidenceKeys: [],
@@ -134,27 +141,34 @@ async function buildEmpty(again: "finish" | "same", maxCallsPerRun?: number) {
   });
   services.add(instance);
   const generation = instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller() });
-  return { requests, generation };
+  return { requests, generation, exploredAgain: () => exploringAgain };
 }
 
 describe("a Flow build that stops with nothing in its Flow", () => {
-  it("does not end while budget remains: it is told nothing is in the Flow yet, explores on, and its Flow is proposed", async () => {
-    const { requests, generation } = await buildEmpty("finish");
+  // No count ends the round (t1056): refused completions in a row once stalled it, and a fresh round was told nothing
+  // was in the Flow yet. Now the model is steered in the same round, and the Flow it then builds is proposed.
+  it("does not end while budget remains: it is steered in the same round, explores on, and its Flow is proposed", async () => {
+    const { requests, generation, exploredAgain } = await buildEmpty("finish");
 
     await expect(generation).resolves.toMatchObject({ status: "proposed" });
-    const entry = requests.map((request) => request.context.evidenceLoop?.evidence.find((item) => item.toolId === "core.resumed")?.value as JsonObject | undefined).find((value) => value?.code === "llm_evidence_loop.explore_again");
-    expect(entry).toMatchObject({ stopped: "unusable_decisions", draftSteps: 0, judgement: { stepsInFlow: 0 }, instruction: expect.stringContaining("Nothing is in the Flow yet") });
+    expect(exploredAgain()).toBe(0);
+    expect(requests.some((request) => (request.context.evidenceLoop?.evidence ?? []).some((item) => item.toolId === "core.no_progress" || item.toolId === "core.loop_check"))).toBe(true);
   });
 
+  // A purse is dollars, never a count of calls (t1056): the build runs, steered, until its purse refuses the next call.
+  // This provider prices nothing, so each call is held at Core's default model's rates (`llm/build-purse/priced.ts`):
+  // a decision's request of about 20,000 tokens at about $0.007, beside a judging pair kept back at about $0.008, while
+  // each decision reports costing $0.001. A purse of $0.02 left room for four decisions, too few to show that no count
+  // ended it; $0.05 pays for well past the old counts before the hold no longer fits.
   it("ends at its budget as a budget hit, with what was tried, how far it got and what blocked it", async () => {
-    const { requests, generation } = await buildEmpty("same", 12);
+    const { requests, generation } = await buildEmpty("same", 0.05);
 
     const diagnostic = await rejectedGenerationDiagnostic(generation);
 
-    expect(requests).toHaveLength(12);
+    expect(requests.length).toBeGreaterThan(12);
     expect(diagnostic.code).toBe("flow_bootstrap.evidence_budget_exhausted");
-    expect(diagnostic.ending).toMatchObject({ kind: "budget_exhausted", bound: "calls", tried: { stepsInFlow: 0, decisions: 12 } });
-    expect(diagnostic.ending?.message).toMatch(/^The build stopped at its limit of 12 model calls before the Flow was finished\./u);
+    expect(diagnostic.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost", tried: { stepsInFlow: 0 } });
+    expect(diagnostic.ending?.message).toMatch(/^The build (stopped at its spending limit|used its budget for this Flow)/u);
     expect(diagnostic.ending?.message).toContain("No step I found belonged in the Flow.");
     expect(diagnostic.ending?.message).toMatch(/I worked on it live (?:once|twice|\d+ times)[^.]*\. What held it up was that /u);
     expect(diagnostic.ending?.message).not.toMatch(/\bdecisions?\b/u);
@@ -203,9 +217,9 @@ describe("a Flow build that stops before its Flow is ready", () => {
 // repeated it exactly. The service hands the phases the signature of the
 // Flow the first round starts from -- here the kept draft a continuation
 // carries on (t240). Since t1049 no count of steps without progress ends the
-// round: a continuation circling on presses that do nothing is steered, runs
-// until its purse (here the run's twelve calls) is gone, and still never
-// opens an identical second round.
+// round, and since t1056 no count of calls either: a continuation circling on
+// presses that do nothing is steered, runs until its purse is gone, and still
+// never opens an identical second round.
 describe("a continuation that circles on repeats with the kept draft unchanged", () => {
   it("runs, steered, until its purse is gone, never opening an identical second round", async () => {
     let building = 1;
@@ -224,9 +238,11 @@ describe("a continuation that circles on repeats with the kept draft unchanged",
       const decision: JsonObject = { kind: "tool_call", callId: `call.${call}`, toolId: "example.act", input: { press: call }, ...(building === 1 ? { add: true } : {}) };
       return { response: { kind: "evidence_tool_decision", summary: "Step.", decision }, usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 } };
     });
+    // Each build's purse: the first spends its own to the end, and the second carries that spend under a larger ceiling.
+    let purseUsd = 0.015;
     const instance = new AutomationStudioService({
       dataDir: tempRoot,
-      llmProviderResolver: (() => ({ provider, maxCallsPerRun: 12, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 })) as never,
+      llmProviderResolver: (() => ({ provider, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: purseUsd })) as never,
       llmEvidenceRuntime: {
         domainId: "example",
         deniedEvidenceKeys: [],
@@ -240,16 +256,18 @@ describe("a continuation that circles on repeats with the kept draft unchanged",
     const request = { projectId: project.id, flowId: flow.flowId, evidenceGuided: true as const, caller: caller() };
 
     const first = await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation(request));
-    expect(first.ending).toMatchObject({ kind: "budget_exhausted", bound: "calls" });
+    expect(first.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost" });
     building = 2;
+    purseUsd = 0.05;
     const diagnostic = await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation(request));
 
-    // The purse ends it -- the run's twelve calls -- not a count of steps without progress, and in one round: no
+    // The purse ends it -- dollars, never a count of calls or of steps without progress -- and in one round: no
     // identical second round is opened.
     expect(diagnostic.code).toBe("flow_bootstrap.evidence_budget_exhausted");
-    expect(diagnostic.ending).toMatchObject({ kind: "budget_exhausted", bound: "calls", tried: { rounds: 1, decisions: 12 } });
-    // Its words say the limit it met, never that it kept retrying the same: that came from the removed count.
-    expect(diagnostic.ending?.message).toContain("stopped at its limit of 12 model calls");
+    expect(diagnostic.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost", tried: { rounds: 1 } });
+    expect(second.length).toBeGreaterThan(12);
+    // Its words say the limit it met, never that it kept retrying the same: that came from a removed count.
+    expect(diagnostic.ending?.message).toMatch(/spending limit|budget for this Flow/u);
     expect(diagnostic.ending?.message).not.toContain("kept retrying the same");
     // Steered: from the third press that did nothing, the model was told so, and on the decisions after.
     const steered = shownInSecond.filter((shown) => shown.includes("core.no_progress")).length;

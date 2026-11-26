@@ -430,7 +430,7 @@ describe("prior-call batch coordinator", () => {
     expect(h.runMember.mock.calls[0]?.[0].value.parameters).not.toEqual({ target: { handle: "original.model.handle" } });
   });
 
-  it.each(["tool_calls", "time", "purse", "unavailable", "cancelled"] as const)("stops when the existing %s allowance is exhausted after one actual member", async (reason) => {
+  it.each(["time", "purse", "unavailable", "cancelled"] as const)("stops when the existing %s allowance is exhausted after one actual member", async (reason) => {
     const h = harness();
     h.ports.allowance = () => h.runMember.mock.calls.length > 0 ? { allowed: false, reason } : { allowed: true };
     expect(await runAutomationStudioLlmPriorNodes(h.input)).toMatchObject({ kind: "stopped", skipped: ["b", "c"], stop: { index: 1, reason } });

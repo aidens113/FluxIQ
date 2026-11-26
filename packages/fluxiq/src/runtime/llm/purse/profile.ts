@@ -5,5 +5,4 @@ export type AutomationStudioLlmRunBudgetProfile = {
   ledger: Required<AutomationStudioLlmRunBudgetLimits>;
   maxEstimatedCostUsdPerCall: number;
   maxEstimatedCostUsdPerCallAt(atMs?: number): number;
-  declaredCallsPerRun?: number;
 };

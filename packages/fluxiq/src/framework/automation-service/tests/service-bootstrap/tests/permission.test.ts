@@ -259,7 +259,7 @@ async function build(decisions: JsonObject[], permittedConsequences?: Automation
   const { project, flow } = await seeded(example);
   const instance = new AutomationStudioService({
     dataDir: tempRoot,
-    llmProviderResolver: (() => ({ provider, maxCallsPerRun: 6 })) as never,
+    llmProviderResolver: (() => ({ provider })) as never,
     // Said how to run its steps again, so the build's test can run the Flow whole; its replay calls never press anything.
     llmEvidenceRuntime: automationStudioReplayingBinding(refundingBinding(pressed))
   }).bindNativeNodeRuntime(pressRuntime());

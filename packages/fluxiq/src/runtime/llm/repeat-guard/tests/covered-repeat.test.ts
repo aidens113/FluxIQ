@@ -33,7 +33,7 @@ describe("a covered press refused as a repeat", () => {
       expect(said).toMatch(/under sameAsCall, names the layer and, where it can, the controls that close it/u);
       expect(said).toMatch(/Press one of those first, or another control inside that layer -- never a control the page marks as covered by it/u);
       expect(said).toMatch(/Then this press may be made again: a call made after the page has changed is not a repeat/u);
-      expect(said).toContain("Repeats refused in a row end this round, and the Flow so far is then tested and judged.");
+      expect(said).toContain("Repeats refused in a row are caught as a repeat, and you decide how to go on.");
       expect(said).not.toMatch(/use a different control or a different input/u);
     }
   });
@@ -41,17 +41,17 @@ describe("a covered press refused as a repeat", () => {
   it("says the same to a loop that drafts nothing, ending its work untested", () => {
     const said = String(automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.run_node", inARow: 1, earlier: COVERED[0], undrafted: true }).instruction);
     expect(said).toMatch(/Press one of those first/u);
-    expect(said).toContain("end this work where it stands, with nothing tested or judged.");
+    expect(said).toContain("caught as a repeat, and you decide how to go on");
     expect(said).not.toMatch(/Flow so far|amend the draft/u);
   });
 
   it("says the same in candidate and builder mode, with the count that ends the build", () => {
     const first = String(automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.run_node", inARow: 1, earlier: COVERED[1], candidate: true }).instruction);
     expect(first).toMatch(/Press one of those first, or another control inside that layer/u);
-    expect(first).toContain("Sending this press unchanged again is refused the same way, and 3 repeats refused in a row end this build with nothing tested.");
+    expect(first).toContain("Sending this press unchanged again is refused the same way, and repeats refused in a row are caught as a repeat, and you decide how to go on.");
     expect(first).not.toMatch(/use a different control or a different input|submit a corrected candidate/u);
     const last = String(automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.run_node", inARow: 2, earlier: COVERED[1], candidate: true }).instruction);
-    expect(last).toContain("Sending this press unchanged again ends this build with nothing tested.");
+    expect(last).toBe(first);
   });
 
   it("runs again once a press that closes the layer changed the page", () => {

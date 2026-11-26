@@ -16,7 +16,7 @@ const inspect: AutomationStudioLlmEvidenceTool = { toolId: "inspect", descriptio
 
 function loop(overrides: Partial<AutomationStudioLlmEvidenceLoopInput> = {}): AutomationStudioLlmEvidenceLoopInput {
   return {
-    tools: [inspect], maxIterations: 2, maxToolCalls: 2,
+    tools: [inspect], 
     executeTool: async () => ({ facts: ["ready"] }),
     decide: async () => ({ kind: "complete", result: { answer: "done" } }),
     ...overrides
@@ -25,23 +25,29 @@ function loop(overrides: Partial<AutomationStudioLlmEvidenceLoopInput> = {}): Au
 
 describe("a refused configuration names its check", () => {
   it("says which limit refused, with the figures it was held to", async () => {
-    const result = await runAutomationStudioLlmEvidenceLoop(loop({ maxIterations: 64, maxToolCalls: 116 }));
+    const result = await runAutomationStudioLlmEvidenceLoop(loop({ minToolCalls: 1.5 }));
     expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.invalid_configuration", accounting: { iterations: 0, toolCalls: 0 } });
     expect(!result.ok && result.configuration).toEqual({
-      check: "limits.max_tool_calls", values: { maxToolCalls: 116, ceiling: 64 },
-      words: "maxToolCalls 116 must be a whole number from 1 to the loop's ceiling of 64."
+      check: "limits.min_tool_calls", values: { minToolCalls: 1.5 },
+      words: "minToolCalls 1.5 must be a whole number of at least 0."
     });
   });
 
+  // No count of turns, calls or replies in a row is a limit a loop holds (t1056): the input has none to refuse.
+  it("refuses no count of turns, calls or replies, which no longer bound a loop", async () => {
+    const figures: Array<Partial<AutomationStudioLlmEvidenceLoopInput>> = [{}, { unusableDecisions: { stalled: () => new Error("stalled") } }];
+    for (const each of figures) {
+      await expect(runAutomationStudioLlmEvidenceLoop(loop(each))).resolves.toMatchObject({ ok: true });
+    }
+  });
+
   it("says the first limit refused, in the order the loop asks them", async () => {
-    const unusable = await runAutomationStudioLlmEvidenceLoop(loop({ unusableDecisions: { maxInARow: 0, stalled: () => new Error("stalled") } }));
-    expect(!unusable.ok && unusable.configuration).toMatchObject({ check: "limits.max_unusable_decisions_in_a_row", values: { maxUnusableDecisionsInARow: 0 } });
-    const iterations = await runAutomationStudioLlmEvidenceLoop(loop({ maxIterations: 65, maxToolCalls: 65 }));
-    expect(!iterations.ok && iterations.configuration).toMatchObject({ check: "limits.max_iterations", values: { maxIterations: 65, ceiling: 64 } });
-    const minimum = await runAutomationStudioLlmEvidenceLoop(loop({ minToolCalls: 2 }));
-    expect(!minimum.ok && minimum.configuration).toMatchObject({ check: "limits.min_tool_calls", values: { minToolCalls: 2, maxToolCalls: 2, maxIterations: 2 } });
-    const budget = await runAutomationStudioLlmEvidenceLoop(loop({ budget: { maxTotalTokens: 0 } }));
+    const stalled = await runAutomationStudioLlmEvidenceLoop(loop({ unusableDecisions: { stalled: "not a function" } } as unknown as Partial<AutomationStudioLlmEvidenceLoopInput>));
+    expect(!stalled.ok && stalled.configuration).toMatchObject({ check: "limits.unusable_stalled" });
+    const budget = await runAutomationStudioLlmEvidenceLoop(loop({ budget: { maxTotalTokens: 0 }, minToolCalls: -1 }));
     expect(!budget.ok && budget.configuration).toMatchObject({ check: "limits.budget", values: { maxTotalTokens: 0 } });
+    const minimum = await runAutomationStudioLlmEvidenceLoop(loop({ minToolCalls: -1 }));
+    expect(!minimum.ok && minimum.configuration).toMatchObject({ check: "limits.min_tool_calls", values: { minToolCalls: -1 } });
   });
 
   it("says which tool refused the set, and why", async () => {

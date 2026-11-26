@@ -49,7 +49,7 @@ it("forwards the bound domain declaration into actual model-facing rerun diagnos
     schemaVersion: "0.1", sdkVersion: AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, packageId: "example.package", packageVersion: "1.0.0", domainId: "example", nodes: [definition]
   }, { packageId: "example.package", packageVersion: "1.0.0", implementations: { [nodeId]: () => ({ status: "success", route: "success", outputs: { success: true } }) } });
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-retained-argument-"));
-  const service = new AutomationStudioService({ dataDir, llmProviderResolver: (() => ({ provider, maxCallsPerRun: 20, maxEstimatedCostUsd: 0.1 })) as never, llmEvidenceRuntime: binding });
+  const service = new AutomationStudioService({ dataDir, llmProviderResolver: (() => ({ provider, maxEstimatedCostUsd: 0.1 })) as never, llmEvidenceRuntime: binding });
   try {
     service.bindNativeNodeRuntime(runtime);
     const { project, flow } = await blankFixture(service, "active", "example");

@@ -94,6 +94,17 @@ export async function runAutomationStudioAnswerFirstAttempt(given: AutomationStu
   return await runWithAutomationStudioRunOverrides(frame, () => attemptRun(given));
 }
 
+/**
+ * Whether this attempt's completion check can ever ask the judge (`../completion/check.ts`): a chat attempt has the judge
+ * alone; a caller's judge `off` takes the result as it stands; a caller's own check stands in for the judge unless the
+ * judge is `always`. Nothing else asks one (t1056).
+ */
+function judgeMayBeAsked(caller: AutomationStudioAnswerFirstAttemptInput["caller"]): boolean {
+  if (!caller) return true;
+  const judge = caller.judge ?? "auto";
+  return caller.check === undefined ? judge !== "off" : judge === "always";
+}
+
 async function attemptRun(given: AutomationStudioAnswerFirstAttemptInput): Promise<AutomationStudioGenerateFlowBootstrapAdaptationAnswered> {
   // The library is offered here, once, before anything runs: no part that can be offered leaves `given` as it is (`../../project-parts/known-parts.ts`).
   // A caller's grant and person port, where it brought them (`../caller/applied.ts`); a chat attempt's input is left as it is.
@@ -108,7 +119,8 @@ async function attemptRun(given: AutomationStudioAnswerFirstAttemptInput): Promi
   live.claim(attemptId);
   try {
     const run = await opened(input, attemptId, hold, again);
-    automationStudioAnswerFirstKeepBackJudge(input.creation.purse);
+    // The judge's call is kept back only where a judge can be asked: money kept back for one that never runs refuses decisions the purse could pay for.
+    if (judgeMayBeAsked(input.caller)) automationStudioAnswerFirstKeepBackJudge(input.creation.purse);
     // On the row before anything is sent, so the first round shows as working and a Core that dies in it leaves something to read as cut off. A carry-on's press has already written its own.
     if (!hold) await automationStudioAnswerFirstKeep(run);
     // The common path's purse is opened as a repair's, whose part it would write: this is an attempt's creation.

@@ -162,6 +162,8 @@ const OUT_OF_TIME = "project.trial_out_of_time";
 const STARTS_IN_END_STATE = "project.trial_starts_in_end_state";
 /** The controller's code for a composed Flow the judge already refuted (`flow-bootstrap/candidate/unchanged-submission.ts`). */
 const UNCHANGED_AFTER_NO = "candidate.unchanged_after_no";
+/** The whole gate's code for a yes it held for rows nothing accounted for (`flow-bootstrap/candidate/trial/rows.ts`). */
+const ROWS_HELD = "candidate.trial_rows_unaccounted";
 
 export function automationStudioProjectSingleSubflowTrial(input: AutomationStudioProjectSingleSubflowTrialInput): AutomationStudioProjectDispatchWholeTrial | undefined {
   const { structure, ports, controller, gate } = input;
@@ -237,16 +239,25 @@ function carvedFrom(allowance: AutomationStudioLlmBuildPurse, purse: AutomationS
 /** The whole test's answer in the builder's terms (header): a trial of the proposal under test, or a refusal. */
 function answerOf(request: AutomationStudioSubflowTrialRequest, ran: AutomationStudioLlmEvidenceToolExecutionResult, complete: { revision: number; digest: string }, kept: AutomationStudioResultKeptCondition[] | undefined): AutomationStudioProjectDispatchWholeTrialAnswer {
   const evidence = isObject(ran.evidence) ? ran.evidence : {};
-  const verdict = verdictOf(evidence.verdict);
-  if (verdict === undefined || evidence.revision !== complete.revision || evidence.digest !== complete.digest) return refusalOf(evidence);
+  const whole = verdictOf(evidence.verdict);
+  if (whole === undefined || evidence.revision !== complete.revision || evidence.digest !== complete.digest) return refusalOf(evidence);
+  // A yes the whole gate held for rows nothing accounted for reaches the builder's gate as the judge's yes, so its own
+  // row check holds it, in its own words (t692; the whole gate's hold is `flow-bootstrap/candidate/trial/rows.ts`, t1056).
+  const judged: JsonObject = isObject(evidence.feedback) ? structuredClone(evidence.feedback) : {};
+  const rowsHeld = judged.code === ROWS_HELD;
+  if (rowsHeld) {
+    delete judged.code;
+    delete judged.keptEveryRow;
+  }
+  const verdict = rowsHeld ? "yes" : whole;
   const { scope, proposal } = request;
   const trialRunId = typeof evidence.trialRunId === "string" && evidence.trialRunId ? evidence.trialRunId : undefined;
   // Answered from the recording, or run live after checking it (header, D48).
   const recorded = evidence.checkedAgainst === "recorded_run";
   const checked = recorded ? { checkedAgainst: "recorded_run" } : isObject(evidence.offlineCheck) ? { offlineCheck: structuredClone(evidence.offlineCheck) } : {};
   const feedback: JsonObject = {
-    ...(isObject(evidence.feedback) ? structuredClone(evidence.feedback) : {}),
-    wholeTest: { revision: complete.revision, digest: complete.digest, verdict, ...(trialRunId ? { trialRunId } : {}), ...checked, said: recorded ? `${OFFLINE.kept} ${WORDS.wholeTestKept}` : WORDS.wholeTest },
+    ...judged,
+    wholeTest: { revision: complete.revision, digest: complete.digest, verdict: whole, ...(trialRunId ? { trialRunId } : {}), ...checked, said: recorded ? `${OFFLINE.kept} ${WORDS.wholeTestKept}` : WORDS.wholeTest },
     complete: { ...complete },
     // A pass the run rescued says so to the builder too; the supervisor answers it with a repair (`../supervisor/completion.ts`).
     ...(Array.isArray(evidence.slowDown) ? { slowDown: structuredClone(evidence.slowDown) } : {})

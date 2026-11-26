@@ -34,7 +34,7 @@
 // (`automationStudioActivityPersonWords`): never "the judge", "Step 8" or
 // "dedup".
 import { automationStudioActivityPersonWords } from "../../../automation-activity/index.ts";
-import type { AutomationStudioLlmEvidenceLoopTrace } from "../../../llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopTrace, AutomationStudioLlmEvidenceLoopUnreadable } from "../../../llm/index.ts";
 import {
   type AutomationStudioFlowBootstrapBudgetBound,
   type AutomationStudioFlowBootstrapBuildEnding
@@ -60,8 +60,6 @@ export type AutomationStudioFlowBootstrapBudgetSizes = {
   maxCostUsd?: number | undefined;
   maxDurationMs?: number | undefined;
   maxTotalTokens?: number | undefined;
-  declaredCalls?: number | undefined;
-  maxRounds?: number | undefined;
 };
 
 /**
@@ -138,6 +136,11 @@ export function automationStudioFlowBootstrapBudgetExhausted(input: {
    * (`./last-fix.ts`). Absent, the last refusal codes say it, where known.
    */
   lastRound?: readonly AutomationStudioLlmEvidenceLoopTrace[] | undefined;
+  /**
+   * The unreadable replies the budget ran out during: what the money last went on, said as a detail of this ending
+   * (t1056). They once ended a build as an ending of their own, at a count of them in a row; no count does now.
+   */
+  unreadable?: AutomationStudioLlmEvidenceLoopUnreadable | undefined;
 }): AutomationStudioFlowBootstrapBuildEnding {
   const notDone = automationStudioFlowBootstrapNotDone(input.checklist);
   const kept = automationStudioFlowBootstrapKeptSaid(input.kept);
@@ -154,6 +157,7 @@ export function automationStudioFlowBootstrapBudgetExhausted(input: {
   const message = automationStudioFlowBootstrapEndingFitted((room) => ({
     body: [
       spent ? `The build used its budget for this Flow before the Flow was finished. ${spent}` : `The build stopped at ${budgetSaid(input.bound, input.sizes)} before the Flow was finished.`,
+      input.unreadable ? unreadableSaid(input.unreadable, input.decisions) : "",
       // How far it got and what its test found, said once: never "not judged" twice (`./not-done.ts`).
       automationStudioFlowBootstrapProgressAndTestSaid(input.checklist, input.judgement, room),
       judged ? checkFoundSaid(input.judgement.judge, room.judge) : ""
@@ -169,15 +173,25 @@ export function automationStudioFlowBootstrapBudgetExhausted(input: {
   };
 }
 
+/** What the money last went on where the replies arrived unreadable, in a person's words (t211's, t1056). */
+function unreadableSaid(unreadable: AutomationStudioLlmEvidenceLoopUnreadable, decisions: number): string {
+  const { inARow, total, cases, said } = unreadable;
+  const why = cases.length ? ` -- ${cases.length > 1 ? "most often because " : "because "}${said} --` : "";
+  const last = inARow === 1 ? "Its last reply came back unreadable" : `Its last ${inARow} replies came back unreadable`;
+  return `${last}${why} and it asked again each time, with a note of what was wrong. In all, ${total} of ${Math.max(total, decisions)} replies could not be read; each was paid for and counted in the build's budget.`;
+}
+
 function budgetSaid(bound: AutomationStudioFlowBootstrapBudgetBound, sizes: AutomationStudioFlowBootstrapBudgetSizes): string {
   switch (bound) {
     case "cost": return sizes.maxCostUsd !== undefined ? `its spending limit of $${sizes.maxCostUsd.toFixed(2)}` : "its spending limit";
     case "duration": return sizes.maxDurationMs !== undefined ? `its time limit of ${Math.round(sizes.maxDurationMs / 60_000)} minutes` : "its time limit";
     case "tokens": return sizes.maxTotalTokens !== undefined ? `its budget of ${sizes.maxTotalTokens} tokens` : "its token budget";
-    case "calls": return sizes.declaredCalls !== undefined ? `its limit of ${sizes.declaredCalls} model calls` : "its limit on model calls";
+    // A declared count of calls bounds no build (t1056); only a test-scoped call allowance on the purse can still run out.
+    case "calls": return "its limit on model calls";
     // No build reaches it since t240 -- repairs are bounded by money and progress -- but published records may carry it.
     case "repair_rounds": return "its limit on repairs";
-    case "rounds": return sizes.maxRounds !== undefined ? `its limit of ${sizes.maxRounds} live rounds` : "its limit on live rounds";
+    // No build reaches it since t1056 -- rounds end on the result, the purse, the clock or Stop -- but published records may carry it.
+    case "rounds": return "its limit on live rounds";
   }
 }
 

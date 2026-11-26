@@ -97,8 +97,8 @@ async function run(steps: Step[]) {
     siteReset: made.ledger,
     siteResetSettleMs: 0,
     loop: {
-      tools: [runNode], maxIterations: steps.length, maxToolCalls: steps.length + 2,
-      unusableDecisions: { maxConsecutive: steps.length, maxInARow: steps.length, stalled: () => new Error("stalled") },
+      tools: [runNode], 
+      unusableDecisions: { stalled: () => new Error("stalled") },
       executeTool: made.wrapper.executeTool,
       decide: async ({ evidence }) => {
         seen.push(evidence.map((entry) => ({ ...entry })));

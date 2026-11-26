@@ -1,14 +1,13 @@
 // A repair's `complete` on the Flow the judge said does not do what was asked,
 // unchanged, is refused as an identical retry of a failed act (live run
-// murwcmx2, cause C-C); and a model that keeps completing it ends its round on
-// the stall guard and the build as not doable, never on a lone later yes.
+// murwcmx2, cause C-C); a model that keeps completing it is steered, never ended by a count (t1056), and the build
+// ends as not doable on the judge's word, never on a lone later yes.
 import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../draft/index.ts";
 import { runAutomationStudioLlmEvidenceLoop, AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID, automationStudioFlowBootstrapDraftStepIsWritable, type AutomationStudioLlmEvidenceLoopAccounting, type AutomationStudioLlmEvidenceLoopResult } from "../../../../llm/index.ts";
 import type { AutomationStudioLlmEvidenceLoopResume } from "../../../../llm/evidence-loop/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW } from "../../../../llm/repeat-guard/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS } from "../../../../loop-limits/index.ts";
 import { automationStudioInstructedActsChecklist } from "../../instructed-acts/index.ts";
 import {
   AUTOMATION_STUDIO_FLOW_BOOTSTRAP_UNCHANGED_SINCE_JUDGED_WRONG,
@@ -97,7 +96,7 @@ describe("a repair's completion of the Flow its judge said does not do what was 
 
   it("is not refused outside a repair after a judge: the exploration, a repair of a round that stopped short, or one with nothing in its Flow", () => {
     expect(automationStudioFlowBootstrapUnchangedCompleteRefusal({ writable, steps: judgedFlow() })).toBeUndefined();
-    const stoppedShort = { seed: automationStudioFlowBootstrapRepairSeed(judgedFlow()), resume: { revision: 1, stopped: "iterations" as const, outstandingIssueCodes: [], judgement: { stopped: "iterations", test: "replayed_clean", stepsInFlow: 3, actsDone: 1, actsTodo: [] } } };
+    const stoppedShort = { seed: automationStudioFlowBootstrapRepairSeed(judgedFlow()), resume: { revision: 1, stopped: "repeat_without_progress" as const, outstandingIssueCodes: [], judgement: { stopped: "repeat_without_progress", test: "replayed_clean", stepsInFlow: 3, actsDone: 1, actsTodo: [] } } };
     expect(automationStudioFlowBootstrapUnchangedCompleteRefusal({ writable, repair: stoppedShort, steps: stoppedShort.seed })).toBeUndefined();
     const empty = { ...repairOf("no", ADVICE), seed: [] };
     expect(automationStudioFlowBootstrapUnchangedCompleteRefusal({ writable, repair: empty, steps: [] })).toBeUndefined();
@@ -105,28 +104,32 @@ describe("a repair's completion of the Flow its judge said does not do what was 
 });
 
 describe("a model that keeps completing the refuted Flow unchanged", () => {
-  it("is shown the refusal each time, and its round ends on the stall guard as a round whose decisions kept coming back unusable", async () => {
+  it("is shown the refusal each time, steered once it repeats, and goes on until it changes the Flow", async () => {
     const repair = repairOf("no", ADVICE);
-    const decide = vi.fn(async () => ({ kind: "complete", result: { summary: "No change needed." } }));
+    // The model completes the refuted Flow unchanged until it is told it is repeating, then drops the step the advice is
+    // about and completes the Flow it has changed.
+    let steered = 0;
+    const decide = vi.fn(async ({ evidence }: { evidence: ReadonlyArray<{ toolId: string }> }) => {
+      if (decide.mock.calls.length > 200) throw new Error("runaway: nothing ended the loop");
+      if (evidence.some((entry) => entry.toolId === "core.loop_check")) steered += 1;
+      if (steered === 1) return { kind: "amend_draft", amendments: [{ step: 3, change: "drop" }] };
+      return { kind: "complete", result: { summary: steered ? "Dropped the step the judge named." : "No change needed." } };
+    });
     const stalled = vi.fn((progress: { issueCodes: readonly string[] }) => Object.assign(new Error("stalled"), { progress }));
     const checkCompletion = vi.fn(async (_result: JsonObject, context: { steps: readonly AutomationStudioFlowDraftStep[] }) => automationStudioFlowBootstrapUnchangedCompleteRefusal({ writable, repair, steps: context.steps }) ?? { ok: true as const });
 
-    await expect(runAutomationStudioLlmEvidenceLoop({
+    const result = await runAutomationStudioLlmEvidenceLoop({
       tools: [{ toolId: "inspect", description: "Read the page.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } }],
-      decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, maxIterations: 64, checkCompletion,
-      unusableDecisions: { maxConsecutive: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS, stalled },
+      decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, checkCompletion, dryRun: false,
+      unusableDecisions: { stalled },
       draft: { seed: repair.seed, resume: repair.resume }
-    })).rejects.toThrow("stalled");
+    });
 
-    // Every completion was refused, none accepted, and the round stalled on that refusal's code.
-    expect(checkCompletion).toHaveBeenCalledTimes(decide.mock.calls.length);
-    expect(stalled.mock.calls[0]![0]).toMatchObject({ issueCodes: [AUTOMATION_STUDIO_FLOW_BOOTSTRAP_UNCHANGED_SINCE_JUDGED_WRONG] });
-    // Stopped by the repeat guard (t195-w46, run `run-musr9pv3-f4bf6256`): the
-    // first refusal is new, and each completion refused again over the same
-    // draft counts toward its in-a-row bound, well before the no-progress bound
-    // or the 64 decisions.
-    expect(decide.mock.calls.length).toBe(1 + AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW);
-    expect(decide.mock.calls.length).toBeLessThan(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS);
+    // No count ended it: past the old three refused repeats in a row, the repeat was steered, and the changed Flow passed.
+    expect(result).toMatchObject({ ok: true });
+    expect(stalled).not.toHaveBeenCalled();
+    expect(steered).toBeGreaterThan(0);
+    expect(checkCompletion.mock.calls.length).toBeGreaterThan(1 + AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW - 1);
     // The second decision read the refusal's feedback.
     const shown = (decide.mock.calls[1] as unknown as [{ evidence: { toolId: string; value: JsonObject }[] }])[0].evidence;
     expect(shown.find((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID)?.value).toMatchObject({ code: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_UNCHANGED_SINCE_JUDGED_WRONG, advice: ADVICE });
@@ -153,7 +156,7 @@ describe("a model that keeps completing the refuted Flow unchanged", () => {
       replayable: (steps) => steps.length > 0,
       checklist: (steps) => automationStudioInstructedActsChecklist({ instructionText: INSTRUCTION, draftSteps: steps }),
       budget: { maxCostUsd: 0.25, maxDurationMs: 540_000 },
-      maxIterations: 64,
+      
       keep: async () => undefined,
       now: () => 0
     });

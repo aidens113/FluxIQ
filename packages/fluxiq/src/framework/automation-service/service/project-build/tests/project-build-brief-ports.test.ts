@@ -59,7 +59,8 @@ const START_END = {
 
 type Entry = { callId: string; toolId: string; value: unknown };
 const lastOf = (evidence: readonly Entry[], toolId: string) => [...evidence].reverse().find((entry) => entry.toolId === toolId)?.value as JsonObject | undefined;
-const decision = (decided: JsonObject) => ({ response: { kind: "evidence_tool_decision", summary: "Scripted", decision: decided }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.0001 } });
+/** A tenth of a cent a decision: the build's purse, never a count of calls (t1056; the resolver's 80 is read by nothing), ends a build whose model only repeats itself. */
+const decision = (decided: JsonObject) => ({ response: { kind: "evidence_tool_decision", summary: "Scripted", decision: decided }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 } });
 
 /** Where the supervisor's latest evidence is kept beside the builders'. */
 const SUPERVISOR = "(supervisor)";
@@ -160,7 +161,7 @@ async function build(input: {
     return decision(builderDecision(subflowKey, evidence, (seen) => input.builderFirst?.(subflowKey, seen), askedActs(input.plan, subflowKey)));
   });
   const service = new AutomationStudioService({
-    dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 80, maxEstimatedCostUsd: 0.1 }),
+    dataDir, llmProviderResolver: () => ({ provider, maxEstimatedCostUsd: 0.1 }),
     llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: input.tools, executeTool: input.executeTool, ...(input.startState ? { startState: input.startState } : {}), resolvePlanNodeParameters: (request: Parameters<typeof automationStudioTestDeclaredStepResolution>[0]) => automationStudioTestDeclaredStepResolution(request, input.stepControl) } as unknown as NonNullable<AutomationStudioServiceOptions["llmEvidenceRuntime"]>,
     ...(input.prepareStart ? { prepareCandidateStart: input.prepareStart } : {})
   });
@@ -396,6 +397,7 @@ describe("a brief whose parts ask for no lasting act", () => {
 
 // A8 wave 7 `run-mv9dd0fk-8cd2e522` (t630): a builder given an input none of its steps could use was refused
 // `subflow.input_unread` three times and stopped; its return said "subflow.scope_refused:b54daa6d" and nothing more.
+// No count of refusals stops a builder now (t1056): it is told each one and steered, and its allowance ends it.
 describe("a brief whose builder never reads the input the plan gives it", () => {
   it("comes back blocked naming the refused submission's issue and the input, with the plan's advice", async () => {
     const plan = {
@@ -423,8 +425,9 @@ describe("a brief whose builder never reads the input the plan gives it", () => 
     const returned = (dispatched?.returns as JsonObject[] | undefined)?.[0];
     expect(returned, JSON.stringify(dispatched)).toMatchObject({ subflowKey: "second", outcome: "blocked" });
     const reason = String(returned!.reason);
-    expect(reason).toContain("core.submit_subflow answered subflow.scope_refused (subflow.input_unread: input \"titles\") (3 in a row)");
-    // No other subflow hands `titles` on, so it is the person's value, and the advice is to give it where it is used (t672).
+    // Loop detection, not a count, ends the builder's round on the repeated refusal (t1056), and the return names the
+    // refused submission and, since no other subflow hands `titles` on, the advice to give it where it is used (t672).
+    expect(reason).toContain("core.submit_subflow answered subflow.scope_refused (subflow.input_unread: input \"titles\")");
     expect(reason).toContain("The plan gives this subflow a value the person gives the Flow, and no step of it reads that value: if another subflow is the one that uses it, change the plan with project.amend_plan");
     expect(reason).not.toMatch(/subflow\.scope_refused:[0-9a-f]{8}/u);
     expect(reason).not.toContain("candidate.last_submission");

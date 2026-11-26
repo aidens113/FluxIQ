@@ -84,7 +84,7 @@ function scriptedProvider(): { provider: AutomationStudioLlmProvider; ran: Autom
 describe("a runtime bound with its own system instructions", () => {
   it("sends them on every provider request of a build, decisions and judge alike, and the adapter counts them", async () => {
     const { provider, ran, measured } = scriptedProvider();
-    const instance = new AutomationStudioService({ dataDir: tempRoot, llmProviderResolver: (() => ({ provider, maxCallsPerRun: 24, maxEstimatedCostUsd: 0.25 })) as never });
+    const instance = new AutomationStudioService({ dataDir: tempRoot, llmProviderResolver: (() => ({ provider, maxEstimatedCostUsd: 0.25 })) as never });
     services.add(instance);
     // Bound after the resolver, as a host binds it: the provider is resolved per build, so it is this binding that is stamped.
     instance.bindLlmEvidenceRuntime(shop(INSTRUCTIONS));
@@ -110,7 +110,7 @@ describe("a runtime bound with its own system instructions", () => {
 
   it("sends nothing of the kind when the runtime binds none", async () => {
     const { provider, ran } = scriptedProvider();
-    const instance = new AutomationStudioService({ dataDir: tempRoot, llmProviderResolver: (() => ({ provider, maxCallsPerRun: 24, maxEstimatedCostUsd: 0.25 })) as never, llmEvidenceRuntime: shop() });
+    const instance = new AutomationStudioService({ dataDir: tempRoot, llmProviderResolver: (() => ({ provider, maxEstimatedCostUsd: 0.25 })) as never, llmEvidenceRuntime: shop() });
     services.add(instance);
     const { project, flow } = await blankFixture(instance, "active", "example");
 

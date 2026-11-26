@@ -186,7 +186,7 @@ function typingPlan(selector: JsonValue, text: JsonValue = "Ada"): JsonObject {
  * step its test can run. The judge of a finished build's test says yes, and is
  * counted in `requests`.
  */
-async function create(plans: JsonObject[], options: { binding?: AutomationStudioLlmEvidenceRuntimeBinding; maxCallsPerRun?: number; types?: true } = {}) {
+async function create(plans: JsonObject[], options: { binding?: AutomationStudioLlmEvidenceRuntimeBinding; types?: true } = {}) {
   const requests: AutomationStudioLlmTaskRequest[] = [];
   let decided = 0;
   // The build reads its instruction when it starts (t976, b2ee9ed45), apart from the plans scripted here.
@@ -205,7 +205,7 @@ async function create(plans: JsonObject[], options: { binding?: AutomationStudio
   const { project, flow } = await seeded(example);
   const instance = new AutomationStudioService({
     dataDir: tempRoot,
-    llmProviderResolver: (() => ({ provider, maxCallsPerRun: options.maxCallsPerRun ?? 6 })) as never,
+    llmProviderResolver: (() => ({ provider })) as never,
     llmEvidenceRuntime: automationStudioReplayingBinding(options.binding ?? typingBinding())
   }).bindNativeNodeRuntime(typingRuntime());
   services.add(instance);
@@ -224,6 +224,26 @@ async function create(plans: JsonObject[], options: { binding?: AutomationStudio
 function feedbackBefore(requests: AutomationStudioLlmTaskRequest[], call: number): JsonObject | undefined {
   const evidence = requests[call - 1]?.context.evidenceLoop?.evidence ?? [];
   return evidence.filter((item) => item.toolId === "core.completion_check").at(-1)?.value as JsonObject | undefined;
+}
+
+/**
+ * An empty build's ending, worked from its prices (t1056). Every call costs $0.001 (`create`), the start's reading of
+ * its instruction included, and the purse is the run cost ceiling, $0.25. Each round ends on loop detection, as the
+ * same refused plan comes back, and the build explores again; no count of rounds ends it (it was six). The purse pays
+ * for 236 calls -- 235 decisions over 30 rounds, and the reading -- $0.236 in all, every one of them accounted for.
+ * The $0.014 left cannot hold the next decision beside what the purse keeps back for judging, so the purse ends the
+ * build, on its cost.
+ */
+function expectPurseEnding(diagnostic: unknown, requests: readonly AutomationStudioLlmTaskRequest[]): void {
+  expect(requests).toHaveLength(235);
+  expect(diagnostic).toMatchObject({
+    code: "flow_bootstrap.evidence_budget_exhausted",
+    totalProviderCallCount: 236,
+    accounting: { estimatedCostUsd: expect.closeTo(236 * 0.001, 9) },
+    evidenceLoop: { iterationCount: 235, decisionCount: 235, exhausted: { bound: "budget", budgetBound: "cost" } },
+    ending: { kind: "budget_exhausted", bound: "cost", tried: { rounds: 30, decisions: 235, stepsInFlow: 0, tested: "not_tested" } }
+  });
+  expect((diagnostic as { ending: { message: string } }).ending.message).toContain("Building this Flow has used $0.24 of its spending limit of $0.25");
 }
 
 describe("creating a Flow whose nodes name what the exploration showed", () => {
@@ -286,19 +306,20 @@ describe("creating a Flow whose nodes name what the exploration showed", () => {
 
   // It used to stop after three, and three was wrong: a model correcting one
   // mistake at a time is making progress, and the guard ended builds that were
-  // working. It keeps asking now until what the build may spend runs out -- here
-  // the run's own call count -- and still says which check refused the last
-  // plan and never creates anything.
+  // working. It keeps asking now until what the build may spend runs out -- its
+  // purse, since no count of calls ends a build (t1056) -- and still says which
+  // check refused the last plan and never creates anything.
   it("keeps asking past three refused plans, spends what the run allows, and says which check refused the last", async () => {
     const run = await create([typingPlan({ handle: NAME_FIELD.handle }, UNREADABLE_TEXT)]);
     const diagnostic = await rejectedGenerationDiagnostic(run.generation);
+    expectPurseEnding(diagnostic, run.requests);
 
     expect(run.requests.length).toBeGreaterThan(3);
-    // Nothing in the Flow never ends a build while budget remains (t208): it ends at the run's declared call count,
+    // Nothing in the Flow never ends a build while budget remains (t208): it ends when its purse is spent,
     // said as that budget, and still names the check that refused the last plan.
     expect(diagnostic).toMatchObject({
       code: "flow_bootstrap.evidence_budget_exhausted",
-      ending: { kind: "budget_exhausted", bound: "calls", tried: { stepsInFlow: 0 } },
+      ending: { kind: "budget_exhausted", bound: "cost", tried: { stepsInFlow: 0 } },
       stage: "provider_output_validation",
       providerInvocation: "attempted",
       issueCodes: ["bootstrap.invalid_parameter_value"]
@@ -310,26 +331,29 @@ describe("creating a Flow whose nodes name what the exploration showed", () => {
   it("stops on a handle the domain never issued, with the domain's code, and creates nothing", async () => {
     const run = await create([typingPlan({ handle: "target.99" })]);
     const diagnostic = await rejectedGenerationDiagnostic(run.generation);
+    expectPurseEnding(diagnostic, run.requests);
 
-    expect(diagnostic).toMatchObject({ code: "flow_bootstrap.evidence_budget_exhausted", ending: { bound: "calls" }, issueCodes: ["example.handle_unknown"] });
+    expect(diagnostic).toMatchObject({ code: "flow_bootstrap.evidence_budget_exhausted", ending: { bound: "cost" }, issueCodes: ["example.handle_unknown"] });
     await expectNoTopology(run.instance, run.project.id, run.flow.flowId);
   });
 
   it("refuses a handle when the domain bound no resolver", async () => {
     const run = await create([typingPlan({ handle: NAME_FIELD.handle })], { binding: typingBinding(false) });
     const diagnostic = await rejectedGenerationDiagnostic(run.generation);
+    expectPurseEnding(diagnostic, run.requests);
 
-    expect(diagnostic).toMatchObject({ code: "flow_bootstrap.evidence_budget_exhausted", ending: { bound: "calls" }, issueCodes: ["bootstrap.handle_resolution_unavailable"] });
+    expect(diagnostic).toMatchObject({ code: "flow_bootstrap.evidence_budget_exhausted", ending: { bound: "cost" }, issueCodes: ["bootstrap.handle_resolution_unavailable"] });
   });
 
-  // The streak is never longer than the calls the run allows, so a build
-  // whose every call was refused still ends under the refusal's name.
+  // A build whose every call was refused still ends under the last refusal's name. No count of calls ends it (t1056):
+  // the purse does.
   it("names the last refusal when a build's calls all go on refused plans", async () => {
-    const run = await create([typingPlan({ handle: "target.99" }), typingPlan({ handle: NAME_FIELD.handle }, UNREADABLE_TEXT)], { maxCallsPerRun: 2 });
+    const run = await create([typingPlan({ handle: "target.99" }), typingPlan({ handle: NAME_FIELD.handle }, UNREADABLE_TEXT)]);
     const diagnostic = await rejectedGenerationDiagnostic(run.generation);
+    expectPurseEnding(diagnostic, run.requests);
 
-    expect(run.requests).toHaveLength(2);
-    expect(diagnostic).toMatchObject({ code: "flow_bootstrap.evidence_budget_exhausted", ending: { bound: "calls" }, issueCodes: ["bootstrap.invalid_parameter_value"], evidenceLoop: { iterationCount: 2 } });
+    expect(run.requests.length).toBeGreaterThan(2);
+    expect(diagnostic).toMatchObject({ code: "flow_bootstrap.evidence_budget_exhausted", ending: { bound: "cost" }, issueCodes: ["bootstrap.invalid_parameter_value"], evidenceLoop: { iterationCount: run.requests.length } });
   });
 
   it("refuses to persist a plan that still names a handle, however it arrives", async () => {

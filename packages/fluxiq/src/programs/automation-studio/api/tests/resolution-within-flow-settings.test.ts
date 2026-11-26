@@ -4,12 +4,14 @@ import { assertFlowLlmExecutionSettings } from "../handlers/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_MAX_USD } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioLlmProvider } from "../../../../runtime/llm/harness/index.ts";
 import { automationStudioLlmResolutionWithinFlowSettings } from "../../../../runtime/llm/flow-execution-limits/index.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP } from "../../../../runtime/llm/flow-execution-limits/index.ts";
+/** The most calls the settings check lets a Flow store; it bounds no run (t1056). */
+const AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP = 250;
 import { AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS } from "../../../../runtime/llm/index.ts";
 
 // The Flow's stored `llmExecutionSettings` were saved and returned but never
 // read, so a Flow configured for 48 calls was built with 64
-// (`run-munnq7vz-98c3481c`). They lower the resolution; they never raise it.
+// (`run-munnq7vz-98c3481c`). The per-call cost lowers the resolution and never raises it. The call count is read by
+// nothing (t1056): no count of calls ends a run.
 
 const provider: AutomationStudioLlmProvider = { metadata: { provider: "mock", model: "mock" }, runTask: async () => ({}) };
 const defaults = AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS;
@@ -22,21 +24,22 @@ function flow(execution: unknown): JsonObject {
 }
 
 describe("a provider resolution narrowed by the Flow's own spend limits", () => {
-  it("takes the Lab's saved settings from the live run: 48 calls, and the resolver's own request sizing", () => {
+  it("takes the Lab's saved settings from the live run, reads no call count from them, and keeps the resolver's own request sizing", () => {
     const narrowed = automationStudioLlmResolutionWithinFlowSettings(sessionKeyResolution(), flow({
       tokenLimits: { maxInputTokens: 48_000, maxOutputTokens: 8_000, maxTotalTokens: 56_000 }, maxCalls: 48, timeoutMs: 25_000, maxEstimatedCostUsd: 0.25, retryCount: 0
     }));
 
-    expect(narrowed).toEqual({ ...sessionKeyResolution(), maxCallsPerRun: 48 });
+    expect(narrowed).toEqual(sessionKeyResolution());
     expect(narrowed.provider).toBe(provider);
   });
 
-  it("lowers the call count and per-call cost, and never raises either", () => {
-    const narrowed = automationStudioLlmResolutionWithinFlowSettings({ ...sessionKeyResolution(), maxCallsPerRun: 10, maxEstimatedCostUsd: 0.05 }, flow({ maxCalls: 20, maxEstimatedCostUsd: 0.1 }));
-    expect(narrowed).toMatchObject({ maxCallsPerRun: 10, maxEstimatedCostUsd: 0.05, maxTotalEstimatedCostUsd: defaults.maxTotalEstimatedCostUsd });
+  it("lowers the per-call cost and never raises it, and sets no call count", () => {
+    const narrowed = automationStudioLlmResolutionWithinFlowSettings({ ...sessionKeyResolution(), maxEstimatedCostUsd: 0.05 }, flow({ maxCalls: 20, maxEstimatedCostUsd: 0.1 }));
+    expect(narrowed).toMatchObject({ maxEstimatedCostUsd: 0.05, maxTotalEstimatedCostUsd: defaults.maxTotalEstimatedCostUsd });
 
     const lowered = automationStudioLlmResolutionWithinFlowSettings(sessionKeyResolution(), flow({ maxCalls: 20, maxEstimatedCostUsd: 0.1 }));
-    expect(lowered).toMatchObject({ maxCallsPerRun: 20, maxEstimatedCostUsd: 0.1 });
+    expect(lowered).toMatchObject({ maxEstimatedCostUsd: 0.1 });
+    expect(lowered).not.toHaveProperty("maxCallsPerRun");
   });
 
   it.each([
@@ -57,7 +60,8 @@ describe("a provider resolution narrowed by the Flow's own spend limits", () => 
     const runTask = vi.fn(provider.runTask);
     const resolution = { ...sessionKeyResolution(), provider: { ...provider, runTask }, maxEstimatedCostUsd: host, maxTotalEstimatedCostUsd: host };
     const narrowed = automationStudioLlmResolutionWithinFlowSettings(resolution, metadata);
-    expect(narrowed).toMatchObject({ maxCallsPerRun: 48, maxEstimatedCostUsd: expected, maxTotalEstimatedCostUsd: host });
+    expect(narrowed).toMatchObject({ maxEstimatedCostUsd: expected, maxTotalEstimatedCostUsd: host });
+    expect(narrowed).not.toHaveProperty("maxCallsPerRun");
     expect(runTask).not.toHaveBeenCalled();
   });
 
@@ -68,15 +72,15 @@ describe("a provider resolution narrowed by the Flow's own spend limits", () => 
       tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 }, maxCalls: 30, timeoutMs: 20_000, maxEstimatedCostUsd: 0.25, retryCount: 0
     }));
 
-    expect(narrowed).toEqual({ ...sessionKeyResolution(), maxCallsPerRun: 30 });
+    expect(narrowed).toEqual(sessionKeyResolution());
   });
 
   it("measures a per-call cost the resolution leaves out against the harness default, so it cannot widen it", () => {
     const narrowed = automationStudioLlmResolutionWithinFlowSettings({ provider }, flow({ maxCalls: 30, maxEstimatedCostUsd: 0.25 }));
-    expect(narrowed).toEqual({ provider, maxCallsPerRun: 30, maxEstimatedCostUsd: 0.25 });
+    expect(narrowed).toEqual({ provider, maxEstimatedCostUsd: 0.25 });
   });
 
-  it("reads the web app's unset call count of 1 as no call count", () => {
+  it("reads the web app's unset call count of 1, as any, as no call count", () => {
     const narrowed = automationStudioLlmResolutionWithinFlowSettings(sessionKeyResolution(), flow({ maxCalls: 1 }));
 
     expect(narrowed).toEqual(sessionKeyResolution());

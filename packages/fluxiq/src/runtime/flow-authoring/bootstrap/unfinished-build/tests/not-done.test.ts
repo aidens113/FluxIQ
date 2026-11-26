@@ -100,7 +100,6 @@ describe("what the person is told stopped the build", () => {
       .toBe("too many attempts in a row went nowhere, because the Flow did not yet do what you asked");
     // An issue with no words of its own adds nothing, and other stops are said as before.
     expect(automationStudioFlowBootstrapStopSaid("unusable_decisions", ["something.else"])).toBe("too many attempts in a row went nowhere");
-    expect(automationStudioFlowBootstrapStopSaid("iterations", ["llm_evidence_loop.draft_amendments_refused"])).toBe("it used all the tries it had before the Flow was finished");
     expect(automationStudioFlowBootstrapStopSaid("budget")).toBe("a budget ran out");
   });
 
@@ -308,7 +307,7 @@ describe("the stop as a person reads it", () => {
       .toBe("too many attempts in a row went nowhere, because it kept trying changes to the Flow that changed nothing");
     expect(automationStudioFlowBootstrapStopSaid("unusable_decisions", ["llm_evidence_loop.repeat_refused"]))
       .toBe("too many attempts in a row went nowhere, because it kept asking to run steps again exactly as they had already run, which changes nothing");
-    for (const stop of ["iterations", "tool_calls", "unusable_decisions", "repeat_without_progress", "judged_wrong"] as const) {
+    for (const stop of ["unusable_decisions", "repeat_without_progress", "judged_wrong"] as const) {
       expect(automationStudioFlowBootstrapStopSaid(stop)).not.toMatch(internal);
     }
     for (const code of ["llm_output.bad", "llm_evidence_loop.already_answered", "llm_evidence_loop.draft_amendment_undone", "llm_evidence_loop.repeat_refused"]) {

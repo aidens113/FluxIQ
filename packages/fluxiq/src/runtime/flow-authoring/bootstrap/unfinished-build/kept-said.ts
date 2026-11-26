@@ -1,6 +1,6 @@
 // What an ending tells the person was kept of the Flow so far: one sentence
-// for every ending that keeps it (`./budget-exhausted.ts`, `./not-finished.ts`,
-// `./replies-unreadable.ts`), so they cannot come to disagree about it.
+// for every ending that keeps it (`./budget-exhausted.ts`, `./not-finished.ts`),
+// so they cannot come to disagree about it.
 //
 // **Said as what it is (t195-w37, live run `run-murz83zy-5030820f`).** What a
 // build that stopped keeps is a draft beside the Flow (`../incomplete-draft/`,

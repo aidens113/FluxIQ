@@ -38,9 +38,9 @@ export type AutomationStudioLlmEvidenceRowTransition = {
 
 /** The loop's counters: numbers the loop and its handlers both read and move. */
 export type AutomationStudioLlmEvidenceLoopCounters = {
-  /** Amendments carried out, held to `limits.maxDraftAmendments`. */
+  /** Amendments carried out. Counted, never held to a limit (t1056). */
   draftAmendments: number;
-  /** The far backstop: unusable decisions in a row, however they differ. */
+  /** Unusable decisions in a row, however they differ: what an exhaustion's `lastIssueCodes` reads. Never an ending (t1056). */
   unusableInARow: number;
   /**
    * Times the model asked to finish, refused or not. A loop that ran out of
@@ -68,6 +68,8 @@ export type AutomationStudioLlmEvidenceDecisionHandlerContext = {
   draftSteps: AutomationStudioFlowDraftStep[];
   /** Composes the framework's draft again over `draftSteps`, in place (`../../flow-authoring/draft/compose/in-place.ts`); the loop always gives it, and a handler tested alone may not. Called after every edit that applied. */
   composeDraft?: (() => void) | undefined;
+  /** The decisions the budget leaves, this one included, where a bound counts them down (`../loop-budget.ts`); undefined, or infinite, where none does. The loop always gives it. */
+  decisionsLeft?: (() => number | undefined) | undefined;
   amendmentMemory: AutomationStudioLlmEvidenceAmendmentMemory;
   noProgress: AutomationStudioLlmEvidenceNoProgress;
   /** Decisions in a row refused for one reason (`./refusal-run.ts`). */

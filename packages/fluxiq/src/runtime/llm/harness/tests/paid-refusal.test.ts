@@ -91,7 +91,7 @@ function harness(input: Partial<AutomationStudioLlmHarnessInput>): Promise<Autom
 }
 
 function runBudget(): AutomationStudioLlmRunBudgetLedger {
-  return new AutomationStudioLlmRunBudgetLedger({ maxCallsPerRun: 4, maxTotalTokensPerRun: 100_000, maxOutputTokensPerRun: 100_000, maxEstimatedCostUsdPerRun: 1 });
+  return new AutomationStudioLlmRunBudgetLedger({ maxTotalTokensPerRun: 100_000, maxOutputTokensPerRun: 100_000, maxEstimatedCostUsdPerRun: 1 });
 }
 
 /** The real adapter, answering 200 with `content` and step 0108's usage. */

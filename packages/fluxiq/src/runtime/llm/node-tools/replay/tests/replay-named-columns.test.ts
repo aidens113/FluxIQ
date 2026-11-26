@@ -79,7 +79,7 @@ describe("a loop given the named columns", () => {
       kind: "llm_evidence_tool_execution", evidence: { replay: value.replay ?? null }, effectApplied: value.replay === "reset", resultCode: "core.replay.replayed"
     }));
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, executeTool, draft: { seed: [{ ...structuredClone(step), proposes: true }] }, maxIterations: 6, maxToolCalls: 6, propagateDecisionErrors: true,
+      tools, decide, executeTool, draft: { seed: [{ ...structuredClone(step), proposes: true }] }, propagateDecisionErrors: true,
       definitionOf: (id: string) => definitions.find((definition) => definition.id === id), ...(namedColumns ? { namedColumns } : {})
     });
     const sent = (prefix: string) => executeTool.mock.calls.map(([call]) => call)

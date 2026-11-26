@@ -85,9 +85,13 @@ describe("a loop that starts from a draft", () => {
   // them: a completion over them is refused, and nothing is run again, until each
   // is rerun. The tests above turn the test off; their subject is the seed.
   it("refuses to finish over seeded steps that never ran in this build, and runs nothing again", async () => {
-    const decide = vi.fn().mockResolvedValue({ kind: "complete", result: { summary: "Kept the Flow as it was." } });
+    // Two completions, each refused, then the model's script runs out: no count ends the loop (t1056).
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "complete", result: { summary: "Kept the Flow as it was." } })
+      .mockResolvedValueOnce({ kind: "complete", result: { summary: "Kept the Flow as it was." } })
+      .mockRejectedValue(new Error("script exhausted"));
     const executeTool = vi.fn();
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, draft: { seed: seed() }, maxIterations: 2, unusableDecisions: { stalled: () => new Error("stalled") } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, draft: { seed: seed() }, unusableDecisions: { stalled: () => new Error("stalled") } });
     expect(result.ok).toBe(false);
     expect(executeTool).not.toHaveBeenCalled();
     const shown = decide.mock.calls[1]?.[0].evidence.find((entry: { toolId: string }) => entry.toolId === "core.dry_run");
@@ -111,9 +115,10 @@ describe("a loop that starts from a draft", () => {
     const decide = vi.fn().mockResolvedValue({ kind: "complete", result: { summary: "Kept the Flow as it was." } });
     const checkCompletion = vi.fn().mockResolvedValue({ ok: false, issueCodes: ["fixture.not_yet"], feedback: { reason: "fixture" } });
     await expect(runAutomationStudioLlmEvidenceLoop({
-      tools, decide, executeTool: vi.fn(), draft: { seed: saved.steps }, dryRun: false, checkCompletion, maxIterations: 10, propagateDecisionErrors: true,
+      // A round stalls only where its caller ends it on loop detection's signal (t1056).
+      tools, decide, executeTool: vi.fn(), draft: { seed: saved.steps }, dryRun: false, checkCompletion, propagateDecisionErrors: true, loopSignal: () => "end",
       unusableDecisions: {
-        maxConsecutive: 2,
+        
         stalled: (progress) => {
           handed.push([...progress.steps]);
           return stalledError;

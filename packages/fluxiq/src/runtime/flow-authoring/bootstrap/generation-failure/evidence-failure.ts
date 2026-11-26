@@ -36,9 +36,6 @@ const EVIDENCE_LOOP_FAILURE_CODES: Record<AutomationStudioLlmEvidenceLoopFailure
   "llm_evidence_loop.evidence_limit": "flow_bootstrap.evidence_limit",
   "llm_evidence_loop.iteration_limit": "flow_bootstrap.evidence_iteration_limit",
   "llm_evidence_loop.cancelled": "flow_bootstrap.evidence_cancelled",
-  // A build ends this way through its phases, with a message (`../unfinished-build/replies-unreadable.ts`);
-  // a caller that publishes the loop's ending itself has only the code, and it names what happened.
-  "llm_evidence_loop.unreadable_replies": "flow_bootstrap.provider_response_malformed",
   // A provider that stopped answering always ends with its own message (`./loop-provider-unavailable.ts`,
   // t619): this code is never published from here without it. It was `flow_bootstrap.provider_timeout`,
   // a request-stage code this stage's parse refuses, so the catch erased it to the stage's own code.
@@ -258,7 +255,6 @@ function evidenceLoopExhausted(
 ): NonNullable<NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["evidenceLoop"]>["exhausted"]> {
   return {
     bound: exhaustion.bound,
-    maxIterations: exhaustion.maxIterations,
     iterations: exhaustion.iterations,
     draftSteps: exhaustion.draftSteps,
     proposableSteps: exhaustion.proposableSteps,

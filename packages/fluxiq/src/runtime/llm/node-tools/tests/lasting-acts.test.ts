@@ -134,7 +134,7 @@ describe("the build's lasting acts, wherever its steps are sent again", () => {
       .mockResolvedValueOnce({ kind: "tool_call", callId: "part.1", toolId: "core.run_flow", input: { from: 1 } })
       .mockResolvedValueOnce({ kind: "complete", result: { done: true } });
     const lastingActs = vi.fn(async () => new Set(["a1"]) as ReadonlySet<string>);
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, maxIterations: 6, maxToolCalls: 6, propagateDecisionErrors: true, lastingActs });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, propagateDecisionErrors: true, lastingActs });
     expect(result).toMatchObject({ ok: true });
     expect(executeTool.mock.calls.map(([call]) => [call.callId, call.value.replay ?? null])).toEqual([
       ["add.1", null],

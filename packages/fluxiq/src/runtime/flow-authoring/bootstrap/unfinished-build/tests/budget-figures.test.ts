@@ -38,14 +38,13 @@ function refusal(spentUsd: number, projectedCostUsd: number | undefined, ceiling
 function stoppedByCost(steps: AutomationStudioFlowDraftStep[], accounting: AutomationStudioLlmEvidenceLoopAccounting, costRefusal?: Extract<AutomationStudioLlmBuildPurseRefusal, { code: "llm_budget.run_cost_limit" }>): AutomationStudioLlmEvidenceLoopResult {
   return {
     ok: false, code: "llm_evidence_loop.iteration_limit", trace: [], steps, accounting,
-    exhaustion: { bound: "budget", budgetBound: "cost", maxIterations: 64, iterations: accounting.iterations, draftSteps: steps.length, proposableSteps: steps.length, completionAttempts: 0, lastIssueCodes: [], outstandingIssueCodes: [], ...(costRefusal ? { costRefusal } : {}) }
+    exhaustion: { bound: "budget", budgetBound: "cost", iterations: accounting.iterations, draftSteps: steps.length, proposableSteps: steps.length, completionAttempts: 0, lastIssueCodes: [], outstandingIssueCodes: [], ...(costRefusal ? { costRefusal } : {}) }
   };
 }
 
 function outOfDecisions(steps: AutomationStudioFlowDraftStep[], accounting: AutomationStudioLlmEvidenceLoopAccounting): AutomationStudioLlmEvidenceLoopResult {
   return {
-    ok: false, code: "llm_evidence_loop.iteration_limit", trace: [], steps, accounting,
-    exhaustion: { bound: "iterations", maxIterations: 64, iterations: 64, draftSteps: steps.length, proposableSteps: steps.length, completionAttempts: 1, lastIssueCodes: [], outstandingIssueCodes: [] }
+    ok: false, code: "llm_evidence_loop.repeat_without_progress", trace: [], steps, accounting
   };
 }
 
@@ -68,7 +67,7 @@ function harness(rounds: Array<(request: AutomationStudioFlowBootstrapRoundReque
       replayable: (steps) => steps.length > 0,
       checklist: (steps) => automationStudioInstructedActsChecklist({ instructionText: INSTRUCTION, draftSteps: steps }),
       budget: { maxCostUsd: 0.25, maxDurationMs: 540_000 },
-      maxIterations: 64,
+      
       keep: async () => undefined,
       now: () => 0
     }

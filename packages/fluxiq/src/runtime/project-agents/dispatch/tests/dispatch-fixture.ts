@@ -83,7 +83,6 @@ export type BuilderSeen = {
   lease: AutomationStudioHostResourceLease | undefined;
   signal: AbortSignal;
   purse: AutomationStudioLlmBuildPurse | undefined;
-  maxIterations: number | undefined;
 };
 
 type BuilderInput = Parameters<typeof runAutomationStudioSubflowBuilderLoop>[0];
@@ -153,7 +152,7 @@ export async function gardenBuild(options: { capacity: number; briefs: GardenBri
   let running = 0;
   let mostAtOnce = 0;
   const runBuilder: typeof runAutomationStudioSubflowBuilderLoop = async (input) => {
-    const look: BuilderSeen = { briefId: input.scope.briefId, callScope: input.callScope, lease: AutomationStudioHostLeaseScope.current(), signal: input.loop.signal!, purse: input.loop.purse, maxIterations: input.loop.maxIterations };
+    const look: BuilderSeen = { briefId: input.scope.briefId, callScope: input.callScope, lease: AutomationStudioHostLeaseScope.current(), signal: input.loop.signal!, purse: input.loop.purse };
     seen.push(look);
     running += 1;
     mostAtOnce = Math.max(mostAtOnce, running);

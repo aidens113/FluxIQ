@@ -2,17 +2,18 @@
 // provider and model, and hold every limit inside its bound.
 
 import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_MAX_USD } from "../../../../flows/authoring/model/index.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP } from "../../../../runtime/llm/flow-execution-limits/index.ts";
 import { assertAutomationStudioLlmModelBinding } from "../../../../runtime/models/catalog/index.ts";
 import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST } from "../../../../runtime/models/limits/index.ts";
 import { boundedWholeNumber } from "./bounded-whole-number.ts";
 
-// The most provider calls a Flow may pin: Core's own runaway backstop
-// (`AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP`). The run's own budget, and the
-// Flow's `adaptationPolicySettings.maxEstimatedCostUsdPerRun`, are what actually
-// bound spend. It was a second 64 until t583, and A8's first created project
-// Flow was refused its settings for pinning the Lab's 250.
-const FLOW_LLM_EXECUTION_MAX_CALLS = AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP;
+// The most provider calls a Flow's settings may store. It is a bound on what the
+// setting may say, and bounds nothing a run does: no count of calls ends a run
+// and nothing reads a stored count (t1056). The run's own budget, and the Flow's
+// `adaptationPolicySettings.maxEstimatedCostUsdPerRun`, are what bound spend. It
+// was a second 64 until t583, and A8's first created project Flow was refused its
+// settings for pinning the Lab's 250; it was Core's 250-call runaway backstop
+// until t1056 removed that.
+const FLOW_LLM_EXECUTION_MAX_CALLS = 250;
 
 export function assertFlowLlmExecutionSettings(metadata: Record<string, unknown>): void {
   assertAutomationStudioLlmModelBinding(metadata.llmProvider, metadata.llmModel);

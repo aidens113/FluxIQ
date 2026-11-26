@@ -14,8 +14,8 @@ import { automationStudioLlmBuildCallRecord, automationStudioLlmRunCallRecord } 
 
 const RESERVED = { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.1 };
 
-function ledger(maxCallsPerRun?: number): AutomationStudioLlmRunBudgetLedger {
-  return new AutomationStudioLlmRunBudgetLedger({ ...(maxCallsPerRun ? { maxCallsPerRun } : {}), maxTotalTokensPerRun: 10_000_000, maxOutputTokensPerRun: 10_000_000, maxEstimatedCostUsdPerRun: 10 });
+function ledger(): AutomationStudioLlmRunBudgetLedger {
+  return new AutomationStudioLlmRunBudgetLedger({ maxTotalTokensPerRun: 10_000_000, maxOutputTokensPerRun: 10_000_000, maxEstimatedCostUsdPerRun: 10 });
 }
 
 function reserve(budget: AutomationStudioLlmRunBudgetLedger, requestId: string, extra: Partial<Parameters<AutomationStudioLlmRunBudgetLedger["reserve"]>[0]> = {}) {
@@ -91,7 +91,7 @@ describe("the run ledger's per-call receipt", () => {
   });
 
   it("keeps at most the record limit and says how many calls it left out", () => {
-    const budget = ledger(AUTOMATION_STUDIO_LLM_RUN_CALL_RECORD_LIMIT + 3);
+    const budget = ledger();
     for (let index = 0; index < AUTOMATION_STUDIO_LLM_RUN_CALL_RECORD_LIMIT + 3; index += 1) {
       reserve(budget, `request.${index}`, { maxEstimatedCostUsd: 0.000_001 }).complete({ inputTokens: 1, outputTokens: 1, totalTokens: 2, estimatedCostUsd: 0 });
     }
@@ -221,13 +221,14 @@ describe("the harness's line for each call", () => {
   });
 
   it("writes no line for a call the ledger refused, because no provider was asked", async () => {
-    const budget = new AutomationStudioLlmRunBudgetLedger({ maxCallsPerRun: 1, maxTotalTokensPerRun: 100_000, maxOutputTokensPerRun: 100_000, maxEstimatedCostUsdPerRun: 1 });
+    // A purse that holds one call's ten-cent reservation and no more (t1056: no call count refuses).
+    const budget = new AutomationStudioLlmRunBudgetLedger({ maxTotalTokensPerRun: 100_000, maxOutputTokensPerRun: 100_000, maxEstimatedCostUsdPerRun: 0.15 });
     let asked = 0;
     const provider: AutomationStudioLlmProvider = { metadata: { provider: "mock", model: "debug-model" }, runTask: async () => { asked += 1; return answer; } };
     await call(budget, "request.first", provider);
     const refused = await call(budget, "request.second", provider);
 
-    expect(refused.diagnostics.map((diagnostic) => diagnostic.code)).toContain("llm_budget.run_call_limit");
+    expect(refused.diagnostics.map((diagnostic) => diagnostic.code)).toContain("llm_budget.run_cost_limit");
     expect(asked).toBe(1);
     expect(budget.callRecords("run.receipt").calls.map((line) => line.requestId)).toEqual(["request.first"]);
   });

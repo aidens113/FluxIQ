@@ -57,7 +57,6 @@ describe("AutomationStudioService recording persistence", () => {
                 };
             }
           },
-          maxCallsPerRun: 2
         };
       }
     });
@@ -137,7 +136,6 @@ describe("AutomationStudioService recording persistence", () => {
           }
         },
         tokenLimits: { maxInputTokens: 4000, maxOutputTokens: 1000, maxTotalTokens: 5000 },
-        maxCallsPerRun: 2,
         maxEstimatedCostUsd: 0.1,
         maxTotalEstimatedCostUsd: 0.15
       }),
@@ -246,7 +244,6 @@ describe("AutomationStudioService recording persistence", () => {
               usage: { inputTokens: 8, outputTokens: 4, totalTokens: 12, estimatedCostUsd: 0.001 }
             }
         },
-        maxCallsPerRun: 2
       })
     });
     const project = await service.createProject({ name: "Multiple target proposals" });

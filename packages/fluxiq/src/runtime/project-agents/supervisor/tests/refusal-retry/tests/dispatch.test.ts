@@ -90,7 +90,7 @@ describe("project.brief_repeated", () => {
     const same = dispatch([brief("main", ["p1"])]);
     const built = project({ builder: () => "blocked" });
     // The script has decisions to spare: the third refused in a row ends it, as for a refused press (`../../../../../llm/evidence-loop/tests/repeat-guard.test.ts`).
-    await expect(supervise([look, call(IDS.writePlan, ONE_PART), same, same, same, same, same, same, same, same], built, { executeTool: onThePage, propagateDecisionErrors: true })).rejects.toThrow("stalled");
+    await expect(supervise([look, call(IDS.writePlan, ONE_PART), same, same, same, same, same, same, same, same], built, { executeTool: onThePage, propagateDecisionErrors: true, endsOnSignal: true })).rejects.toThrow("stalled");
     expect(built.dispatched).toHaveLength(1);
   });
 });

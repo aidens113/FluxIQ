@@ -1,6 +1,5 @@
 // An incomplete draft read back from storage.
 import type { AutomationStudioFlowDraftStep } from "../../draft/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../loop-limits/index.ts";
 import { automationStudioFlowBootstrapLargestSizeLimits } from "../plan/index.ts";
 import type { AutomationStudioFlowBootstrapIncompleteDraft } from "./record.ts";
 
@@ -15,9 +14,8 @@ import type { AutomationStudioFlowBootstrapIncompleteDraft } from "./record.ts";
  * setting was higher must still seed a build after it is lowered -- the
  * build's own validation refuses what the current setting does not allow.
  */
-const MAX_STEPS = automationStudioFlowBootstrapLargestSizeLimits().maxTotalNodes
-  + AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations
-  + 1;
+// A loop appends a step for every action and no count of its turns has a ceiling (t1056), so the list has none either.
+const MAX_STEPS = automationStudioFlowBootstrapLargestSizeLimits().maxTotalNodes + Number.POSITIVE_INFINITY;
 const STOPPED: readonly string[] = ["iterations", "budget", "tool_calls", "unusable_decisions", "repeat_without_progress", "judged_wrong"]; // judged_wrong: a Flow the judge found wrong and no repair fixed (`../unfinished-build/phases.ts`).
 const ISSUE_CODE = /^[a-z0-9_.:-]{1,100}$/i;
 const OPTIONAL_OBJECTS = ["ranWith", "settings", "replay", "routing"] as const;

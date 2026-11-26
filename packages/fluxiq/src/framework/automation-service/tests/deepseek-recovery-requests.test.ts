@@ -119,31 +119,43 @@ describe("the real DeepSeek adapter on a real runtime recovery", () => {
   // revoked on the first failed call, so every later call -- the patch
   // included -- was refused. A bad answer is a spent call. The run carries on,
   // the exploration asks again -- no count stops it, neither of steps without
-  // progress (t1049) nor the exploration's own call allowance (t1057) -- until
-  // the run's purse is gone, and the patch, whose call was held, is still sent.
-  // The hang variant declares a purse of eight calls, so it ends on the purse
-  // after six one-second timeouts rather than spending twenty-four of them.
-  it.each([
-    ["come back malformed", "malformed", "llm.provider_malformed_response", undefined, 26],
-    ["run past the call's deadline", "hang", "llm.provider_timeout", 1_000, 8]
-  ] as const)("carries on through exploration decisions that %s, asks again until the purse is gone, and still sends the patch", async (_label, decisionReply, code, timeoutMs, maxCallsPerRun) => {
-    const run = await recover({ tokenLimits: LIVE_TOKEN_LIMITS.default!, explore: true, patch: true, looks: 18, decisionReply, maxCallsPerRun, ...(timeoutMs ? { timeoutMs } : {}) });
-    const asked = maxCallsPerRun - 2;
+  // progress (t1049), the exploration's own call allowance (t1057), nor a
+  // declared call count (t1056) -- until the run's purse is gone, and the patch,
+  // whose call was held, is still sent.
+  it("carries on through exploration decisions that come back malformed, asks again until the purse is gone, and still sends the patch", async () => {
+    const run = await recover({ tokenLimits: LIVE_TOKEN_LIMITS.default!, explore: true, patch: true, looks: 18, decisionReply: "malformed" });
+    const asked = run.sent.filter((call) => call.taskKind === "evidence_tool_decision").length;
 
+    expect(asked).toBeGreaterThan(24);
     expect(run.sent.map((call) => call.taskKind)).toEqual(["runtime_diagnosis", ...Array.from({ length: asked }, () => "evidence_tool_decision"), "runtime_patch"]);
     // The same iteration asked each time: each unusable answer was asked again.
     expect(run.sent.filter((call) => call.taskKind === "evidence_tool_decision").map((call) => call.iteration)).toEqual(Array.from({ length: asked }, () => 1));
-    expect(run.revealed).toHaveLength(maxCallsPerRun);
+    expect(run.revealed).toHaveLength(asked + 2);
     expect(providerCalls(run.detail).map((call) => call.validation)).toEqual([
       { ok: true, issueCodes: [] },
-      ...Array.from({ length: asked }, () => ({ ok: false, issueCodes: [code] })),
+      ...Array.from({ length: asked }, () => ({ ok: false, issueCodes: ["llm.provider_malformed_response"] })),
       { ok: true, issueCodes: [] }
     ]);
     expect(explorationStage(run.detail)).toMatchObject({
       status: "failed",
-      detail: { outcome: "budget_exhausted", endedBy: "llm_budget.run_call_limit", unusableDecisions: asked }
+      // The run's token pot, the first of its budgets these large malformed replies spend.
+      detail: { outcome: "budget_exhausted", endedBy: "llm_budget.run_total_limit", unusableDecisions: asked }
     });
     expect(explorationStage(run.detail)?.detail).not.toHaveProperty("stopReason");
+    expect(run.detail.interventions.find((intervention) => intervention.kind === "runtime_patch")).toMatchObject({ validation: { ok: true } });
+  }, 60_000);
+
+  // A decision call that never answers, past the harness's own retries of the timeout, is the provider failing: it is
+  // billed nothing, so asking again would go on unpaid until the clock now that no count ends the exploration (t1056).
+  // It ends the exploration at once as that failure, and the patch, whose call was held, is still sent.
+  it("ends the exploration at a decision call the provider never answers, and still sends the patch", async () => {
+    const run = await recover({ tokenLimits: LIVE_TOKEN_LIMITS.default!, explore: true, patch: true, looks: 18, decisionReply: "hang", timeoutMs: 1_000 });
+    const asked = run.sent.filter((call) => call.taskKind === "evidence_tool_decision").length;
+
+    expect(asked).toBeGreaterThan(0);
+    expect(asked).toBeLessThanOrEqual(4);
+    expect(explorationStage(run.detail)).toMatchObject({ status: "failed" });
+    expect(run.sent.at(-1)?.taskKind).toBe("runtime_patch");
     expect(run.detail.interventions.find((intervention) => intervention.kind === "runtime_patch")).toMatchObject({ validation: { ok: true } });
   }, 30_000);
 });
@@ -160,8 +172,6 @@ type RecoveryOptions = {
   decisionReply?: "malformed" | "hang";
   /** The resolution's per-call timeout. */
   timeoutMs?: number;
-  /** The run's declared call count: part of its purse. Absent, the live run's twenty-six. */
-  maxCallsPerRun?: number;
 };
 
 type SentCall = { url: string; taskKind: string; iteration?: number; recentActions?: JsonObject[]; policyGates?: JsonObject };
@@ -184,7 +194,6 @@ async function recover(options: RecoveryOptions): Promise<Recovery> {
       return {
         ...resolution,
         tokenLimits: options.tokenLimits,
-        maxCallsPerRun: options.maxCallsPerRun ?? 26,
         // The live run's 600,000, or every call's worst case when that is less.
         maxTotalTokensPerRun: Math.min(600_000, options.tokenLimits.maxTotalTokens * 26),
         timeoutMs: options.timeoutMs ?? 25_000,

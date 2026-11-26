@@ -18,18 +18,23 @@ export type AutomationStudioLlmLoopDecisionFacts = {
   approachesChanged: number;
   /** A repeat was caught again after the latest change of approach (`../repeat-guard/loop-detection/attempt-record.ts`, `persisting`). */
   persisting: boolean;
+  /**
+   * Whether the loop's caller can carry an `ask_person` out (`loopSignal`). A loop with no such caller (t1056: every loop
+   * is offered the decision now) is never offered it. Absent, it can.
+   */
+  personReachable?: boolean | undefined;
 };
 
 /** The decisions offered, and why, for the step's meta. */
 export type AutomationStudioLlmLoopDecisionOptions = {
   offered: readonly AutomationStudioLlmLoopDecisionKind[];
   /** Why `ask_person` is offered or not, in Core's words. */
-  askPerson: "offered" | "after_change_approach" | "after_repeat_persists";
+  askPerson: "offered" | "after_change_approach" | "after_repeat_persists" | "no_person";
   approachesChanged: number;
 };
 
 export function automationStudioLlmLoopDecisionOptions(facts: AutomationStudioLlmLoopDecisionFacts): AutomationStudioLlmLoopDecisionOptions {
-  const askPerson = facts.approachesChanged < 1 ? "after_change_approach" : !facts.persisting ? "after_repeat_persists" : "offered";
+  const askPerson = facts.personReachable === false ? "no_person" : facts.approachesChanged < 1 ? "after_change_approach" : !facts.persisting ? "after_repeat_persists" : "offered";
   return {
     offered: AUTOMATION_STUDIO_LLM_LOOP_DECISIONS.filter((decision) => decision !== "ask_person" || askPerson === "offered"),
     askPerson,

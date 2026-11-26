@@ -63,7 +63,7 @@ export async function automationStudioLlmEvidenceHandleCompletion(
   // The caller's check and the draft's dry run, both asked and answered
   // together (`../evidence-loop/completion-attempt.ts` says why both).
   // The check is told how many decisions remain after this one (t743), so a rule asking for more work holds only where there is room.
-  const attempt = await automationStudioLlmEvidenceCompletionAttempt({ result: decision.result, steps: draftSteps, checkCompletion: input.checkCompletion, dryRun: context.dryRun, signal: input.signal, turnsLeft: Math.max(0, limits.maxIterations - iteration - 1) });
+  const attempt = await automationStudioLlmEvidenceCompletionAttempt({ result: decision.result, steps: draftSteps, checkCompletion: input.checkCompletion, dryRun: context.dryRun, signal: input.signal, ...turnsAfter(context.decisionsLeft?.()) });
   if (attempt.kind === "threw") {
     if (input.propagateDecisionErrors) throw attempt.error;
     return end("llm_evidence_loop.invalid_decision");
@@ -153,4 +153,9 @@ function dryRunSaid(seen: { ran: boolean; reused?: boolean; verdict?: JsonValue 
 
 function isObject(value: JsonValue | undefined): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** The decisions left after this one, where the budget counts them; none where nothing counts them down (t1056: no count of turns stands behind the budget). */
+function turnsAfter(left: number | undefined): { turnsLeft?: number } {
+  return left !== undefined && Number.isFinite(left) ? { turnsLeft: Math.max(0, left - 1) } : {};
 }

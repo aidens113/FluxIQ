@@ -39,7 +39,7 @@ describe("explicit candidate authoring", () => {
         return { revision: request.revision, digest: request.digest, verdict: "yes", feedback: {} };
       } },
       loop: {
-        tools: [], maxIterations: 6, maxToolCalls: 6, budget: { maxCostUsd: 0.1 },
+        tools: [], budget: { maxCostUsd: 0.1 },
         executeTool: async () => ({}),
         decide: async ({ iteration, tools, evidence }) => {
           if (iteration === 1) return { kind: "tool_call", toolId: "core.submit_candidate", callId: "submit", input: result(), usage: { totalTokens: 100, estimatedCostUsd: 0.06 } };
@@ -64,7 +64,7 @@ describe("explicit candidate authoring", () => {
     const seen: string[] = [];
     const acceptedFlow = { graph: "unchanged" };
     const outcome = await runAutomationStudioFlowCandidateAuthoringLoop({ submission, loop: {
-      tools: [{ toolId: "demo.explore", effect: "mutate", description: "Explore", inputSchema: { type: "object" } }], maxIterations: 6, maxToolCalls: 6,
+      tools: [{ toolId: "demo.explore", effect: "mutate", description: "Explore", inputSchema: { type: "object" } }], 
       executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { wrongTurn: "irrelevant item" }, effectApplied: true }),
       decide: async ({ iteration, evidence, decisionSchema }) => {
         const schema = JSON.stringify(decisionSchema);
@@ -177,8 +177,8 @@ describe("a completion the loop refuses says why", () => {
     let stalledCodes: readonly string[] | undefined;
     let index = 0;
     await runAutomationStudioFlowCandidateAuthoringLoop({ submission, loop: {
-      tools: [{ toolId: "demo.look", effect: "observe", description: "Look", inputSchema: { type: "object" } }], maxIterations: decisions.length + 1, maxToolCalls: decisions.length + 1,
-      unusableDecisions: { maxConsecutive: 3, maxInARow: 3, stalled: ({ issueCodes }) => {
+      tools: [{ toolId: "demo.look", effect: "observe", description: "Look", inputSchema: { type: "object" } }], 
+      unusableDecisions: { stalled: ({ issueCodes }) => {
         stalledCodes = issueCodes;
         return new Error("stalled");
       } },
@@ -206,8 +206,10 @@ describe("a completion the loop refuses says why", () => {
     expect(told).not.toHaveProperty("revision");
     // No trial runner here, so it is not told to test with one.
     expect(String(told.instruction)).not.toContain("core.test_candidate");
-    // The stall carries the code the build's ending reads (`../../../conversations/commands/progress.ts`).
-    expect(stalledCodes()).toContain("candidate.latest_submission_required");
+    // Four refused completions in a row once stalled the loop on this code. No count of refusals ends a loop (t1056): each
+    // is told why, loop detection steers the run, and the loop goes on until the model stops answering here.
+    expect(stalledCodes()).toBeUndefined();
+    expect(feedback.filter((entry) => entry?.code === "candidate.latest_submission_required").length).toBeGreaterThanOrEqual(3);
   });
 
   it("with a submission: names the latest revision and digest to complete with", async () => {
@@ -258,7 +260,7 @@ describe("explicit client examples in the actual submit tool", () => {
         captured.push(((tool.inputSchema.properties as JsonObject).flow as JsonObject).description as string);
         throw stop;
       },
-      loop: { tools: [], maxIterations: 1, maxToolCalls: 1,
+      loop: { tools: [], 
         executeTool: async () => { throw new Error("no tool should execute"); },
         decide: async () => { throw new Error("no model should execute"); }
       }

@@ -36,20 +36,14 @@ export type AutomationStudioLlmEvidenceLoopFailureCode =
    */
   | "llm_evidence_loop.evidence_limit"
   /**
-   * The loop ran out of turns: iterations, the run's decision budget, or tool
-   * calls. **Nothing about what the model produced is being reported here**, and
-   * a result carrying this code always carries `exhaustion` saying which
-   * allowance ran out and how far the draft had got (`./exhaustion.ts`).
+   * The loop's budget ran out: the purse refused a decision, or the tokens or
+   * the clock left none. No count of turns or tool calls ends a loop (t1056).
+   * **Nothing about what the model produced is being reported here**, and a
+   * result carrying this code always carries `exhaustion` saying which bound
+   * ran out and how far the draft had got (`./exhaustion.ts`).
    */
   | "llm_evidence_loop.iteration_limit"
   | "llm_evidence_loop.cancelled"
-  /**
-   * The provider's replies kept arriving unreadable: an unbroken run of them,
-   * each asked again with a note of what could not be read, reached its limit
-   * (`../unreadable-reply.ts`). A result carrying this code always carries
-   * `unreadable`, saying how many there were and of which kinds.
-   */
-  | "llm_evidence_loop.unreadable_replies"
   /**
    * The provider stopped answering: an unbroken run of decision calls that got
    * no answer -- timed out, unreachable, a server error, rate limited --
@@ -84,7 +78,11 @@ export type AutomationStudioLlmEvidenceLoopResult =
      * express at all (`./exhaustion.ts`).
      */
     exhaustion?: AutomationStudioLlmEvidenceLoopExhaustion;
-    /** Present exactly when the code is `llm_evidence_loop.unreadable_replies`. */
+    /**
+     * On a budget ending (`llm_evidence_loop.iteration_limit`) whose last replies arrived unreadable: what the money
+     * last went on, said by the build's ending (t1056). No count of unreadable replies ends a loop any more; this is the
+     * streak the budget ran out during, and every unreadable reply of the loop.
+     */
     unreadable?: AutomationStudioLlmEvidenceLoopUnreadable;
     /** Present exactly when the code is `llm_evidence_loop.provider_unavailable`. */
     providerUnavailable?: AutomationStudioLlmEvidenceLoopProviderUnavailable;
@@ -104,7 +102,7 @@ export function automationStudioLlmEvidenceLoopFailure(
   accounting: AutomationStudioLlmEvidenceLoopAccounting,
   /** What ran out, for the one code that says something ran out. */
   exhaustion?: AutomationStudioLlmEvidenceLoopExhaustion,
-  /** How many unreadable replies, for the one code that says they ended it. */
+  /** The unreadable replies the budget ran out during, for a budget ending (above). */
   unreadable?: AutomationStudioLlmEvidenceLoopUnreadable,
   /** How many unanswered calls, for the one code that says the provider stopped answering. */
   providerUnavailable?: AutomationStudioLlmEvidenceLoopProviderUnavailable,

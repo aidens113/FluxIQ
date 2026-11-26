@@ -99,7 +99,7 @@ describe("an unchanged rerun of a read whose condition left out no row", () => {
       .mockResolvedValueOnce({ kind: "tool_call", callId: "call.list", toolId: "list", input: where, add: true })
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "rerun", input: where }] })
       .mockResolvedValueOnce({ kind: "complete", result: { flow: "..." } });
-    await runAutomationStudioLlmEvidenceLoop({ tools: [list, renew], decide, executeTool, maxIterations: 6, maxToolCalls: 6, unusableDecisions: { stalled: () => new Error("stalled") }, dryRun: false });
+    await runAutomationStudioLlmEvidenceLoop({ tools: [list, renew], decide, executeTool, unusableDecisions: { stalled: () => new Error("stalled") }, dryRun: false });
     const evidence = decide.mock.calls[2]?.[0].evidence as { toolId: string; value: Record<string, unknown> }[];
     const feedback = evidence.find((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID)?.value;
     expect(feedback).toMatchObject({ refused: [{ step: 1, reason: "changes_nothing" }] });

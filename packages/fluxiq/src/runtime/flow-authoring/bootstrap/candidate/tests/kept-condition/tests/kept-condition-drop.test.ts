@@ -163,6 +163,8 @@ describe("the resend a kept-condition refusal invites, through the authoring and
       if (iteration === 4) return call("look-2", look.toolId, { again: true });
       if (iteration === 5) return call("submit-drop", "core.submit_candidate", dropped);
       if (iteration === 6) return call("submit-again", "core.submit_candidate", { ...dropped, summary: "Same change, sent again as invited" });
+      // A completion the check refuses, then the script ends: no count of turns ends the loop (t1056).
+      if (iteration > 7) throw new Error("script exhausted");
       return { kind: "complete", result: { revision: 0, digest: "none" } };
     };
     await runAutomationStudioFlowCandidateAuthoringLoop({
@@ -170,12 +172,12 @@ describe("the resend a kept-condition refusal invites, through the authoring and
       trial: { candidateId: "candidate.campsites", port: async (request) => answered(request, await judge(request.candidate.buildPlan.plan.subflows)) },
       accepted: (candidate) => accepted.push(candidate.revision),
       loop: {
-        tools: [look], maxIterations: 8, maxToolCalls: 10,
-        unusableDecisions: { maxConsecutive: 8, maxInARow: 8, stalled: () => new Error("stalled") },
+        tools: [look],
+        unusableDecisions: { stalled: () => new Error("stalled") },
         executeTool: async () => ({ kind: "llm_evidence_tool_execution", stateDigests: { before: PAGE, after: PAGE }, evidence: { ok: true, sites: 12 }, effectApplied: false, draft: { actionId: "demo.look", effect: "observe", proposes: false } }),
         decide
       }
-    });
+    }).catch(() => undefined);
 
     expect(entry(shown, "test-1")).toMatchObject({ ok: false });
     // The refusal: its own code, the mark the guard reads beside Core's feedback, and the revision that stood still stands.

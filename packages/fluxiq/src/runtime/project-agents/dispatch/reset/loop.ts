@@ -84,7 +84,6 @@ export async function runAutomationStudioProjectResetLoop(input: {
     ...input.ports.loop,
     draft: false,
     dryRun: false,
-    maxIterations: input.brief.maxIterations,
     signal: input.signal,
     purse: input.allowance,
     ...(input.callScope !== undefined ? { callScope: input.callScope } : {}),

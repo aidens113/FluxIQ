@@ -133,7 +133,6 @@ export type AutomationStudioResultVerificationProvider = {
   tokenLimits?: Partial<AutomationStudioLlmTokenLimits>;
   timeoutMs?: number;
   maxEstimatedCostUsd?: number;
-  maxCallsPerRun?: number;
   maxTotalTokensPerRun?: number;
   maxTotalEstimatedCostUsd?: number;
 };
@@ -603,7 +602,6 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
     explicitRunBudget: true,
     // A standing check's per-call grant must never become the run's total.
     resolution: {
-      ...(resolved.maxCallsPerRun !== undefined ? { maxCallsPerRun: resolved.maxCallsPerRun } : {}),
       ...(resolved.maxTotalTokensPerRun !== undefined ? { maxTotalTokensPerRun: resolved.maxTotalTokensPerRun } : {}),
       ...(resolved.maxTotalEstimatedCostUsd !== undefined ? { maxTotalEstimatedCostUsd: resolved.maxTotalEstimatedCostUsd } : {}),
       ...(resolved.tokenLimits ? { tokenLimits: resolved.tokenLimits } : {})

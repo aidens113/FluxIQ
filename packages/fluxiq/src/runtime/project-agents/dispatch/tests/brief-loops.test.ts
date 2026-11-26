@@ -31,8 +31,8 @@ describe("a dispatched brief's loop", () => {
     let step = 0;
     const builder = (): AutomationStudioProjectBuilderPorts => ({
       loop: {
-        tools: [], maxToolCalls: 6,
-        unusableDecisions: { maxConsecutive: 3, maxInARow: 3, stalled: () => new Error("stalled") },
+        tools: [], 
+        unusableDecisions: { stalled: () => new Error("stalled") },
         executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: false, targetsUnchanged: true }),
         decide: async ({ evidence }) => steps[step++]!(evidence)
       },
@@ -53,13 +53,19 @@ describe("a dispatched brief's loop", () => {
   });
 
   it("ends a reset that leaves acts on the site as blocked, naming each act still to undo", async () => {
+    let completions = 0;
     const left: AutomationStudioSiteResetNamedAct[] = [{ act: "act-1", did: "press \"Add to planting list\" button" }];
     const reset = (): AutomationStudioProjectResetPorts => ({
       loop: {
         tools: [],
-        unusableDecisions: { maxConsecutive: 2, maxInARow: 2, stalled: () => new Error("the reset stalled") },
+        unusableDecisions: { stalled: () => new Error("the reset stalled") },
         executeTool: async () => ({ ok: true }),
-        decide: async () => ({ kind: "complete", result: { summary: "done" } })
+        // Completes three times, refused each time, then stops answering: no count of turns ends the loop (t1056).
+        decide: async () => {
+          completions += 1;
+          if (completions > 3) throw new Error("script exhausted");
+          return { kind: "complete", result: { summary: "done" } };
+        }
       },
       remainingActs: async () => left
     });
@@ -78,7 +84,7 @@ describe("a dispatched brief's loop", () => {
     const reset = (): AutomationStudioProjectResetPorts => ({
       loop: {
         tools: [{ toolId: "site.undo", description: "Undo one act", effect: "mutate", inputSchema: { type: "object" } }],
-        unusableDecisions: { maxConsecutive: 3, maxInARow: 3, stalled: () => new Error("the reset stalled") },
+        unusableDecisions: { stalled: () => new Error("the reset stalled") },
         executeTool: async () => {
           left = [];
           return { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true, targetsUnchanged: false };
@@ -107,7 +113,7 @@ describe("a dispatched brief's loop", () => {
     const reset = (): AutomationStudioProjectResetPorts => ({
       loop: {
         tools: [{ toolId: "site.undo", description: "Undo one act", effect: "mutate", inputSchema: { type: "object" } }],
-        unusableDecisions: { maxConsecutive: 3, maxInARow: 3, stalled: () => new Error("the reset stalled") },
+        unusableDecisions: { stalled: () => new Error("the reset stalled") },
         executeTool: async () => ({ ok: true }),
         decide: async () => {
           step += 1;
@@ -133,13 +139,17 @@ describe("a dispatched brief's loop", () => {
   // L1 reset settlement: the refusal lists each open act with what settles it, and says what cannotUndo truly does.
   it("tells a reset whose completion is refused what settles each act and when to name one under cannotUndo (t591, L1)", async () => {
     const seen: unknown[] = [];
+    let completions = 0;
     const reset = (): AutomationStudioProjectResetPorts => ({
       loop: {
         tools: [{ toolId: "site.undo", description: "Undo one act", effect: "mutate", inputSchema: { type: "object" } }],
-        unusableDecisions: { maxConsecutive: 2, maxInARow: 2, stalled: () => new Error("the reset stalled") },
+        unusableDecisions: { stalled: () => new Error("the reset stalled") },
         executeTool: async () => ({ ok: true }),
         decide: async ({ evidence }) => {
           seen.push(...evidence.map((entry) => entry.value));
+          // Refused each time, then the model stops answering: no count of turns ends the loop (t1056).
+          completions += 1;
+          if (completions > 3) throw new Error("script exhausted");
           return { kind: "complete", result: { summary: "done" } };
         }
       },
@@ -162,7 +172,7 @@ describe("a dispatched brief's loop", () => {
     const reset = (): AutomationStudioProjectResetPorts => ({
       loop: {
         tools: [{ toolId: "site.undo", description: "Undo one act", effect: "mutate", inputSchema: { type: "object" } }],
-        unusableDecisions: { maxConsecutive: 3, maxInARow: 3, stalled: () => new Error("the reset stalled") },
+        unusableDecisions: { stalled: () => new Error("the reset stalled") },
         executeTool: async () => ({ ok: true }),
         decide: async () => {
           step += 1;

@@ -4,11 +4,9 @@
 // agent's act is put to the ledger that owns it; and a brief's call cap leaves
 // room for its subflow trials' judges.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioProjectSubflowBrief } from "../../../../../runtime/project-agents/index.ts";
 import { AutomationStudioSiteResetProjectLedger } from "../../../../../runtime/flow-authoring/bootstrap/site-reset/index.ts";
 import { judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 import { trialFixture } from "../../candidate-trial/tests/fixtures.ts";
-import { automationStudioProjectBuildBriefCalls } from "../brief-calls.ts";
 import { automationStudioProjectBuildResetCalls } from "../reset-calls.ts";
 import { AUTOMATION_STUDIO_PROJECT_BUILD_SUPERVISOR_LEDGER, automationStudioProjectBuildWholeTrials } from "../index.ts";
 
@@ -21,10 +19,6 @@ function pressingTrial(consequences: string[]) {
   fixture.ports.graphOptions = ({ signal }) => ({ signal, now: () => 100, nativeNodeExecutor: async () => ({ result: { status: "success", route: "success", outputs: {} } }) } as ReturnType<typeof fixture.ports.graphOptions>);
   const { judge: _judge, ...environment } = fixture.ports;
   return { fixture, environment };
-}
-
-function brief(kind: AutomationStudioProjectSubflowBrief["kind"], maxIterations: number): AutomationStudioProjectSubflowBrief {
-  return { briefId: "brief-1", kind, planDigest: "d".repeat(64), subflowKey: "main", parts: ["p1"], entry: { caseId: "observed-current", predecessors: [] }, allowanceUsd: 0.01, maxIterations, permittedActs: [] };
 }
 
 describe("a project build's lasting acts", () => {
@@ -66,11 +60,5 @@ describe("a project build's lasting acts", () => {
     expect(own.claim("act-1")).toMatchObject({ kind: "refused" });
     expect(calls.claim("act-9")).toMatchObject({ kind: "refused" });
     expect(calls.claim(undefined)).toEqual({ kind: "none" });
-  });
-
-  it("caps a build brief's calls at three per decision, for its trials' judges, and a reset's at its decisions", () => {
-    expect(automationStudioProjectBuildBriefCalls(brief("build", 6))).toBe(18);
-    expect(automationStudioProjectBuildBriefCalls(brief("repair", 4))).toBe(12);
-    expect(automationStudioProjectBuildBriefCalls(brief("reset", 5))).toBe(5);
   });
 });

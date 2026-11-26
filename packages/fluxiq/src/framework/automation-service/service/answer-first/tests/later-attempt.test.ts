@@ -168,7 +168,7 @@ describe("a later attempt at the same task", () => {
     const afterTheFreshRound = [FORWARD(READ_STEP), complete("Listed.")];
     const second = await lane.attempt({
       script: Array.from({ length: 30 }, () => (request: Parameters<typeof toldTo>[0]) => {
-        if (toldTo(request)?.why === undefined) throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "Mangled.", false);
+        if (toldTo(request)?.why === undefined) throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "Mangled.", false, undefined, undefined, undefined, undefined, undefined, undefined, { inputTokens: 1_000, outputTokens: 40, totalTokens: 1_040, estimatedCostUsd: 0.0004 });
         return afterTheFreshRound.shift() ?? toolCall("look", LOOK_TOOL, {});
       })
     });

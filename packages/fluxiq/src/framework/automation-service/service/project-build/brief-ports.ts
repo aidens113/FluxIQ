@@ -11,7 +11,7 @@ import { AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID, AUTOMATION_STUDIO_LLM_RUN
 import { AUTOMATION_STUDIO_PROJECT_RESET_COMPLETION, type AutomationStudioProjectBriefEnding, type AutomationStudioProjectBriefPortFactory, type AutomationStudioProjectBriefPortRequest, type AutomationStudioProjectBuilderPorts } from "../../../../runtime/project-agents/index.ts";
 import { startAutomationStudioBuildRouting } from "../../route-state/index.ts";
 import { automationStudioCandidateStallCode, automationStudioCandidateSubmissionRefusals } from "../candidate-failure/index.ts";
-import { automationStudioFlowBootstrapUnusableDecisions, type generateAutomationStudioFlowCandidateDraft } from "../flow-bootstrap-commands/index.ts";
+import { automationStudioFlowBootstrapLoopSignal, automationStudioFlowBootstrapUnusableDecisions, type generateAutomationStudioFlowCandidateDraft } from "../flow-bootstrap-commands/index.ts";
 import type { AutomationStudioProjectBuildActsRecord } from "./acts-record.ts";
 import type { AutomationStudioProjectBuildDecisions } from "./decisions.ts";
 import { automationStudioProjectBuildBriefTold as told, automationStudioProjectBuildEvidenceBeside as beside } from "../project-build-notes/index.ts";
@@ -248,8 +248,8 @@ export function automationStudioProjectBuildBriefPorts(input: {
   const { projectId, flowId, resolution, startLocation } = draft.submission;
   const { binding } = project;
   // A stall for no progress carries the brief's last refused submission as codes, which its return reads back (t630, `project-agents/dispatch/ending.ts`).
-  const unusable = (maxIterations: number, submissions: ReturnType<typeof automationStudioCandidateSubmissionRefusals>) => automationStudioFlowBootstrapUnusableDecisions({
-    maxConsecutiveUnusableDecisions: draft.maxConsecutiveUnusableDecisions, maxIterations, callerEnding: () => undefined,
+  const unusable = (submissions: ReturnType<typeof automationStudioCandidateSubmissionRefusals>) => automationStudioFlowBootstrapUnusableDecisions({
+    callerEnding: () => undefined,
     stalled: (progress) => {
       const code = automationStudioCandidateStallCode(progress.issueCodes);
       const refused = code === "flow_bootstrap.evidence_repeat_without_progress" ? submissions.codes(progress) : [];
@@ -300,7 +300,7 @@ export function automationStudioProjectBuildBriefPorts(input: {
       return await project.runHarness({ ...call, instructions: task ? task() : [...call.instructions, declarations], evidenceLoop: {...call.evidenceLoop!, evidence: shown.evidence.map((item) => ({ ...item })) }, flowBootstrap: { ...call.flowBootstrap!, routing: shown.context, describedNodeIds: nodeDescriptions.ids() } });
     };
     const decide = (completionSchema: JsonObject | undefined) => input.decisions.decide({ runHarness, wrapDecision: routing.observing, completionSchema });
-    const { purse: _purse, signal: _signal, budget: _budget, maxIterations: _maxIterations, tools: _tools, executeTool: _executeTool, nodeOf: _nodeOf, ...limits } = draft.loop;
+    const { purse: _purse, signal: _signal, budget: _budget, tools: _tools, executeTool: _executeTool, nodeOf: _nodeOf, ...limits } = draft.loop;
     // This brief's own submissions, watched where the builder loop answers them (`observe` below).
     const submissions = automationStudioCandidateSubmissionRefusals(AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID);
     // A toggle an exploration call recorded is written into the build record once the call has answered (t792).
@@ -311,7 +311,9 @@ export function automationStudioProjectBuildBriefPorts(input: {
       const scope = parentAuthority.currentScope();
       return scope && !personNeeded.signal.aborted ? { ...scope, generation: permissions, authority: permissions } : undefined;
     } } : undefined;
-    const loop = { ...limits, rerunAuthority, tools: harness.tools, observedStateKeys: harness.observedStateKeys, pageChannel: harness.pageChannel, executeTool: written(routing.recording(personNeeded.executeTool), togglesWritten), nodeOf: nodeDescriptions.definition, unusableDecisions: unusable(request.brief.maxIterations, submissions), decide: delegate };
+    const loop = { ...limits, rerunAuthority, tools: harness.tools, observedStateKeys: harness.observedStateKeys, pageChannel: harness.pageChannel, executeTool: written(routing.recording(personNeeded.executeTool), togglesWritten), nodeOf: nodeDescriptions.definition, unusableDecisions: unusable(submissions), decide: delegate,
+      // The ladder's top rung ends a builder's round as a stall does (t1056, `../flow-bootstrap-commands/loop-signal.ts`).
+      ...automationStudioFlowBootstrapLoopSignal() };
     const setCompletionSchema = (schema: JsonObject | undefined) => { configuredDecide = decide(schema); };
     return { loop, permissions, decide, setCompletionSchema, submissions, ended: briefEnding(permissions, personNeeded) };
   };

@@ -12,7 +12,7 @@ describe("the judgement a repair reads", () => {
     const codes = Array.from({ length: 30 }, (_unused, index) => `bootstrap.code_${index}`);
     const value = automationStudioFlowBootstrapJudgementValue({
       round: 1,
-      stopped: "iterations",
+      stopped: "repeat_without_progress",
       tested: "replay_failed",
       testIssueCodes: codes,
       failedSteps: [2, 3],
@@ -101,7 +101,7 @@ describe("where the step a repair is to fix starts", () => {
   it("names the page each step that did not work in the test starts on, the first one at the Flow's start", async () => {
     const outcome = (position: number, status: string) => ({ step: position, status }) as unknown as NonNullable<AutomationStudioFlowDraftStep["replayed"]>;
     const judged = await automationStudioFlowBootstrapJudgeUnfinished({
-      round: 0, stopped: "iterations", steps: [step(1), step(2), step(3)], lastIssueCodes: [], replayable: () => true, checklist: () => undefined,
+      round: 0, stopped: "repeat_without_progress", steps: [step(1), step(2), step(3)], lastIssueCodes: [], replayable: () => true, checklist: () => undefined,
       test: async (seed) => {
         seed[0]!.replayed = outcome(1, "unreproducible");
         seed[1]!.replayed = outcome(2, "replayed");

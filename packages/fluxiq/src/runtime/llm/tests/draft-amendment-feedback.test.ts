@@ -70,7 +70,7 @@ describe("an amendment the draft refused", () => {
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 9, change: "drop" }] })
       .mockResolvedValueOnce(complete);
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 8, maxToolCalls: 8, unusableDecisions: { stalled }, executeTool: pressing()
+      tools, decide, unusableDecisions: { stalled }, executeTool: pressing()
     });
     expect(result.ok).toBe(true);
     const feedback = feedbackShown(decide, 2);
@@ -95,7 +95,7 @@ describe("an amendment the draft refused", () => {
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "drop" }, { step: 4, change: "drop" }] })
       .mockResolvedValueOnce(complete);
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 8, maxToolCalls: 8, unusableDecisions: { stalled }, executeTool: pressing()
+      tools, decide, unusableDecisions: { stalled }, executeTool: pressing()
     });
     expect(result.ok).toBe(true);
     expect(amendRow(result.trace)).toMatchObject({
@@ -114,7 +114,7 @@ describe("an amendment the draft refused", () => {
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "unrepeat" }] })
       .mockResolvedValueOnce(complete);
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 8, maxToolCalls: 8, unusableDecisions: { stalled }, executeTool: pressing()
+      tools, decide, unusableDecisions: { stalled }, executeTool: pressing()
     });
     expect(result.ok).toBe(true);
     expect(amendRow(result.trace)).toMatchObject({
@@ -134,7 +134,7 @@ describe("an amendment the draft refused", () => {
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "drop" }] })
       .mockResolvedValueOnce(complete);
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 8, maxToolCalls: 8, unusableDecisions: { stalled }, executeTool: pressing()
+      tools, decide, unusableDecisions: { stalled }, executeTool: pressing()
     });
     expect(result.ok).toBe(true);
     expect(amendRow(result.trace)?.amendmentsRefused).toBeUndefined();
@@ -149,7 +149,7 @@ describe("an amendment the draft refused", () => {
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 9, change: "drop" }] })
       .mockResolvedValue(complete);
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 8, maxToolCalls: 8,
+      tools, decide, 
       unusableDecisions: { stalled }, executeTool: pressing(2_000_000)
     });
     expect(result.ok).toBe(true);
@@ -172,7 +172,7 @@ describe("a rerun the loop cannot carry out", () => {
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 6, change: "rerun", input: { target: "target.6" } }] })
       .mockResolvedValueOnce(complete);
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 8, maxToolCalls: 8, unusableDecisions: { stalled }, executeTool: pressing()
+      tools, decide, unusableDecisions: { stalled }, executeTool: pressing()
     });
     expect(result.ok).toBe(true);
     expect(amendRow(result.trace)).toMatchObject({
@@ -199,7 +199,7 @@ describe("a rerun the loop cannot carry out", () => {
       })
       .mockResolvedValueOnce(complete);
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 8, maxToolCalls: 8, unusableDecisions: { stalled }, executeTool: pressing()
+      tools, decide, unusableDecisions: { stalled }, executeTool: pressing()
     });
     expect(result.ok).toBe(true);
     expect(amendRow(result.trace)).toMatchObject({
@@ -441,7 +441,7 @@ describe("a refusal about a listing says what comes next", () => {
       .mockResolvedValueOnce({ kind: "tool_call", callId: "call.list", toolId: "list", input: { where: "atLeast 5" }, add: true })
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "repeat", over: 1 }] })
       .mockResolvedValueOnce(complete);
-    await runAutomationStudioLlmEvidenceLoop({ tools: [list, press], decide, maxIterations: 8, maxToolCalls: 8, unusableDecisions: { stalled }, executeTool });
+    await runAutomationStudioLlmEvidenceLoop({ tools: [list, press], decide, unusableDecisions: { stalled }, executeTool });
     const feedback = feedbackShown(decide, 2);
     expect(feedback).toMatchObject({ refused: [{ step: 1, reason: "over_not_before" }] });
     expect(nextOf(feedback!)).toContain(`No step after step 1 does anything to a row yet`);
@@ -453,7 +453,7 @@ describe("a refusal about a listing says what comes next", () => {
     const executeTool = vi.fn(async () => ({ kind: "llm_evidence_tool_execution" as const, evidence: { ok: false }, effectApplied: false, stateDigests: { before: "same-state", after: "same-state" }, draft: { proposes: true } }));
     const decide = vi.fn().mockResolvedValueOnce({ kind: "tool_call", callId: "failed-list", toolId: "list", input: { where: "wrong" } })
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 2, change: "rerun", input: { where: "wrong" } }] }).mockResolvedValueOnce(complete);
-    await runAutomationStudioLlmEvidenceLoop({ tools: [list], decide, executeTool, draft: { seed: [{ position: 1, iteration: 0, actionId: "list", input: { where: "previous valid read" }, effect: "observe", effectApplied: true, proposes: true, disposition: "kept" }] }, unusableDecisions: { stalled: () => new Error("stalled") }, maxIterations: 5, maxToolCalls: 5, dryRun: false });
+    await runAutomationStudioLlmEvidenceLoop({ tools: [list], decide, executeTool, draft: { seed: [{ position: 1, iteration: 0, actionId: "list", input: { where: "previous valid read" }, effect: "observe", effectApplied: true, proposes: true, disposition: "kept" }] }, unusableDecisions: { stalled: () => new Error("stalled") }, dryRun: false });
     const feedback = feedbackShown(decide, 2)!;
     expect(feedback).toMatchObject({ refused: [{ step: 2, reason: "changes_nothing" }] });
     // run-mustvzvg C4: step 2 never ran, so nothing says its rows stand or to go on to the act.
@@ -484,20 +484,22 @@ describe("a refusal about a listing says what comes next", () => {
 describe("an act named again that the checklist already shows done, through the loop", () => {
   const stalledError = new Error("stalled");
   const keep = { kind: "amend_draft", amendments: [{ step: 1, change: "keep", act: "a2.quantity" }] };
-  const run = (actsMissing: () => readonly string[], onStall: (input: { issueCodes: readonly string[] }) => unknown = () => stalledError) => {
+  // The model sends the same refused keep twelve times, then finishes; no count ends the round (t1056). With `ends`, its
+  // caller ends the round on loop detection's signal, the one way a run of refusals still stalls one.
+  const run = (actsMissing: () => readonly string[], onStall: (input: { issueCodes: readonly string[] }) => unknown = () => stalledError, ends = false) => {
     const decide = vi.fn()
       .mockResolvedValueOnce({ kind: "tool_call", callId: "call.press.1", toolId: "press", input: { target: "plus" }, add: true, act: "a2.quantity" })
-      .mockResolvedValue(keep);
+      .mockImplementation(async () => decide.mock.calls.length <= 13 ? keep : { kind: "complete", result: { done: true } });
     const done = runAutomationStudioLlmEvidenceLoop({
-      tools, decide, executeTool: pressing(), maxIterations: 30, maxToolCalls: 30, dryRun: false, propagateDecisionErrors: true,
-      draft: { actsMissing }, unusableDecisions: { maxConsecutive: 8, stalled: onStall }
+      tools, decide, executeTool: pressing(), dryRun: false, propagateDecisionErrors: true,
+      draft: { actsMissing }, unusableDecisions: { stalled: onStall }, ...(ends ? { loopSignal: () => "end" as const } : {})
     });
     return { decide, done };
   };
 
   it("is told nothing is left to do for it, and which acts still are", async () => {
     const { decide, done } = run(() => ["a3", "a3.size"]);
-    await expect(done).rejects.toBe(stalledError);
+    await expect(done).resolves.toMatchObject({ ok: true });
     const feedback = feedbackShown(decide, 3);
     expect(feedback).toMatchObject({ refused: [{ step: 1, reason: "act_already_named", next: "Step 1 already names a2.quantity, and the acts checklist shows a2.quantity done, so nothing is left to do for it: do not name it again. Still not done on the checklist: a3, a3.size. Go on with those." }] });
     expect(String(feedback?.instruction)).toContain("next, beside a refusal, is what to do instead");
@@ -506,16 +508,16 @@ describe("an act named again that the checklist already shows done, through the 
   // W2: it used to be told the general reason alone, with no next.
   it("is told to correct the step its todo names while the checklist still shows the act not done, never sent back to the checklist", async () => {
     const { decide, done } = run(() => ["a2.quantity", "a3"]);
-    await expect(done).rejects.toBe(stalledError);
+    await expect(done).resolves.toMatchObject({ ok: true });
     const refused = feedbackShown(decide, 3)?.refused as { step: number; reason: string; next?: string }[];
     expect(refused).toMatchObject([{ step: 1, reason: "act_already_named" }]);
     expect(refused[0]?.next).toContain("Step 1 already names a2.quantity, and the checklist still shows it not done");
     expect(refused[0]?.next).not.toContain("Still not done on the checklist");
   });
 
-  it("stalls the round as amendments refused, not as a refused call", async () => {
+  it("stalls a round its caller ends on the signal as amendments refused, not as a refused call", async () => {
     const onStall = vi.fn((_input: { issueCodes: readonly string[] }) => stalledError);
-    const { done } = run(() => ["a3"], onStall);
+    const { done } = run(() => ["a3"], onStall, true);
     await expect(done).rejects.toBe(stalledError);
     expect(onStall).toHaveBeenCalledTimes(1);
     expect(onStall.mock.calls[0]![0].issueCodes).toEqual(["llm_evidence_loop.draft_amendments_refused"]);

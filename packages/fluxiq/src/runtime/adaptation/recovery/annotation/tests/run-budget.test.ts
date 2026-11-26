@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AUTOMATION_STUDIO_LLM_DEFAULT_TOKEN_LIMITS,
-  AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP,
   AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD as CEILING,
   AutomationStudioLlmRunBudgetLedger,
   estimateAutomationStudioDeepSeekCostUsd
@@ -23,11 +22,11 @@ describe("resolveAutomationStudioRecoveryRunBudget", () => {
   const WINDOW = AUTOMATION_STUDIO_LLM_DEFAULT_TOKEN_LIMITS.maxTotalTokens;
   // Core's own default token pot (6,000 per share, 144,000 in all) is gone:
   // it refused a whole page's diagnosis outright. The purse binds.
-  it("bounds a recovery nobody asked for by the run cost ceiling and the per-call limit times the shares, with the call count only a backstop", () => {
+  it("bounds a recovery nobody asked for by the run cost ceiling and the per-call limit times the shares, and by no count of calls", () => {
     const budget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: false });
 
+    // No call count is a limit (t1056): the ledger is given tokens and money only.
     expect(budget.ledger).toEqual({
-      maxCallsPerRun: AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP,
       maxTotalTokensPerRun: WINDOW * AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES,
       // No per-call output limit was named, so the output pot is the token pot.
       maxOutputTokensPerRun: WINDOW * AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES,
@@ -46,23 +45,12 @@ describe("resolveAutomationStudioRecoveryRunBudget", () => {
     expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: false, policyMaxEstimatedCostUsdPerRun: 5 }).ledger.maxEstimatedCostUsdPerRun).toBe(5);
   });
 
-  // A resolver's call count is a real outside limit, so it is honoured, and a
-  // small one divides the purse among the calls it can actually make.
-  it("takes a resolver's declared call count at its word and sizes the purse to it", () => {
-    const budget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: false, resolution: { maxCallsPerRun: 2 } });
-
-    expect(budget.ledger).toEqual({ maxCallsPerRun: 2, maxTotalTokensPerRun: 2 * WINDOW, maxOutputTokensPerRun: 2 * WINDOW, maxEstimatedCostUsdPerRun: CEILING });
-    expect(budget.maxEstimatedCostUsdPerCall).toBeCloseTo(CEILING / 2, 12);
-    // Said, so a stage may plan by it; the backstop is never offered as one.
-    expect(budget.declaredCallsPerRun).toBe(2);
-    expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: false }).declaredCallsPerRun).toBeUndefined();
-  });
-
   it("honors explicit resolver totals up to the server maximum", () => {
     const resolverTotal = CEILING * 0.6;
-    const asked = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { maxCallsPerRun: 10, maxEstimatedCostUsd: CEILING, maxTotalEstimatedCostUsd: resolverTotal } });
-    expect(asked.ledger).toEqual({ maxCallsPerRun: 10, maxTotalTokensPerRun: 10 * WINDOW, maxOutputTokensPerRun: 10 * WINDOW, maxEstimatedCostUsdPerRun: resolverTotal });
-    expect(asked.maxEstimatedCostUsdPerCall).toBeCloseTo(resolverTotal / 10, 8);
+    const asked = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { maxEstimatedCostUsd: CEILING, maxTotalEstimatedCostUsd: resolverTotal } });
+    const shares = AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES;
+    expect(asked.ledger).toEqual({ maxTotalTokensPerRun: shares * WINDOW, maxOutputTokensPerRun: shares * WINDOW, maxEstimatedCostUsdPerRun: resolverTotal });
+    expect(asked.maxEstimatedCostUsdPerCall).toBeCloseTo(resolverTotal / shares, 8);
 
     // A resolver that gives a per-call cost and no total would otherwise be
     // multiplied into many times the ceiling; the ceiling holds it.
@@ -72,32 +60,32 @@ describe("resolveAutomationStudioRecoveryRunBudget", () => {
   });
 
   // The ledger reserves each call's share, rounded to a billionth, against the
-  // total. Every declared call must still fit on the last one, or it is
-  // refused on cost while the run still has money.
-  it.each([10, 25, 26, 64])("fits every reservation of a %i-call run inside its total", (calls) => {
-    const budget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { maxCallsPerRun: calls, maxEstimatedCostUsd: CEILING, maxTotalEstimatedCostUsd: 2 } });
+  // total. Every share must still fit on the last one, or it is refused on cost
+  // while the run still has money.
+  it("fits every share's reservation inside its total", () => {
+    const calls = AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES;
+    const budget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { maxEstimatedCostUsd: CEILING, maxTotalEstimatedCostUsd: 2 } });
     const total = budget.ledger.maxEstimatedCostUsdPerRun;
     expect(total).toBe(2);
     const rounded = (value: number) => Math.round(value * 1_000_000_000) / 1_000_000_000;
     // A resolver that declared no per-call limits has no worst case of its own
     // to reserve -- the default is the whole window, which no call fills -- so
-    // each call reserves an even share, and every declared call fits.
+    // each call reserves an even share, and every share fits.
     expect(budget.maxEstimatedCostUsdPerCall).toBeCloseTo(total / calls, 8);
-    const admitted = Math.min(calls, Math.floor(total / budget.maxEstimatedCostUsdPerCall));
     let committed = 0;
-    for (let call = 0; call < admitted; call += 1) {
+    for (let call = 0; call < calls; call += 1) {
       expect(rounded(committed + budget.maxEstimatedCostUsdPerCall)).toBeLessThanOrEqual(total);
       committed = rounded(committed + budget.maxEstimatedCostUsdPerCall);
     }
-    expect(budget.ledger.maxCallsPerRun).toBe(calls);
-    // And the token pot is the per-call limit times the calls.
+    // No count of calls is a limit (t1056), and the token pot is the per-call limit times the shares.
+    expect(budget.ledger).not.toHaveProperty("maxCallsPerRun");
     expect(budget.ledger.maxTotalTokensPerRun).toBe(WINDOW * calls);
   });
 
-  it("caps the token pot at a resolver's whole-run token exposure, however many calls it declared", () => {
-    const budget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { maxCallsPerRun: 26, maxTotalTokensPerRun: 100_000, maxTotalEstimatedCostUsd: 2 } });
+  it("caps the token pot at a resolver's whole-run token exposure", () => {
+    const budget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { maxTotalTokensPerRun: 100_000, maxTotalEstimatedCostUsd: 2 } });
 
-    expect(budget.ledger).toEqual({ maxCallsPerRun: 26, maxTotalTokensPerRun: 100_000, maxOutputTokensPerRun: 100_000, maxEstimatedCostUsdPerRun: 2 });
+    expect(budget.ledger).toEqual({ maxTotalTokensPerRun: 100_000, maxOutputTokensPerRun: 100_000, maxEstimatedCostUsdPerRun: 2 });
   });
 
   // The Flow's configured spend limit lowers the ceiling of a run a person
@@ -112,11 +100,7 @@ describe("resolveAutomationStudioRecoveryRunBudget", () => {
     expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution }).ledger.maxEstimatedCostUsdPerRun).toBe(2);
   });
 
-  it("ignores a nonsensical declared call count rather than letting it zero the run", () => {
-    for (const maxCallsPerRun of [0, -3, Number.NaN, Number.POSITIVE_INFINITY]) {
-      expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: false, resolution: { maxCallsPerRun } }).ledger.maxCallsPerRun).toBe(AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP);
-    }
-  });
+
 });
 
 // The user's rule: a run costs at most the run cost ceiling ($0.10 since
@@ -177,7 +161,12 @@ describe("a recovery call's reservation", () => {
   const OFF_PEAK_MS = Date.UTC(2026, 9, 3, 12);
   const peak = () => PEAK_MS;
   const offPeak = () => OFF_PEAK_MS;
-  const live = { maxCallsPerRun: 64, tokenLimits: { maxInputTokens: 48_000, maxOutputTokens: 8_000, maxTotalTokens: 56_000 }, maxEstimatedCostUsd: CEILING, maxTotalEstimatedCostUsd: CEILING };
+  const LIVE_LIMITS = { maxInputTokens: 48_000, maxOutputTokens: 8_000, maxTotalTokens: 56_000 };
+  // The live repairs' figures, with a purse of twice the model's peak worst case. A run's even share was the purse over
+  // its declared calls (64 there); no count of calls is declared any more (t1056), so the share is the purse over
+  // Core's shares, and this purse keeps it below one call's worst case at any hour, as 64 calls did.
+  const liveFor = (model: "deepseek-flash" | "deepseek-v4-pro" = "deepseek-flash") => ({ tokenLimits: LIVE_LIMITS, maxEstimatedCostUsd: CEILING, maxTotalEstimatedCostUsd: 2 * estimateAutomationStudioDeepSeekCostUsd(48_000, 8_000, 0, model, PEAK_MS) });
+  const live = liveFor();
 
   it("is one call's worst case at the model's peak rates, so an ordinary diagnosis is no breach", () => {
     const budget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: live, model: "deepseek-flash", now: peak });
@@ -193,7 +182,7 @@ describe("a recovery call's reservation", () => {
   });
 
   it("is priced for the model the provider calls, and Core's default model when that is not a priced one", () => {
-    const pro = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: live, model: "deepseek-v4-pro", now: peak });
+    const pro = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: liveFor("deepseek-v4-pro"), model: "deepseek-v4-pro", now: peak });
     expect(pro.maxEstimatedCostUsdPerCall).toBeCloseTo(estimateAutomationStudioDeepSeekCostUsd(48_000, 8_000, 0, "deepseek-v4-pro"), 8);
     const mock = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: live, model: "mock", now: peak });
     expect(mock.maxEstimatedCostUsdPerCall).toBeCloseTo(estimateAutomationStudioDeepSeekCostUsd(48_000, 8_000), 8);
@@ -204,8 +193,8 @@ describe("a recovery call's reservation", () => {
   // purse holds one, so off-peak it is half the peak hold.
   it("is half the peak worst case off-peak, and the peak one at peak", () => {
     for (const model of ["deepseek-flash", "deepseek-v4-pro"]) {
-      const atPeak = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: live, model, now: peak });
-      const offPeakBudget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: live, model, now: offPeak });
+      const atPeak = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: liveFor(model as "deepseek-flash"), model, now: peak });
+      const offPeakBudget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: liveFor(model as "deepseek-flash"), model, now: offPeak });
       expect(atPeak.maxEstimatedCostUsdPerCall, model).toBeCloseTo(estimateAutomationStudioDeepSeekCostUsd(48_000, 8_000, 0, model as "deepseek-flash"), 9);
       expect(offPeakBudget.maxEstimatedCostUsdPerCall, model).toBeCloseTo(atPeak.maxEstimatedCostUsdPerCall / 2, 9);
       expect(offPeakBudget.maxEstimatedCostUsdPerCall, model).toBeCloseTo(estimateAutomationStudioDeepSeekCostUsd(48_000, 8_000, 0, model as "deepseek-flash", OFF_PEAK_MS), 9);
@@ -220,7 +209,7 @@ describe("a recovery call's reservation", () => {
   it("prices each call at the rate in force when that call is made, not when the budget was resolved", () => {
     for (const model of ["deepseek-flash", "deepseek-v4-pro"] as const) {
       let clockMs = OFF_PEAK_MS;
-      const budget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: live, model, now: () => clockMs });
+      const budget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: liveFor(model), model, now: () => clockMs });
       const peakWorstCase = estimateAutomationStudioDeepSeekCostUsd(48_000, 8_000, 0, model, PEAK_MS);
       const offPeakWorstCase = estimateAutomationStudioDeepSeekCostUsd(48_000, 8_000, 0, model, OFF_PEAK_MS);
       // Resolved off-peak: the figure fixed at resolution is the off-peak one.
@@ -257,12 +246,13 @@ describe("a recovery call's reservation", () => {
     let clockMs = OFF_PEAK_MS;
     const capped = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { ...live, maxEstimatedCostUsd: CEILING * 0.02 }, model: "deepseek-flash", now: () => clockMs });
     const purse = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: live, model: "deepseek-flash", costLeftUsd: CEILING * 0.04, now: () => clockMs });
-    const shared = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { ...live, maxCallsPerRun: 2 }, model: "deepseek-flash", now: () => clockMs });
+    // The even share of a purse whose share is above any call's worst case: the ceiling over Core's shares (t1056).
+    const shared = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { ...live, maxTotalEstimatedCostUsd: 2 }, model: "deepseek-flash", now: () => clockMs });
     for (const at of [OFF_PEAK_MS, PEAK_MS]) {
       clockMs = at;
       expect(capped.maxEstimatedCostUsdPerCallAt()).toBeLessThanOrEqual(CEILING * 0.02);
       expect(purse.maxEstimatedCostUsdPerCallAt()).toBeLessThanOrEqual(CEILING * 0.04);
-      expect(shared.maxEstimatedCostUsdPerCallAt()).toBeCloseTo(CEILING / 2, 9);
+      expect(shared.maxEstimatedCostUsdPerCallAt()).toBeCloseTo(2 / AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES, 9);
     }
     clockMs = PEAK_MS;
     expect(capped.maxEstimatedCostUsdPerCallAt()).toBe(CEILING * 0.02);
@@ -272,7 +262,7 @@ describe("a recovery call's reservation", () => {
     expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: live, model: "deepseek-flash", costLeftUsd: CEILING * 0.04, now: peak }).maxEstimatedCostUsdPerCall).toBe(CEILING * 0.04);
     expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { ...live, maxEstimatedCostUsd: CEILING * 0.02 }, model: "deepseek-flash", now: peak }).maxEstimatedCostUsdPerCall).toBe(CEILING * 0.02);
 
-    const budget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: live, model: "deepseek-flash", now: peak });
+    const budget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { ...live, maxTotalEstimatedCostUsd: CEILING }, model: "deepseek-flash", now: peak });
     const ledger = new AutomationStudioLlmRunBudgetLedger(budget.ledger);
     let spent = 0;
     for (let call = 0; call < 64; call += 1) {

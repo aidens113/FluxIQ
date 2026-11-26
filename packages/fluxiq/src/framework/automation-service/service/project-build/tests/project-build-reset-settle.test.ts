@@ -143,7 +143,14 @@ function built(options: { shelfMoved?: boolean } = {}) {
     draft: { submission: { projectId: "project", flowId: "flow", resolution: {}, instructionText: "", originalSource: "", signal: new AbortController().signal }, loop: {}, maxConsecutiveUnusableDecisions: 3 },
     decisions: { decide: (input: { runHarness: typeof runHarness }) => {
       runHarness = input.runHarness;
-      return async () => ({ kind: "complete", result: {} });
+      // The model completes, is refused, and after four tries stops answering: no count of turns ends its loop (t1056;
+      // the brief's `maxIterations` of four once did), and its calls here cost nothing a purse could run out of.
+      let decided = 0;
+      return async () => {
+        decided += 1;
+        if (decided > 4) throw new Error("script exhausted");
+        return { kind: "complete", result: {} };
+      };
     } },
     subflowTrial: {}, proposals: {}, accounting: () => ({}), acts: { calls: (calls: unknown) => calls, trialRan: () => undefined }
   } as unknown as Parameters<typeof automationStudioProjectBuildBriefPorts>[0]);

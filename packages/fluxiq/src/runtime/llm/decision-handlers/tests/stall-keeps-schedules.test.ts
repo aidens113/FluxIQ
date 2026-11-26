@@ -44,10 +44,10 @@ async function stalledSteps(decisions: readonly JsonObject[], issueCodes: readon
   for (const decision of decisions) decide.mockResolvedValueOnce(decision);
   decide.mockResolvedValue({ kind: "complete", result: { done: true } });
   await expect(runAutomationStudioLlmEvidenceLoop({
-    tools: [press, find], decide, executeTool: page(), maxIterations: 30, maxToolCalls: 30, dryRun: false, propagateDecisionErrors: true,
+    // A round stalls only where its caller ends it on loop detection's signal: no count ends one on its own (t1056).
+    tools: [press, find], decide, executeTool: page(), dryRun: false, propagateDecisionErrors: true, loopSignal: () => "end",
     draft: { seed: savedSeed() },
     unusableDecisions: {
-      maxConsecutive: 20,
       stalled: (progress) => {
         handed.push({ issueCodes: [...progress.issueCodes], steps: [...progress.steps] });
         return stalledError;
@@ -67,16 +67,16 @@ function expectScheduled(steps: readonly AutomationStudioFlowDraftStep[]): void 
 const gone = (target: string) => ({ kind: "tool_call", callId: `gone.${target}`, toolId: "press", input: { target: `Gone ${target}` } });
 
 describe("a round stall hands over the draft", () => {
-  it("keeps each saved step's scheduled candidate when three refusals of one kind stall the round", async () => {
+  it("keeps each saved step's scheduled candidate when refusals of one kind, caught as a repeat, end the round on the signal", async () => {
     const keep = (step: number) => ({ kind: "amend_draft", amendments: [{ step, change: "keep" }] });
-    expectScheduled(await stalledSteps([keep(1), keep(2), keep(3)], ["llm_evidence_loop.draft_amendments_refused"]));
+    expectScheduled(await stalledSteps(Array.from({ length: 12 }, (_, index) => keep(1 + (index % 3))), ["llm_evidence_loop.draft_amendments_refused"]));
   });
 
   it("keeps each saved step's scheduled candidate when refused repeats stall the round", async () => {
     expectScheduled(await stalledSteps([gone("A"), gone("A"), gone("A"), gone("A"), gone("A")], ["llm_evidence_loop.repeat_refused", "llm_evidence_loop.last_refusal:web.action.rejected.target_unobserved"]));
   });
 
-  it("keeps each saved step's scheduled candidate when looking without acting stalls the round", async () => {
-    expectScheduled(await stalledSteps(Array.from({ length: 8 }, (_, index) => ({ kind: "tool_call", callId: `find.${index}`, toolId: "find", input: { query: `query ${index}` } })), ["llm_evidence_loop.searching_without_acting"]));
+  it("keeps each saved step's scheduled candidate when looking without acting, caught as a repeat, ends the round on the signal", async () => {
+    expectScheduled(await stalledSteps(Array.from({ length: 20 }, (_, index) => ({ kind: "tool_call", callId: `find.${index}`, toolId: "find", input: { query: `query ${index}` } })), ["llm_evidence_loop.repeat_refused"]));
   });
 });

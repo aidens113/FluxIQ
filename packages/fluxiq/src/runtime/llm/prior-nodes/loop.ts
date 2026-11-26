@@ -46,7 +46,7 @@ export function automationStudioLlmPriorNodesLoop(input: {
   // Actual producer receipts/errors stay private for this loop's lifetime, including partial lists.
   const receipts = new Map<string, AutomationStudioLlmRerunOutcome>();
   const admission = automationStudioLlmPriorNodesAdmission({
-    config: ctx.input, maxToolCalls: ctx.limits.maxToolCalls, minToolCalls: ctx.limits.minToolCalls, accounting: ctx.accounting, failedCalls: () => ctx.counters.failedToolCalls,
+    config: ctx.input, minToolCalls: ctx.limits.minToolCalls, accounting: ctx.accounting, failedCalls: () => ctx.counters.failedToolCalls,
     purse: input.purse, clock: input.clock, startedAtMs: input.startedAtMs, remaining: input.remaining, eligible: input.eligible, admission: input.admission,
     stopped: () => stopped || terminal !== undefined
   });

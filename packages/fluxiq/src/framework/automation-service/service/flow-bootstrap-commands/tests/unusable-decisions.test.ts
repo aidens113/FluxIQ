@@ -5,17 +5,16 @@ const progress = { issueCodes: ["llm_output.invalid_evidence_decision"], trace: 
 type Stall = Parameters<ReturnType<typeof automationStudioFlowBootstrapUnusableDecisions>["stalled"]>[0];
 
 describe("the unusable-decision options both authoring modes give their loop", () => {
-  it("holds the build's guard to the loop's decision backstop, or uses it alone without one", () => {
-    const base = { callerEnding: () => undefined, stalled: () => new Error("stalled") };
-    expect(automationStudioFlowBootstrapUnusableDecisions({ ...base, maxConsecutiveUnusableDecisions: 8, maxIterations: 12 }).maxConsecutive).toBe(8);
-    expect(automationStudioFlowBootstrapUnusableDecisions({ ...base, maxConsecutiveUnusableDecisions: 8, maxIterations: 5 }).maxConsecutive).toBe(5);
-    expect(automationStudioFlowBootstrapUnusableDecisions({ ...base, maxConsecutiveUnusableDecisions: 8 }).maxConsecutive).toBe(8);
+  // No count of unusable decisions in a row ends a loop (t1056): the options carry the stall alone, and no bound.
+  it("carries no bound on unusable decisions in a row", () => {
+    const options = automationStudioFlowBootstrapUnusableDecisions({ callerEnding: () => undefined, stalled: () => new Error("stalled") });
+    expect(Object.keys(options)).toEqual(["stalled"]);
   });
 
   it("ends a stall with the build's own ending when it has one, and with the caller's stall otherwise", () => {
     const asked = new Error("permission asked"), stall = new Error("stalled"), seen: Stall[] = [];
     let ask = true;
-    const options = automationStudioFlowBootstrapUnusableDecisions({ maxConsecutiveUnusableDecisions: 8, callerEnding: (got) => { seen.push(got); return ask ? asked : undefined; }, stalled: (got) => { seen.push(got); return stall; } });
+    const options = automationStudioFlowBootstrapUnusableDecisions({ callerEnding: (got) => { seen.push(got); return ask ? asked : undefined; }, stalled: (got) => { seen.push(got); return stall; } });
     expect(options.stalled(progress)).toBe(asked);
     ask = false;
     expect(options.stalled(progress)).toBe(stall);

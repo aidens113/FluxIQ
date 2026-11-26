@@ -75,7 +75,7 @@ async function build(hooks: Hooks, prepare: (service: AutomationStudioService, p
     schemaVersion: "0.1", sdkVersion: AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, packageId: "example.package", packageVersion: "1.0.0", domainId: "example", nodes: [definition]
   }, { packageId: "example.package", packageVersion: "1.0.0", implementations: { [NODE_ID]: () => ({ status: "success", route: "success", outputs: { success: true } }) }, ...hooks });
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-domain-hooks-"));
-  const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 20, maxEstimatedCostUsd: 0.1 }), llmEvidenceRuntime: binding });
+  const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxEstimatedCostUsd: 0.1 }), llmEvidenceRuntime: binding });
   cleanups.push(async () => {
     await service.close();
     await rm(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });

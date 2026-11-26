@@ -7,7 +7,7 @@
 // says why it stopped and how far it had got.
 
 import { automationStudioActivityCheckRefusalReasons, automationStudioActivityIssueWords } from "../../automation-activity/index.ts";
-import { automationStudioActivityFailureCodeWords, automationStudioActivityRefusedStepIssues } from "../../automation-activity/wording/index.ts";
+import { automationStudioActivityFailureCodeWords, automationStudioActivityReasonText, automationStudioActivityRefusedStepIssues, type AutomationStudioActivityIssue } from "../../automation-activity/wording/index.ts";
 import { automationStudioCandidateRefusalCodes } from "../../../framework/automation-service/service/candidate-failure/index.ts";
 import { automationStudioProjectBuildReasonUnrepeated } from "../../../framework/automation-service/service/project-build-ending/index.ts";
 import type { AutomationStudioConversationCommandCallResult, AutomationStudioConversationCommandOutcome } from "./command.ts";
@@ -89,7 +89,7 @@ export function automationStudioConversationCallCause(what: string, response: Au
   if (typeof ending === "string" && ending.trim()) return `${what} could not finish. ${ending.trim().replace(/\.$/u, "")}`;
   const code = typeof diagnostic?.code === "string" ? diagnostic.code : codesIn(response.error ?? "")[0];
   const meant = (code && NO_PROGRESS.test(code) ? refusedWords(diagnostic) ?? neverSubmittedWords(diagnostic) : undefined)
-    ?? (code && ITERATION_LIMIT.test(code) ? exhaustedWords(diagnostic?.evidenceLoop?.exhausted) : undefined)
+    ?? (code && ITERATION_LIMIT.test(code) ? exhaustedWords(diagnostic?.evidenceLoop?.exhausted, diagnostic?.refusedSteps) : undefined)
     ?? supervisorEndingWords(diagnostic)
     ?? (code ? automationStudioActivityFailureCodeWords(code) : undefined)
     ?? (typeof diagnostic?.stage === "string" && Object.hasOwn(STAGE_WORDS, diagnostic.stage) ? STAGE_WORDS[diagnostic.stage] : undefined);
@@ -176,11 +176,50 @@ const ITERATION_LIMIT = /evidence_iteration_limit$/u;
  * budget that ran out where one did, else the decisions or steps it may take.
  * Round 4 (`run-muyrpbnk-fef374e7`, C6) showed what a code with no words of its
  * own came to: its stage's, "the model's answer could not be used".
+ *
+ * A candidate build whose budget ran out while its latest submissions were
+ * refused carries those refused steps beside the ending (t1056,
+ * `candidate-generation.ts`): no count of refusals ends a build any more, so
+ * the budget is what ends one that kept being refused, and the person reads
+ * what the money last went on, not only that it ran out (`refusedOnWords`).
  */
-function exhaustedWords(exhausted: { bound?: unknown; budgetBound?: unknown } | undefined): string {
+function exhaustedWords(exhausted: { bound?: unknown; budgetBound?: unknown } | undefined, refusedSteps: unknown): string {
   const budget = typeof exhausted?.budgetBound === "string" && Object.hasOwn(BUDGET_WORDS, exhausted.budgetBound) ? BUDGET_WORDS[exhausted.budgetBound] : undefined;
-  if (budget) return budget;
-  return exhausted?.bound === "tool_calls" ? "it reached the limit on how many steps it may try" : "it reached the limit on how many decisions it may make";
+  const ran = budget ?? (exhausted?.bound === "tool_calls" ? "it reached the limit on how many steps it may try" : "it reached the limit on how many decisions it may make");
+  const refused = refusedOnWords(refusedSteps);
+  return refused ? `${ran} ${refused}` : ran;
+}
+
+/** The most steps a budget ending names by their words; the rest are counted. */
+const REFUSED_NAMED = 2;
+/** The most characters of one refused step's words quoted. */
+const REFUSED_STEP_WORDS = 80;
+
+/**
+ * What a candidate build's latest refused submission was refused for, from the
+ * refused steps its failure carries, in words that follow a budget's ("it
+ * reached its spending limit ..."): why, in each issue's own words, where its
+ * code has some (`automationStudioActivityIssueWords`), else which steps were
+ * refused, named by the model's own words. Nothing when it carries none.
+ */
+function refusedOnWords(refusedSteps: unknown): string | undefined {
+  const steps = (Array.isArray(refusedSteps) ? refusedSteps : []).filter((entry): entry is { step: string; code?: unknown; line?: unknown; path?: unknown } =>
+    Boolean(entry) && typeof entry === "object" && typeof (entry as { step?: unknown }).step === "string" && Boolean((entry as { step: string }).step.trim()));
+  if (!steps.length) return undefined;
+  const issues: AutomationStudioActivityIssue[] = steps.map((step) => ({
+    code: typeof step.code === "string" ? step.code : "", step: step.step,
+    ...(typeof step.line === "number" ? { line: step.line } : {}), ...(typeof step.path === "string" ? { path: step.path } : {})
+  }));
+  const reasons = automationStudioActivityIssueWords(issues, true, true).reasons;
+  if (reasons.length) return `while the Flow it wrote was still being refused, the last time because ${joined(reasons)}`;
+  const named = steps.slice(0, REFUSED_NAMED).flatMap((step) => {
+    const words = automationStudioActivityReasonText(step.step, REFUSED_STEP_WORDS)?.replace(/[.!?]+$/u, "").trim();
+    return words ? [`'${words}'`] : [];
+  });
+  if (!named.length) return "while the Flow it wrote was still being refused";
+  const more = steps.length - named.length;
+  const which = joined(more > 0 ? [...named, more === 1 ? "one more step" : `${more} more steps`] : named);
+  return `while the Flow it wrote was still being refused at ${steps.length === 1 ? "the step" : "the steps"} ${which}`;
 }
 
 /** Each budget a build can run out of, in words that finish "failed: ...". */

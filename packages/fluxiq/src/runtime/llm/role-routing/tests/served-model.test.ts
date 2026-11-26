@@ -43,7 +43,7 @@ function harness(input: Partial<AutomationStudioLlmHarnessInput>): Promise<Autom
 }
 
 function runBudget(): AutomationStudioLlmRunBudgetLedger {
-  return new AutomationStudioLlmRunBudgetLedger({ maxCallsPerRun: 8, maxTotalTokensPerRun: 100_000, maxOutputTokensPerRun: 100_000, maxEstimatedCostUsdPerRun: 5 });
+  return new AutomationStudioLlmRunBudgetLedger({ maxTotalTokensPerRun: 100_000, maxOutputTokensPerRun: 100_000, maxEstimatedCostUsdPerRun: 5 });
 }
 
 describe("a call routed by role", () => {

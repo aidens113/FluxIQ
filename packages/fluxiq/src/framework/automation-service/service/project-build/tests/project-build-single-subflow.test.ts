@@ -129,7 +129,7 @@ async function plotBuild() {
   });
   const host = new CountingHost(1);
   const serviceOptions: AutomationStudioServiceOptions = {
-    dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 80, maxEstimatedCostUsd: 0.1 }),
+    dataDir, llmProviderResolver: () => ({ provider, maxEstimatedCostUsd: 0.1 }),
     llmEvidenceRuntime: {
       domainId: "isolated", deniedEvidenceKeys: [],
       resolvePlanNodeParameters: (input: Parameters<typeof automationStudioTestDeclaredStepResolution>[0]) => automationStudioTestDeclaredStepResolution(input, { name: "Book", kind: "button", scope: "p:bookings", resource: "r:plots", subject: String(input.parameters.plot), page: "s:plots" }),

@@ -116,7 +116,7 @@ describe("the judge's mode, through the service", () => {
 describe("a caller's budget and model", () => {
   // Each call is priced at $1.20, so five decisions and a judge cost $7.20: more than the $5 default.
   const pricey = { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 1.2 };
-  const resolver = { maxCallsPerRun: 100, maxEstimatedCostUsd: 2 };
+  const resolver = { maxEstimatedCostUsd: 2 };
   const fiveDecisions = [1, 2, 3, 4].map((page) => runNode(`read.${page}`, READ_LOANS, { page }, [], page === 1 ? { add: true } : {})).concat([complete("Listed.")]);
   const priced = (provider: AutomationStudioLlmProvider): AutomationStudioLlmProvider => ({ ...provider, estimateCostUsd: () => 1.2 });
 

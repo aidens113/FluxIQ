@@ -259,7 +259,8 @@ describe("prior successful calls in the actual evidence loop", () => {
     if (ended.ok) expect(ended.steps).toHaveLength(3);
   });
 
-  it.each(["quota", "cancel", "time", "purse"])("executes no later member after %s is spent", async (bound) => {
+  // No count of tool calls is an allowance a batch can spend (t1056): the clock, the purse and a cancellation are.
+  it.each(["cancel", "time", "purse"])("executes no later member after %s is spent", async (bound) => {
     let now = 0;
     const abort = new AbortController();
     let spent = 0;
@@ -271,7 +272,7 @@ describe("prior successful calls in the actual evidence loop", () => {
       if (bound === "purse") spent = 1;
     } });
     const { result } = f.run([readCall("a"), readCall("b", "two"), batchCall(["a", "b"]), complete], {
-      signal: abort.signal, ...(bound === "quota" ? { maxToolCalls: 3 } : {}), ...(bound === "time" ? { budget: { maxDurationMs: 100_000, now: () => now } } : {}), ...(bound === "purse" ? { purse } : {})
+      signal: abort.signal, ...(bound === "time" ? { budget: { maxDurationMs: 100_000, now: () => now } } : {}), ...(bound === "purse" ? { purse } : {})
     });
     await result;
     expect(f.actualItems).toEqual(["one", "two", "one"]);
@@ -294,7 +295,7 @@ describe("prior successful calls in the actual evidence loop", () => {
 
   it("withholds the batch when only candidate finishing remains", async () => {
     const f = priorNodesFixture();
-    const { result, decide } = f.run([readCall("a"), readCall("b", "two"), batchCall(["a", "b"]), complete], { discoveryOnly: true, maxIterations: 7, budget: { maxTotalTokens: 1_000, maxTokensPerDecision: 10 } });
+    const { result, decide } = f.run([readCall("a"), readCall("b", "two"), batchCall(["a", "b"]), complete], { discoveryOnly: true, budget: { maxTotalTokens: 80, maxTokensPerDecision: 10 } });
     await result;
     const request = decide.mock.calls[2]?.[0];
     expect(request?.tools.some((tool) => tool.toolId === "core.run_nodes")).toBe(false);
@@ -307,10 +308,11 @@ describe("prior successful calls in the actual evidence loop", () => {
     const originals = Array.from({ length: 7 }, (_, i) => readCall(`a${i}`, `item${i}`));
     const { result } = f.run([...originals, batchCall(["a0", "a1"]), complete], { recoverStall });
     const ended = await result;
-    expect(ended).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_without_progress", accounting: { toolCalls: 8 } });
+    // No count of looks ends the round (t1056): the batch runs both its looks, caught as a repeat, and the model completes.
+    expect(ended).toMatchObject({ ok: true, accounting: { toolCalls: 9 } });
     expect(recoverStall).not.toHaveBeenCalled();
     expect(ended.steps).toHaveLength(7);
-    expect(f.actualItems).toHaveLength(8);
+    expect(f.actualItems).toHaveLength(9);
   });
 
   it("keeps the failed member's trace/accounting under the ordinary end-on-failure policy", async () => {

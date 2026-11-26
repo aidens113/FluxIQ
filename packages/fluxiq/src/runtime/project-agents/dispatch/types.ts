@@ -109,8 +109,6 @@ export type AutomationStudioProjectDispatcherInput = {
   /** The project's one lasting-act ledger. */
   ledger: AutomationStudioSiteResetProjectLedger;
   ports: AutomationStudioProjectBriefPortFactory;
-  /** The call cap of a brief's allowance; absent, the brief's `maxIterations`. Its subflow trials' judge calls count against it too. */
-  maxCalls?: ((brief: AutomationStudioProjectSubflowBrief) => number | undefined) | undefined;
   /**
    * The build's proposals, told each single-subflow brief's trial with the
    * verdict its gate kept (t679, `../single-subflow/whole-test-port.ts`): the

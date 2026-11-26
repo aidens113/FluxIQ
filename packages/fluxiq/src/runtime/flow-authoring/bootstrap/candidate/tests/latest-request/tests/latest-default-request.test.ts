@@ -22,7 +22,7 @@ describe("a whole-candidate test's latest-default identity", () => {
         return answered;
       } }),
       loop: {
-        tools: [], maxIterations: 8, maxToolCalls: 8, captureStateDigest: () => "the-same-page", executeTool: async () => ({}),
+        tools: [], captureStateDigest: () => "the-same-page", executeTool: async () => ({}),
         decide: async () => {
           switch (++decides) {
             case 1: return { kind: "tool_call", toolId: "core.submit_candidate", callId: "submit-1", input: script("https://notice.test/old") };

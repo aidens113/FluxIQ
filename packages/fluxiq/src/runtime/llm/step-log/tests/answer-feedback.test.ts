@@ -42,8 +42,8 @@ describe("an answer folder for a decision Core refused", () => {
       .mockResolvedValueOnce({ ...look("call.2"), reason: "the next page" })
       .mockResolvedValueOnce(complete);
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, maxIterations: 10, dryRun: false,
-      unusableDecisions: { maxConsecutive: 3, stalled: () => new Error("stalled") }
+      tools, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, dryRun: false,
+      unusableDecisions: { stalled: () => new Error("stalled") }
     });
 
     expect(result).toMatchObject({ ok: true });
@@ -73,8 +73,8 @@ describe("an answer folder for a decision Core refused", () => {
       .mockReturnValueOnce({ ok: false, issueCodes: ["llm_evidence_loop.full_run_required"], feedback: refusal })
       .mockReturnValueOnce({ ok: true });
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, checkCompletion, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, maxIterations: 10, dryRun: false,
-      unusableDecisions: { maxConsecutive: 3, stalled: () => new Error("stalled") }
+      tools, decide, checkCompletion, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, dryRun: false,
+      unusableDecisions: { stalled: () => new Error("stalled") }
     });
 
     expect(result).toMatchObject({ ok: true });

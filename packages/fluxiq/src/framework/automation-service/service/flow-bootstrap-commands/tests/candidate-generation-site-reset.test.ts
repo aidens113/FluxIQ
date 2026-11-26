@@ -23,8 +23,8 @@ function build(extra: Record<string, unknown>) {
   const usage = { calls: 0, estimatedInputTokens: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 };
   return generateAutomationStudioFlowCandidateDraft({
     submission: { projectId: "p", flowId: "f", baseDependencyDigest: "b" } as unknown as Input["submission"],
-    loop: { tools: [], executeTool: async () => ({}), maxIterations: 2, maxToolCalls: 2 } as unknown as Input["loop"],
-    maxConsecutiveUnusableDecisions: 2,
+    loop: { tools: [], executeTool: async () => ({}), maxToolCalls: 2 } as unknown as Input["loop"],
+    
     harness: { provider: { metadata: { provider: "test", model: "m" } } } as unknown as Input["harness"],
     runHarness: async () => { throw new Error("never asked"); },
     wrapDecision: (decide) => decide, beforeDecision: () => undefined, progress: () => undefined, ending: () => undefined,

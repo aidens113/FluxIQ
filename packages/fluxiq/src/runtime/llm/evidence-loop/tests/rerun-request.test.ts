@@ -44,7 +44,7 @@ describe("a retained argument after the actual rerun", () => {
     const executeTool = vi.fn().mockResolvedValueOnce({ kind: "llm_evidence_tool_execution", evidence: { ok: false }, effectApplied: false, draft: { proposes: true } });
     if (outcome === "threw") executeTool.mockRejectedValueOnce(new Error("synthetic failure"));
     else executeTool.mockResolvedValueOnce(outcome === "invalid" ? undefined : { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "malformed:extractList.maxPages" }, effectApplied: false, draft: { proposes: true } });
-    await runAutomationStudioLlmEvidenceLoop({ tools: [tool], decide, executeTool, draft, deniedEvidenceKeys: ["selector"], unusableDecisions: { stalled: () => new Error("stalled") }, maxIterations: 5, maxToolCalls: 5, dryRun: false });
+    await runAutomationStudioLlmEvidenceLoop({ tools: [tool], decide, executeTool, draft, deniedEvidenceKeys: ["selector"], unusableDecisions: { stalled: () => new Error("stalled") }, dryRun: false });
     expect(note(decide, 2)).toMatchObject({ step: 2, kept: ["extractList.maxPages"], removal: { extractList: { maxPages: null } }, attempt: { kind: "failed", callId: "rerun.2" } });
     expect(JSON.stringify(note(decide, 2))).not.toContain("selector");
     expect(JSON.stringify(note(decide, 2))).not.toContain("private-locator");
@@ -56,7 +56,7 @@ describe("a retained argument after the actual rerun", () => {
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [rerun(3, { extractList: { maxPages: null } })] }).mockResolvedValueOnce(complete);
     const executeTool = vi.fn(async ({ value }: { value: JsonObject }) => ({ kind: "llm_evidence_tool_execution" as const,
       evidence: { ok: !Object.hasOwn(value.extractList as JsonObject, "maxPages") }, effectApplied: !Object.hasOwn(value.extractList as JsonObject, "maxPages"), draft: { proposes: true } }));
-    await runAutomationStudioLlmEvidenceLoop({ tools: [tool], decide, executeTool, draft, deniedEvidenceKeys: ["selector"], unusableDecisions: { stalled: () => new Error("stalled") }, maxIterations: 6, maxToolCalls: 6, dryRun: false });
+    await runAutomationStudioLlmEvidenceLoop({ tools: [tool], decide, executeTool, draft, deniedEvidenceKeys: ["selector"], unusableDecisions: { stalled: () => new Error("stalled") }, dryRun: false });
     expect(note(decide, 2)?.kept).toEqual(["extractList.maxPages"]);
     expect(executeTool).toHaveBeenCalledTimes(3);
     expect(executeTool.mock.calls[2]![0].value.extractList).not.toHaveProperty("maxPages");
@@ -68,7 +68,7 @@ describe("a retained argument after the actual rerun", () => {
       const decide = vi.fn().mockResolvedValueOnce({ kind: "tool_call", callId: "first", toolId: "list", input: old })
         .mockResolvedValueOnce({ kind: "amend_draft", amendments: [rerun(2, patch)] }).mockResolvedValueOnce(complete);
       const executeTool = vi.fn().mockResolvedValue({ kind: "llm_evidence_tool_execution", evidence: { ok: declared }, effectApplied: false, draft: { proposes: true } });
-      await runAutomationStudioLlmEvidenceLoop({ tools: [tool], decide, executeTool, draft, ...(declared ? { deniedEvidenceKeys: ["selector"] } : {}), unusableDecisions: { stalled: () => new Error("stalled") }, maxIterations: 5, maxToolCalls: 5, dryRun: false });
+      await runAutomationStudioLlmEvidenceLoop({ tools: [tool], decide, executeTool, draft, ...(declared ? { deniedEvidenceKeys: ["selector"] } : {}), unusableDecisions: { stalled: () => new Error("stalled") }, dryRun: false });
       expect(note(decide, 2)).toBeUndefined();
     }
   });
@@ -79,7 +79,7 @@ describe("a retained argument after the actual rerun", () => {
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [rerun(1, { config: { control: "second" } }), { step: 1, change: "keep", act: "a2" }] }).mockResolvedValueOnce(complete);
     const executeTool = vi.fn().mockResolvedValueOnce({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true })
       .mockResolvedValueOnce({ kind: "llm_evidence_tool_execution", evidence: { ok: false }, effectApplied: false });
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [press], decide, executeTool, deniedEvidenceKeys: [], maxIterations: 5, maxToolCalls: 5, dryRun: false });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [press], decide, executeTool, deniedEvidenceKeys: [], dryRun: false });
     const shown = decide.mock.calls[2]![0].evidence as { toolId: string; value: JsonObject }[];
     expect(shown.find((entry) => entry.toolId === "core.amendment_check")?.value).toMatchObject({ refused: [{ reason: "did_not_work" }] });
     expect(result.steps.some((candidate) => candidate.acts?.includes("a2"))).toBe(false);
@@ -100,7 +100,7 @@ describe("a retained argument after the actual rerun", () => {
     const decide = vi.fn().mockResolvedValueOnce({ kind: "tool_call", callId: "first", toolId: "press", input: { config: { control: "first", kept: true } }, add: true, act: "a1" })
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [rerun(1, { config: { control: "second" } })] })
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [rerun(1, { config: { control: "third" } })] }).mockResolvedValueOnce(complete);
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [press], decide, executeTool, deniedEvidenceKeys: [], lastingActs: async () => new Set(["a1"]), controlParameterKeys: new Set(["target"]), maxIterations: 7, maxToolCalls: 7, dryRun: false });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [press], decide, executeTool, deniedEvidenceKeys: [], lastingActs: async () => new Set(["a1"]), controlParameterKeys: new Set(["target"]), dryRun: false });
     expect(performed).toBe(1);
     expect(executeTool.mock.calls.filter(([call]) => call.value.replay === "verify")).toHaveLength(2);
     expect(note(decide, 2)).toBeUndefined();
@@ -112,7 +112,7 @@ describe("a retained argument after the actual rerun", () => {
     const seeded: AutomationStudioFlowDraftStep = { ...step(1, "demo.press", "core.run_node"), input: { node: "demo.press", parameters: { query: { $state: { path: "query" } }, note: "before" }, consequences: [] }, effectApplied: true };
     const decide = vi.fn().mockResolvedValueOnce({ kind: "amend_draft", amendments: [rerun(1, { parameters: { note: "after" }, write: true })] }).mockResolvedValueOnce(complete);
     const executeTool = vi.fn();
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [{ toolId: "core.run_node", description: "Run a node.", inputSchema: { type: "object" }, effect: "mutate" }], decide, executeTool, deniedEvidenceKeys: [], draft: { seed: [seeded] }, maxIterations: 5, maxToolCalls: 5, dryRun: false });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [{ toolId: "core.run_node", description: "Run a node.", inputSchema: { type: "object" }, effect: "mutate" }], decide, executeTool, deniedEvidenceKeys: [], draft: { seed: [seeded] }, dryRun: false });
     expect(executeTool).not.toHaveBeenCalled();
     expect(note(decide, 1)).toMatchObject({ kept: ["query"], attempt: { kind: "refused", reason: "rerun_holds_binding" } });
     expect(note(decide, 1)?.attempt).not.toHaveProperty("callId");
@@ -433,7 +433,7 @@ describe("the loop running that rerun", () => {
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 2, change: "rerun", input: { where } }] })
       .mockResolvedValue({ kind: "complete", result: { done: true } });
 
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [list], decide, executeTool, unusableDecisions: { stalled: () => new Error("stalled") }, maxIterations: 6, maxToolCalls: 6, dryRun: false });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [list], decide, executeTool, unusableDecisions: { stalled: () => new Error("stalled") }, dryRun: false });
 
     expect(executeTool.mock.calls.map(([call]) => call.value)).toEqual([{ list: "suggestions", where }, { list: "suggestions" }, { list: "suggestions", where }]);
     const feedback = (decide.mock.calls[3]![0].evidence as { toolId: string; value: JsonObject }[]).find((entry) => entry.toolId === "core.amendment_check")?.value;
