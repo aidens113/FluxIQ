@@ -110,8 +110,8 @@ describe("what a refusal says of a look", () => {
 
   it("names a look at the page as new evidence, and how to make it", () => {
     for (const words of [WORDS.judged(UNSURE), WORDS.sameEvidence("unsure", UNSURE), WORDS.freshRound(false)]) {
-      expect(words).toContain("a look at the page that shows what the check said it could not see");
-      expect(words).toContain("open that page, then read or search it there");
+      expect(words).toContain("a read of the page that shows what the check said it could not see");
+      expect(words).toContain("core.full_page gives the whole page");
     }
   });
 
