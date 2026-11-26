@@ -90,7 +90,7 @@ describe("an answer step", () => {
       refused: [{ step: 13, reason: "act_already_named", next: "The acts checklist shows a1.quantity done, so nothing is left to do for it: do not name it again." }, { step: 14, reason: "no_such_step" }],
       applied: 0, steps: 13, positions: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
       reasons: { act_already_named: "That step already names that act.", no_such_step: "There is no step at that number." },
-      stepsWithoutProgress: 1, maxStepsWithoutProgress: 8, instruction: "The listed amendments changed nothing."
+      stepsWithoutProgress: 1, instruction: "The listed amendments changed nothing."
     };
     automationStudioLlmStepLogAnswer({ ...refusedAgain, amendmentsRefused: [{ step: 13, reason: "act_already_named" }, { step: 14, reason: "no_such_step" }], amendmentCheck }, env());
     expect(json(path.join(directory, "0001-answer-amend_draft", "result.json"))).toMatchObject({ verdict: "refused", told: amendmentCheck });

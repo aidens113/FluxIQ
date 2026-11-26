@@ -60,7 +60,7 @@ describe("a while-loop that cannot end, refused when it is written", () => {
     expect(assembled.issues.find((issue) => issue.code === "flow_draft.repeat_while_never_ends")?.message).toBe(said);
 
     // What the model reads next: the reason, Core's sentence on the entry, and the same sentence as what to do.
-    const told = automationStudioLlmEvidenceDraftAmendmentFeedback({ refusals: amended.refused, applied: amended.applied, steps, stepsWithoutProgress: 1, maxStepsWithoutProgress: 6 });
+    const told = automationStudioLlmEvidenceDraftAmendmentFeedback({ refusals: amended.refused, applied: amended.applied, steps, stepsWithoutProgress: 1 });
     const entry = (told.refused as { reason: string; said?: string; next: string }[])[0]!;
     expect(entry.reason).toBe("repeat_never_ends");
     expect(entry.said).toBe(said);
@@ -96,10 +96,10 @@ describe("no guidance or refusal teaches a count as the way a loop ends", () => 
   it("says no `most` in the refusal, its reason or its way out", () => {
     const steps = draft("web.output.dom-click");
     const amended = applyAutomationStudioFlowDraftAmendments(steps, [repeatWhile()], { loopNeverEnds: acts.loopNeverEnds });
-    const told = automationStudioLlmEvidenceDraftAmendmentFeedback({ refusals: amended.refused, applied: 0, steps, stepsWithoutProgress: 1, maxStepsWithoutProgress: 6 });
+    const told = automationStudioLlmEvidenceDraftAmendmentFeedback({ refusals: amended.refused, applied: 0, steps, stepsWithoutProgress: 1 });
     expect(JSON.stringify(told)).not.toMatch(/\bmost\b|to bound it|passes it should take/u);
     // With no sentence to carry (no library), the reason's own way out names no count either.
-    const bare = automationStudioLlmEvidenceDraftAmendmentFeedback({ refusals: [{ step: 2, reason: "repeat_never_ends" }], applied: 0, steps, stepsWithoutProgress: 1, maxStepsWithoutProgress: 6 });
+    const bare = automationStudioLlmEvidenceDraftAmendmentFeedback({ refusals: [{ step: 2, reason: "repeat_never_ends" }], applied: 0, steps, stepsWithoutProgress: 1 });
     expect(JSON.stringify(bare)).not.toMatch(/\bmost\b|to bound it/u);
     expect((bare.refused as { next: string }[])[0]!.next).toContain("answers ended when there is nothing more");
   });

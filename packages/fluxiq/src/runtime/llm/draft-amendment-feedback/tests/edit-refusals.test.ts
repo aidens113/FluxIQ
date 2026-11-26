@@ -6,7 +6,7 @@ import { automationStudioLlmEvidenceDraftAmendmentFeedback } from "../index.ts";
 describe("framework draft edit refusals", () => {
   const feedback = automationStudioLlmEvidenceDraftAmendmentFeedback({
     refusals: [{ step: 2, reason: "not_a_read" }],
-    applied: 0, steps: [], stepsWithoutProgress: 1, maxStepsWithoutProgress: 4
+    applied: 0, steps: [], stepsWithoutProgress: 1
   });
 
   it("tells not_a_read with the way out", () => {

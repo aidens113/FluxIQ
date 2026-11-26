@@ -66,12 +66,14 @@ describe("looking again after being refused", () => {
     expect(result.trace[1]).toMatchObject({ toolId: "press", resultCode: "llm_evidence_loop.already_answered" });
   });
 
-  it("still ends a run that only repeats itself", async () => {
+  // t1049: no count of steps without progress ends it; a run that only repeats itself is steered, and here, with
+  // nothing else to end it, meets the loop's own ceiling.
+  it("still ends a run that only repeats itself, on the loop's own ceiling", async () => {
     const decide = vi.fn().mockResolvedValue(look(1));
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 8, maxToolCalls: 8, maxStepsWithoutProgress: 3, executeTool: refusing
+      tools, decide, maxIterations: 8, maxToolCalls: 8, executeTool: refusing
     });
-    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_without_progress" });
+    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.iteration_limit", accounting: { iterations: 8 } });
   });
 
   it("lets a look that was itself refused be asked again, and runs it", async () => {
@@ -99,17 +101,16 @@ describe("looking again after being refused", () => {
     expect(decide.mock.calls[1]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["inspect", "press", "core.run_flow"]); // `core.run_flow` is offered from the first decision (page-diff D11), refused by name until a step can run again.
   });
 
-  it("counts a refused look against the no-progress guard, so asking for it forever still stops", async () => {
-    // The deliberate other half. Deleting the request's signature takes away
-    // the bound that used to stop a refused look being asked again and again,
-    // so the guard has to be that bound instead.
+  it("counts a refused look as a step without progress, which steers and never ends the loop (t1049)", async () => {
+    // A refused look asked for again and again is steered; what ends it here is the loop's own ceiling, not a count of
+    // steps without progress, which once stopped it at the third.
     const decide = vi.fn().mockResolvedValue(look(1));
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 16, maxToolCalls: 16, maxStepsWithoutProgress: 3, executeTool: refusingLook
+      tools, decide, maxIterations: 16, maxToolCalls: 16, executeTool: refusingLook
     });
 
-    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_without_progress" });
-    expect(result.accounting.toolCalls).toBe(3);
+    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.iteration_limit", accounting: { iterations: 16 } });
+    expect(result.accounting.toolCalls).toBeGreaterThan(3);
   });
 
   // The hole the signature bound never covered. A refused *action* used to
@@ -126,7 +127,7 @@ describe("looking again after being refused", () => {
     let index = 0;
     const decide = vi.fn().mockImplementation(async () => pressed((index += 1)));
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 16, maxToolCalls: 16, maxStepsWithoutProgress: 3, executeTool: refusing
+      tools, decide, maxIterations: 16, maxToolCalls: 16, executeTool: refusing
     });
 
     expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_without_progress" });
@@ -140,7 +141,7 @@ describe("looking again after being refused", () => {
     const decide = vi.fn().mockImplementation(async () => pressed((index += 1)));
     const applying = async () => ({ kind: "llm_evidence_tool_execution" as const, evidence: { ok: true }, effectApplied: true });
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 5, maxToolCalls: 5, maxStepsWithoutProgress: 3, executeTool: applying
+      tools, decide, maxIterations: 5, maxToolCalls: 5, executeTool: applying
     });
 
     expect(result).not.toMatchObject({ code: "llm_evidence_loop.repeat_without_progress" });
@@ -218,7 +219,7 @@ describe("an action refused until a look ran", () => {
     expect(result.trace[1]).toMatchObject({ toolId: "press", resultCode: "llm_evidence_loop.already_answered" });
   });
 
-  it("still ends a refuse, look, refuse loop as a run without progress", async () => {
+  it("runs a refuse, look, refuse loop on, steered, to the loop's own ceiling (t1049)", async () => {
     const gate = gatedPress(false);
     let index = 0;
     const decide = vi.fn().mockImplementation(async () => {
@@ -226,11 +227,10 @@ describe("an action refused until a look ran", () => {
       return index % 2 === 1 ? pressOne(index) : readList(index);
     });
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools: gatedTools, decide, maxIterations: 40, maxToolCalls: 40, maxStepsWithoutProgress: 3, unusableDecisions: { stalled }, executeTool: gate.executeTool
+      tools: gatedTools, decide, maxIterations: 40, maxToolCalls: 40, unusableDecisions: { stalled }, executeTool: gate.executeTool
     });
 
-    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_without_progress" });
-    expect(result.accounting.toolCalls).toBeLessThan(10);
+    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.iteration_limit", accounting: { iterations: 40 } });
     // The retries after each look reached the tool rather than memory.
     expect(gate.calls.filter((toolId) => toolId === "press").length).toBeGreaterThan(1);
   });
@@ -290,7 +290,7 @@ describe("a trial refused until the site is put back", () => {
       return index % 2 === 1 ? testRevision(index) : readCart(index);
     });
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools: trialTools, decide, maxIterations: 40, maxToolCalls: 40, maxStepsWithoutProgress: 3, unusableDecisions: { stalled }, executeTool: gate.executeTool
+      tools: trialTools, decide, maxIterations: 40, maxToolCalls: 40, unusableDecisions: { stalled }, executeTool: gate.executeTool
     });
 
     expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_without_progress" });

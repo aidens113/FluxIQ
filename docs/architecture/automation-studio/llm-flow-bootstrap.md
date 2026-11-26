@@ -2660,7 +2660,7 @@ own output limit are the request's, and a reply cut there has its own reading.
 **An unreadable reply is asked again, never a bare ending (t211).** A reply that
 arrived and could not be read (`llm.provider_malformed_response`, a truncated
 or oversized reply, output that is not the decision object) has a count of its
-own and never moves the no-progress guard. It is asked again with the same
+own and never moves the count of steps without progress. It is asked again with the same
 context and a `core.decision_check` note saying what could not be read (the
 reply's case from `runtime/models/failures/reply-account.ts`, in words) and how many in a
 row stop the build; it is paid for and counted in the budget. Six in a row end
@@ -3662,8 +3662,9 @@ mark (one constant for Core and domains since t728,
 `AUTOMATION_STUDIO_REPEATED_ANSWER_REASON` in `@fluxiq/contracts/automation`,
 republished from `fluxiq/automation`; Core's activity wording, the
 unfinished-build last fix and `fluxiq/ui`'s failure reason all read it)
-and `repeatedAnswer` stay as what they were, a marking, and the
-no-progress guard stays the far backstop. Live runs `run-muq310ht-ab80eed0`
+and `repeatedAnswer` stay as what they were, a marking. (The no-progress guard
+that was the far backstop here is gone, t1049: no count of steps without progress
+ends a loop, and the model is steered instead.) Live runs `run-muq310ht-ab80eed0`
 (a close button pressed 20 times, one list read rerun 8 times) and
 `run-muq3ubys-4b4dbf5b` are why.
 

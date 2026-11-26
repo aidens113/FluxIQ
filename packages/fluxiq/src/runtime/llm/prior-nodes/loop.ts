@@ -48,7 +48,7 @@ export function automationStudioLlmPriorNodesLoop(input: {
   const admission = automationStudioLlmPriorNodesAdmission({
     config: ctx.input, maxToolCalls: ctx.limits.maxToolCalls, minToolCalls: ctx.limits.minToolCalls, accounting: ctx.accounting, failedCalls: () => ctx.counters.failedToolCalls,
     purse: input.purse, clock: input.clock, startedAtMs: input.startedAtMs, remaining: input.remaining, eligible: input.eligible, admission: input.admission,
-    stopped: () => stopped || terminal !== undefined || ctx.noProgress.reached()
+    stopped: () => stopped || terminal !== undefined
   });
   const identity = automationStudioLlmPriorNodesIdentity();
   const priorNodes = automationStudioLlmPriorNodesController({
@@ -115,7 +115,6 @@ export function automationStudioLlmPriorNodesLoop(input: {
       if (ctx.input.signal?.aborted) return automationStudioLlmEvidenceLoopFailure(ctx.draftSteps, "llm_evidence_loop.cancelled", ctx.trace, ctx.accounting);
       if (summary.executed === 0) {
         ctx.noProgress.stepped(tool.toolId);
-        if (ctx.noProgress.reached()) return automationStudioLlmEvidenceLoopFailure(ctx.draftSteps, "llm_evidence_loop.repeat_without_progress", ctx.trace, ctx.accounting);
         ctx.noProgress.redirect(iteration);
       }
       return undefined;

@@ -78,7 +78,7 @@ export type AutomationStudioLlmStepLogAnswerStep = {
 const written = new WeakMap<object, { tell(told: unknown): void }>();
 
 /** The codes of a call refused unrun as a repeat (`../decision-handlers/refused-repeat.ts`, `../decision-handlers/answered-request.ts`). */
-const REPEAT_REFUSALS = new Set([AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_REFUSED_CODE, "llm_evidence_loop.rejected.repeat_without_progress"]);
+const REPEAT_REFUSALS = new Set([AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_REFUSED_CODE]);
 
 /**
  * The codes of a call answered from what the loop already holds, never run

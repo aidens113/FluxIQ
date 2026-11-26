@@ -42,7 +42,7 @@ describe("a key beside a tool call's input that its tool does not declare", () =
   it("is named by the closed input correction, and the model is told where every other key goes", async () => {
     const error = automationStudioLlmUnusableDecisionError(await schemaDecision({ ...look, PRIVATE_FIELD_NAME: "PRIVATE_FIELD_VALUE" }))!;
     expect(error.fieldIssues).toEqual([besideInputIssue]);
-    const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes: error.issueCodes, fieldIssues: error.fieldIssues!, stepsWithoutProgress: 1, maxStepsWithoutProgress: 3 });
+    const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes: error.issueCodes, fieldIssues: error.fieldIssues!, stepsWithoutProgress: 1 });
     expect(feedback.fieldIssues).toEqual([besideInputIssue]);
     expect(feedback.instruction).toContain(holdsOnly);
     expect(feedback.instruction).toContain("every other key goes inside response.decision.input, where the tool's input schema declares it");
@@ -52,7 +52,7 @@ describe("a key beside a tool call's input that its tool does not declare", () =
   it("is named beside write's own correction when both were written beside input", async () => {
     const error = automationStudioLlmUnusableDecisionError(await schemaDecision({ ...look, write: true, notes: "x" }))!;
     expect(error.fieldIssues).toEqual([writeIssue, besideInputIssue]);
-    const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes: error.issueCodes, fieldIssues: error.fieldIssues!, stepsWithoutProgress: 1, maxStepsWithoutProgress: 3 });
+    const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes: error.issueCodes, fieldIssues: error.fieldIssues!, stepsWithoutProgress: 1 });
     expect(feedback.instruction).toContain("response.decision.input.write");
     expect(feedback.instruction).toContain(holdsOnly);
   });
@@ -60,7 +60,7 @@ describe("a key beside a tool call's input that its tool does not declare", () =
   it("gives write alone its correction, unchanged", async () => {
     const error = automationStudioLlmUnusableDecisionError(await schemaDecision({ ...look, write: true }))!;
     expect(error.fieldIssues).toEqual([writeIssue]);
-    const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes: error.issueCodes, fieldIssues: error.fieldIssues!, stepsWithoutProgress: 1, maxStepsWithoutProgress: 3 });
+    const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes: error.issueCodes, fieldIssues: error.fieldIssues!, stepsWithoutProgress: 1 });
     expect(feedback.instruction).not.toContain(holdsOnly);
   });
 
@@ -80,7 +80,7 @@ describe("a key beside a tool call's input that its tool does not declare", () =
 describe("an unreadable reply whose brackets were miscounted", () => {
   const nesting = "A tool call is {kind, callId, toolId, input: {...}}: every key of the tool's input goes inside input, and input closes before the decision does.";
   const told = (replyCase: "content_mismatched" | "content_unclosed" | "content_fenced", offers?: { tools: boolean; complete: boolean; amend: boolean }) => String(automationStudioLlmUnusableDecisionFeedback({
-    issueCodes: ["llm.provider_malformed_response"], stepsWithoutProgress: 0, maxStepsWithoutProgress: 3,
+    issueCodes: ["llm.provider_malformed_response"], stepsWithoutProgress: 0,
     ...(offers ? { offers } : {}), unreadable: { reply: { case: replyCase }, inARow: 1, maxInARow: 6 }
   }).instruction);
 

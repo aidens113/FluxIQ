@@ -250,8 +250,7 @@ export async function runAutomationStudioRecoveryExploration(
   // and the patch, because it is model spend on this run. That budget is bounded
   // by tokens and money, not by a small call count -- a two-call run is what
   // once ended every real exploration in `budget_exhausted` before it looked at
-  // anything -- and the exploration's own ledger adds the clock and the
-  // no-progress guard. When the run budget refuses the next decision, the
+  // anything -- and the exploration's own ledger adds the clock. When the run budget refuses the next decision, the
   // refusal is what ended the exploration, and it is kept so the ending can be
   // named as tokens or as money rather than as a fault.
   let runBudgetRefusal: AutomationStudioLlmRunBudgetDiagnostic["code"] | undefined;
@@ -398,7 +397,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * something empty. Which error says what happened. A call that was made and
  * paid for and answered with something unusable -- or timed out, or met a
  * provider that was briefly unavailable -- throws the unusable-decision error,
- * and the runner asks again under the progress guard. Anything else ends the
+ * and the runner asks again. Anything else ends the
  * loop, which the runner classifies, so "the provider would not answer" ends as
  * `failed` -- not as an exploration that ran and found nothing, which is the
  * collapse the whole outcome vocabulary exists to prevent.

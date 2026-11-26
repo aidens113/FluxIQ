@@ -208,7 +208,7 @@ const KINDS: Script = {
   2: look("l.2"),
   3: look("l.3"),
   4: look("l.4"),
-  5: { kind: "amend_draft", amendments: [{ step: 1, change: "keep", settings: { amended: 5 } }] },
+  5: { kind: "amend_draft", amendments: [{ step: 1, change: "keep" }] }, // No edit carries settings (t1049).
   6: act("c.6", CLICK, "h.6"),
   7: { kind: "complete", result: { done: 7 } },
   8: { kind: "complete", result: { done: 8 } }
@@ -379,11 +379,14 @@ describe("route-state captures per recorded build", () => {
       // and the dry run now makes steps 3 and 6 optional and would accept it, so the script refuses it as
       // today's check does. Decision 30 then follows a refusal, not a dry run: one capture fewer after, and
       // the refusal's entry grows the shown count, so the old rule catches it (before 30, unseen 2).
-      "bigbox-run6": { decisions: 37, before: 17, afterReported: 0, afterUnreported: 15, callsBeforeUnseen: 4 },
-      crossborder: { decisions: 22, before: 12, afterReported: 0, afterUnreported: 10, callsBeforeUnseen: 1 },
+      // No count of steps without progress ends a loop (t1049), and its redirect no longer falls silent at the eighth
+      // such step: the note keeps arriving on each one after, so more decisions follow a shown count that grew without a
+      // call before them (bigbox 4 to 7, crossborder 1 to 3 with one more capture before, run 4 2 to 10).
+      "bigbox-run6": { decisions: 37, before: 17, afterReported: 0, afterUnreported: 15, callsBeforeUnseen: 7 },
+      crossborder: { decisions: 22, before: 13, afterReported: 0, afterUnreported: 10, callsBeforeUnseen: 3 },
       // Run 4's rerun at 38 named the attempt the rerun at 32 replaced, which is refused since the framework drafts the Flow
       // (t1037, `recorded-runs.ts`), so decision 39 follows no call: one capture fewer after, 27.
-      "everything-store-run4": { decisions: 48, before: 30, afterReported: 0, afterUnreported: 27, callsBeforeUnseen: 2 }
+      "everything-store-run4": { decisions: 48, before: 30, afterReported: 0, afterUnreported: 27, callsBeforeUnseen: 10 }
     });
   });
 
@@ -410,11 +413,10 @@ describe("route-state captures per recorded build", () => {
       "after, no call reports": { decisions: unreported.decisions, captures: total(unreported) }
     });
     expect(traceOf(after).map((row) => [row.iteration, row.resultCode])).toEqual(traceOf(before).map((row) => [row.iteration, row.resultCode]));
-    // The scripted build now ends at 15 decisions, not 18 (t1036, e9bf3fa31: no look is withdrawn, the looks asked for again
-    // are answered from memory, and the repeat stop ends it, as `state-digest-cost.test.ts` records). The old rule's captures
-    // fell from 12 to 11 with the three decisions that no longer run; the new routing's 0 and 9 are unchanged.
-    expect(before.decisions).toBe(15);
-    expect([total(before), total(after), total(unreported)]).toEqual([11, 0, 9]);
+    // No look is withdrawn and the looks asked for again are answered from memory (t1036). No count of steps without
+    // progress stops the build any more (t1049), so it runs the whole recording, all 18 of its decisions, and then completes, as `state-digest-cost.test.ts` records; the old rule's captures are 12, the new routing's 0 and 9.
+    expect(before.decisions).toBe(19);
+    expect([total(before), total(after), total(unreported)]).toEqual([12, 0, 9]);
     expect(total(unreported)).toBe(1 + [...unreported.shown.keys()].filter((decision) => decision > 1 && unreported.afterCalls.has(decision)).length);
     for (const decision of before.contexts.keys()) expect(isSubsequence(statesOf(before.contexts.get(decision))!, statesOf(after.contexts.get(decision))!), `decision ${decision}`).toBe(true);
   });

@@ -290,13 +290,12 @@ export function automationStudioLlmUnusableDecisionError(result: AutomationStudi
 /**
  * What the model is shown after an unusable decision, before it is asked
  * again: the issue codes, how many steps in a row have given the loop nothing
- * new and how many end it, and the shape a decision takes. Codes only, never a
+ * new (a count that ends nothing, t1049), and the shape a decision takes. Codes only, never a
  * model's words; bounded to well under a kilobyte.
  */
 export function automationStudioLlmUnusableDecisionFeedback(input: {
   issueCodes: readonly string[];
   stepsWithoutProgress: number;
-  maxStepsWithoutProgress: number;
   /** What the unusable decision was offered, so the accepted shapes are the ones it could have given. */
   offers?: AutomationStudioLlmUnusableDecisionOffers;
   /** Known parser grammar locations only; screened again at this model boundary. */
@@ -339,7 +338,6 @@ export function automationStudioLlmUnusableDecisionFeedback(input: {
     code: "llm_evidence_loop.decision_unusable",
     issueCodes,
     stepsWithoutProgress: input.stepsWithoutProgress,
-    ...(Number.isFinite(input.maxStepsWithoutProgress) ? { maxStepsWithoutProgress: input.maxStepsWithoutProgress } : {}), // None where no count ends the loop (t1008).
     ...(fieldIssues.length ? { fieldIssues } : {}),
     accepted: acceptedDecision(input.offers),
     instruction: [DECISION_FEEDBACK_INSTRUCTION,

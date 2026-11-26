@@ -277,7 +277,7 @@ async function annotateRunDetail(input: AutomationStudioRuntimeRecoveryAnnotatio
   })) ?? [];
   // What the run may spend: its cost ceiling and token budget, with the call
   // count only a runaway backstop. `run-budget.ts` says why each number is what
-  // it is; the clock and the progress guard live in the exploration ledger.
+  // it is; the clock lives in the exploration ledger.
   const budget = resolveAutomationStudioRecoveryRunBudget({
     explicitRunBudget,
     resolution: providerResolution,

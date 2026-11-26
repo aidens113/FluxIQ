@@ -5,12 +5,10 @@
 // chain of state digests: it keeps the step that produced the state success was
 // observed in, and drops the step whose state came back to where it started.
 // Core cannot compute such a digest. It does not know what is being automated,
-// and the one digest the exploration already computes --
-// `automationStudioExplorationEvidenceDigest`, inside the budget ledger -- is a
-// digest of *what the step said*, not of *what the world was*. Those are
-// different facts and they disagree in both directions: a step can return the
-// same bytes twice having changed something both times, and a step can return
-// new bytes having changed nothing. So the digest comes from outside, through
+// and a digest of *what the step said* is not one of *what the world was*.
+// Those are different facts and they disagree in both directions: a step can
+// return the same bytes twice having changed something both times, and a step
+// can return new bytes having changed nothing. So the digest comes from outside, through
 // this hook, once before each step and once after it.
 //
 // ## The digest contract

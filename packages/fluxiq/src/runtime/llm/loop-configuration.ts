@@ -11,11 +11,7 @@
 // surface is unchanged and every existing consumer still reads it from there.
 
 import type { JsonObject, JsonValue } from "../../core/index.ts";
-import {
-  AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS,
-  AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS,
-  AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_REDIRECT_AT_STEPS_WITHOUT_PROGRESS
-} from "../loop-limits/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
 import type { AutomationStudioLlmEvidenceFinishingTools, AutomationStudioLlmEvidenceLoopBudget } from "./loop-budget.ts";
 import { automationStudioLlmEvidenceLoopBudgetValid } from "./loop-budget.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness/index.ts";
@@ -171,35 +167,16 @@ export type AutomationStudioLlmEvidenceLoopInput = {
   completionSchema?: JsonObject;
   minToolCalls?: number;
   propagateDecisionErrors?: boolean;
-  /**
-   * The far backstop on steps in a row that give the loop nothing new.
-   *
-   * It was three, and three is wrong. A build that meets a setback, looks at
-   * the page again and tries another way has taken two steps that gathered
-   * nothing new and is doing exactly the right thing; the third ended it. The
-   * loop is bounded by what it spends -- cost, tokens, the deadline -- and by
-   * genuine progress, and this is only the stop for a loop that is repeating
-   * itself and will not stop. It is set well past any ordinary correction, so
-   * in normal work it never fires.
-   *
-   * A step gives nothing new when it asks for a tool request already answered
-   * with nothing changed since, when it asks to repeat an observation no action
-   * has changed, or when it is an unusable decision refused for a set of issues
-   * already seen since the last tool result. The loop answers the first two
-   * itself -- the earlier result is placed at the end of the evidence with a
-   * note naming it, and the tool is not run -- and tells the model about the
-   * third. A tool that runs resets the count. An unusable decision refused for
-   * issues not seen since then is new: the count starts again at one.
-   *
-   * The step that reaches the guard ends the loop: a repeated request as
-   * `llm_evidence_loop.repeat_without_progress`, an unusable decision through
-   * `unusableDecisions.stalled`.
-   *
-   * Absent, `unusableDecisions.maxConsecutive` when that is set, otherwise
-   * `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS`,
-   * held to `maxIterations`. Given both, they must agree.
-   */
-  maxStepsWithoutProgress?: number;
+  // There is no setting for steps in a row without progress (t1049). Such a
+  // count once ended the loop (`maxStepsWithoutProgress`, eight by default);
+  // none does now (user, 2026-11-24: "THERE SHOULDNT BE ANY ARBITRARY FUCKING
+  // CALL LIMIT THAT RANDOMLY JUST RESETS EVERYTHING"). The loop still counts
+  // them, to steer: from
+  // `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_REDIRECT_AT_STEPS_WITHOUT_PROGRESS` on
+  // it tells the model plainly what it keeps repeating
+  // (`./evidence-progress/stall-redirect.ts`), and a repeat is loop detection's
+  // to catch and the model's to decide (`loopSignal`). Only the result, the
+  // purse or a person's Stop ends a task.
   /**
    * Ask again after an unusable decision instead of ending.
    *
@@ -208,12 +185,12 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * every call the loop makes -- is recorded as an `unusable` step, the model
    * is told the issue codes and the decision shape as evidence under
    * `AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID`, and the loop
-   * asks again. Two things end it, and `stalled` builds the error that does,
-   * which is then handled exactly as if `decide` had thrown it (thrown under
-   * `propagateDecisionErrors`, otherwise `llm_evidence_loop.invalid_decision`):
-   * an unusable decision that reaches the no-progress guard, and the
-   * `maxInARow`-th unusable decision in a row however different their issues.
-   * A usable decision resets the second count.
+   * asks again. The `maxInARow`-th unusable decision in a row ends it, and
+   * `stalled` builds the error that does, which is then handled exactly as if
+   * `decide` had thrown it (thrown under `propagateDecisionErrors`, otherwise
+   * `llm_evidence_loop.invalid_decision`); a loop with `loopSignal` has no such
+   * count. A usable decision resets it. Unusable decisions refused for the same
+   * issues again are steps without progress, which steer and never end (t1049).
    *
    * Absent, the error is an ordinary decision error, as it always was. Any
    * other error `decide` throws is unaffected either way.
@@ -222,21 +199,24 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * too, and joins the same counts.
    */
   unusableDecisions?: {
-    /** The no-progress guard's length, when `maxStepsWithoutProgress` is not given. */
+    /**
+     * @deprecated Read by nothing (t1049). It was the length of the guard on
+     * steps without progress, and no such count ends a loop now. Still accepted
+     * only because many callers pass it; remove it with them.
+     */
     maxConsecutive?: number;
     /**
      * The far backstop: unusable decisions in a row that end the loop however
-     * much their issues differ. At least the no-progress guard and at most
-     * `maxIterations`; absent,
+     * much their issues differ. At least 1 and at most `maxIterations`; absent,
      * `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW`
-     * held to those two.
+     * held to `maxIterations`.
      */
     maxInARow?: number;
     /**
      * Replies in a row that arrived and could not be read after which the loop
      * ends `llm_evidence_loop.unreadable_replies` (`./unreadable-reply.ts`).
      * They are asked again with a note of what could not be read and never
-     * move the no-progress guard or the far backstop. At most `maxIterations`;
+     * move the count of steps without progress or the far backstop. At most `maxIterations`;
      * absent, `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNREADABLE_REPLIES_IN_A_ROW`.
      */
     maxUnreadableInARow?: number;
@@ -290,8 +270,8 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    *
    * `observe`: it is a step without progress, recorded in the trace under its
    * call id with a closed code, and shown to the model as that call's result
-   * (`tool-failure.ts`); the loop asks again, and a run of them reaching the
-   * no-progress guard ends it `llm_evidence_loop.tool_failed`. It is not
+   * (`tool-failure.ts`); the loop asks again, and no run of them ends it
+   * (t1049): a model that keeps calling what fails is steered. It is not
    * evidence toward `minToolCalls`, and an action that failed counts as a
    * change, since it may have changed what a look would see. `end`: the loop
    * ends `llm_evidence_loop.tool_failed` at once and records nothing.
@@ -566,16 +546,6 @@ export type EvidenceLoopLimits = {
   maxIterations: number;
   maxToolCalls: number;
   minToolCalls: number;
-  maxStepsWithoutProgress: number;
-  /**
-   * Steps in a row without progress after which the loop changes what it asks
-   * for instead of stopping (`./evidence-loop/stall-redirect.ts`).
-   *
-   * Always below `maxStepsWithoutProgress`, so the redirection always comes
-   * first and stopping is always the last resort. Derived, never configured: a
-   * caller that shortens the guard shortens this with it.
-   */
-  redirectAtStepsWithoutProgress: number;
   maxUnusableDecisionsInARow: number;
   /** Unreadable replies in a row that end the loop (`./unreadable-reply.ts`). */
   maxUnreadableRepliesInARow: number;
@@ -595,23 +565,11 @@ export function resolveLimits(input: AutomationStudioLlmEvidenceLoopInput): Evid
   const maxIterations = input.maxIterations ?? 8;
   const unusable = input.unusableDecisions;
   const draft = input.draft === false ? undefined : input.draft;
-  if (input.maxStepsWithoutProgress !== undefined && unusable?.maxConsecutive !== undefined
-    && input.maxStepsWithoutProgress !== unusable.maxConsecutive) {
-    return refused("limits.max_steps_without_progress_agrees", { maxStepsWithoutProgress: input.maxStepsWithoutProgress, unusableMaxConsecutive: unusable.maxConsecutive }, "maxStepsWithoutProgress and unusableDecisions.maxConsecutive are both given and differ.");
-  }
-  const maxStepsWithoutProgress = input.maxStepsWithoutProgress ?? unusable?.maxConsecutive
-    ?? Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS, maxIterations);
   const limits: EvidenceLoopLimits = {
     maxIterations,
     maxToolCalls: input.maxToolCalls ?? 8,
     minToolCalls: input.minToolCalls ?? 0,
-    maxStepsWithoutProgress,
-    // One below the guard at the tightest, so a loop configured to stop at two
-    // still says so before it stops, and a loop that cannot redirect before it
-    // stops is one nobody can configure.
-    redirectAtStepsWithoutProgress: Math.max(1, Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_REDIRECT_AT_STEPS_WITHOUT_PROGRESS, maxStepsWithoutProgress - 1)),
-    maxUnusableDecisionsInARow: unusable?.maxInARow
-      ?? Math.max(maxStepsWithoutProgress, Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW, maxIterations)),
+    maxUnusableDecisionsInARow: unusable?.maxInARow ?? Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW, maxIterations),
     maxUnreadableRepliesInARow: unusable?.maxUnreadableInARow ?? Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNREADABLE_REPLIES_IN_A_ROW, maxIterations),
     // Editing the draft *is* the authoring, now that the draft is what the
     // result is built from, so an allowance of four was an allowance of four
@@ -624,8 +582,8 @@ export function resolveLimits(input: AutomationStudioLlmEvidenceLoopInput): Evid
 
 /**
  * A loop whose caller takes loop detection's signal (`loopSignal`, the answer-first attempt's rounds) is ended by no
- * count of its own: not its turns, its calls, its edits, its steps without progress or its unusable replies in a row
- * (user, 2026-11-24: "THERE SHOULDNT BE ANY ARBITRARY FUCKING CALL LIMIT THAT RANDOMLY JUST RESETS EVERYTHING"). Each
+ * count of its own: not its turns, its calls, its edits or its unusable replies in a row; and no loop at all is ended by
+ * its steps without progress (t1049, `maxStepsWithoutProgress` is gone) (user, 2026-11-24: "THERE SHOULDNT BE ANY ARBITRARY FUCKING CALL LIMIT THAT RANDOMLY JUST RESETS EVERYTHING"). Each
  * such ending started a fresh round with an empty evidence window, so the model lost everything it had seen and did it
  * again (t1008, run-mwufisf0-5535f5f5: four rounds of looks in a row). A task ends with its result or its purse
  * (user, 2026-11-03), and a repeat is caught by loop detection and decided by the model (2026-11-19). The figures are
@@ -634,20 +592,17 @@ export function resolveLimits(input: AutomationStudioLlmEvidenceLoopInput): Evid
 function uncounted(input: AutomationStudioLlmEvidenceLoopInput, limits: EvidenceLoopLimits): EvidenceLoopLimits {
   if (input.loopSignal === undefined) return limits;
   const none = Number.POSITIVE_INFINITY;
-  return { ...limits, maxIterations: none, maxToolCalls: none, maxStepsWithoutProgress: none, maxUnusableDecisionsInARow: none, maxDraftAmendments: none };
+  return { ...limits, maxIterations: none, maxToolCalls: none, maxUnusableDecisionsInARow: none, maxDraftAmendments: none };
 }
 
 /** The first check `limits` fail, in the order the loop has always asked them, or none. */
 function limitsIssue(input: AutomationStudioLlmEvidenceLoopInput, limits: EvidenceLoopLimits): EvidenceLoopLimitsRefused["issue"] | undefined {
-  const { maxIterations, maxToolCalls, minToolCalls, maxStepsWithoutProgress, maxUnusableDecisionsInARow, maxUnreadableRepliesInARow, maxDraftAmendments } = limits;
+  const { maxIterations, maxToolCalls, minToolCalls, maxUnusableDecisionsInARow, maxUnreadableRepliesInARow, maxDraftAmendments } = limits;
   const unusable = input.unusableDecisions;
   const ceiling = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS;
-  if (!Number.isInteger(maxStepsWithoutProgress) || maxStepsWithoutProgress < 1 || maxStepsWithoutProgress > maxIterations) {
-    return issue("limits.max_steps_without_progress", { maxStepsWithoutProgress, maxIterations }, `maxStepsWithoutProgress ${maxStepsWithoutProgress} must be a whole number from 1 to maxIterations ${maxIterations}.`);
-  }
   if (unusable && typeof unusable.stalled !== "function") return issue("limits.unusable_stalled", {}, "unusableDecisions.stalled is not a function.");
-  if (unusable && (!Number.isInteger(maxUnusableDecisionsInARow) || maxUnusableDecisionsInARow < maxStepsWithoutProgress || maxUnusableDecisionsInARow > maxIterations)) {
-    return issue("limits.max_unusable_decisions_in_a_row", { maxUnusableDecisionsInARow, maxStepsWithoutProgress, maxIterations }, `maxUnusableDecisionsInARow ${maxUnusableDecisionsInARow} must be a whole number from maxStepsWithoutProgress ${maxStepsWithoutProgress} to maxIterations ${maxIterations}.`);
+  if (unusable && (!Number.isInteger(maxUnusableDecisionsInARow) || maxUnusableDecisionsInARow < 1 || maxUnusableDecisionsInARow > maxIterations)) {
+    return issue("limits.max_unusable_decisions_in_a_row", { maxUnusableDecisionsInARow, maxIterations }, `maxUnusableDecisionsInARow ${maxUnusableDecisionsInARow} must be a whole number from 1 to maxIterations ${maxIterations}.`);
   }
   if (unusable && (!Number.isInteger(maxUnreadableRepliesInARow) || maxUnreadableRepliesInARow < 1 || maxUnreadableRepliesInARow > maxIterations)) {
     return issue("limits.max_unreadable_replies_in_a_row", { maxUnreadableRepliesInARow, maxIterations }, `maxUnreadableRepliesInARow ${maxUnreadableRepliesInARow} must be a whole number from 1 to maxIterations ${maxIterations}.`);
@@ -670,8 +625,4 @@ function limitsIssue(input: AutomationStudioLlmEvidenceLoopInput, limits: Eviden
     return issue("limits.max_draft_amendments", { maxDraftAmendments, maxIterations }, `maxDraftAmendments ${maxDraftAmendments} must be a whole number from 0 to maxIterations ${maxIterations}.`);
   }
   return undefined;
-}
-
-function refused(check: string, figures: Readonly<Record<string, unknown>>, words: string): EvidenceLoopLimitsRefused {
-  return { issue: issue(check, figures, words) };
 }

@@ -8,13 +8,13 @@
 // it, and whether Core has just seen the page unchanged. The second time one
 // request is answered from the same result, the redirect is given at once
 // rather than when the no-progress count reaches it: by then the model has been
-// told twice, and a third ask is the loop the count exists to stop.
+// told twice. Nothing here ends the loop (t1049): a request asked again and
+// again is steered, and a repeat is loop detection's to decide.
 import { automationStudioLlmDecisionContextSupersede } from "../decision-context/index.ts";
 import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_REQUEST_CHECK_TOOL_ID,
   automationStudioLlmEvidenceAnsweredRequestNote,
   automationStudioLlmEvidenceLatestCandidateReceipt,
-  automationStudioLlmEvidenceLoopFailure as failure,
   type AutomationStudioLlmEvidenceAnsweredRequestCode,
   type AutomationStudioLlmEvidenceLoopDecision,
   type AutomationStudioLlmEvidenceLoopTrace
@@ -22,8 +22,7 @@ import {
 import type { AutomationStudioLlmEvidenceDecisionHandlerContext, AutomationStudioLlmEvidenceDecisionNext } from "./types.ts";
 
 /**
- * Answers one tool call from what the loop already holds: the loop ends, or
- * asks again. It takes no digest (`./answer-check.ts`), and an answer given
+ * Answers one tool call from what the loop already holds, and asks again. It takes no digest (`./answer-check.ts`), and an answer given
  * withdraws nothing (page-diff D4: there is no look to withdraw).
  */
 export function automationStudioLlmEvidenceHandleAnsweredRequest(
@@ -35,8 +34,7 @@ export function automationStudioLlmEvidenceHandleAnsweredRequest(
   /** The request as the repeat policy keys it (`../repeat-policy.ts`): the same one the answering call was recorded under. */
   requestSignature: string
 ): Exclude<AutomationStudioLlmEvidenceDecisionNext, { kind: "rerun" }> {
-  const { limits, trace, accounting, draftSteps, noProgress, evidence, history } = context;
-  const end = (endCode: Parameters<typeof failure>[1]): { kind: "end"; result: ReturnType<typeof failure> } => ({ kind: "end", result: failure(draftSteps, endCode, trace, accounting) });
+  const { draftSteps, noProgress, evidence, history } = context;
   noProgress.answeredFromEvidence(answeredByCallId, decision.toolId);
   context.loops.answered(decision.toolId, decision.input, context.contextOf(decision.toolId), context.repeats.state());
   // The node the answering call ran: the same request, so the same node.
@@ -44,14 +42,10 @@ export function automationStudioLlmEvidenceHandleAnsweredRequest(
   const signature = requestSignature;
   const repeat = history.record(iteration, { kind: "answered", signature, toolId: decision.toolId, ...(actionId !== undefined && actionId !== decision.toolId ? { actionId } : {}), code, answeredByCallId });
   const step: AutomationStudioLlmEvidenceLoopTrace = { iteration, decision: "tool_call", toolId: decision.toolId, resultCode: code, ...(decision.usage ? { usage: decision.usage } : {}) };
-  if (noProgress.reached()) {
-    context.recordRow({ ...step, resultCode: "llm_evidence_loop.rejected.repeat_without_progress" });
-    return end("llm_evidence_loop.repeat_without_progress");
-  }
   const records = history.records();
   const answering = records.find((record) => (record.decision.kind === "call" || record.decision.kind === "look") && record.decision.callId === answeredByCallId);
   const note = automationStudioLlmEvidenceAnsweredRequestNote({
-    code, toolId: decision.toolId, answeredByCallId, stepsWithoutProgress: noProgress.steps, maxStepsWithoutProgress: limits.maxStepsWithoutProgress,
+    code, toolId: decision.toolId, answeredByCallId, stepsWithoutProgress: noProgress.steps,
     ...(context.input.discoveryOnly ? { discoveryOnly: true, candidate: automationStudioLlmEvidenceLatestCandidateReceipt(evidence, context.input.finishingTools?.submit), finishing: context.input.finishingTools } : {}),
     ...(repeat ? { timesAsked: repeat.times, askedAt: repeat.iterations } : {}),
     ...(answering ? { answeredAt: answering.iteration } : {}),

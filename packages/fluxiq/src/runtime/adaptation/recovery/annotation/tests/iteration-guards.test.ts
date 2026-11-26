@@ -50,41 +50,39 @@ describe("what bounds a recovery", () => {
     expect(budgetCodes(run.detail)).toEqual([]);
   });
 
-  // The guard that makes the one above safe. The model keeps asking new
-  // questions and keeps getting the answer it already has; nothing is spent
-  // out and nothing is counted out, and the exploration still stops -- after
-  // four looks of its twenty-four -- saying it was going in circles. The
-  // patch stage still runs: a circling exploration is a finding, not a fault.
-  it("stops an exploration that is going in circles on the no-progress guard, then still patches", async () => {
+  // The model keeps asking new questions and keeps getting the answer it
+  // already has. It once stopped after four looks on the no-progress guard;
+  // no count of steps without progress stops it now (t1049). It is steered,
+  // and goes on until a bound that is not that count -- here the exploration's
+  // own allowance of twenty-four actions. The patch stage still runs.
+  it("lets an exploration going in circles run past the old guard, steered, then still patches", async () => {
     const run = await annotate({ looks: 40, sameAnswer: true });
 
-    expect(run.executed).toHaveLength(4);
-    expect(run.taskKinds).toEqual(["runtime_diagnosis", "evidence_tool_decision", "evidence_tool_decision", "evidence_tool_decision", "evidence_tool_decision", "runtime_patch"]);
-    expect(explorationStage(run.detail)).toMatchObject({
-      status: "failed",
-      detail: { requested: true, outcome: "no_progress", endedBy: "no_progress", stopReason: "no_progress", noProgressReason: "repeated_evidence", actions: 4 }
-    });
-    expect(budgetCodes(run.detail)).toEqual([]);
+    expect(run.executed).toHaveLength(24);
+    expect(run.taskKinds.at(-1)).toBe("runtime_patch");
+    expect(explorationStage(run.detail)).toMatchObject({ status: "failed", detail: { requested: true, outcome: "budget_exhausted", actions: 24 } });
+    expect(explorationStage(run.detail)?.detail).not.toHaveProperty("noProgressReason");
+    expect(patchIntervention(run.detail)).toMatchObject({ kind: "runtime_patch", validation: { ok: true } });
   });
 
-  // The guard also ends a loop whose answers are unusable. Every decision call
-  // fails as the provider's own invalid output -- a spent call, not a fault --
-  // so the exploration asks again, and after three unusable answers of its
-  // twenty-four allowed it is stopped, saying the answers were the problem. The
-  // patch still runs: nothing about a bad reply ends the recovery.
-  it("stops an exploration whose every decision comes back unusable on the no-progress guard, then still patches", async () => {
+  // Every decision call fails as the provider's own invalid output -- a spent
+  // call, not a fault -- so the exploration asks again. Three such answers once
+  // stopped it on the no-progress guard; none does now (t1049): it asks again
+  // until a bound that is not that count, the exploration's own allowance of
+  // twenty-four provider calls. The patch still runs.
+  it("asks again past the old guard when every decision comes back unusable, then still patches", async () => {
     const run = await annotate({ looks: 40, unusableDecisions: "all" });
 
-    expect(run.taskKinds).toEqual(["runtime_diagnosis", "evidence_tool_decision", "evidence_tool_decision", "evidence_tool_decision", "runtime_patch"]);
+    expect(run.taskKinds).toEqual(["runtime_diagnosis", ...Array.from({ length: 24 }, () => "evidence_tool_decision"), "runtime_patch"]);
     expect(run.executed).toEqual([]);
     expect(explorationStage(run.detail)).toMatchObject({
       status: "failed",
-      detail: { requested: true, outcome: "no_progress", endedBy: "no_progress", stopReason: "no_progress", noProgressReason: "unusable_decision", unusableDecisions: 3, actions: 0 }
+      detail: { requested: true, outcome: "budget_exhausted", stopReason: "provider_call_limit", unusableDecisions: 24, actions: 0 }
     });
     // Each unusable answer is on the receipt, charged, with its code.
-    expect(costAccounting(run.detail)).toMatchObject({ calls: 5, explorationCalls: 3, pendingCalls: 0 });
+    expect(costAccounting(run.detail)).toMatchObject({ calls: 26, explorationCalls: 24, pendingCalls: 0 });
     expect(receipt(run.detail).filter((call) => call.taskKind === "evidence_tool_decision").map((call) => call.validation)).toEqual(
-      Array.from({ length: 3 }, () => ({ ok: false, issueCodes: ["llm.provider_output_invalid"] }))
+      Array.from({ length: 24 }, () => ({ ok: false, issueCodes: ["llm.provider_output_invalid"] }))
     );
     expect(patchIntervention(run.detail)).toMatchObject({ kind: "runtime_patch", validation: { ok: true } });
     expect(budgetCodes(run.detail)).toEqual([]);

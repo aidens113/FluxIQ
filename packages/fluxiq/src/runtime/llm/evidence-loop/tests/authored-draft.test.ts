@@ -174,15 +174,16 @@ describe("progress, where the model authors its draft", () => {
     const states = ["s0", "sA", "sA", "sB", "sB", "sA", "sA", "sB", "sB", "sA", "sA", "sB"];
     const decide = vi.fn().mockImplementation(async ({ iteration }: { iteration: number }) => call(iteration));
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools: [go], decide, executeTool: vi.fn().mockResolvedValue(worked), maxIterations: 20, maxToolCalls: 20, dryRun: false,
-      maxStepsWithoutProgress: 3, unusableDecisions: { maxConsecutive: 3, stalled },
+      tools: [go], decide, executeTool: vi.fn().mockResolvedValue(worked), maxIterations: 20, maxToolCalls: 20, dryRun: false, unusableDecisions: { maxConsecutive: 3, stalled },
       captureStateDigest: () => states.shift(),
       draft: { acts: () => [{ id: "a1", verb: "add", quote: "add the kettle", todo: "no_step_added" }], actsMissing: () => ["a1"] }
     });
-    // Two new states, then three revisits: stopped at the fifth call, not the twentieth.
-    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_without_progress" });
-    expect(decide).toHaveBeenCalledTimes(5);
-    const redirect = shownAt(decide, 4).find((entry) => entry.toolId === "core.no_progress")?.value;
+    // Two new states, then revisits: steered from the third, never stopped by their count (t1049), so the loop runs
+    // to its own ceiling of twenty rather than stopping at the fifth call as it once did.
+    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.iteration_limit" });
+    expect(decide).toHaveBeenCalledTimes(20);
+    // The first redirect, at the third step without progress.
+    const redirect = Array.from({ length: 20 }, (_, index) => shownAt(decide, index).find((entry) => entry.toolId === "core.no_progress")?.value).find((value) => value !== undefined);
     expect(redirect).toMatchObject({ actsMissing: ["a1"] });
     expect(String(redirect?.instruction)).toContain("does a1");
   });
@@ -194,8 +195,7 @@ describe("progress, where the model authors its draft", () => {
       .mockResolvedValueOnce(call(1)).mockResolvedValueOnce(call(2)).mockResolvedValueOnce(call(3, { act: "a1" })).mockResolvedValueOnce(call(4))
       .mockResolvedValueOnce(complete);
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools: [go], decide, executeTool: vi.fn().mockResolvedValue(worked), maxIterations: 8, maxToolCalls: 8, dryRun: false,
-      maxStepsWithoutProgress: 3, unusableDecisions: { maxConsecutive: 3, stalled },
+      tools: [go], decide, executeTool: vi.fn().mockResolvedValue(worked), maxIterations: 8, maxToolCalls: 8, dryRun: false, unusableDecisions: { maxConsecutive: 3, stalled },
       captureStateDigest: () => states.shift(),
       draft: { actsMissing: (steps) => (steps.some((step) => step.disposition === "kept" && step.acts?.includes("a1")) ? [] : ["a1"]) }
     });

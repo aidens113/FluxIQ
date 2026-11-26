@@ -71,13 +71,13 @@ export function automationStudioLlmEvidenceShowVerifiedRepeat(
   context: AutomationStudioLlmEvidenceDecisionHandlerContext,
   input: { iteration: number; callId: string; toolId: string; answeredByCallId: string; requestSignature: string }
 ): void {
-  const { evidence, history, noProgress, limits } = context;
+  const { evidence, history, noProgress } = context;
   const earlier = evidence.findIndex((entry) => entry.callId === input.answeredByCallId);
   if (earlier >= 0) evidence.splice(earlier, 1);
   const repeat = history.repeats(input.requestSignature);
   const note = automationStudioLlmEvidenceAnsweredRequestNote({
     code: "llm_evidence_loop.looked_again_unchanged", toolId: input.toolId, answeredByCallId: input.callId,
-    stepsWithoutProgress: noProgress.steps, maxStepsWithoutProgress: limits.maxStepsWithoutProgress,
+    stepsWithoutProgress: noProgress.steps,
     ...(repeat.times ? { timesAsked: repeat.times, askedAt: repeat.iterations } : {}),
     answeredAt: input.iteration,
     ...(context.lastAction ? { lastActionBefore: context.lastAction } : {}),

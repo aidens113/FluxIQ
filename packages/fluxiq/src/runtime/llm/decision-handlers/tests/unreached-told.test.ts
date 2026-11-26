@@ -26,7 +26,7 @@ const step = (n: number, page: string, over: Partial<Step> = {}): Step => ({
 
 function handling(draftSteps: Step[]): AutomationStudioLlmEvidenceDecisionHandlerContext & Told {
   const base: Record<string, unknown> = {
-    input: {}, limits: { maxStepsWithoutProgress: 4 }, trace: [], accounting: {}, draftSteps, evidence: [],
+    input: {}, limits: {}, trace: [], accounting: {}, draftSteps, evidence: [],
     amendmentMemory: { before: vi.fn(), after: () => undefined, refusals: (refused: unknown[]) => refused },
     noProgress: { steps: 0, stepped: vi.fn(), reached: () => false, redirect: vi.fn(), cleared: vi.fn() },
     counters: { draftAmendments: 0, unusableInARow: 0 }, refusalRun: { refused: () => 1 },

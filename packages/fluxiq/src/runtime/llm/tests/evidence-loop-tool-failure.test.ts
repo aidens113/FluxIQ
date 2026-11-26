@@ -34,7 +34,7 @@ describe("a tool call that fails, in a loop that observes failures", () => {
 
     // The guard is named rather than inherited: its default is now a far
     // backstop, because three in a row ended builds that were working.
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools, minToolCalls: 1, decide, executeTool, maxStepsWithoutProgress: 3, unusableDecisions: { stalled } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, minToolCalls: 1, decide, executeTool, unusableDecisions: { stalled } });
 
     expect(result).toMatchObject({ ok: true, result: { plan: "close the prompt first" }, accounting: { iterations: 2, toolCalls: 2 } });
     expect(result.trace[1]).toEqual({
@@ -48,7 +48,7 @@ describe("a tool call that fails, in a loop that observes failures", () => {
     // a row of its own. The failure is in the draft too: an action that was
     // attempted and did not happen is part of the record of what was done.
     expect(shown.at(-3)).toEqual({ callId: "call.press.1", toolId: "press", value: {
-      ok: false, code: "llm_evidence_loop.tool_failed", toolId: "press", step: 2, stepsWithoutProgress: 1, maxStepsWithoutProgress: 3, instruction: expect.any(String)
+      ok: false, code: "llm_evidence_loop.tool_failed", toolId: "press", step: 2, stepsWithoutProgress: 1, instruction: expect.any(String)
     } });
     // The way out names the draft step the failed call became, and the rerun that corrects it (W2).
     expect(shown.at(-3).value.instruction).toContain("This call is step 2 of the draft");
@@ -157,20 +157,21 @@ describe("a tool call that fails, in a loop that observes failures", () => {
     expect(result.trace.map((step) => step.resultCode)).toEqual(["llm_evidence_loop.tool_failed", undefined, undefined]);
   });
 
-  it("ends as tool_failed once failures run to the no-progress guard, the last one in the trace", async () => {
+  // t1049: a run of failures is steps without progress, which steer and end nothing. It once ended the loop
+  // `tool_failed` at the guard; now each is shown and the loop runs on to its own ceilings (eight decisions, eight calls).
+  it("never ends on how many failures came in a row, each one in the trace", async () => {
     let call = 0;
     const decide = vi.fn(async () => ({ kind: "tool_call", callId: `call.press.${++call}`, toolId: "press", input: { attempt: call } }));
     const executeTool = vi.fn(async ({ toolId }: { toolId: string }) => {
       if (toolId === "press") throw new Error(PRIVATE);
       return { page: "home" };
     });
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, maxStepsWithoutProgress: 3, unusableDecisions: { stalled } });
-    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.tool_failed", accounting: { iterations: 3, toolCalls: 4 } });
-    expect(result.trace.slice(1).map((step) => [step.callId, step.resultCode])).toEqual([
-      ["call.press.1", "llm_evidence_loop.tool_failed"],
-      ["call.press.2", "llm_evidence_loop.tool_failed"],
-      ["call.press.3", "llm_evidence_loop.tool_failed"]
-    ]);
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, unusableDecisions: { stalled } });
+    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.iteration_limit", accounting: { iterations: 8, toolCalls: 8 } });
+    // The first look, then a failed press for each decision the loop's eight tool calls had room for.
+    expect(result.trace.slice(1).map((step) => [step.callId, step.resultCode])).toEqual(
+      Array.from({ length: 7 }, (_, index) => [`call.press.${index + 1}`, "llm_evidence_loop.tool_failed"])
+    );
   });
 
   it("records a failed initial observation, keeps it offered, and does not count it as evidence", async () => {

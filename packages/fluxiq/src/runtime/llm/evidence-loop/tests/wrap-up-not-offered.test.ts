@@ -138,7 +138,7 @@ describe("a candidate tool offered in the final counted slot", () => {
 // loop's own finishing tools (t537): a subflow builder submits and tests with
 // its own, and a loop that names none keeps the candidate's words.
 const note = (finishing?: { submit: string; test: string }) => String(automationStudioLlmEvidenceAnsweredRequestNote({
-  code: "llm_evidence_loop.not_offered", toolId: "inspect", answeredByCallId: "call.1", stepsWithoutProgress: 1, maxStepsWithoutProgress: 8,
+  code: "llm_evidence_loop.not_offered", toolId: "inspect", answeredByCallId: "call.1", stepsWithoutProgress: 1,
   discoveryOnly: true, candidate: { revision: 2, digest: "d".repeat(64) }, ...(finishing ? { finishing } : {})
 }).instruction);
 
@@ -163,7 +163,7 @@ describe("the answered-request note of a discovery-only loop", () => {
   });
 
   it("tells a draft wrap-up its tool is listed and did not run", () => {
-    const said = String(automationStudioLlmEvidenceAnsweredRequestNote({ code: "llm_evidence_loop.not_offered", toolId: "inspect", answeredByCallId: "call.1", stepsWithoutProgress: 1, maxStepsWithoutProgress: 8 }).instruction);
+    const said = String(automationStudioLlmEvidenceAnsweredRequestNote({ code: "llm_evidence_loop.not_offered", toolId: "inspect", answeredByCallId: "call.1", stepsWithoutProgress: 1 }).instruction);
     expect(said).toBe("The build is in its last decisions, so no tool runs now: this tool is still listed, but this call was not run. Complete from your draft, or amend it and complete.");
     expect(said).not.toContain("undoes");
   });
@@ -174,7 +174,7 @@ describe("the answered-request note of a discovery-only loop", () => {
   it("never recommends testing a receipt whose trial failed or that a refusal cleared", () => {
     const tools = { submit: "core.submit_subflow", test: "core.test_subflow" };
     const answered = automationStudioLlmEvidenceAnsweredRequestNote({
-      code: "llm_evidence_loop.already_answered", toolId: "core.submit_subflow", answeredByCallId: "submit-subflow-8", stepsWithoutProgress: 6, maxStepsWithoutProgress: 8, timesAsked: 2,
+      code: "llm_evidence_loop.already_answered", toolId: "core.submit_subflow", answeredByCallId: "submit-subflow-8", stepsWithoutProgress: 6, timesAsked: 2,
       discoveryOnly: true, candidate: { revision: 5, digest: "d".repeat(64), lastTrial: "execution_failed", stale: true }, finishing: tools
     });
     const said = String(answered.instruction);

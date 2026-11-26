@@ -2537,21 +2537,22 @@ its own name:
    exploration it stops reports `recovery_deadline_expired`, as distinct from
    its own `wall_clock_expired`. The per-call timeout, 20 seconds by default and
    45 at most, still catches a single hung call.
-4. **No progress.** An exploration step advances only when it brings back
-   something the exploration did not already have. Three consecutive steps that
-   do not advance stop the exploration with the outcome `no_progress`, separate
-   from `budget_exhausted`. The reason names which failure it was: a repeated
-   request, an answer already held, an empty or refused answer, or an unusable
-   decision. Any step that advances resets the count.
+4. **No count of steps without progress (t1049).** Three steps in a row that
+   brought back nothing new used to stop an exploration `no_progress`. No such
+   count ends anything now (user, 2026-11-24: "THERE SHOULDNT BE ANY ARBITRARY
+   FUCKING CALL LIMIT THAT RANDOMLY JUST RESETS EVERYTHING"): the evidence loop
+   tells the model plainly what it keeps repeating, and the exploration goes on
+   to its answer, its clock or the run's purse. The outcome `no_progress` now
+   means only that a repeat guard stopped it (`repeat_window`, or the loop's
+   own repeat refusals).
 5. **Unusable decisions.** A decision call that reached the provider and came
    back as nothing the exploration can act on is asked again rather than ending
    the exploration. That covers a reply that failed Core's checks (an
    `llm_output.` finding) and every provider failure that only spends the call:
    a malformed, invalid, truncated, or oversize reply, an unusable usage
    report, a timeout, a network error, rate limiting, or an HTTP 5xx. Each one is
-   charged like any other call and counts as a step that did not advance, with
-   the reason `unusable_decision`, so three in a row stop the exploration as
-   `no_progress`. Any other failure, such as a refused budget, a pre-send
+   charged like any other call; a run of them ends nothing by its count (t1049).
+   Any other failure, such as a refused budget, a pre-send
    refusal, a key Secret Keys would not release, or a provider refusing the
    request, ends the exploration.
 6. **The patch reserve.** Before an exploration starts, the recovery reserves

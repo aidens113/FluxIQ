@@ -109,7 +109,7 @@ describe("a call with add that copies a step already in the Flow", () => {
 describe("the feedback a step not added as a second copy is told", () => {
   const steps = [{ position: 1, effect: "mutate" }, { position: 2, effect: "observe" }, { position: 3, effect: "mutate" }, { position: 4, effect: "observe" }];
   const feedbackOf = (refusals: readonly AutomationStudioFlowDraftAmendmentRefusal[], actsNotDone?: readonly string[]) =>
-    automationStudioLlmEvidenceDraftAmendmentFeedback({ refusals, applied: 0, steps, stepsWithoutProgress: 0, maxStepsWithoutProgress: 8, actsNotDone });
+    automationStudioLlmEvidenceDraftAmendmentFeedback({ refusals, applied: 0, steps, stepsWithoutProgress: 0, actsNotDone });
   const refusedOf = (feedback: Record<string, unknown>) => feedback.refused as { step: number; reason: string; copyOf?: number; next?: string }[];
 
   it("names the step that already does it, as copyOf and in next, for a press, with the checklist after it", () => {

@@ -16,7 +16,7 @@
 // - `evidence_gathered` -- it ran and produced something observed.
 // - `no_evidence_found` -- it ran to a clean end and produced nothing.
 // - `budget_exhausted` -- a limit stopped it before it could answer.
-// - `no_progress` -- it could have kept going and had stopped getting anywhere.
+// - `no_progress` -- it kept attempting what it had already attempted.
 // - `unsafe_action_blocked` -- a refusal stopped it.
 //
 // **Success is constructible only from observed evidence.** That is Phase D's
@@ -47,7 +47,7 @@ export const AUTOMATION_STUDIO_EXPLORATION_OUTCOMES = Object.freeze([
   "no_evidence_found",
   /** A limit -- time, actions, provider calls, evidence -- stopped it. */
   "budget_exhausted",
-  /** It was still allowed to run and had stopped getting anywhere, so it was stopped. */
+  /** It kept repeating an action or a request, and a repeat guard stopped it (never a count of steps without progress, t1049). */
   "no_progress",
   /** Something it tried to do was refused as unsafe or out of scope. */
   "unsafe_action_blocked",
@@ -76,7 +76,6 @@ export const AUTOMATION_STUDIO_EXPLORATION_STOP_REASONS = Object.freeze([
   "action_limit",
   "provider_call_limit",
   "repeat_window",
-  "no_progress",
   "destructive_action_refused",
   "out_of_scope_refused",
   "refusal_limit",
@@ -94,10 +93,10 @@ export const AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_STOP_REASON: Readonly<Rec
   // Going in circles is its own ending, and the reason it is not
   // `budget_exhausted` is what an operator does next: a run that stopped on
   // money or on the clock is a number to raise, and a run that kept asking the
-  // same question is not. Both repeat guards say so -- the action-level window
-  // and the streak guard that watches whether anything is still being learned.
+  // same question is not. The action-level window says so. (A streak of steps
+  // that learned nothing once stopped an exploration here too; none does now,
+  // t1049.)
   repeat_window: "no_progress",
-  no_progress: "no_progress",
   destructive_action_refused: "unsafe_action_blocked",
   out_of_scope_refused: "unsafe_action_blocked",
   refusal_limit: "unsafe_action_blocked",

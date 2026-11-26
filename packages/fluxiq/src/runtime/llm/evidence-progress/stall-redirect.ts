@@ -24,17 +24,19 @@
 //      build finished now;
 //   3. what happened the last time it tried to finish, by issue code, which is
 //      the one thing standing between the draft it has and a Flow;
-//   4. how many steps remain before the loop stops, and that finishing or doing
-//      something it has not done are the two ways out.
+//   4. that finishing or doing something it has not done are the two ways out.
 //
-// It is the loop's fourth refusal channel and says the same three things as the
-// other three -- what happened, how close the loop is to stopping, what to do
-// instead (`./answered-request.ts`) -- with one addition the others cannot
-// make: those speak about one decision, and this speaks about the run of them.
+// It is the loop's fourth refusal channel and says the same things as the
+// other three -- what happened and what to do instead
+// (`./answered-request.ts`) -- with one addition the others cannot make: those
+// speak about one decision, and this speaks about the run of them.
 //
-// **It never ends the loop.** A push that does not fit the evidence budget is
-// dropped and the loop goes on; a nudge is not worth an ending. Stopping stays
-// with `maxStepsWithoutProgress`, five steps further on.
+// **Nothing here ends the loop, and no count of steps without progress does
+// (t1049).** There is no countdown to tell: the model is told what it repeated
+// and what has not changed, and a repeat is loop detection's to catch and the
+// model's to decide (user, 2026-11-24: "THERE SHOULDNT BE ANY ARBITRARY FUCKING
+// CALL LIMIT THAT RANDOMLY JUST RESETS EVERYTHING"). Only the result, the purse
+// or a person's Stop ends a task.
 //
 // **The stall is usually a symptom, and the redirection names the cause.** On
 // `run-mulum3x7-18ceeb75` the spinning at iterations 13-19 and 21-33 followed
@@ -84,7 +86,6 @@ export type AutomationStudioLlmEvidenceStallRedirectInput = {
   /** A discovery-only loop's own submit and test tools, which its words name; the candidate's when absent (t537). */
   finishing?: { submit: string; test: string } | undefined;
   stepsWithoutProgress: number;
-  maxStepsWithoutProgress: number;
   /** The tools whose latest answers gave the loop nothing it did not hold. */
   repeatingToolIds: readonly string[];
   /** Steps that would be proposed if the build finished now. */
@@ -111,8 +112,6 @@ export type AutomationStudioLlmEvidenceStallRedirectInput = {
    * step did instead and where to name the act.
    */
   acts?: JsonValue | undefined;
-  /** A task that keeps going until its result or its budget: a round that stalls ends and a fresh one follows, so no word of the exploration stopping is true. */
-  freshRoundFollows?: true | undefined;
   /** A loop that plans: its way forward, said in place of the draft's sentences (`./planning-tools.ts`). */
   forward?: AutomationStudioLlmEvidencePlanningStep | undefined;
 };
@@ -139,22 +138,19 @@ const RECORDS_MISSING = "Your last attempt to finish was refused because the ins
  * that the way out is to finish the draft rather than to ask again.
  */
 export function automationStudioLlmEvidenceStallRedirect(input: AutomationStudioLlmEvidenceStallRedirectInput): JsonObject {
-  const stepsLeft = Math.max(0, input.maxStepsWithoutProgress - input.stepsWithoutProgress);
   const issueCodes = [...new Set(input.lastIssueCodes.filter((code) => ISSUE_CODE.test(code)))];
   const stillMissing = automationStudioLlmEvidenceStillMissing(input.answerability);
   return {
     ok: false,
     code: "llm_evidence_loop.no_progress",
     stepsWithoutProgress: input.stepsWithoutProgress,
-    // A loop no count ends (`../loop-configuration.ts`, `uncounted`, t1008) has no stop to count down to.
-    ...(Number.isFinite(input.maxStepsWithoutProgress) ? { maxStepsWithoutProgress: input.maxStepsWithoutProgress, stepsLeftBeforeStopping: stepsLeft } : {}),
     repeatingToolIds: [...new Set(input.repeatingToolIds.filter((toolId) => ISSUE_CODE.test(toolId)))],
     ...(input.discoveryOnly ? { authoringMode: "candidate", ...(input.candidate ? { candidate: { ...input.candidate } } : {}) } : input.forward ? (input.forward.toolId ? { next: input.forward.toolId } : {}) : { draftStepsSoFar: input.proposableSteps }),
     completionAttempts: input.completionAttempts,
     ...(issueCodes.length ? { lastCompletionIssueCodes: issueCodes } : {}),
     ...(stillMissing ? { stillMissing } : {}),
     ...(actsMissing(input).length ? { actsMissing: actsMissing(input) } : {}),
-    instruction: instruction(input, stepsLeft, issueCodes.length > 0, stillMissing)
+    instruction: instruction(input, issueCodes.length > 0, stillMissing)
   };
 }
 
@@ -230,18 +226,17 @@ function untriedRoutes(owed: readonly string[], stillMissing: "record_producer" 
 }
 
 /** A planning loop's redirection: what repeating got it and its own way forward. */
-function planningInstruction(input: AutomationStudioLlmEvidenceStallRedirectInput, forward: AutomationStudioLlmEvidencePlanningStep, stepsLeft: number): string {
+function planningInstruction(input: AutomationStudioLlmEvidenceStallRedirectInput, forward: AutomationStudioLlmEvidencePlanningStep): string {
   return [
     `The last ${input.stepsWithoutProgress} steps told you nothing you did not already have.`,
     input.repeatingToolIds.length
       ? "The tools named in repeatingToolIds are answering with what they already answered; asking them again will return the same thing again."
       : "Repeating a request returns the result you already hold.",
-    forward.instruction,
-    stepsLeft > 0 ? `${stepsLeft} more step(s) without progress and this build stops.` : "This build stops on the next step without progress."
+    forward.instruction
   ].join(" ");
 }
 
-function instruction(input: AutomationStudioLlmEvidenceStallRedirectInput, stepsLeft: number, refused: boolean, stillMissing: "record_producer" | undefined): string {
+function instruction(input: AutomationStudioLlmEvidenceStallRedirectInput, refused: boolean, stillMissing: "record_producer" | undefined): string {
   if (input.discoveryOnly) {
     // A receipt whose trial failed on record, or that a refusal cleared, is never recommended for a test (t741, social 0166).
     const untestable = input.candidate
@@ -252,9 +247,9 @@ function instruction(input: AutomationStudioLlmEvidenceStallRedirectInput, steps
       : candidateCovered(input, stillMissing)
         ? "No candidate has been accepted. Use the evidence already gathered, correct any named submission issues and submit the whole candidate, then test its returned revision and digest. Do not complete an untested candidate."
         : untriedRoutes(actsMissing(input), stillMissing));
-    return `The last ${input.stepsWithoutProgress} steps added no new evidence. Repeating the same request returns the answer already held. ${next} ${stepsLeft} more step(s) without progress stop this build.`;
+    return `The last ${input.stepsWithoutProgress} steps added no new evidence. Repeating the same request returns the answer already held. ${next}`;
   }
-  if (input.forward) return planningInstruction(input, input.forward, stepsLeft);
+  if (input.forward) return planningInstruction(input, input.forward);
   // What is missing leads, because it is the only sentence here that says what
   // to do next rather than what not to do again.
   const said = stillMissing ? [RECORDS_MISSING] : [];
@@ -299,21 +294,7 @@ function instruction(input: AutomationStudioLlmEvidenceStallRedirectInput, steps
   } else if (!stillMissing && !owed.length && input.completionAttempts === 0 && input.proposableSteps > 0 && input.canComplete) {
     said.push(`You have not tried to finish yet. If the draft answers the instruction, complete now.`);
   }
-  const way = stillMissing || owed.length ? "Do the missing step." : "Do something you have not done, or complete.";
-  // A task that keeps going ends no exploration here: the round does, and the next starts from the page as it stands (`freshRoundFollows`).
-  if (!Number.isFinite(stepsLeft)) {
-    // No count ends this loop (t1008): repeating is caught by loop detection, never by a countdown.
-    said.push(way);
-    return said.join(" ");
-  }
-  if (input.freshRoundFollows) {
-    said.push(stepsLeft > 0
-      ? `${way} ${stepsLeft} more step(s) without progress and this round ends; the next starts from the page as it stands, with what you hold kept.`
-      : `${way} This round ends on the next step without progress; the next starts from the page as it stands, with what you hold kept.`);
-    return said.join(" ");
-  }
-  said.push(stepsLeft > 0
-    ? `${way} ${stepsLeft} more step(s) without progress and this exploration stops with no Flow.`
-    : `${way} This exploration stops on the next step without progress.`);
+  // No countdown follows (t1049): no count of steps without progress ends anything, so none is said.
+  said.push(stillMissing || owed.length ? "Do the missing step." : "Do something you have not done, or complete.");
   return said.join(" ");
 }

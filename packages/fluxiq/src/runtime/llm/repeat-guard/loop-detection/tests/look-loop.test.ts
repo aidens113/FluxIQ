@@ -154,11 +154,11 @@ describe("a change of approach on looks alone (0079 onwards)", () => {
   });
 });
 
-describe("the redirect of a loop no count ends", () => {
+describe("the redirect of a loop no count ends (every loop, since t1049)", () => {
   it("counts down to nothing", () => {
     const note = automationStudioLlmEvidenceStallRedirect({
-      stepsWithoutProgress: 5, maxStepsWithoutProgress: Number.POSITIVE_INFINITY, repeatingToolIds: ["find"], lastIssueCodes: [],
-      proposableSteps: 0, completionAttempts: 0, canComplete: true, freshRoundFollows: true
+      stepsWithoutProgress: 5, repeatingToolIds: ["find"], lastIssueCodes: [],
+      proposableSteps: 0, completionAttempts: 0, canComplete: true
     } as Parameters<typeof automationStudioLlmEvidenceStallRedirect>[0]);
     expect(note).not.toHaveProperty("maxStepsWithoutProgress");
     expect(note).not.toHaveProperty("stepsLeftBeforeStopping");

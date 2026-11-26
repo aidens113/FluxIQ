@@ -1,6 +1,6 @@
 import { runAgentIterations, type AgentIterationResult } from "../agents/iteration/index.ts";
 import type { JsonObject, JsonValue } from "../../core/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_REDIRECT_AT_STEPS_WITHOUT_PROGRESS } from "../loop-limits/index.ts";
 import {
   AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID,
   automationStudioFlowDraftComposeInPlace, automationStudioFlowDraftSettleLoopCovered,
@@ -108,11 +108,8 @@ export { AUTOMATION_STUDIO_LLM_EVIDENCE_BUDGET_TOOL_ID, AUTOMATION_STUDIO_LLM_EV
 
 export { AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION } from "./evidence-loop-decision.ts";
 
-/** Far backstop for unusable decisions; the no-progress, cost and time gates bind underneath it. */
+/** Far backstop for unusable decisions in a row, on a loop with no `loopSignal`; the cost and time gates bind underneath it. */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW = 12;
-
-/** The shared no-progress backstop, re-exported for existing callers. */
-export { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS };
 
 /** Established public loop contracts. */
 export type {
@@ -250,12 +247,12 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
   let offeredCompletion = false;
   // Everything the loop remembers in order to tell working from repeating, and
   // what it says when the answer is repeating (`./evidence-progress/no-progress.ts`
-  // states the whole rule and the run it was measured on). The stop is the last
-  // resort: several steps earlier this starts telling the model plainly that it
-  // already holds what it keeps asking for, at no cost in calls or iterations.
+  // states the whole rule and the run it was measured on). It steers and never
+  // stops (t1049): from the redirect it tells the model plainly that it already
+  // holds what it keeps asking for, at no cost in calls or iterations, on every
+  // further step without progress; a repeat is loop detection's to decide.
   const noProgress = automationStudioLlmEvidenceNoProgress({
-    max: limits.maxStepsWithoutProgress,
-    redirectAt: limits.redirectAtStepsWithoutProgress,
+    redirectAt: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_REDIRECT_AT_STEPS_WITHOUT_PROGRESS,
     facts: () => automationStudioLlmEvidenceRedirectFacts({
       config: input, steps: draftSteps, evidence, completionAttempts: counters.completionAttempts,
       canComplete: offeredCompletion, answerability: rows.answerability
@@ -275,8 +272,10 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
     accounting.evidenceBytes += bytes;
     return bytes;
   };
-  // One more unusable decision. Returns the error that ends the loop once a
-  // guard is reached, or nothing when the loop should ask again.
+  // One more unusable decision. Returns the error that ends the loop once the
+  // far backstop or a repeat's stall is reached, or nothing when the loop should
+  // ask again. Refused for the same issues again, it is a step without progress,
+  // which steers and ends nothing (t1049).
   const unusable = (step: AutomationStudioLlmEvidenceLoopTrace, issueCodes: readonly string[], transition?: RowTransition): { error: unknown } | undefined => {
     counters.unusableInARow += 1;
     lastIssueCodes = issueCodes;
@@ -289,7 +288,7 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
     recordRow(step, transition);
     // It is also one more repeat refused in a row, beside the identical part runs it sat between (`repeat-guard/outcomes.ts`, run-musr9pv3-f4bf6256); with a loop signal, loop detection's ladder decides (`./evidence-loop/refused-again.ts`, t1014).
     const repeatsStall = sameDraftRefusedAgain && automationStudioLlmEvidenceRefusedAgainEnds(handling, step.iteration, handling.repeats.refusedAgain(step.iteration), { caught: automationStudioLlmEvidenceLoopCaught, raise: automationStudioLlmEvidenceLoopRaise });
-    if (!repeatsStall && !noProgress.reached() && counters.unusableInARow < limits.maxUnusableDecisionsInARow) {
+    if (!repeatsStall && counters.unusableInARow < limits.maxUnusableDecisionsInARow) {
       // A refused completion is the one stall the redirection has something
       // specific to say about: its issue codes are what stand between the
       // draft and a Flow.
@@ -313,12 +312,12 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
     const stalled = unusable({ iteration, decision: "unusable", ...(resultCode ? { resultCode } : {}), ...(resultReason ? { resultReason } : {}), ...(usage ? { usage } : {}) }, issueCodes);
     if (stalled) return stalled;
     // The model is told what was wrong, as evidence, before it is asked again.
-    const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes, stepsWithoutProgress: noProgress.steps, maxStepsWithoutProgress: limits.maxStepsWithoutProgress, offers, ...(fieldIssues ? { fieldIssues } : {}), ...(unknownTool ? { unknownTool } : {}) });
+    const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes, stepsWithoutProgress: noProgress.steps, offers, ...(fieldIssues ? { fieldIssues } : {}), ...(unknownTool ? { unknownTool } : {}) });
     automationStudioLlmFailedDecisionFeedback({ iteration, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID, feedback, evidence, accountEvidence });
     return "ask_again";
   };
   // A reply that could not be read: asked again; a count ends it only with no loop signal, else a repeat is loop detection's (`./evidence-loop/unreadable-reply.ts`, t1014).
-  const unreadable = automationStudioLlmEvidenceUnreadableReplies({ loopSignal: input.loopSignal !== undefined, maxInARow: limits.maxUnreadableRepliesInARow, progress: () => ({ steps: noProgress.steps, max: limits.maxStepsWithoutProgress }), ended: (summary) => failure(draftSteps, "llm_evidence_loop.unreadable_replies", trace, accounting, undefined, summary),
+  const unreadable = automationStudioLlmEvidenceUnreadableReplies({ loopSignal: input.loopSignal !== undefined, maxInARow: limits.maxUnreadableRepliesInARow, progress: () => ({ steps: noProgress.steps }), ended: (summary) => failure(draftSteps, "llm_evidence_loop.unreadable_replies", trace, accounting, undefined, summary),
     record: (iteration, thrown) => {
       history.record(iteration, { kind: "unusable", signature: automationStudioLlmDecisionContextSignature({ kind: "unusable", issueCodes: thrown.issueCodes }), issueCodes: thrown.issueCodes });
       const usage = automationStudioLlmFailedDecisionUsage(thrown);
@@ -505,7 +504,6 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
       automationStudioLlmDecisionContextSupersede(evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID);
     } else {
       noProgress.stepped(decision.toolId);
-      if (noProgress.reached()) return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting);
       if (reask === "repeat") {
         automationStudioLlmEvidenceShowVerifiedRepeat(handling, { iteration, callId, toolId: decision.toolId, answeredByCallId: verifying!.answeredByCallId, requestSignature: toolRequestSignature });
       }

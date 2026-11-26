@@ -38,9 +38,13 @@ export function automationStudioFlowDraftAmendmentRoute(
     const id = automationStudioFlowDraftStepId(last);
     routing = { kind: "repeat", through: id, while: id, ...(amendment.most === undefined ? {} : { most: amendment.most }) };
   } else {
-    const through = named(amendment.through) ?? step;
-    const over = named(amendment.over) ?? automationStudioFlowDraftPrecedingProposedStep(steps, step);
-    if (!over) return { ok: false, reason: amendment.over === undefined ? "no_step_before_it" : "no_such_step" };
+    // A step named that is not in the draft is refused by its number: it never
+    // quietly becomes this step, or the step before it (t1049, W3's leftover).
+    if (amendment.through !== undefined && !named(amendment.through)) return { ok: false, reason: "no_such_step", through: amendment.through };
+    if (amendment.over !== undefined && !named(amendment.over)) return { ok: false, reason: "no_such_step", over: amendment.over };
+    const through = amendment.through === undefined ? step : named(amendment.through)!;
+    const over = amendment.over === undefined ? automationStudioFlowDraftPrecedingProposedStep(steps, step) : named(amendment.over);
+    if (!over) return { ok: false, reason: "no_step_before_it" };
     if (!automationStudioFlowDraftStepIsProposed(through) || !automationStudioFlowDraftStepIsProposed(over)) return { ok: false, reason: "not_a_kept_step" };
     // Over a listing, `most` takes only its first rows (F5); over a check the assembler refuses it.
     routing = { kind: "repeat", through: automationStudioFlowDraftStepId(through), over: automationStudioFlowDraftStepId(over), ...(amendment.most === undefined ? {} : { most: amendment.most }) };
