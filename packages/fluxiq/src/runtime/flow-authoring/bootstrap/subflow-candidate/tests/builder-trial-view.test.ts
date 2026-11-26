@@ -55,7 +55,7 @@ async function tested(options: { reset?: { moved: boolean; movesDuring: number }
       }
     }),
     loop: {
-      tools: [look], maxIterations: 6, maxToolCalls: 8,
+      tools: [look], 
       unusableDecisions: { stalled: () => new Error("stalled") },
       executeTool: async (call) => {
         if (call.callId.endsWith(".page")) {

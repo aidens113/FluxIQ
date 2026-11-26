@@ -16,7 +16,6 @@ import { automationStudioFlowBootstrapKeptSaid } from "../kept-said.ts";
 import { automationStudioFlowBootstrapNotDoable } from "../not/index.ts";
 import { automationStudioFlowBootstrapProgressAndTestSaid, automationStudioFlowBootstrapRepairingJudgedSaid } from "../not/index.ts";
 import { automationStudioFlowBootstrapNotFinished } from "../not/index.ts";
-import { automationStudioFlowBootstrapRepliesUnreadable } from "../replies-unreadable.ts";
 
 const MAX = AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_MAX_MESSAGE;
 const KEPT = automationStudioFlowBootstrapKeptSaid(true);
@@ -114,16 +113,16 @@ describe("the other endings that sliced their message", () => {
     expect(said).not.toContain("what held it up");
   });
 
-  it("replies unreadable: fits, the kept sentence whole at its end", () => {
-    const said = automationStudioFlowBootstrapRepliesUnreadable({
-      unreadable: { inARow: 6, total: 8, cases: ["content_mismatched"], said: "its brackets did not match: one closed the wrong kind, or there was one too many or too few" },
-      judgement: judgement(), checklist, rounds: 3, decisions: 38, kept: true
+  // Unreadable replies are a detail of the budget's ending now, never an ending of their own (t1056).
+  it("a budget ending whose last replies arrived unreadable: fits, says so, and keeps its closing sentences whole", () => {
+    const said = automationStudioFlowBootstrapBudgetExhausted({
+      bound: "tokens", sizes: { maxTotalTokens: 360_000 }, judgement: judgement(), checklist, rounds: 3, decisions: 38, kept: true,
+      unreadable: { inARow: 6, total: 8, cases: ["content_mismatched"], said: "its brackets did not match: one closed the wrong kind, or there was one too many or too few" }
     }).message;
     expect(said.length).toBeLessThanOrEqual(MAX);
     expect(said.endsWith(KEPT)).toBe(true);
-    expect(said).toMatch(/^The build stopped because the replies it got back could not be read: 6 in a row came back unreadable/u);
-    // Three live rounds are said as every ending says them, before what was kept.
-    expect(said).toContain("I worked on it live 3 times: first exploring the page, then fixing it twice after testing what I had. " + KEPT);
+    expect(said).toMatch(/^The build stopped at its budget of 360000 tokens before the Flow was finished. Its last 6 replies came back unreadable -- because its brackets did not match/u);
+    expect(said).toContain("In all, 8 of 38 replies could not be read; each was paid for and counted in the build's budget.");
   });
 });
 

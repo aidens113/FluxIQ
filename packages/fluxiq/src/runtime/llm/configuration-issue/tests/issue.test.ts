@@ -16,7 +16,7 @@ const inspect: AutomationStudioLlmEvidenceTool = { toolId: "inspect", descriptio
 
 function loop(overrides: Partial<AutomationStudioLlmEvidenceLoopInput> = {}): AutomationStudioLlmEvidenceLoopInput {
   return {
-    tools: [inspect], maxIterations: 2, maxToolCalls: 2,
+    tools: [inspect], 
     executeTool: async () => ({ facts: ["ready"] }),
     decide: async () => ({ kind: "complete", result: { answer: "done" } }),
     ...overrides
@@ -33,10 +33,9 @@ describe("a refused configuration names its check", () => {
     });
   });
 
-  // No count of turns, calls or replies in a row is a limit a loop holds, so none is refused (t1056): figures an old
-  // caller still passes are read by nothing.
+  // No count of turns, calls or replies in a row is a limit a loop holds (t1056): the input has none to refuse.
   it("refuses no count of turns, calls or replies, which no longer bound a loop", async () => {
-    const figures: Array<Partial<AutomationStudioLlmEvidenceLoopInput>> = [{ maxIterations: 65, maxToolCalls: 116 }, { maxIterations: 0, maxToolCalls: 0 }, { unusableDecisions: { stalled: () => new Error("stalled") } }];
+    const figures: Array<Partial<AutomationStudioLlmEvidenceLoopInput>> = [{}, { unusableDecisions: { stalled: () => new Error("stalled") } }];
     for (const each of figures) {
       await expect(runAutomationStudioLlmEvidenceLoop(loop(each))).resolves.toMatchObject({ ok: true });
     }

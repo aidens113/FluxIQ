@@ -367,7 +367,9 @@ describe("the in-run repair of a Lab-scoped run", () => {
     const context = bind(world);
     const [first, later] = await underFlow(store, async () => [await repair(world), await repair(world, inRunRepairRequest({ incidentId: "incident.2" }))]);
     expect(first?.kind).toBe("overlay");
-    expect(store.spentNowUsd(IN_RUN_REPAIR_PROJECT_ID, IN_RUN_REPAIR_FLOW_ID)).toBe(0.04);
+    // The diagnosis reports no cost and its provider prices none: it is charged as priced at Core's default model, never
+    // free (t1056, `runtime/llm/build-purse/priced.ts`), on top of the patch's reported $0.02.
+    expect(store.spentNowUsd(IN_RUN_REPAIR_PROJECT_ID, IN_RUN_REPAIR_FLOW_ID)).toBeGreaterThan(0.04);
     // The first incident spent what the creation left, so the second asks no model.
     expect(later?.kind).toBe("none");
     expect(taskKinds(world)).toEqual(["runtime_diagnosis", "runtime_patch"]);

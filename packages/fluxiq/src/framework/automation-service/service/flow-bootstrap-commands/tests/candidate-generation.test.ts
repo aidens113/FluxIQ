@@ -124,7 +124,7 @@ function boundGeneration(store: Pick<AutomationStudioFlowCandidateDraftStore, "s
   const input: Parameters<typeof generateAutomationStudioFlowCandidateDraft>[0] = {
     submission: { projectId: "project.1", flowId: "flow.1", registry, resolution, baseDependencyDigest: "base", instructionText: context.bootstrapInstructionText, originalSource: binding },
     originalSource: binding, sourceInstructionIds: [...binding.originalSources.effectiveInstructionIds], baseSettingsRevision: 1,
-    loop: { propagateDecisionErrors: true, tools: [], maxToolCalls: 2, executeTool: async () => { throw new Error("No discovery/effect expected"); } },
+    loop: { propagateDecisionErrors: true, tools: [], executeTool: async () => { throw new Error("No discovery/effect expected"); } },
     
     harness: { projectId: "project.1", flowId: "flow.1", instructions: [sourceFixture.instruction()], provider, deniedEvidenceKeys: [] }, runHarness: runAutomationStudioLlmHarness,
     wrapDecision: decide => decide, beforeDecision: () => undefined, progress: () => undefined, ending: () => undefined,

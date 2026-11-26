@@ -167,7 +167,7 @@ async function run(steps: Step[], options: { hook?: boolean; gap?: boolean; rowT
     siteReset: built.ledger,
     siteResetSettleMs: 0,
     loop: {
-      tools: [runNode], maxIterations: steps.length, maxToolCalls: steps.length + 2,
+      tools: [runNode], 
       unusableDecisions: { stalled: () => new Error("stalled") },
       executeTool: built.wrapper.executeTool,
       decide: async ({ evidence }) => {

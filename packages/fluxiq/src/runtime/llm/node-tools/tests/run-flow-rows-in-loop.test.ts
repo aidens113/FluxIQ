@@ -51,7 +51,7 @@ async function build(withNodes: boolean) {
     .mockResolvedValueOnce({ kind: "complete", result: { done: true } });
   const executeTool = store();
   const result = await runAutomationStudioLlmEvidenceLoop({
-    tools, decide, executeTool, draft: { seed: seed() }, maxIterations: 6, maxToolCalls: 6, propagateDecisionErrors: true,
+    tools, decide, executeTool, draft: { seed: seed() }, propagateDecisionErrors: true,
     ...(withNodes ? { nodeOf: (id: string) => NODES[id] } : {})
   });
   const presses = (prefix: string) => executeTool.mock.calls.map(([call]) => call)

@@ -34,7 +34,7 @@ function ports(briefs: Decide[][], seen: Entry[][], received: Entry[], verdict: 
     let step = 0;
     return {
       loop: {
-        tools: [LOOK], maxToolCalls: 12,
+        tools: [LOOK], 
         unusableDecisions: { stalled: () => new Error("stalled") },
         executeTool: async (call) => {
           received.push({ callId: call.callId, toolId: call.toolId, value: structuredClone(call.value) });

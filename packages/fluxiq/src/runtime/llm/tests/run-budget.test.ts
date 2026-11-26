@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AutomationStudioLlmRunBudgetLedger } from "../run-budget.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP } from "../flow-execution-limits/index.ts";
+/** The 250-call backstop the run budget once held a run to (gone since t1056). */
+const AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP = 250;
 
 describe("Automation Studio LLM run budget ledger", () => {
   it("bounds new holds in nested cost windows without charging unrelated old holds, and closes idempotently", () => {
@@ -100,7 +101,7 @@ describe("Automation Studio LLM run budget ledger", () => {
   });
 
   it("atomically reserves calls and worst-case output, then releases unused capacity on completion", () => {
-    const ledger = new AutomationStudioLlmRunBudgetLedger({ maxCallsPerRun: 2, maxTotalTokensPerRun: 1000, maxOutputTokensPerRun: 400, maxEstimatedCostUsdPerRun: 0.25 });
+    const ledger = new AutomationStudioLlmRunBudgetLedger({ maxTotalTokensPerRun: 1000, maxOutputTokensPerRun: 400, maxEstimatedCostUsdPerRun: 0.25 });
     const diagnosis = ledger.reserve({ runId: "run.one", requestId: "request.diagnosis", estimatedInputTokens: 200, maxOutputTokens: 200, maxEstimatedCostUsd: 0.1 });
     expect(diagnosis.ok).toBe(true);
     expect(ledger.reserve({ runId: "run.one", requestId: "request.concurrent", estimatedInputTokens: 200, maxOutputTokens: 250, maxEstimatedCostUsd: 0.1 })).toMatchObject({ ok: false, diagnostic: { code: "llm_budget.run_output_limit" } });
@@ -113,23 +114,23 @@ describe("Automation Studio LLM run budget ledger", () => {
   });
 
   it("rejects duplicate IDs and exhausted total budgets, and no declared call count refuses (t1056)", () => {
-    const ledger = new AutomationStudioLlmRunBudgetLedger({ maxCallsPerRun: 1, maxTotalTokensPerRun: 300, maxOutputTokensPerRun: 200 });
+    const ledger = new AutomationStudioLlmRunBudgetLedger({ maxTotalTokensPerRun: 300, maxOutputTokensPerRun: 200 });
     const first = ledger.reserve({ runId: "run.one", requestId: "request.one", estimatedInputTokens: 100, maxOutputTokens: 100 });
     expect(first.ok).toBe(true);
     expect(ledger.reserve({ runId: "run.one", requestId: "request.one", estimatedInputTokens: 1, maxOutputTokens: 1 })).toMatchObject({ ok: false, diagnostic: { code: "llm_budget.duplicate_request" } });
     if (first.ok) first.lease.complete();
     // A declared count of one call is read no more: the second call is admitted, because tokens and money allow it.
-    const roomy = new AutomationStudioLlmRunBudgetLedger({ maxCallsPerRun: 1, maxTotalTokensPerRun: 300, maxOutputTokensPerRun: 200, maxEstimatedCostUsdPerRun: 1 });
+    const roomy = new AutomationStudioLlmRunBudgetLedger({ maxTotalTokensPerRun: 300, maxOutputTokensPerRun: 200, maxEstimatedCostUsdPerRun: 1 });
     const once = roomy.reserve({ runId: "run.one", requestId: "request.one", estimatedInputTokens: 10, maxOutputTokens: 10, maxEstimatedCostUsd: 0.01 });
     if (once.ok) once.lease.complete({ inputTokens: 10, outputTokens: 10, totalTokens: 20, estimatedCostUsd: 0.01 });
     expect(roomy.reserve({ runId: "run.one", requestId: "request.two", estimatedInputTokens: 1, maxOutputTokens: 1, maxEstimatedCostUsd: 0.01 })).toMatchObject({ ok: true });
 
-    const total = new AutomationStudioLlmRunBudgetLedger({ maxCallsPerRun: 2, maxTotalTokensPerRun: 100, maxOutputTokensPerRun: 100 });
+    const total = new AutomationStudioLlmRunBudgetLedger({ maxTotalTokensPerRun: 100, maxOutputTokensPerRun: 100 });
     expect(total.reserve({ runId: "run.two", requestId: "request.large", estimatedInputTokens: 75, maxOutputTokens: 50 })).toMatchObject({ ok: false, diagnostic: { code: "llm_budget.run_total_limit" } });
   });
 
   it("rejects invalid identifiers/numbers and charges invalid usage at the reservation", () => {
-    const ledger = new AutomationStudioLlmRunBudgetLedger({ maxCallsPerRun: 2, maxTotalTokensPerRun: 500, maxOutputTokensPerRun: 200 });
+    const ledger = new AutomationStudioLlmRunBudgetLedger({ maxTotalTokensPerRun: 500, maxOutputTokensPerRun: 200 });
     expect(ledger.reserve({ runId: "", requestId: "request.one", estimatedInputTokens: -1, maxOutputTokens: 1 })).toMatchObject({ ok: false, diagnostic: { code: "llm_budget.invalid_reservation" } });
     const lease = ledger.reserve({ runId: "run.safe", requestId: "request.safe", estimatedInputTokens: 100, maxOutputTokens: 100 });
     expect(lease.ok).toBe(true);
@@ -138,7 +139,7 @@ describe("Automation Studio LLM run budget ledger", () => {
   });
 
   it("atomically blocks cost oversubscription and retains unknown-call cost", () => {
-    const ledger = new AutomationStudioLlmRunBudgetLedger({ maxCallsPerRun: 2, maxTotalTokensPerRun: 500, maxOutputTokensPerRun: 200, maxEstimatedCostUsdPerRun: 0.25 });
+    const ledger = new AutomationStudioLlmRunBudgetLedger({ maxTotalTokensPerRun: 500, maxOutputTokensPerRun: 200, maxEstimatedCostUsdPerRun: 0.25 });
     const first = ledger.reserve({ runId: "run.cost", requestId: "request.cost.one", estimatedInputTokens: 50, maxOutputTokens: 50, maxEstimatedCostUsd: 0.2 });
     expect(first.ok).toBe(true);
     expect(ledger.reserve({ runId: "run.cost", requestId: "request.cost.two", estimatedInputTokens: 10, maxOutputTokens: 10, maxEstimatedCostUsd: 0.1 })).toMatchObject({ ok: false, diagnostic: { code: "llm_budget.run_cost_limit" } });
@@ -165,7 +166,7 @@ describe("Automation Studio LLM run budget ledger", () => {
   // counted inside `calls`, and it draws on the one backstop like everything
   // else, so there is no longer a number that bounds only one kind of call.
   it("counts exploration calls on the receipt, and no call count refuses the next one (t1056)", () => {
-    const ledger = new AutomationStudioLlmRunBudgetLedger({ maxCallsPerRun: 3, maxTotalTokensPerRun: 10_000, maxOutputTokensPerRun: 10_000, maxEstimatedCostUsdPerRun: 1 });
+    const ledger = new AutomationStudioLlmRunBudgetLedger({ maxTotalTokensPerRun: 10_000, maxOutputTokensPerRun: 10_000, maxEstimatedCostUsdPerRun: 1 });
     for (const [requestId, allowance] of [["request.diagnosis", "run"], ["request.explore", "exploration"], ["request.patch", "run"]] as const) {
       const lease = ledger.reserve({ runId: "run.label", requestId, estimatedInputTokens: 100, maxOutputTokens: 100, maxEstimatedCostUsd: 0.1, allowance });
       expect(lease.ok).toBe(true);
@@ -226,7 +227,7 @@ describe("Automation Studio LLM run budget ledger", () => {
   });
 
   it("charges valid actual overages instead of under-accounting them", () => {
-    const ledger = new AutomationStudioLlmRunBudgetLedger({ maxCallsPerRun: 1, maxTotalTokensPerRun: 100, maxOutputTokensPerRun: 50, maxEstimatedCostUsdPerRun: 0.1 });
+    const ledger = new AutomationStudioLlmRunBudgetLedger({ maxTotalTokensPerRun: 100, maxOutputTokensPerRun: 50, maxEstimatedCostUsdPerRun: 0.1 });
     const reserved = ledger.reserve({ runId: "run.overage", requestId: "request.overage", estimatedInputTokens: 50, maxOutputTokens: 50, maxEstimatedCostUsd: 0.1 });
     expect(reserved.ok).toBe(true);
     if (reserved.ok) reserved.lease.complete({ inputTokens: 80, outputTokens: 60, totalTokens: 140, estimatedCostUsd: 0.2 });
@@ -237,7 +238,7 @@ describe("Automation Studio LLM run budget ledger", () => {
   // reservation is refused as if it were a call in flight; released, it leaves
   // no trace on the receipt, and a lease settles only once.
   it("holds a reservation that other calls cannot spend, and releases it without charging anything", () => {
-    const ledger = new AutomationStudioLlmRunBudgetLedger({ maxCallsPerRun: 2, maxTotalTokensPerRun: 1_000, maxOutputTokensPerRun: 1_000, maxEstimatedCostUsdPerRun: 0.2 });
+    const ledger = new AutomationStudioLlmRunBudgetLedger({ maxTotalTokensPerRun: 1_000, maxOutputTokensPerRun: 1_000, maxEstimatedCostUsdPerRun: 0.2 });
     const hold = ledger.reserve({ runId: "run.hold", requestId: "recovery.patch-reserve", estimatedInputTokens: 400, maxOutputTokens: 100, maxEstimatedCostUsd: 0.1 });
     expect(hold.ok).toBe(true);
     if (!hold.ok) return;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODES } from "../../../../llm/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../../loop-limits/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, AUTOMATION_STUDIO_LLM_EVIDENCE_ACCOUNTED_BYTES_MAX } from "../../../../loop-limits/index.ts";
 
 /** The ceiling a loop's turns and calls were once held to, which readers of a record were bounded by (t1056 removed it). */
 const OLD_LOOP_CEILING = 64;
@@ -380,7 +380,7 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
       const bad: Array<Record<string, unknown>> = [
         { iteration: 2.5 },
         { iteration: -1 },
-        { evidenceBytes: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes + 1 },
+        { evidenceBytes: AUTOMATION_STUDIO_LLM_EVIDENCE_ACCOUNTED_BYTES_MAX + 1 },
         { at: -1 },
         { at: 4_102_444_800_001 },
         { at: 1.5 },

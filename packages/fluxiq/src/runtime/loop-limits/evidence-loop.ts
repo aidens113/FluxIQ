@@ -16,27 +16,11 @@
 // now fails the build on a value import in that direction; this module is where
 // a shared value goes instead of provoking one.
 //
-// **There is no ceiling on a loop's turns or calls (t1056).** These were the
-// most a caller could configure, 64 of each, and the loop, its provider's
-// preflight and every reader of a recorded build were held to them, so a build
-// that was still learning met a limit no person set (user, 2026-11-24: "THERE
-// SHOULDNT BE ANY ARBITRARY FUCKING CALL LIMIT THAT RANDOMLY JUST RESETS
-// EVERYTHING"). Nothing in `runtime/llm/`, the build or its readers reads them
-// now; `adaptation/recovery/` still caps its exploration's backstop with them,
-// and they go with that caller.
-//
-// `maxEvidenceBytes` is no longer a limit on anything. It was a 1 MiB backstop
-// on everything a loop gathered, which ended a loop `evidence_limit`; a
-// whole-page packet can be that size on its own, and the model is now shown
-// every entry with the model's context window as the only bound on a request
-// (`../llm/context-window.ts`). It stays, at the largest safe integer, only
-// because readers of a recorded trace hold an accounted byte count to it.
-/** @deprecated `maxIterations` and `maxToolCalls` are read only by `adaptation/recovery/` (t1056); no loop, preflight or reader of a build is held to them. */
-export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS = {
-  maxIterations: 64,
-  maxToolCalls: 64,
-  maxEvidenceBytes: Number.MAX_SAFE_INTEGER
-} as const;
+// **There is no ceiling on a loop's turns or calls (t1056).** The loop limits
+// this module once held -- the most a caller could configure, 64 of each -- are
+// gone, with every reader (user, 2026-11-24: "THERE SHOULDNT BE ANY ARBITRARY
+// FUCKING CALL LIMIT THAT RANDOMLY JUST RESETS EVERYTHING"). The bound readers
+// of a recorded trace hold an accounted byte count to is `./evidence-bytes.ts`.
 
 // Steps in a row that give a loop nothing new, after which it **changes what it
 // is asking for**.

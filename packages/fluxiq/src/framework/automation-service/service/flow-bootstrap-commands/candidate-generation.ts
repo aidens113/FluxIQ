@@ -11,6 +11,7 @@ import { automationStudioCandidateFingerprint as fingerprint } from "../../../..
 import type { AutomationStudioCandidateOriginalSourceBinding, AutomationStudioCandidateTrialPort, AutomationStudioCandidateTrialResult, AutomationStudioCandidateTrialVerdict, AutomationStudioFlowCandidate } from "../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";
 import type { AutomationStudioSiteResetLedger } from "../../../../runtime/flow-authoring/bootstrap/site-reset/index.ts";
 import { automationStudioFlowBootstrapUnusableDecisions } from "./unusable-decisions.ts";
+import { automationStudioFlowBootstrapLoopSignal } from "./loop-signal.ts";
 import { automationStudioFlowBootstrapFailureWithSpend } from "./failure-spend.ts";
 
 /** `core.submit_candidate` (`../../flow-bootstrap/candidate/authoring-loop.ts`). */
@@ -116,6 +117,12 @@ export async function generateAutomationStudioFlowCandidateDraft(input: {
       const steps = refused.length ? automationStudioFlowBootstrapRefusedSteps.bounded(refusedSteps) : [];
       return steps.length ? new AutomationStudioFlowBootstrapGenerationError({ ...failure.diagnostic, refusedSteps: steps }) : failure;
     } });
+  // A budget that ran out while the latest submissions were refused says so: what the money last went on, as a detail of
+  // the budget's ending rather than an ending of its own (t1056).
+  const withRefusedSteps = (failure: AutomationStudioFlowBootstrapGenerationError): AutomationStudioFlowBootstrapGenerationError => {
+    const steps = failure.diagnostic.code === "flow_bootstrap.evidence_iteration_limit" ? automationStudioFlowBootstrapRefusedSteps.bounded(refusedSteps) : [];
+    return steps.length ? new AutomationStudioFlowBootstrapGenerationError({ ...failure.diagnostic, refusedSteps: steps }) : failure;
+  };
   // The latest submission Core accepted: a refused resubmission clears the loop's own `latest`, and a failed build still keeps this one.
   let accepted: AutomationStudioFlowCandidate | undefined;
   const draftRecord = (candidate: AutomationStudioFlowCandidate, accounting: AutomationStudioBootstrapAccounting): AutomationStudioFlowCandidateDraftRecord => {
@@ -147,7 +154,8 @@ export async function generateAutomationStudioFlowCandidateDraft(input: {
     accepted: (candidate) => { accepted = structuredClone(candidate); },
     // The loop observes its whole input, its own two tools among the calls, so saving and testing the Flow are cards in the chat (t373).
     observe: (loop) => noteRefusedSteps(submissions.observe(observeAutomationStudioEvidenceLoop(loop))),
-    loop: { ...input.loop, unusableDecisions, decide: input.wrapDecision(async ({ iteration, tools, evidence, decisionSchema, canComplete, signal }) => {
+    // The ladder's top rung ends the round, so the build tests what it has and repairs it (t1056, `./loop-signal.ts`).
+    loop: { ...input.loop, ...automationStudioFlowBootstrapLoopSignal(), unusableDecisions, decide: input.wrapDecision(async ({ iteration, tools, evidence, decisionSchema, canComplete, signal }) => {
       input.beforeDecision();
       input.progress(accounted(observedUsage), "provider_request");
       const decision = await input.runHarness({
@@ -166,7 +174,7 @@ export async function generateAutomationStudioFlowCandidateDraft(input: {
   }).catch(async (error: unknown) => { throw await withCandidate(automationStudioFlowBootstrapFailureWithSpend(error, accounted(observedUsage))); }); // Whatever ended it, the failure says what the build spent (round 3's C3) and what it wrote (t362).
   const accounting = accounted(authored.loop.accounting);
   input.progress(accounting, "post_provider_validation");
-  if (!authored.loop.ok) throw await withCandidate(input.ending(authored.loop, accounting) ?? flowBootstrapEvidenceLoopFailure(authored.loop, accounting));
+  if (!authored.loop.ok) throw await withCandidate(input.ending(authored.loop, accounting) ?? withRefusedSteps(flowBootstrapEvidenceLoopFailure(authored.loop, accounting)));
   if (!authored.candidate) throw new Error("FLOW_CANDIDATE_MISSING: No latest submitted candidate.");
   input.loop.signal?.throwIfAborted(); input.submission.signal?.throwIfAborted();
   const current = await input.currentBinding();

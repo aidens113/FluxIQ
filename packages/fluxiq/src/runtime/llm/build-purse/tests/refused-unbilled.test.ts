@@ -16,7 +16,7 @@ const RUN = "run.unbilled";
 
 describe("what a refused call that reported no usage is charged", () => {
   it("charges the run's ledger and the purse nothing for an HTTP 400 with no usage, then only real usage for later calls", async () => {
-    const ledger = new AutomationStudioLlmRunBudgetLedger({ maxCallsPerRun: 8, maxTotalTokensPerRun: 100_000, maxOutputTokensPerRun: 100_000, maxEstimatedCostUsdPerRun: 1 });
+    const ledger = new AutomationStudioLlmRunBudgetLedger({ maxTotalTokensPerRun: 100_000, maxOutputTokensPerRun: 100_000, maxEstimatedCostUsdPerRun: 1 });
     const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 1 });
     const refused = await automationStudioLlmBuildPurseScope(purse, () => harness("request.refused", refusing(), ledger));
 

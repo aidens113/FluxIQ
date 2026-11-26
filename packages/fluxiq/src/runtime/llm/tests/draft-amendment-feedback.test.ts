@@ -70,7 +70,7 @@ describe("an amendment the draft refused", () => {
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 9, change: "drop" }] })
       .mockResolvedValueOnce(complete);
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 8, maxToolCalls: 8, unusableDecisions: { stalled }, executeTool: pressing()
+      tools, decide, unusableDecisions: { stalled }, executeTool: pressing()
     });
     expect(result.ok).toBe(true);
     const feedback = feedbackShown(decide, 2);
@@ -95,7 +95,7 @@ describe("an amendment the draft refused", () => {
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "drop" }, { step: 4, change: "drop" }] })
       .mockResolvedValueOnce(complete);
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 8, maxToolCalls: 8, unusableDecisions: { stalled }, executeTool: pressing()
+      tools, decide, unusableDecisions: { stalled }, executeTool: pressing()
     });
     expect(result.ok).toBe(true);
     expect(amendRow(result.trace)).toMatchObject({
@@ -114,7 +114,7 @@ describe("an amendment the draft refused", () => {
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "unrepeat" }] })
       .mockResolvedValueOnce(complete);
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 8, maxToolCalls: 8, unusableDecisions: { stalled }, executeTool: pressing()
+      tools, decide, unusableDecisions: { stalled }, executeTool: pressing()
     });
     expect(result.ok).toBe(true);
     expect(amendRow(result.trace)).toMatchObject({
@@ -134,7 +134,7 @@ describe("an amendment the draft refused", () => {
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "drop" }] })
       .mockResolvedValueOnce(complete);
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 8, maxToolCalls: 8, unusableDecisions: { stalled }, executeTool: pressing()
+      tools, decide, unusableDecisions: { stalled }, executeTool: pressing()
     });
     expect(result.ok).toBe(true);
     expect(amendRow(result.trace)?.amendmentsRefused).toBeUndefined();
@@ -149,7 +149,7 @@ describe("an amendment the draft refused", () => {
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 9, change: "drop" }] })
       .mockResolvedValue(complete);
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 8, maxToolCalls: 8,
+      tools, decide, 
       unusableDecisions: { stalled }, executeTool: pressing(2_000_000)
     });
     expect(result.ok).toBe(true);
@@ -172,7 +172,7 @@ describe("a rerun the loop cannot carry out", () => {
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 6, change: "rerun", input: { target: "target.6" } }] })
       .mockResolvedValueOnce(complete);
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 8, maxToolCalls: 8, unusableDecisions: { stalled }, executeTool: pressing()
+      tools, decide, unusableDecisions: { stalled }, executeTool: pressing()
     });
     expect(result.ok).toBe(true);
     expect(amendRow(result.trace)).toMatchObject({
@@ -199,7 +199,7 @@ describe("a rerun the loop cannot carry out", () => {
       })
       .mockResolvedValueOnce(complete);
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 8, maxToolCalls: 8, unusableDecisions: { stalled }, executeTool: pressing()
+      tools, decide, unusableDecisions: { stalled }, executeTool: pressing()
     });
     expect(result.ok).toBe(true);
     expect(amendRow(result.trace)).toMatchObject({
@@ -441,7 +441,7 @@ describe("a refusal about a listing says what comes next", () => {
       .mockResolvedValueOnce({ kind: "tool_call", callId: "call.list", toolId: "list", input: { where: "atLeast 5" }, add: true })
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "repeat", over: 1 }] })
       .mockResolvedValueOnce(complete);
-    await runAutomationStudioLlmEvidenceLoop({ tools: [list, press], decide, maxIterations: 8, maxToolCalls: 8, unusableDecisions: { stalled }, executeTool });
+    await runAutomationStudioLlmEvidenceLoop({ tools: [list, press], decide, unusableDecisions: { stalled }, executeTool });
     const feedback = feedbackShown(decide, 2);
     expect(feedback).toMatchObject({ refused: [{ step: 1, reason: "over_not_before" }] });
     expect(nextOf(feedback!)).toContain(`No step after step 1 does anything to a row yet`);
@@ -453,7 +453,7 @@ describe("a refusal about a listing says what comes next", () => {
     const executeTool = vi.fn(async () => ({ kind: "llm_evidence_tool_execution" as const, evidence: { ok: false }, effectApplied: false, stateDigests: { before: "same-state", after: "same-state" }, draft: { proposes: true } }));
     const decide = vi.fn().mockResolvedValueOnce({ kind: "tool_call", callId: "failed-list", toolId: "list", input: { where: "wrong" } })
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 2, change: "rerun", input: { where: "wrong" } }] }).mockResolvedValueOnce(complete);
-    await runAutomationStudioLlmEvidenceLoop({ tools: [list], decide, executeTool, draft: { seed: [{ position: 1, iteration: 0, actionId: "list", input: { where: "previous valid read" }, effect: "observe", effectApplied: true, proposes: true, disposition: "kept" }] }, unusableDecisions: { stalled: () => new Error("stalled") }, maxIterations: 5, maxToolCalls: 5, dryRun: false });
+    await runAutomationStudioLlmEvidenceLoop({ tools: [list], decide, executeTool, draft: { seed: [{ position: 1, iteration: 0, actionId: "list", input: { where: "previous valid read" }, effect: "observe", effectApplied: true, proposes: true, disposition: "kept" }] }, unusableDecisions: { stalled: () => new Error("stalled") }, dryRun: false });
     const feedback = feedbackShown(decide, 2)!;
     expect(feedback).toMatchObject({ refused: [{ step: 2, reason: "changes_nothing" }] });
     // run-mustvzvg C4: step 2 never ran, so nothing says its rows stand or to go on to the act.

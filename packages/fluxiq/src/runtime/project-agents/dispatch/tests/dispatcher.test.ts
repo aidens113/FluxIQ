@@ -46,7 +46,7 @@ describe("the project dispatcher", () => {
       expect(seen.lease?.holder).toEqual({ role: "builder", briefId: seen.briefId });
       expect(seen.purse?.attribution).toEqual({ role: "builder", briefId: seen.briefId });
       expect(seen.purse?.isClosed()).toBe(true);
-      expect(seen.maxIterations).toBeUndefined();
+      expect(seen).not.toHaveProperty("maxIterations");
     }
   });
 

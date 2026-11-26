@@ -150,7 +150,7 @@ describe("a loop that makes no progress", () => {
     // No count of turns ends a loop either (t1056): the 48 it is given bound nothing.
     const decide = presses(MANY * 2, { kind: "complete", result: {} });
 
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: library, decide, executeTool: pressesNothing(), maxIterations: 48, maxToolCalls: 48, dryRun: false });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: library, decide, executeTool: pressesNothing(), dryRun: false });
 
     expect(result).toMatchObject({ ok: true });
     expect(result.accounting.iterations).toBe(MANY * 2 + 1);
@@ -162,7 +162,7 @@ describe("a loop that makes no progress", () => {
     // `ok: true`, so nothing about this call says it failed -- and the same bytes every time.
     const executeTool = vi.fn(async () => ({ kind: "llm_evidence_tool_execution" as const, evidence: { ok: true, rows: ["a", "b"] }, effectApplied: false }));
 
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: library, decide, executeTool, maxIterations: 48, maxToolCalls: 48, dryRun: false });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: library, decide, executeTool, dryRun: false });
 
     expect(result.ok).toBe(true);
     // The first answer is new; the five after it are not, so the redirect came at the third of them.
@@ -179,7 +179,7 @@ describe("a loop that makes no progress", () => {
       return { kind: "llm_evidence_tool_execution" as const, evidence: { ok: true, saidAgain: call + 1 }, effectApplied: false, repeatedAnswer: call + 1 };
     });
 
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: library, decide, executeTool, maxIterations: 48, maxToolCalls: 48, dryRun: false });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: library, decide, executeTool, dryRun: false });
 
     expect(result.ok).toBe(true);
     expect(redirections(decide).map((note) => note.stepsWithoutProgress)).toEqual([3, 4, 5, 6]);
@@ -201,7 +201,7 @@ describe("a loop that is working", () => {
       .mockResolvedValueOnce({ kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "target_moved" }, effectApplied: false })
       .mockResolvedValueOnce({ kind: "llm_evidence_tool_execution", evidence: { ok: true, pressed: true }, effectApplied: true, draft: { actionId: "press", effect: "mutate", proposes: true } });
 
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: library, decide, executeTool, maxIterations: 48, maxToolCalls: 48 });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: library, decide, executeTool});
 
     expect(result.ok).toBe(true);
     expect(redirections(decide)).toEqual([]);
@@ -215,7 +215,7 @@ describe("a loop that is working", () => {
       return { kind: "llm_evidence_tool_execution" as const, evidence: { ok: true, sawSomethingNew: call }, effectApplied: false };
     });
 
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: library, decide, executeTool, maxIterations: 12, maxToolCalls: 12, dryRun: false });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: library, decide, executeTool, dryRun: false });
 
     expect(result).toMatchObject({ ok: true });
     expect(result.accounting.iterations).toBe(MANY + 1);
@@ -308,7 +308,7 @@ describe("a stalled loop is pointed at what the plan still lacks", () => {
     let checks = 0;
 
     await runAutomationStudioLlmEvidenceLoop({
-      tools: library, decide, executeTool, maxIterations: 48, maxToolCalls: 48,
+      tools: library, decide, executeTool, 
       checkCompletion: async () => (checks += 1) === 1 ? cannotAnswer : { ok: true },
       unusableDecisions: { stalled: () => new Error("stalled") }
     });

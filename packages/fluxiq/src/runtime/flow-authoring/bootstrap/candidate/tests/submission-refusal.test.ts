@@ -43,7 +43,7 @@ async function run(decisions: AutomationStudioLlmEvidenceLoopDecision[]) {
   const outcome = await runAutomationStudioFlowCandidateAuthoringLoop({
     submission,
     loop: {
-      tools: [{ toolId: "demo.look", effect: "observe", description: "Look", inputSchema: { type: "object" } }], maxIterations: decisions.length + 2, maxToolCalls: decisions.length + 2,
+      tools: [{ toolId: "demo.look", effect: "observe", description: "Look", inputSchema: { type: "object" } }], 
       unusableDecisions: { stalled: ({ issueCodes }) => Object.assign(new Error("stalled"), { issueCodes }) },
       executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { looked: true }, effectApplied: false, stateDigests: { before: "page.item", after: "page.item" } }),
       decide: async ({ evidence }) => {

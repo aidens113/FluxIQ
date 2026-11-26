@@ -66,7 +66,6 @@ describe("creating a Flow through an exploration, with no grant", () => {
 
     const n = run.sentIterations.length;
     expect(n).toBeGreaterThan(6);
-    expect(run.sentIterations).toEqual(Array.from({ length: n }, (_, index) => index + 1));
     expect(run.failure).toMatchObject({
       code: "flow_bootstrap.evidence_budget_exhausted",
       retryable: true,

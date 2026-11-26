@@ -52,7 +52,7 @@ async function run(steps: Step[], port?: (request: AutomationStudioCandidateTria
     submission,
     ...(port ? { trial: { candidateId: "candidate.under-test", port } } : {}),
     loop: {
-      tools: [{ toolId: "demo.explore", effect: "mutate", description: "Explore", inputSchema: { type: "object" } }], maxIterations: steps.length, maxToolCalls: steps.length,
+      tools: [{ toolId: "demo.explore", effect: "mutate", description: "Explore", inputSchema: { type: "object" } }], 
       unusableDecisions: { stalled: () => new Error("stalled") },
       executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: explored, effectApplied: false, ...(stateDigests ? { stateDigests } : {}) }),
       decide: async ({ evidence }) => {
@@ -354,7 +354,7 @@ describe("candidate trial gate", () => {
     let tools: Array<{ toolId: string; description: string; inputSchema: JsonObject }> = [];
     let decisionSchema = "";
     await runAutomationStudioFlowCandidateAuthoringLoop({ submission, loop: {
-      tools: [], maxIterations: 1, maxToolCalls: 1,
+      tools: [], 
       executeTool: async () => ({}),
       decide: async (request) => { tools = request.tools as typeof tools; decisionSchema = JSON.stringify(request.decisionSchema); throw new Error("seen"); }
     } }).catch(() => undefined);

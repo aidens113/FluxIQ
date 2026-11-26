@@ -258,7 +258,7 @@ describe("the loop's gate on proposing", () => {
       };
     });
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools: [tool], decide, executeTool, maxIterations: 6, maxToolCalls: 6, minToolCalls: 1,
+      tools: [tool], decide, executeTool, minToolCalls: 1,
       unusableDecisions: { stalled: () => new Error("stalled") }
     });
     return { result, decide, executeTool };
@@ -295,7 +295,7 @@ describe("the loop's gate on proposing", () => {
     const executeTool = vi.fn(async () => ({ kind: "llm_evidence_tool_execution" as const, evidence: { page: "after" }, effectApplied: true }));
     const result = await runAutomationStudioLlmEvidenceLoop({
       tools: [{ toolId: "press", description: "Press.", inputSchema: { type: "object" }, effect: "mutate" as const }],
-      decide, executeTool, maxIterations: 6, maxToolCalls: 6, minToolCalls: 1
+      decide, executeTool, minToolCalls: 1
     });
     expect(result.ok).toBe(true);
     expect(executeTool).toHaveBeenCalledTimes(1);

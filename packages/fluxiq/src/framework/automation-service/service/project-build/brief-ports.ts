@@ -11,7 +11,7 @@ import { AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID, AUTOMATION_STUDIO_LLM_RUN
 import { AUTOMATION_STUDIO_PROJECT_RESET_COMPLETION, type AutomationStudioProjectBriefEnding, type AutomationStudioProjectBriefPortFactory, type AutomationStudioProjectBriefPortRequest, type AutomationStudioProjectBuilderPorts } from "../../../../runtime/project-agents/index.ts";
 import { startAutomationStudioBuildRouting } from "../../route-state/index.ts";
 import { automationStudioCandidateStallCode, automationStudioCandidateSubmissionRefusals } from "../candidate-failure/index.ts";
-import { automationStudioFlowBootstrapUnusableDecisions, type generateAutomationStudioFlowCandidateDraft } from "../flow-bootstrap-commands/index.ts";
+import { automationStudioFlowBootstrapLoopSignal, automationStudioFlowBootstrapUnusableDecisions, type generateAutomationStudioFlowCandidateDraft } from "../flow-bootstrap-commands/index.ts";
 import type { AutomationStudioProjectBuildActsRecord } from "./acts-record.ts";
 import type { AutomationStudioProjectBuildDecisions } from "./decisions.ts";
 import { automationStudioProjectBuildBriefTold as told, automationStudioProjectBuildEvidenceBeside as beside } from "../project-build-notes/index.ts";
@@ -311,7 +311,9 @@ export function automationStudioProjectBuildBriefPorts(input: {
       const scope = parentAuthority.currentScope();
       return scope && !personNeeded.signal.aborted ? { ...scope, generation: permissions, authority: permissions } : undefined;
     } } : undefined;
-    const loop = { ...limits, rerunAuthority, tools: harness.tools, observedStateKeys: harness.observedStateKeys, pageChannel: harness.pageChannel, executeTool: written(routing.recording(personNeeded.executeTool), togglesWritten), nodeOf: nodeDescriptions.definition, unusableDecisions: unusable(submissions), decide: delegate };
+    const loop = { ...limits, rerunAuthority, tools: harness.tools, observedStateKeys: harness.observedStateKeys, pageChannel: harness.pageChannel, executeTool: written(routing.recording(personNeeded.executeTool), togglesWritten), nodeOf: nodeDescriptions.definition, unusableDecisions: unusable(submissions), decide: delegate,
+      // The ladder's top rung ends a builder's round as a stall does (t1056, `../flow-bootstrap-commands/loop-signal.ts`).
+      ...automationStudioFlowBootstrapLoopSignal() };
     const setCompletionSchema = (schema: JsonObject | undefined) => { configuredDecide = decide(schema); };
     return { loop, permissions, decide, setCompletionSchema, submissions, ended: briefEnding(permissions, personNeeded) };
   };

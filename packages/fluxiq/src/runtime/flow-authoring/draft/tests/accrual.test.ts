@@ -20,7 +20,7 @@ describe("the draft a build accrues", () => {
       .mockResolvedValueOnce(pressed(3))
       .mockResolvedValueOnce({ kind: "complete", result: { flow: "..." } });
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 8, maxToolCalls: 8,
+      tools, decide, 
       executeTool: async ({ toolId }) => toolId === "press"
         ? { kind: "llm_evidence_tool_execution", evidence: { page: "after" }, effectApplied: true }
         : { page: "looked" }
@@ -45,7 +45,7 @@ describe("the draft a build accrues", () => {
       .mockResolvedValueOnce(pressed(3))
       .mockResolvedValueOnce({ kind: "complete", result: { flow: "..." } });
     await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 8, maxToolCalls: 8,
+      tools, decide, 
       executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: page, effectApplied: true })
     });
     const shown = decide.mock.calls[3]?.[0].evidence as { callId: string; toolId: string; value: unknown }[];
@@ -63,7 +63,7 @@ describe("the draft a build accrues", () => {
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "drop" }] })
       .mockResolvedValueOnce({ kind: "complete", result: { flow: "..." } });
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 8, maxToolCalls: 8, unusableDecisions: { stalled },
+      tools, decide, unusableDecisions: { stalled },
       executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { page: "after" }, effectApplied: true })
     });
     expect(result.ok).toBe(true);
@@ -110,7 +110,7 @@ describe("the draft a build accrues", () => {
       .mockResolvedValueOnce(repeat)
       .mockResolvedValue({ kind: "complete", result: { flow: "..." } });
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 12, maxToolCalls: 12, unusableDecisions: { stalled },
+      tools, decide, unusableDecisions: { stalled },
       executeTool: async ({ toolId }) => toolId === "press"
         ? { kind: "llm_evidence_tool_execution", evidence: { page: "after" }, effectApplied: true }
         : { page: "looked" }
@@ -129,7 +129,7 @@ describe("the draft a build accrues", () => {
       .mockResolvedValueOnce(pressed(1))
       .mockResolvedValueOnce({ kind: "complete", result: { flow: "..." } });
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 4, maxToolCalls: 4,
+      tools, decide, 
       captureStateDigest: () => `digest.${(taken += 1) > 1 ? "after" : "before"}`,
       executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { page: "after" }, effectApplied: true })
     });
@@ -142,7 +142,7 @@ describe("the draft a build accrues", () => {
       .mockResolvedValueOnce(pressed(1))
       .mockResolvedValueOnce({ kind: "complete", result: { flow: "..." } });
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 4, maxToolCalls: 4, minToolCalls: 0, unusableDecisions: { stalled },
+      tools, decide, minToolCalls: 0, unusableDecisions: { stalled },
       captureStateDigest: () => { throw new Error("the host went away"); },
       executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { page: "after" }, effectApplied: true })
     });
@@ -155,7 +155,7 @@ describe("the draft a build accrues", () => {
       .mockResolvedValueOnce(pressed(1))
       .mockResolvedValueOnce({ kind: "complete", result: { flow: "..." } });
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 4, maxToolCalls: 4, draft: false,
+      tools, decide, draft: false,
       executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { page: "after" }, effectApplied: true })
     });
     expect(result.steps).toHaveLength(1);

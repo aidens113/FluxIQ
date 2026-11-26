@@ -62,7 +62,7 @@ describe("a call with add that copies a step already in the Flow", () => {
       .mockResolvedValueOnce(ran("s-results", "s-product"))
       .mockResolvedValueOnce(ran("s-product", "s-results"))
       .mockResolvedValueOnce(ran("s-results", "s-product"));
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, maxIterations: 6, maxToolCalls: 6, dryRun: false, unusableDecisions: { stalled } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, dryRun: false, unusableDecisions: { stalled } });
     expect(executeTool).toHaveBeenCalledTimes(3);
     // Steps 1 and 2 went to the product page and back with nothing lasting: a dead end. Step 3 does the press once,
     // and its act is claimed on it.
@@ -86,7 +86,7 @@ describe("a call with add that copies a step already in the Flow", () => {
       .mockResolvedValueOnce(read("s1b", "list-requests"))
       .mockResolvedValueOnce(ran("s1", "s2"))
       .mockResolvedValueOnce(read("s2", "list-requests"));
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, maxIterations: 8, maxToolCalls: 8, dryRun: false, unusableDecisions: { stalled } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, dryRun: false, unusableDecisions: { stalled } });
     expect(result.steps.map((step) => [step.id, step.disposition, step.drafted])).toEqual([["d1", "taken", "repeat"], ["d2", "kept", "in"], ["d3", "kept", "in"], ["d4", "kept", "in"]]);
     const draft = shownAt(decide, 2).find((entry) => entry.toolId === "core.flow_draft")?.value as { steps: Array<Record<string, unknown>> };
     expect(draft.steps[0]?.out).toBe("repeat");
@@ -98,7 +98,7 @@ describe("a call with add that copies a step already in the Flow", () => {
       .mockResolvedValueOnce(press("c2", "t-plus", { add: true }))
       .mockResolvedValueOnce(complete);
     const executeTool = vi.fn().mockResolvedValueOnce(ran("s-qty-1", "s-qty-2")).mockResolvedValueOnce(ran("s-qty-2", "s-qty-3"));
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, maxIterations: 4, maxToolCalls: 4, dryRun: false, unusableDecisions: { stalled } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, dryRun: false, unusableDecisions: { stalled } });
     expect(result.steps.map((step) => step.disposition)).toEqual(["kept", "kept"]);
     expect(shownAt(decide, 2).some((entry) => entry.toolId === "core.amendment_check")).toBe(false);
   });

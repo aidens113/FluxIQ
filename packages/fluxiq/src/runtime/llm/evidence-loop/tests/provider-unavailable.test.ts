@@ -28,7 +28,7 @@ const toldTheModel = (calls: Array<[Shown]>) => calls.some(([request]) => reques
 async function run(decide: ReturnType<typeof vi.fn>) {
   const stalled = vi.fn(() => new Error("stalled"));
   const result = await runAutomationStudioLlmEvidenceLoop({
-    tools, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, maxIterations: 12,
+    tools, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, 
     unusableDecisions: { stalled }
   });
   return { result, stalled };

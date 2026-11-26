@@ -37,7 +37,7 @@ const built = [
 const complete = { kind: "complete", result: { done: true } };
 
 const loop = (decide: ReturnType<typeof vi.fn>) => runAutomationStudioLlmEvidenceLoop({
-  tools: [press], decide, executeTool: site(), maxIterations: 20, maxToolCalls: 20, dryRun: false
+  tools: [press], decide, executeTool: site(), dryRun: false
 });
 
 /** Two pressed steps in the Flow, then `amendments`, then complete. */

@@ -66,7 +66,7 @@ describe("a call's statement of the options that stood chosen as it found the pa
       .mockResolvedValueOnce({ kind: "complete", result: { flow: "ready" } });
     const withAt = [{ ...STOOD[0]!, at: { selector: "#size-l" } }, STOOD[1]!];
     const executeTool = vi.fn().mockResolvedValueOnce(pressing(withAt));
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, maxIterations: 4, maxToolCalls: 2, dryRun: false, unusableDecisions: { stalled: () => new Error("stalled") } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, dryRun: false, unusableDecisions: { stalled: () => new Error("stalled") } });
     expect(result.steps[0]).toMatchObject({ disposition: "kept", chosen: withAt });
   });
 });

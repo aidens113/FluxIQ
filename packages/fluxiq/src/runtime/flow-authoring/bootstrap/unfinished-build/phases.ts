@@ -119,11 +119,10 @@
 // different is not a new act. A round with no act left to do is unchanged
 // (murwcmx2's read, above).
 //
-// **Unreadable replies end the build only as that (t211).** Each reply the
-// loop could not read is asked again; an unbroken run of them ends the round
-// as `unreadable`, and the build with a message saying so and how many tries
-// it took (`./replies-unreadable.ts`) -- never "not doable", and never a bare
-// code.
+// **Unreadable replies are never "not doable" (t211).** Each reply the loop
+// could not read is asked again with a note, and no count of them ends a round
+// (t1056): the budget does, and its ending says what the money last went on
+// when its last replies arrived unreadable (`./budget-exhausted.ts`).
 //
 // **A budget is never "not doable".** A round stopped by the spend ceiling,
 // the token budget or the deadline -- or a repair that has none of them left to
@@ -220,7 +219,6 @@ import { automationStudioFlowBootstrapFinishingVerdict, type AutomationStudioFlo
 import { automationStudioFlowBootstrapNotDoable } from "./not/doable.ts";
 import { automationStudioFlowBootstrapNotFinished } from "./not/finished.ts";
 import { automationStudioFlowBootstrapJudgementProgress, automationStudioFlowBootstrapJudgementUnmeasured } from "./progress.ts";
-import { automationStudioFlowBootstrapRepliesUnreadable } from "./replies-unreadable.ts";
 import { automationStudioFlowBootstrapJudgeAtReserve } from "./reserve-judging.ts";
 import { automationStudioFlowBootstrapProviderUnavailable } from "./provider-unavailable.ts";
 import { automationStudioFlowBootstrapRepairingJudgedSaid, automationStudioFlowBootstrapRepairingNotRunSaid, automationStudioFlowBootstrapStopAnnouncementSaid, automationStudioFlowBootstrapStopSaid, automationStudioFlowBootstrapTestReachSaid } from "./not/done.ts";
@@ -521,7 +519,7 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
     stops.push({ round, stopped });
     /** The next round's worst case, where the purse could not fund it though it was not spent: what a cost ending says it needed. */
     let unfunded: AutomationStudioFlowBootstrapNextRoundHold | undefined;
-    const end = async (kind: "not_doable" | AutomationStudioFlowBootstrapBudgetBound | { notFinished: AutomationStudioFlowBootstrapStoodStill } | { unreadable: AutomationStudioLlmEvidenceLoopUnreadable } | { providerUnavailable: AutomationStudioLlmEvidenceLoopProviderUnavailable }, noRoute?: AutomationStudioFlowBootstrapNoRouteLeft): Promise<AutomationStudioFlowBootstrapBuildPhasesOutcome> => {
+    const end = async (kind: "not_doable" | AutomationStudioFlowBootstrapBudgetBound | { notFinished: AutomationStudioFlowBootstrapStoodStill } | { providerUnavailable: AutomationStudioLlmEvidenceLoopProviderUnavailable }, noRoute?: AutomationStudioFlowBootstrapNoRouteLeft): Promise<AutomationStudioFlowBootstrapBuildPhasesOutcome> => {
       automationStudioLlmBuildTrace.line(`build ending round=${round} kind=${typeof kind === "string" ? kind : Object.keys(kind)[0] ?? "-"}`);
       const kept = await input.keep(kind === "not_doable" || typeof kind === "object" ? (stopped === "budget" ? "budget" : stopped) : "budget", phase2.lastIssueCodes, seed, phase2.completionAttempts);
       const checklist = input.checklist(seed);
@@ -534,9 +532,7 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
             ? automationStudioFlowBootstrapNotFinished({ ...told, stoodStill: kind.notFinished, kept: kept !== undefined })
           : typeof kind === "object" && "providerUnavailable" in kind
             ? automationStudioFlowBootstrapProviderUnavailable({ ...told, providerUnavailable: kind.providerUnavailable, changes: record.filter((row) => row.decision === "tool_call" && row.effectApplied === true).length, kept: kept !== undefined })
-          : typeof kind === "object"
-            ? automationStudioFlowBootstrapRepliesUnreadable({ ...told, unreadable: kind.unreadable, kept: kept !== undefined })
-            : automationStudioFlowBootstrapBudgetExhausted({ ...told, bound: kind, kept: kept !== undefined, sizes: { maxCostUsd: input.purse?.ceilingUsd ?? input.budget.maxCostUsd, maxDurationMs: input.budget.maxDurationMs, maxTotalTokens: input.budget.maxTotalTokens, maxRounds }, spending: kind === "cost" ? costSpending(phase2.progress.exhaustion?.costRefusal, input.purse, spentBefore, spent.estimatedCostUsd, unfunded, judgedAtStopUsd, unchangedAtStop) : undefined, lastRound: phase2.progress.trace }),
+            : automationStudioFlowBootstrapBudgetExhausted({ ...told, bound: kind, kept: kept !== undefined, ...(phase2.progress.unreadable ? { unreadable: phase2.progress.unreadable } : {}), sizes: { maxCostUsd: input.purse?.ceilingUsd ?? input.budget.maxCostUsd, maxDurationMs: input.budget.maxDurationMs, maxTotalTokens: input.budget.maxTotalTokens, maxRounds }, spending: kind === "cost" ? costSpending(phase2.progress.exhaustion?.costRefusal, input.purse, spentBefore, spent.estimatedCostUsd, unfunded, judgedAtStopUsd, unchangedAtStop) : undefined, lastRound: phase2.progress.trace }),
         progress: { trace: [...record], accounting: { ...spent }, ...(phase2.progress.exhaustion ? { exhaustion: phase2.progress.exhaustion } : {}) },
         lastIssueCodes: phase2.lastIssueCodes,
         kept,
@@ -554,8 +550,6 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
       return exhausted ?? (funding.callsFit() ? undefined : "calls");
     };
     if (ending.kind === "budget") return await end(ending.bound);
-    // Replies that kept arriving unreadable, each asked again: said as exactly that, with how many tries.
-    if (ending.kind === "unreadable") return await end({ unreadable: ending.unreadable });
     // A provider that stopped answering ends the build now: never another round of waits (run-muq05kas-058193f0).
     if (ending.kind === "provider_unavailable") return await end({ providerUnavailable: ending.providerUnavailable });
     const todo = judgement.todo.length;

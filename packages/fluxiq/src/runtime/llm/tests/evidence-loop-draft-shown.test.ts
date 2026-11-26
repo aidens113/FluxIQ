@@ -28,7 +28,7 @@ async function run(presses: number, over: Record<string, unknown> = {}, value = 
   const decide = vi.fn();
   for (let index = 1; index <= presses; index += 1) decide.mockResolvedValueOnce(pressed(index, value));
   decide.mockResolvedValue(complete);
-  const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, maxIterations: 64, maxToolCalls: 64, executeTool: pressing, ...over });
+  const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool: pressing, ...over });
   return { result, decide };
 }
 

@@ -1,7 +1,6 @@
 import type { JsonObject } from "../../../core/index.ts";
 import { AUTOMATION_STUDIO_SUBFLOW_BRIEF_MIN_CALLS } from "../../flow-authoring/bootstrap/subflow-candidate/index.ts";
 import type { AutomationStudioLlmBuildPurse } from "../../llm/build-purse/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
 import type { AutomationStudioProjectStructurePlan } from "../contracts/index.ts";
 import { automationStudioProjectSingleSubflowPlan } from "../single-subflow/index.ts";
 
@@ -62,7 +61,8 @@ const DEFAULT_ITERATIONS = 30;
  * calls than this keeps its calls for its trials' judges (t577: at a 250-call purse, A8's builders were sized 77
  * turns and every one stopped unasked).
  */
-const MAX_ITERATIONS = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations;
+/** The most turns a brief may name: a bound on what it says, which ends nothing (no count of turns ends a loop, t1056). */
+const MAX_ITERATIONS = 64;
 /** The money no brief is given less than. */
 const MIN_USD = 1e-6;
 

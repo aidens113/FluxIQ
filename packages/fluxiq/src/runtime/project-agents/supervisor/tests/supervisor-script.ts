@@ -60,8 +60,6 @@ export async function supervise(steps: Step[], built = project(), options: {
     ...(options.observe ? { observe: options.observe } : {}),
     loop: {
       tools: options.tools ?? HOST_TOOLS,
-      maxIterations: steps.length + (options.spareTurns ?? 0),
-      maxToolCalls: steps.length + 2,
       unusableDecisions: { stalled: () => new Error("stalled") },
       ...(options.propagateDecisionErrors ? { propagateDecisionErrors: true } : {}),
       ...(options.endsOnSignal ? { loopSignal: () => "end" as const } : {}),

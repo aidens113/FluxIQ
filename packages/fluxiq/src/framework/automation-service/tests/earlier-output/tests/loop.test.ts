@@ -81,7 +81,7 @@ function testing(outputs: Record<string, JsonObject>) {
 }
 
 const loop = (decide: ReturnType<typeof vi.fn>, host: ReturnType<typeof exploring>) => runAutomationStudioLlmEvidenceLoop({
-  tools: [runNode], decide, executeTool: host.executeTool, nodeOf, maxIterations: 10, maxToolCalls: 6, dryRun: false, unusableDecisions: { stalled}
+  tools: [runNode], decide, executeTool: host.executeTool, nodeOf, dryRun: false, unusableDecisions: { stalled}
 });
 
 type Shown = ReadonlyArray<{ toolId: string; value: JsonObject }>;

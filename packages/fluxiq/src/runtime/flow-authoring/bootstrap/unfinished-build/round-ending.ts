@@ -32,7 +32,7 @@ const BUDGET_BOUNDS: Readonly<Record<AutomationStudioLlmEvidenceLoopBudgetBound,
   calls: "calls"
 });
 
-/** The round's ending: finished, stopped short, stopped by a budget or by unreadable replies, or one this lifecycle does not reach past. */
+/** The round's ending: finished, stopped short, stopped by a budget, or one this lifecycle does not reach past. */
 export function automationStudioFlowBootstrapRoundEnding(
   outcome: AutomationStudioLlmEvidenceLoopResult | AutomationStudioFlowBootstrapUnfinishedStall
 ): AutomationStudioFlowBootstrapRoundEnding {
@@ -49,13 +49,10 @@ export function automationStudioFlowBootstrapRoundEnding(
     const lastCode = outcome.trace.at(-1)?.resultCode;
     return { kind: "provider_unavailable", stopped: "unusable_decisions", providerUnavailable: outcome.providerUnavailable, steps: outcome.steps, lastIssueCodes: lastCode ? [lastCode] : [], completionAttempts: 0, progress };
   }
-  if (outcome.code === "llm_evidence_loop.unreadable_replies" && outcome.unreadable) {
-    const lastCode = outcome.trace.at(-1)?.resultCode;
-    return { kind: "unreadable", stopped: "unusable_decisions", unreadable: outcome.unreadable, steps: outcome.steps, lastIssueCodes: lastCode ? [lastCode] : [], completionAttempts: 0, progress };
-  }
   const exhaustion = outcome.code === "llm_evidence_loop.iteration_limit" ? outcome.exhaustion : undefined;
   if (!exhaustion) return { kind: "other", loop: outcome };
-  const held = { steps: outcome.steps, lastIssueCodes: [...exhaustion.lastIssueCodes], completionAttempts: exhaustion.completionAttempts, progress: { ...progress, exhaustion } };
+  // The unreadable replies the budget ran out during ride on its record, for its ending to say (t1056).
+  const held = { steps: outcome.steps, lastIssueCodes: [...exhaustion.lastIssueCodes], completionAttempts: exhaustion.completionAttempts, progress: { ...progress, exhaustion, ...(outcome.unreadable ? { unreadable: outcome.unreadable } : {}) } };
   // Only a budget runs out (t1056); one that names no bound is not a round this lifecycle reads.
   if (!exhaustion.budgetBound) return { kind: "other", loop: outcome };
   return { kind: "budget", bound: BUDGET_BOUNDS[exhaustion.budgetBound], ...held };

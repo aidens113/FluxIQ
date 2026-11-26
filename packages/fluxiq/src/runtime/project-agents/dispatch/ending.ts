@@ -229,7 +229,8 @@ export const automationStudioProjectDispatchEnding = Object.freeze({
     const why = stopped
       ? "The build was stopped before this brief finished."
       : refusal
-        ? `This brief's allowance could not pay for its next call (${refusal.code}).`
+        // What the money last went on -- the refused submissions, with the plan's advice -- is said after it (t1056).
+        ? `This brief's allowance could not pay for its next call (${refusal.code}).${thrownEnding(error, brief)}`
         : `The builder failed: ${errorWords(error)}${thrownEnding(error, brief)}`;
     // A standing yes for the latest accepted proposal is done, the throw said after it (header, t611): the same check as a returned loop's.
     const passed = passedProposal(spend.accepted, spend.trial);
@@ -317,7 +318,8 @@ function withTerminal(value: AutomationStudioProjectBuilderReturn, reason: Autom
 /** Why a loop ended without completing: its allowance, when that refused, otherwise its own code. */
 function stopReason(brief: AutomationStudioProjectSubflowBrief, loop: Extract<AutomationStudioLlmEvidenceLoopResult, { ok: false }>, allowance: AutomationStudioLlmBuildPurse | undefined): string {
   const refusal = allowance?.refusal;
-  if (refusal) return `This brief's allowance could not pay for its next call (${refusal.code}), so the builder stopped.`;
+  // What the money last went on -- the refused submissions, with the plan's advice -- is said after it (t1056).
+  if (refusal) return `This brief's allowance could not pay for its next call (${refusal.code}), so the builder stopped.${stoppedOn(brief, loop.exhaustion?.lastIssueCodes, loop.trace)}`;
   return `The builder stopped before completing (${loop.code}).${configurationSaid(loop.configuration)}${stoppedOn(brief, loop.exhaustion?.lastIssueCodes, loop.trace)}`;
 }
 

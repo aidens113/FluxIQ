@@ -45,15 +45,6 @@ export type AutomationStudioLlmEvidenceLoopFailureCode =
   | "llm_evidence_loop.iteration_limit"
   | "llm_evidence_loop.cancelled"
   /**
-   * No longer produced (t1056). It was the ending of a loop whose replies kept
-   * arriving unreadable until a count of them in a row was reached; no count
-   * ends a loop now, and the same unreadable reply again is a repeat loop
-   * detection steers (`./unreadable-reply.ts`). Kept, like `evidence_limit`,
-   * because the outcome tables callers key by this union still name it
-   * (`../../adaptation/recovery/exploration-outcome.ts`).
-   */
-  | "llm_evidence_loop.unreadable_replies"
-  /**
    * The provider stopped answering: an unbroken run of decision calls that got
    * no answer -- timed out, unreachable, a server error, rate limited --
    * reached its limit (`../unanswered-calls.ts`). Nothing was said to the
@@ -87,7 +78,11 @@ export type AutomationStudioLlmEvidenceLoopResult =
      * express at all (`./exhaustion.ts`).
      */
     exhaustion?: AutomationStudioLlmEvidenceLoopExhaustion;
-    /** Present exactly when the code is `llm_evidence_loop.unreadable_replies`. */
+    /**
+     * On a budget ending (`llm_evidence_loop.iteration_limit`) whose last replies arrived unreadable: what the money
+     * last went on, said by the build's ending (t1056). No count of unreadable replies ends a loop any more; this is the
+     * streak the budget ran out during, and every unreadable reply of the loop.
+     */
     unreadable?: AutomationStudioLlmEvidenceLoopUnreadable;
     /** Present exactly when the code is `llm_evidence_loop.provider_unavailable`. */
     providerUnavailable?: AutomationStudioLlmEvidenceLoopProviderUnavailable;
@@ -107,7 +102,7 @@ export function automationStudioLlmEvidenceLoopFailure(
   accounting: AutomationStudioLlmEvidenceLoopAccounting,
   /** What ran out, for the one code that says something ran out. */
   exhaustion?: AutomationStudioLlmEvidenceLoopExhaustion,
-  /** How many unreadable replies, for the one code that says they ended it. */
+  /** The unreadable replies the budget ran out during, for a budget ending (above). */
   unreadable?: AutomationStudioLlmEvidenceLoopUnreadable,
   /** How many unanswered calls, for the one code that says the provider stopped answering. */
   providerUnavailable?: AutomationStudioLlmEvidenceLoopProviderUnavailable,

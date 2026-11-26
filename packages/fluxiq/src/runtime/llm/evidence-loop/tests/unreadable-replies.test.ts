@@ -40,7 +40,7 @@ describe("an unreadable reply", () => {
     const stalled = vi.fn(() => stalledError);
 
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, maxIterations: 10,
+      tools, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, 
       unusableDecisions: { stalled }
     });
 
@@ -72,7 +72,7 @@ describe("an unreadable reply", () => {
     const stalled = vi.fn(() => stalledError);
 
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, maxIterations: 10,
+      tools, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, 
       unusableDecisions: { stalled }
     });
 
@@ -90,7 +90,7 @@ describe("an unreadable reply", () => {
     decide.mockResolvedValueOnce(complete);
 
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, maxIterations: 20,
+      tools, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, 
       unusableDecisions: { stalled: () => stalledError }
     });
 
@@ -145,7 +145,7 @@ describe("unreadable replies that keep coming", () => {
     const decide = vi.fn().mockRejectedValue(new AutomationStudioLlmUnusableDecisionError(["llm.provider_timeout"]));
     const stalled = vi.fn(() => stalledError);
     await expect(runAutomationStudioLlmEvidenceLoop({
-      tools, decide, executeTool: async () => ({}), propagateDecisionErrors: true, maxIterations: 20,
+      tools, decide, executeTool: async () => ({}), propagateDecisionErrors: true, 
       unusableDecisions: { stalled }
     })).resolves.toMatchObject({ ok: false, code: "llm_evidence_loop.provider_unavailable" });
     expect(decide).toHaveBeenCalledTimes(3);
@@ -162,7 +162,7 @@ describe("a reply that was read and is no decision this iteration offered", () =
       .mockResolvedValueOnce(complete);
 
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, maxIterations: 10,
+      tools, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, 
       unusableDecisions: { stalled: () => stalledError }
     });
 
@@ -181,7 +181,7 @@ describe("a reply that was read and is no decision this iteration offered", () =
       .mockResolvedValueOnce(complete);
 
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, maxIterations: 10, minToolCalls: 1,
+      tools, decide, executeTool: async () => ({ seen: true }), propagateDecisionErrors: true, minToolCalls: 1,
       unusableDecisions: { stalled: () => stalledError }
     });
 
@@ -206,7 +206,7 @@ describe("a reply that was read and is no decision this iteration offered", () =
     let asked = 0;
     const decide = vi.fn(async () => (asked += 1) <= 20 ? { kind: "finish" } : complete);
     await expect(runAutomationStudioLlmEvidenceLoop({
-      tools, decide, executeTool: async () => ({}), propagateDecisionErrors: true, maxIterations: 10,
+      tools, decide, executeTool: async () => ({}), propagateDecisionErrors: true, 
       unusableDecisions: { stalled: () => stalledError }
     })).resolves.toMatchObject({ ok: true });
     expect(decide).toHaveBeenCalledTimes(21);

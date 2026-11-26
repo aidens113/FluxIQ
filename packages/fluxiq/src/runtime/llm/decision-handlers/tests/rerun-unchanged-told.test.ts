@@ -35,7 +35,7 @@ function resultsPage() {
   });
 }
 
-const loop = (decide: ReturnType<typeof vi.fn>) => runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool: resultsPage(), maxIterations: 20, maxToolCalls: 40, dryRun: false });
+const loop = (decide: ReturnType<typeof vi.fn>) => runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool: resultsPage(), dryRun: false });
 const complete = { kind: "complete", result: { done: true } };
 
 describe("a rerun that changed nothing", () => {
@@ -83,7 +83,7 @@ describe("a rerun that changed nothing", () => {
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "rerun", input: { parameters: { where: "price < 40" } } }] })
       .mockResolvedValue(complete);
 
-    await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, maxIterations: 20, maxToolCalls: 40, dryRun: false });
+    await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, dryRun: false });
 
     expect(shownAt(decide, 2).find((entry) => entry.toolId === "core.rerun_result")).toBeUndefined();
   });

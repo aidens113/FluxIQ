@@ -16,7 +16,7 @@
 import type { JsonObject } from "../../../core/index.ts";
 import { automationStudioLlmLoopUnreadableRepeat, type AutomationStudioLlmLoopFinding } from "../repeat-guard/index.ts";
 import { automationStudioLlmUnreadableDecisionSaid, automationStudioLlmUnusableDecisionFeedback, type AutomationStudioLlmUnusableDecisionError, type AutomationStudioLlmUnusableDecisionOffers } from "../unusable-decision.ts";
-import { automationStudioLlmUnreadableReplies } from "../../models/failures/index.ts";
+import { automationStudioLlmUnreadableReplies, type AutomationStudioLlmEvidenceLoopUnreadable } from "../../models/failures/index.ts";
 
 /** One loop's unreadable replies: `readable` when a reply was read, `reply` for each that was not. */
 export function automationStudioLlmEvidenceUnreadableReplies<Overdue>(options: {
@@ -31,6 +31,8 @@ export function automationStudioLlmEvidenceUnreadableReplies<Overdue>(options: {
 }): {
   readable(): void;
   reply(iteration: number, thrown: AutomationStudioLlmUnusableDecisionError, offers: AutomationStudioLlmUnusableDecisionOffers): "ask_again" | { overdue: Overdue };
+  /** The unbroken run the loop is in, with every unreadable reply of it, while its latest reply was unreadable; else nothing. */
+  streak(): AutomationStudioLlmEvidenceLoopUnreadable | undefined;
 } {
   // Counted for the note alone: it never reaches an end.
   const count = automationStudioLlmUnreadableReplies(Number.POSITIVE_INFINITY);
@@ -39,6 +41,9 @@ export function automationStudioLlmEvidenceUnreadableReplies<Overdue>(options: {
     readable() {
       count.readable();
       again.readable();
+    },
+    streak() {
+      return count.inARow > 0 ? count.summary() : undefined;
     },
     reply(iteration, thrown, offers) {
       const { issueCodes, reply } = thrown;

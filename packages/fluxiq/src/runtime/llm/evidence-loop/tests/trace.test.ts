@@ -21,7 +21,7 @@ describe("the evidence loop's row recorder", () => {
         return calls++ === 0 ? { kind: "tool_call", callId: "c1", toolId: "act", input: {} } : { kind: "complete", result: { done: true } };
       },
       executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence, effectApplied: true, actionability: { actionable: false, cause: "covered" }, resultCode: "client.succeeded" }),
-      maxIterations: 4, maxToolCalls: 4, dryRun: false
+      dryRun: false
     });
     expect(result.ok).toBe(true);
     expect(result.accounting.toolCalls).toBe(1);

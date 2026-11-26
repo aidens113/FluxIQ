@@ -37,7 +37,7 @@ import type {
   AutomationStudioLlmEvidenceLoopTrace,
   AutomationStudioLlmUsageSummary
 } from "../../llm/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../loop-limits/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_ACCOUNTED_BYTES_MAX } from "../../loop-limits/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS } from "./decision-step-ids.ts";
 import { automationStudioFlowBootstrapLargestSizeLimits } from "./plan/index.ts";
 
@@ -356,7 +356,7 @@ export function parseAutomationStudioFlowBootstrapEvidenceSteps(value: readonly 
       || (step.resultCode !== undefined && (typeof step.resultCode !== "string" || !EVIDENCE_STEP_CODE.test(step.resultCode)))
       || (step.resultReason !== undefined && (typeof step.resultReason !== "string" || !EVIDENCE_STEP_CODE.test(step.resultReason)))
       || (step.nodeId !== undefined && (typeof step.nodeId !== "string" || !EVIDENCE_STEP_ID.test(step.nodeId)))
-      || (step.evidenceBytes !== undefined && !boundedInteger(step.evidenceBytes, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes))
+      || (step.evidenceBytes !== undefined && !boundedInteger(step.evidenceBytes, AUTOMATION_STUDIO_LLM_EVIDENCE_ACCOUNTED_BYTES_MAX))
       || (step.amended !== undefined && !boundedInteger(step.amended, UNCOUNTED))
       || (step.at !== undefined && !boundedInteger(step.at, EVIDENCE_STEP_MAX_TIMESTAMP_MS))) return null;
     const usage = parseStepUsage(step.usage);
@@ -478,10 +478,10 @@ export function evidenceStepDraftChange(value: unknown): AutomationStudioLlmEvid
 
 export function evidenceStepDraft(value: unknown): AutomationStudioLlmEvidenceLoopDraftShown | undefined {
   if (!isStepRecord(value) || !hasExactFields(value, DRAFT_FIELDS)
-    || !boundedInteger(value.bytes, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes)
-    || !boundedInteger(value.budget, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes)
+    || !boundedInteger(value.bytes, AUTOMATION_STUDIO_LLM_EVIDENCE_ACCOUNTED_BYTES_MAX)
+    || !boundedInteger(value.budget, AUTOMATION_STUDIO_LLM_EVIDENCE_ACCOUNTED_BYTES_MAX)
     || !boundedInteger(value.steps, MAX_REPRESENTED_DRAFT_STEPS)
-    || !boundedInteger(value.instructionBytes, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes)
+    || !boundedInteger(value.instructionBytes, AUTOMATION_STUDIO_LLM_EVIDENCE_ACCOUNTED_BYTES_MAX)
     || (value.unlisted !== undefined && !boundedInteger(value.unlisted, MAX_REPRESENTED_DRAFT_STEPS))
     || (value.withoutInput !== undefined && !boundedInteger(value.withoutInput, value.steps as number))
     || (value.inputTooLarge !== undefined && !boundedInteger(value.inputTooLarge, value.steps as number))

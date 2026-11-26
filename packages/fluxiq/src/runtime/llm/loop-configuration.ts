@@ -68,6 +68,12 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    */
   loopSignal?: ((signal: AutomationStudioLlmLoopSignal) => AutomationStudioLlmLoopSignalAnswer) | undefined;
   /**
+   * Whether the model's loop decision may ask a person (`ask_person`). Absent, it may wherever a `loopSignal` is
+   * given. A build ends its round on loop detection's signal but has nobody to ask mid-build, so it says `false`
+   * (t1056, `framework/.../flow-bootstrap-commands/loop-signal.ts`).
+   */
+  personReachable?: boolean | undefined;
+  /**
    * How many times the task asks for this lasting act, for the new path: the
    * caller fills it from the attempt's act record. With a `loopSignal`, a stated
    * lasting act on one target is refused past this count (past one repeat when it
@@ -131,11 +137,8 @@ export type AutomationStudioLlmEvidenceLoopInput = {
   // loop with no `loopSignal` at their figure, eight by default, and the readers of a recorded run were held to a ceiling of
   // 64 of each; none of that stands (user, 2026-11-24: "THERE SHOULDNT BE ANY ARBITRARY FUCKING CALL LIMIT THAT RANDOMLY
   // JUST RESETS EVERYTHING"). A loop ends with its result, its purse, its clock, a person's Stop, or the round its caller
-  // ends on loop detection's signal; a repeat is steered and decided (`loopSignal`).
-  /** @deprecated Read by nothing (t1056): no count of turns ends a loop. Accepted only while `adaptation/recovery/` still passes it; remove it with that caller. */
-  maxIterations?: number;
-  /** @deprecated Read by nothing (t1056): no count of calls ends a loop. Accepted only while `adaptation/recovery/` still passes it; remove it with that caller. */
-  maxToolCalls?: number;
+  // ends on loop detection's signal; a repeat is steered and decided (`loopSignal`). The loop input has no
+  // `maxIterations` or `maxToolCalls` any more.
   /**
    * The run's own bounds -- tokens, cost, time -- from which the loop works out
    * before each decision how many it has left. With one given, the model is shown what is left
@@ -207,11 +210,6 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * too, and is told and asked again the same way.
    */
   unusableDecisions?: {
-    /**
-     * @deprecated Read by nothing (t1049, t1056). Its last caller is a test in `adaptation/recovery/`, a path t1056
-     * could not edit; remove the field with that line.
-     */
-    maxConsecutive?: number;
     stalled(input: {
       issueCodes: readonly string[];
       trace: readonly AutomationStudioLlmEvidenceLoopTrace[];

@@ -64,7 +64,7 @@ function builder(seen: Seen, options: { moving?: boolean } = {}) {
     };
     return {
       loop: {
-        tools: [LOOK], maxToolCalls: 8,
+        tools: [LOOK], 
         unusableDecisions: { stalled: () => new Error("stalled") },
         executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true, page: "The seed catalogue." }, effectApplied: false, targetsUnchanged: true }),
         decide: async ({ evidence, tools }) => {

@@ -10,7 +10,8 @@ import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD } from "./flow-execution-lim
  */
 export const AUTOMATION_STUDIO_LLM_RUN_CALL_RECORD_LIMIT = 250;
 export type AutomationStudioLlmRunBudgetAllowance = ModelRunBudgetAllowance;
-export type AutomationStudioLlmRunBudgetLimits = ModelRunBudgetLimits;
+/** A run's limits: its tokens and its dollars. No count of calls is one (t1056), so none can be passed. */
+export type AutomationStudioLlmRunBudgetLimits = Omit<ModelRunBudgetLimits, "maxCallsPerRun">;
 export type AutomationStudioLlmRunBudgetDiagnostic = ModelRunBudgetDiagnostic;
 export type AutomationStudioLlmRunBudgetLease = ModelRunBudgetLease;
 export type AutomationStudioLlmRunBudgetReservation = ModelRunBudgetReservation;
@@ -21,16 +22,14 @@ const receiptPolicy = { isTaskKind, isStage: isAutomationStudioLoopStage };
 // **No count of calls ends a run (t1056; user, 2026-11-24: "THERE SHOULDNT BE ANY ARBITRARY FUCKING CALL LIMIT THAT
 // RANDOMLY JUST RESETS EVERYTHING").** The generic ledger can refuse a call past a count (`llm_budget.run_call_limit`);
 // Studio binds that count to nothing, so the run's dollar ceiling (`llm_budget.run_cost_limit`) is what ends a run, with
-// its token ceilings beside it. It was the 250-call backstop, or the run's declared `maxCallsPerRun`, and it ended
-// recoveries of cheap calls before their money did.
+// its token ceilings beside it. It was a 250-call backstop, or a run's declared `maxCallsPerRun`, and it ended
+// recoveries of cheap calls before their money did; Studio's limits take no count at all now.
 const policy = { ...receiptPolicy, defaultCostCeilingUsd: AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, maxCallsPerRun: Number.POSITIVE_INFINITY, recordLimit: AUTOMATION_STUDIO_LLM_RUN_CALL_RECORD_LIMIT };
 
 /** Studio binds its configured defaults and exact receipt vocabulary to the generic ledger. */
 export class AutomationStudioLlmRunBudgetLedger extends ModelRunBudgetLedger {
-  /** A declared `maxCallsPerRun` (a caller may still pass one, `adaptation/recovery/annotation/run-budget.ts`) is read by nothing (t1056). */
   constructor(limits: AutomationStudioLlmRunBudgetLimits) {
-    const { maxCallsPerRun: _noCallCount, ...counted } = limits;
-    super(counted, policy);
+    super(limits, policy);
   }
   override reserve(input: AutomationStudioLlmRunBudgetReservationInput): AutomationStudioLlmRunBudgetReservation { return super.reserve(input); }
   override callRecords(runId: string): { calls: AutomationStudioLlmRunCallRecord[]; omitted: number } {

@@ -53,7 +53,7 @@ describe("a step the model runs", () => {
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 2, change: "unrepeat" }] })
       .mockResolvedValueOnce(complete);
     const executeTool = vi.fn().mockResolvedValue(worked);
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, maxIterations: 6, maxToolCalls: 4, dryRun: false, unusableDecisions: { stalled } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, dryRun: false, unusableDecisions: { stalled } });
     expect(result.ok).toBe(true);
     expect(executeTool).toHaveBeenCalledTimes(2);
     expect(result.steps[1]).toMatchObject({ disposition: "kept", acts: ["a2.quantity"] });
@@ -63,7 +63,7 @@ describe("a step the model runs", () => {
   // Where the framework drafts the Flow (t1037, user 2026-11-25), a step that worked is in it with or without add.
   it("is in the Flow once it worked, with or without add, as the framework drafts it", async () => {
     const decide = vi.fn().mockResolvedValueOnce(call(1)).mockResolvedValueOnce(call(2, { add: true })).mockResolvedValueOnce(complete);
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool: vi.fn().mockResolvedValue(worked), maxIterations: 4, maxToolCalls: 4, dryRun: false, unusableDecisions: { stalled } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool: vi.fn().mockResolvedValue(worked), dryRun: false, unusableDecisions: { stalled } });
     expect(result.steps.map((step) => [step.id, step.disposition, step.drafted])).toEqual([["d1", "kept", "in"], ["d2", "kept", "in"]]);
     // The draft the next decision reads says so, in the framework's telling.
     const draft = shownAt(decide, 1).find((entry) => entry.toolId === "core.flow_draft")!.value;
@@ -74,7 +74,7 @@ describe("a step the model runs", () => {
   it("names the act it does when added with act, and a failed call added is still out", async () => {
     const decide = vi.fn().mockResolvedValueOnce(call(1, { act: "a2" })).mockResolvedValueOnce(call(2, { add: true })).mockResolvedValueOnce(complete);
     const executeTool = vi.fn().mockResolvedValueOnce(worked).mockResolvedValueOnce(failed);
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, maxIterations: 4, maxToolCalls: 4, dryRun: false, unusableDecisions: { stalled } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, dryRun: false, unusableDecisions: { stalled } });
     expect(result.steps.map((step) => [step.id, step.disposition, step.acts])).toEqual([["d1", "kept", ["a2"]], ["d2", "taken", undefined]]);
   });
 
@@ -84,7 +84,7 @@ describe("a step the model runs", () => {
       .mockResolvedValueOnce(call(2))
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 2, change: "keep", act: "a1" }] })
       .mockResolvedValueOnce(complete);
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool: vi.fn().mockResolvedValue(worked), maxIterations: 6, maxToolCalls: 6, dryRun: false, unusableDecisions: { stalled } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool: vi.fn().mockResolvedValue(worked), dryRun: false, unusableDecisions: { stalled } });
     expect(result.steps.map((step) => [step.id, step.position, step.disposition, step.acts, step.drafted])).toEqual([["d1", 1, "kept", undefined, "in"], ["d2", 2, "kept", ["a1"], undefined]]);
   });
 });
@@ -159,7 +159,7 @@ describe("the acts checklist beside the draft", () => {
     const acts = [{ id: "a1", verb: "add", quote: "add the kettle to the cart", todo: "no_step_added" }];
     const decide = vi.fn().mockResolvedValueOnce(call(1, { act: "a1" })).mockResolvedValueOnce(complete);
     await runAutomationStudioLlmEvidenceLoop({
-      tools: [go], decide, executeTool: vi.fn().mockResolvedValue(worked), maxIterations: 4, maxToolCalls: 4, dryRun: false, unusableDecisions: { stalled },
+      tools: [go], decide, executeTool: vi.fn().mockResolvedValue(worked), dryRun: false, unusableDecisions: { stalled },
       draft: { acts: () => acts, actsMissing: () => ["a1"] }
     });
     const first = shownAt(decide, 0).find((entry) => entry.toolId === "core.flow_draft")!.value;
@@ -198,7 +198,7 @@ describe("progress, where the model authors its draft", () => {
       .mockResolvedValueOnce(call(1)).mockResolvedValueOnce(call(2)).mockResolvedValueOnce(call(3, { act: "a1" })).mockResolvedValueOnce(call(4))
       .mockResolvedValueOnce(complete);
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools: [go], decide, executeTool: vi.fn().mockResolvedValue(worked), maxIterations: 8, maxToolCalls: 8, dryRun: false, unusableDecisions: { stalled },
+      tools: [go], decide, executeTool: vi.fn().mockResolvedValue(worked), dryRun: false, unusableDecisions: { stalled },
       captureStateDigest: () => states.shift(),
       draft: { actsMissing: (steps) => (steps.some((step) => step.disposition === "kept" && step.acts?.includes("a1")) ? [] : ["a1"]) }
     });
@@ -337,7 +337,7 @@ describe("the draft the model is shown", () => {
     const decide = vi.fn()
       .mockResolvedValueOnce({ kind: "tool_call", callId: "call.1", toolId: "press", input: { target: "t1082" } })
       .mockResolvedValueOnce({ kind: "complete", result: { flow: "ready" } });
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [pressTool], decide, executeTool: vi.fn().mockResolvedValue(execution("Not now")), maxIterations: 4, maxToolCalls: 4, dryRun: false, unusableDecisions: { stalled: () => new Error("stalled") } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [pressTool], decide, executeTool: vi.fn().mockResolvedValue(execution("Not now")), dryRun: false, unusableDecisions: { stalled: () => new Error("stalled") } });
     expect(result.steps[0]?.control).toBe("Not now");
     const shown = (decide.mock.calls[1]![0] as { evidence: Shown }).evidence.find((entry) => entry.toolId === "core.flow_draft")!.value;
     const line = (shown.steps as JsonObject[])[0]!;
@@ -390,7 +390,7 @@ describe("a call's statement that it answered an interruption", () => {
     const decide = vi.fn()
       .mockResolvedValueOnce({ kind: "tool_call", callId: "call.1", toolId: "press", input: { target: "t1082" } })
       .mockResolvedValueOnce({ kind: "complete", result: { flow: "ready" } });
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [pressTool], decide, executeTool: vi.fn().mockResolvedValue(interrupting(true)), maxIterations: 4, maxToolCalls: 4, dryRun: false, unusableDecisions: { stalled: () => new Error("stalled") } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [pressTool], decide, executeTool: vi.fn().mockResolvedValue(interrupting(true)), dryRun: false, unusableDecisions: { stalled: () => new Error("stalled") } });
     expect(result.steps[0]?.interruption).toBe(true);
   });
 });
@@ -439,7 +439,7 @@ describe("a call's statement that its press flipped the control it pressed", () 
       .mockResolvedValueOnce(toggling({ key: "t941", to: "off" }, { before: "s0", after: "s1" }))
       .mockResolvedValueOnce(toggling({ key: "t941", to: "on" }, { before: "s1", after: "s2" }))
       .mockResolvedValueOnce(toggling(undefined, { before: "s2", after: "s3" }));
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, maxIterations: 6, maxToolCalls: 6, dryRun: false, unusableDecisions: { stalled } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, dryRun: false, unusableDecisions: { stalled } });
     expect(result.steps.map((step) => [step.disposition, step.drafted])).toEqual([["taken", "undone"], ["taken", "undone"], ["kept", "in"]]);
     expect(result.steps.map((step) => step.cancels)).toEqual(["d2", "d1", undefined]);
   });
@@ -454,7 +454,7 @@ describe("a call's statement that its press flipped the control it pressed", () 
       .mockResolvedValueOnce(toggling(undefined, { before: "s0", after: "s1" }))
       .mockResolvedValueOnce(toggling({ key: "t941", to: "off" }, { before: "s1", after: "s2" }))
       .mockResolvedValueOnce(toggling({ key: "t941", to: "on" }, { before: "s2", after: "s3" }));
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, maxIterations: 6, maxToolCalls: 6, dryRun: false, unusableDecisions: { stalled } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, dryRun: false, unusableDecisions: { stalled } });
     expect(result.steps.map((step) => [step.id, step.disposition, step.acts, step.cancels])).toEqual([
       ["d1", "kept", undefined, undefined], ["d2", "taken", undefined, "d3"], ["d3", "taken", undefined, "d2"]
     ]);
@@ -521,7 +521,7 @@ describe("a call's statement of what its press changed on the page", () => {
     expect(automationStudioLlmEvidenceCallRecord(pressTool, {}, {})).not.toHaveProperty("changed");
     const decide = vi.fn().mockResolvedValueOnce(call(1, { add: true })).mockResolvedValueOnce(complete);
     const executeTool = vi.fn().mockResolvedValueOnce(changing(CART_CHANGES, "mutate", { before: "s0", after: "s1" }));
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, maxIterations: 4, maxToolCalls: 2, dryRun: false, unusableDecisions: { stalled } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, dryRun: false, unusableDecisions: { stalled } });
     expect(result.steps[0]).toMatchObject({ disposition: "kept", changed: CART_CHANGES });
   });
 });
@@ -545,7 +545,7 @@ describe("the draft says which control each step named", () => {
       .mockResolvedValueOnce(press(2, "t1091"))
       .mockResolvedValueOnce(press(3, "t404"))
       .mockResolvedValueOnce(complete);
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool: vi.fn().mockResolvedValue(worked), describeCall: describeCall as never, maxIterations: 6, maxToolCalls: 6, dryRun: false, unusableDecisions: { stalled } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool: vi.fn().mockResolvedValue(worked), describeCall: describeCall as never, dryRun: false, unusableDecisions: { stalled } });
 
     expect(result.ok).toBe(true);
     expect(result.steps.map((step: AutomationStudioFlowDraftStep) => step.words)).toEqual([{ target: "12 Double Rolls" }, { target: "×" }, undefined]);
@@ -565,7 +565,7 @@ describe("the draft says which control each step named", () => {
       return worked;
     });
     const decide = vi.fn().mockResolvedValueOnce(press(1, "t1091", { add: true })).mockResolvedValueOnce(complete);
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, describeCall: describeCall as never, maxIterations: 4, maxToolCalls: 4, dryRun: false, unusableDecisions: { stalled } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, describeCall: describeCall as never, dryRun: false, unusableDecisions: { stalled } });
 
     expect(result.steps.map((step: AutomationStudioFlowDraftStep) => step.words)).toEqual([{ target: "×" }]);
   });
@@ -578,7 +578,7 @@ describe("the draft says which control each step named", () => {
       .mockResolvedValueOnce(press(2, "t1091"))
       .mockResolvedValueOnce(press(3, "t933"))
       .mockResolvedValueOnce(complete);
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool: vi.fn().mockResolvedValue(worked), describeCall: describeCall as never, maxIterations: 6, maxToolCalls: 6, dryRun: false, unusableDecisions: { stalled } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool: vi.fn().mockResolvedValue(worked), describeCall: describeCall as never, dryRun: false, unusableDecisions: { stalled } });
 
     expect(result.ok).toBe(true);
     expect(describeCall).toHaveBeenCalledTimes(3);
@@ -645,7 +645,7 @@ describe("a written step's answer", () => {
       .mockResolvedValueOnce({ kind: "tool_call", callId: "w1", toolId: AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, input: { ...writtenRanWith, write: true } })
       .mockResolvedValueOnce(complete);
     const executeTool = vi.fn().mockResolvedValue(writtenAnswer());
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [runNode], decide, executeTool, maxIterations: 4, maxToolCalls: 4, dryRun: false, unusableDecisions: { stalled } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [runNode], decide, executeTool, dryRun: false, unusableDecisions: { stalled } });
     expect(executeTool.mock.calls[0]![0]).toMatchObject({ toolId: AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, value: { ...writtenRanWith, write: true } });
     expect(result.steps.map((step: AutomationStudioFlowDraftStep) => [step.disposition, step.written, step.effectApplied])).toEqual([["kept", true, false]]);
   });
@@ -656,7 +656,7 @@ describe("a written step's answer", () => {
       .mockResolvedValueOnce({ kind: "tool_call", callId: "w1", toolId: AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, input: { ...writtenRanWith, write: true } })
       .mockResolvedValueOnce(complete);
     const executeTool = vi.fn().mockResolvedValue(writtenAnswer({ resultCode: "web.node.ran", effectApplied: true }));
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [runNode], decide, executeTool, maxIterations: 4, maxToolCalls: 4, dryRun: false, unusableDecisions: { stalled } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [runNode], decide, executeTool, dryRun: false, unusableDecisions: { stalled } });
     expect(result.steps[0]).not.toHaveProperty("written");
     expect(result.steps[0]?.disposition).toBe("kept");
   });
@@ -746,7 +746,7 @@ describe("the decision parse of a node call", () => {
       .mockResolvedValueOnce(nodeCall({ node: "web.output.dom-fill", parameters: { text: { $input: "query" } }, consequences: [], write: true }, { callId: "c2" }))
       .mockResolvedValueOnce(complete);
     const executeTool = vi.fn().mockResolvedValue(worked);
-    await runAutomationStudioLlmEvidenceLoop({ tools: [runNode], decide, executeTool, maxIterations: 6, maxToolCalls: 6, dryRun: false, unusableDecisions: { stalled } });
+    await runAutomationStudioLlmEvidenceLoop({ tools: [runNode], decide, executeTool, dryRun: false, unusableDecisions: { stalled } });
     expect(executeTool).not.toHaveBeenCalled();
     const first = shownAt(decide, 1).find((entry) => entry.toolId === "core.decision_check")!.value;
     expect(first.issueCodes).toEqual([AUTOMATION_STUDIO_LLM_EVIDENCE_BINDING_NEEDS_WRITE_CODE]);

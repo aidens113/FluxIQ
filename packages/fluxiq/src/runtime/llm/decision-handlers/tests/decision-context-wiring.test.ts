@@ -99,7 +99,7 @@ describe("a request answered from memory", () => {
       .mockResolvedValueOnce(look("call.3"))
       .mockResolvedValueOnce({ kind: "complete", result: {} });
 
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [inspect], decide, executeTool: async () => ({ page: 1 }), maxIterations: 12, maxToolCalls: 12 });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [inspect], decide, executeTool: async () => ({ page: 1 })});
     expect(result).toMatchObject({ ok: true });
 
     // The first answer: no redirect yet.

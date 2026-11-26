@@ -36,7 +36,7 @@ async function run(script: Step[]) {
   let at = 0;
   await runAutomationStudioLlmEvidenceLoop({
     tools: [{ toolId: "library.look", description: "Read the page.", effect: "observe", inputSchema: { type: "object" } }, gate.tool],
-    maxIterations: script.length + 1, maxToolCalls: script.length + 1, dryRun: false, draft: false,
+    dryRun: false, draft: false,
     requestContextKey: (toolId) => (toolId === TEST ? automationStudioCandidateTestRequestKey(latest) : undefined),
     unusableDecisions: { stalled: () => new Error("stalled") },
     executeTool: async ({ toolId, value }) => (toolId === TEST ? gate.test(value) : { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: false, targetsUnchanged: true, stateDigests: { before: "page.one", after: "page.one" } }),

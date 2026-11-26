@@ -20,7 +20,7 @@ function ending(reason = DECLINED): AutomationStudioProjectBriefEnding & { fire(
 
 const builderPorts = (ended: AutomationStudioProjectBriefEnding, decide: AutomationStudioProjectBuilderPorts["loop"]["decide"]): AutomationStudioProjectBuilderPorts => ({
   loop: {
-    tools: [], maxToolCalls: 6,
+    tools: [], 
     unusableDecisions: { stalled: () => new Error("stalled") },
     executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: false, targetsUnchanged: true }),
     decide

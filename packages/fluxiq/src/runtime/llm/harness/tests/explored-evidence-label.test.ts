@@ -3,7 +3,6 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../loop-limits/index.ts";
 import {
   AUTOMATION_STUDIO_EXPLORED_EVIDENCE_MAX_ORDINAL,
   AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_PATTERN,
@@ -31,14 +30,14 @@ const LABEL_LITERAL = /(?<![.\w])explored\\?\.(?![A-Za-z_])/u;
 describe("the explored-packet label", () => {
   it("names the Nth packet an exploration returned, and reads a handle qualified with it back", () => {
     expect(automationStudioExploredEvidenceLabel(1)).toBe("explored.1");
-    for (const ordinal of [1, 2, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls, AUTOMATION_STUDIO_EXPLORED_EVIDENCE_MAX_ORDINAL]) {
+    for (const ordinal of [1, 2, 64, 1_000, 123_456]) {
       const label = automationStudioExploredEvidenceLabel(ordinal);
       expect(isAutomationStudioExploredEvidenceLabel(label), label).toBe(true);
       expect(automationStudioExploredEvidenceHandle(`${label}:target.3`)).toEqual({ kind: "qualified", evidenceId: label, handle: "target.3" });
     }
     // The handle keeps everything after the first colon, as the packet issued it.
     expect(automationStudioExploredEvidenceHandle("explored.2:cell.3:4")).toEqual({ kind: "qualified", evidenceId: "explored.2", handle: "cell.3:4" });
-    for (const handle of ["target.3", "explored.0:target.3", "explored:2:target.3", "explored.1000:target.3", "Explored.2:target.3", "explored.2:"]) {
+    for (const handle of ["target.3", "explored.0:target.3", "explored:2:target.3", "Explored.2:target.3", "explored.2:"]) {
       expect(automationStudioExploredEvidenceHandle(handle), handle).toEqual({ kind: "unqualified", handle });
     }
     for (const ordinal of [0, -1, 1.5, Number.NaN, AUTOMATION_STUDIO_EXPLORED_EVIDENCE_MAX_ORDINAL + 1]) {
@@ -71,14 +70,15 @@ describe("the explored-packet label", () => {
       expect(carried).toBe(evidenceId);
       expect(automationStudioExploredEvidenceHandle(`${carried}:target.1`).kind).toBe("qualified");
     }
-    for (const evidenceId of ["explored:1", "explored.0", "explored.01", "explored.1000", "page.1", "Explored.1", ""]) {
+    for (const evidenceId of ["explored:1", "explored.0", "explored.01", "page.1", "Explored.1", ""]) {
       expect(isAutomationStudioExploredEvidenceLabel(evidenceId), evidenceId).toBe(false);
       expect(() => pack(evidenceId), evidenceId).toThrow(/distinct bounded labels/);
     }
   });
 
+  // No count of tool calls ends a loop (t1056), so a label is not held to three digits.
   it("can number every packet one exploration is able to return", () => {
-    expect(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls).toBeLessThanOrEqual(AUTOMATION_STUDIO_EXPLORED_EVIDENCE_MAX_ORDINAL);
+    expect(AUTOMATION_STUDIO_EXPLORED_EVIDENCE_MAX_ORDINAL).toBe(Number.MAX_SAFE_INTEGER);
   });
 
   it("is written in one place, and every other module takes it from there", () => {

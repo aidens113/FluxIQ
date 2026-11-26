@@ -91,13 +91,10 @@ function instruction(body: string): AutomationStudioFlowInstruction {
   return { schemaVersion: "0.1", instructionId: "instruction.build", title: "Returns", scope: { kind: "flow", projectId: "project", flowId: "parent" }, body, priority: 100, status: "active", requirement: "required", createdAt: 0, updatedAt: 0 };
 }
 
-/**
- * The supervisor's loop over a build whose every whole trial answers what `judged` gives. With `completes` false the
- * supervisor's model stops after the dispatch, where its turn count once ended its loop (no count of turns does, t1056).
- */
-async function supervised(judged: NonNullable<Parameters<typeof gatedSingleBuild>[0]["judged"]>, completes = true) {
+/** The supervisor's loop over a build whose every whole trial answers what `judged` gives. */
+async function supervised(judged: NonNullable<Parameters<typeof gatedSingleBuild>[0]["judged"]>) {
   const built = gatedSingleBuild({ scripts: [SCRIPT], judged });
-  const run = await supervise([call(IDS.writePlan, ONE_PART), dispatch([brief("find_newest", ["p1"])]), ...(completes ? [completeOnDispatch] : [])], built);
+  const run = await supervise([call(IDS.writePlan, ONE_PART), dispatch([brief("find_newest", ["p1"])]), completeOnDispatch], built);
   return { run, built };
 }
 
@@ -156,7 +153,9 @@ describe("a single-path build whose last read keeps every row after an act over 
     const flag = judgedSummary.reads!.find((read) => read.nodeId === LAST)!.keptEveryRow!;
     const told = automationStudioCandidateTrialFeedback.judged({ verdict: { verdict: "yes", spent: { calls: 2, inputTokens: 1, outputTokens: 1, totalTokens: 2, estimatedCostUsd: 0 }, firstAskConfirmed: false }, summary: judgedSummary, trialRunId: "trial.1", start: "reset" });
     expect(told.feedback).toMatchObject({ firstAskConfirmed: false, reads: expect.arrayContaining([expect.objectContaining({ nodeId: LAST, kept: 7, keptEveryRow: flag })]) });
-    const { run, built } = await supervised(async () => told, false);
+    // t1056: the whole gate held this yes as a yes, so once the supervisor's loop stopped short (its script ends where a
+    // turn count once ended it) the build was handed back as a candidate on a yes its builder held unsure. It must not be.
+    const { run, built } = await supervised(async () => told);
     expect(built.tested.map((answer) => answer.resultCode)).toEqual(["subflow.trial_unsure"]);
     expect(built.tested[0]!.evidence).toMatchObject({ verdict: "unsure", feedback: { code: "subflow.trial_rows_unaccounted", keptEveryRow: [{ read: LAST, said: flag.said }] } });
     expect(String((built.tested[0]!.evidence as JsonObject).instruction)).toContain("Read keptEveryRow");

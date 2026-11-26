@@ -35,8 +35,8 @@ describe("a re-author that completes its seeded draft unchanged", () => {
 
     const run = runAutomationStudioLlmEvidenceLoop({
       tools: [{ toolId: "inspect", description: "Read the page.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } }],
-      decide, executeTool, propagateDecisionErrors: true, maxIterations: 64, checkCompletion, fullRunRequired: true,
-      unusableDecisions: { maxConsecutive: 3, stalled: () => new Error("stalled") },
+      decide, executeTool, propagateDecisionErrors: true, checkCompletion, fullRunRequired: true,
+      unusableDecisions: { stalled: () => new Error("stalled") },
       draft: { seed: seed() }
     });
 

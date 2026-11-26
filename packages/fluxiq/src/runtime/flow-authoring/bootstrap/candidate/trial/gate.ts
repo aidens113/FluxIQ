@@ -274,6 +274,7 @@ import { automationStudioCandidateTrialActs } from "./acts.ts";
 import { automationStudioCandidateTrialSlowDown as SlowDown } from "./slow-down.ts";
 import { automationStudioCandidateStartedWithSaid } from "../started-with.ts";
 import { automationStudioCandidateTrialStop as Stop } from "./stop.ts";
+import { automationStudioCandidateTrialRows as Rows } from "./rows.ts";
 import { AutomationStudioCandidateEarlierAdviceMemory } from "../earlier-advice-memory.ts";
 // Its own barrel, not result-verification's, whose reads import flow-bootstrap back (a module cycle).
 import {
@@ -496,7 +497,7 @@ export class AutomationStudioFlowCandidateTrialGate {
     }
     // A no whose remedy would take back what an earlier standing no of this build upheld is not taken (header, t633).
     const contradiction = this.standingNos.weigh({ revision: asked.answer.revision, verdict: asked.answer.verdict, standingNo: asked.standingNo });
-    const weighedAnswer = contradiction ? notTaken(asked.answer, contradiction) : asked.answer;
+    const weighedAnswer = contradiction ? notTaken(asked.answer, contradiction) : Rows.held(asked.answer); // A yes over unaccounted rows is held (t692, `./rows.ts`).
     // The page the build explored was changed by an act the start took back and no step does (header, t647).
     const explored = weighedAnswer.verdict !== "yes"
       ? automationStudioSiteResetExploredOnAbsorbed({ absorbed: absorbedActs, steps: (latest.buildPlan?.plan?.subflows ?? []).flatMap((subflow) => subflow.nodes ?? []), ran: weighedAnswer.acts, whose: "flow" })
@@ -742,6 +743,7 @@ function standingInstruction(answer: AutomationStudioCandidateTrialResult, retes
   if (notShown) return notShown;
   const onPage = retestable ? onPageStep(answer) : undefined;
   if (onPage) return testAgainInstruction(onPage);
+  if (Rows.instruction(answer, retestable)) return Rows.instruction(answer, retestable)!;
   if (answer.verdict === "unsure" && retestable && typeof answer.feedback.contradictedByBuild === "string") return CONTRADICTED_RETESTABLE;
   if (answer.verdict === "unsure" && retestable) {
     if (automationStudioCandidateRetestAdvised(answer)) return UNSURE_RETEST_ADVISED;

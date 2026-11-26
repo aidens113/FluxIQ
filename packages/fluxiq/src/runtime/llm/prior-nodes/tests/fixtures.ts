@@ -135,9 +135,8 @@ export function priorNodesFixture(options: {
     commitEffect() { committed = true; },
     run(decisions: unknown[], overrides: Partial<AutomationStudioLlmEvidenceLoopInput> = {}) {
       let index = 0;
-      const maxIterations = overrides.maxIterations ?? 20;
       const decide = vi.fn(async (_request: Parameters<AutomationStudioLlmEvidenceLoopInput["decide"]>[0]) => decisions[index++] ?? complete);
-      const result = runAutomationStudioLlmEvidenceLoop({ tools, executeTool, rerunAuthority: port, decide, maxIterations, maxToolCalls: 30, draft: false, dryRun: false, ...overrides });
+      const result = runAutomationStudioLlmEvidenceLoop({ tools, executeTool, rerunAuthority: port, decide, draft: false, dryRun: false, ...overrides });
       return { result, decide };
     }
   };

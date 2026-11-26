@@ -45,7 +45,7 @@ describe("looking again after being refused", () => {
       .mockResolvedValueOnce(look(3))
       .mockResolvedValueOnce({ kind: "complete", result: { ready: true } });
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 8, maxToolCalls: 8, unusableDecisions: { stalled }, executeTool: refusing
+      tools, decide, unusableDecisions: { stalled }, executeTool: refusing
     });
     expect(result).toMatchObject({ ok: true, accounting: { iterations: 6, toolCalls: 5 } });
     // Every look after a refusal ran, and the observation was offered each time.
@@ -60,7 +60,7 @@ describe("looking again after being refused", () => {
       .mockResolvedValueOnce(pressed(1))
       .mockResolvedValueOnce({ kind: "complete", result: { ready: true } });
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 8, maxToolCalls: 8, unusableDecisions: { stalled }, executeTool: refusing
+      tools, decide, unusableDecisions: { stalled }, executeTool: refusing
     });
     // The second press is the same request over an unchanged world, so it is
     // answered from the first rather than run: a refusal moves what the model
@@ -76,7 +76,7 @@ describe("looking again after being refused", () => {
   it("steers a run that only repeats itself, and ends it with nothing but the model's own result", async () => {
     const decide = vi.fn().mockImplementation(async () => decide.mock.calls.length <= REPEATS ? look(1) : finished);
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 8, maxToolCalls: 8, executeTool: refusing
+      tools, decide, executeTool: refusing
     });
     expect(result).toMatchObject({ ok: true, accounting: { iterations: REPEATS + 1 } });
   });
@@ -91,7 +91,7 @@ describe("looking again after being refused", () => {
       .mockResolvedValueOnce(look(1))
       .mockResolvedValueOnce({ kind: "complete", result: { ready: true } });
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 8, maxToolCalls: 8, unusableDecisions: { stalled }, executeTool: refusingLook
+      tools, decide, unusableDecisions: { stalled }, executeTool: refusingLook
     });
 
     expect(result).toMatchObject({ ok: true, accounting: { toolCalls: 2 } });
@@ -110,7 +110,7 @@ describe("looking again after being refused", () => {
     // A refused look asked for again and again is steered, and no count ends it (t1056): the model's result does.
     const decide = vi.fn().mockImplementation(async () => decide.mock.calls.length <= REPEATS ? look(1) : finished);
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 16, maxToolCalls: 16, executeTool: refusingLook
+      tools, decide, executeTool: refusingLook
     });
 
     expect(result).toMatchObject({ ok: true, accounting: { iterations: REPEATS + 1 } });
@@ -131,7 +131,7 @@ describe("looking again after being refused", () => {
     let index = 0;
     const decide = vi.fn().mockImplementation(async () => (index += 1) <= REPEATS ? pressed(index) : finished);
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 16, maxToolCalls: 16, executeTool: refusing
+      tools, decide, executeTool: refusing
     });
 
     // Counted, so the model is told and steered -- a run of refusals of one kind, then caught as a repeat -- and no count
@@ -150,7 +150,7 @@ describe("looking again after being refused", () => {
     const decide = vi.fn().mockImplementation(async () => (index += 1) <= 5 ? pressed(index) : finished);
     const applying = async () => ({ kind: "llm_evidence_tool_execution" as const, evidence: { ok: true }, effectApplied: true });
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 5, maxToolCalls: 5, executeTool: applying
+      tools, decide, executeTool: applying
     });
 
     expect(result).not.toMatchObject({ code: "llm_evidence_loop.repeat_without_progress" });
@@ -202,7 +202,7 @@ describe("an action refused until a look ran", () => {
       .mockResolvedValueOnce(pressOne(2))
       .mockResolvedValueOnce(done);
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools: gatedTools, decide, maxIterations: 8, maxToolCalls: 8, unusableDecisions: { stalled }, executeTool: gate.executeTool
+      tools: gatedTools, decide, unusableDecisions: { stalled }, executeTool: gate.executeTool
     });
 
     expect(result).toMatchObject({ ok: true, accounting: { toolCalls: 3 } });
@@ -222,7 +222,7 @@ describe("an action refused until a look ran", () => {
       .mockResolvedValueOnce(pressOne(2))
       .mockResolvedValueOnce(done);
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools: gatedTools, decide, maxIterations: 8, maxToolCalls: 8, unusableDecisions: { stalled }, executeTool: gate.executeTool
+      tools: gatedTools, decide, unusableDecisions: { stalled }, executeTool: gate.executeTool
     });
 
     expect(result).toMatchObject({ ok: true, accounting: { toolCalls: 1 } });
@@ -239,7 +239,7 @@ describe("an action refused until a look ran", () => {
       return index % 2 === 1 ? pressOne(index) : readList(index);
     });
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools: gatedTools, decide, maxIterations: 40, maxToolCalls: 40, unusableDecisions: { stalled }, executeTool: gate.executeTool
+      tools: gatedTools, decide, unusableDecisions: { stalled }, executeTool: gate.executeTool
     });
 
     expect(result).toMatchObject({ ok: true, accounting: { iterations: 2 * REPEATS + 1 } });
@@ -285,7 +285,7 @@ describe("a trial refused until the site is put back", () => {
       .mockResolvedValueOnce(testRevision(2))
       .mockResolvedValueOnce(done);
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools: trialTools, decide, maxIterations: 8, maxToolCalls: 8, unusableDecisions: { stalled }, executeTool: gate.executeTool
+      tools: trialTools, decide, unusableDecisions: { stalled }, executeTool: gate.executeTool
     });
 
     expect(result).toMatchObject({ ok: true, accounting: { toolCalls: 3 } });
@@ -303,7 +303,7 @@ describe("a trial refused until the site is put back", () => {
       return index % 2 === 1 ? testRevision(index) : readCart(index);
     });
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools: trialTools, decide, maxIterations: 40, maxToolCalls: 40, unusableDecisions: { stalled }, executeTool: gate.executeTool
+      tools: trialTools, decide, unusableDecisions: { stalled }, executeTool: gate.executeTool
     });
 
     expect(result).toMatchObject({ ok: true });

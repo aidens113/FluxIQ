@@ -31,7 +31,7 @@ describe("a dispatched brief's loop", () => {
     let step = 0;
     const builder = (): AutomationStudioProjectBuilderPorts => ({
       loop: {
-        tools: [], maxToolCalls: 6,
+        tools: [], 
         unusableDecisions: { stalled: () => new Error("stalled") },
         executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: false, targetsUnchanged: true }),
         decide: async ({ evidence }) => steps[step++]!(evidence)

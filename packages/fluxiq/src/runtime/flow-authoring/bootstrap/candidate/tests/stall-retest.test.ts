@@ -92,7 +92,7 @@ describe("a stalled candidate build", () => {
         }
       },
       loop: {
-        tools: [{ toolId: "demo.find", effect: "observe", description: "Find", inputSchema: { type: "object" } }], maxIterations: 20, maxToolCalls: 20,
+        tools: [{ toolId: "demo.find", effect: "observe", description: "Find", inputSchema: { type: "object" } }], 
         unusableDecisions: { stalled: () => new Error("stalled") },
         executeTool: async ({ value }) => ({ kind: "llm_evidence_tool_execution", evidence: { found: `0 matches for ${String(value.query)}` }, effectApplied: false, stateDigests: { before: "s1", after: "s1" } }),
         decide: async ({ evidence }): Promise<AutomationStudioLlmEvidenceLoopDecision> => {

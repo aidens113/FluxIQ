@@ -121,7 +121,7 @@ async function exploreCanonical(options: ExploreOptions = {}) {
     instructions: [],
     runDetail: detail,
     recoveryContext: buildAutomationStudioRuntimeRecoveryContext({ detail }),
-    runBudget: new AutomationStudioLlmRunBudgetLedger({ maxCallsPerRun: 8, maxTotalTokensPerRun: 200_000, maxOutputTokensPerRun: 100_000 }),
+    runBudget: new AutomationStudioLlmRunBudgetLedger({ maxTotalTokensPerRun: 200_000, maxOutputTokensPerRun: 100_000 }),
     // A fifth of the run cost ceiling the ledger defaults to, so five calls fit.
     maxEstimatedCostUsd: AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD / 5,
     recoveryDeadline: startAutomationStudioRecoveryDeadline({ startedAtMs: Date.now() })

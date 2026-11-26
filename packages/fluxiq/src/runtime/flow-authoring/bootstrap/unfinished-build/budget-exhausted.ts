@@ -34,7 +34,7 @@
 // (`automationStudioActivityPersonWords`): never "the judge", "Step 8" or
 // "dedup".
 import { automationStudioActivityPersonWords } from "../../../automation-activity/index.ts";
-import type { AutomationStudioLlmEvidenceLoopTrace } from "../../../llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopTrace, AutomationStudioLlmEvidenceLoopUnreadable } from "../../../llm/index.ts";
 import {
   type AutomationStudioFlowBootstrapBudgetBound,
   type AutomationStudioFlowBootstrapBuildEnding
@@ -137,6 +137,11 @@ export function automationStudioFlowBootstrapBudgetExhausted(input: {
    * (`./last-fix.ts`). Absent, the last refusal codes say it, where known.
    */
   lastRound?: readonly AutomationStudioLlmEvidenceLoopTrace[] | undefined;
+  /**
+   * The unreadable replies the budget ran out during: what the money last went on, said as a detail of this ending
+   * (t1056). They once ended a build as an ending of their own, at a count of them in a row; no count does now.
+   */
+  unreadable?: AutomationStudioLlmEvidenceLoopUnreadable | undefined;
 }): AutomationStudioFlowBootstrapBuildEnding {
   const notDone = automationStudioFlowBootstrapNotDone(input.checklist);
   const kept = automationStudioFlowBootstrapKeptSaid(input.kept);
@@ -153,6 +158,7 @@ export function automationStudioFlowBootstrapBudgetExhausted(input: {
   const message = automationStudioFlowBootstrapEndingFitted((room) => ({
     body: [
       spent ? `The build used its budget for this Flow before the Flow was finished. ${spent}` : `The build stopped at ${budgetSaid(input.bound, input.sizes)} before the Flow was finished.`,
+      input.unreadable ? unreadableSaid(input.unreadable, input.decisions) : "",
       // How far it got and what its test found, said once: never "not judged" twice (`./not-done.ts`).
       automationStudioFlowBootstrapProgressAndTestSaid(input.checklist, input.judgement, room),
       judged ? checkFoundSaid(input.judgement.judge, room.judge) : ""
@@ -166,6 +172,14 @@ export function automationStudioFlowBootstrapBudgetExhausted(input: {
     notDone,
     tried: automationStudioFlowBootstrapTried(input)
   };
+}
+
+/** What the money last went on where the replies arrived unreadable, in a person's words (t211's, t1056). */
+function unreadableSaid(unreadable: AutomationStudioLlmEvidenceLoopUnreadable, decisions: number): string {
+  const { inARow, total, cases, said } = unreadable;
+  const why = cases.length ? ` -- ${cases.length > 1 ? "most often because " : "because "}${said} --` : "";
+  const last = inARow === 1 ? "Its last reply came back unreadable" : `Its last ${inARow} replies came back unreadable`;
+  return `${last}${why} and it asked again each time, with a note of what was wrong. In all, ${total} of ${Math.max(total, decisions)} replies could not be read; each was paid for and counted in the build's budget.`;
 }
 
 function budgetSaid(bound: AutomationStudioFlowBootstrapBudgetBound, sizes: AutomationStudioFlowBootstrapBudgetSizes): string {

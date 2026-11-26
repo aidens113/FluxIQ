@@ -48,7 +48,7 @@ function scripted(verdict: "yes" | "no", firstSeen: Entry[][], deniedEvidenceKey
     ];
     return {
       loop: {
-        tools: [LOOK], maxToolCalls: 8,
+        tools: [LOOK], 
         unusableDecisions: { stalled: () => new Error("stalled") },
         executeTool: async (call) => {
           received.push({ callId: call.callId, toolId: call.toolId, value: structuredClone(call.value) });

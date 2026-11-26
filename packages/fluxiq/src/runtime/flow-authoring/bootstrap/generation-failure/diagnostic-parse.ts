@@ -11,7 +11,7 @@ import { automationStudioConsequencesInOrder, isAutomationStudioActionConsequenc
 // them and the LLM adapter produces them, so neither feature barrel may own the
 // value without closing an initialization cycle through the other.
 import { parseAutomationStudioLlmProviderRefusal, type AutomationStudioLlmProviderRefusal } from "../../../llm/provider-refusal/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../loop-limits/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, AUTOMATION_STUDIO_LLM_EVIDENCE_ACCOUNTED_BYTES_MAX } from "../../../loop-limits/index.ts";
 import { parseAutomationStudioFlowBootstrapEvidenceSteps } from "../evidence-loop-steps.ts";
 import { automationStudioFlowBootstrapLargestSizeLimits } from "../plan/index.ts";
 import { parseAutomationStudioFlowBootstrapBuildEnding } from "./build-ending.ts";
@@ -64,7 +64,7 @@ export function parseAutomationStudioFlowBootstrapFailureDiagnostic(
   if (candidate === null) return null;
   // The refused steps' own words stand only beside the no-progress ending they explain.
   const refusedSteps = automationStudioFlowBootstrapRefusedSteps.parse(value.refusedSteps);
-  if (refusedSteps === null || (refusedSteps !== undefined && value.code !== REFUSED_STEPS_CODE)) return null;
+  if (refusedSteps === null || (refusedSteps !== undefined && !REFUSED_STEPS_CODES.has(value.code as string))) return null;
   // A supervisor's reason for ending stands only beside the supervisor's ending it explains (t649): words on one line, bounded.
   if (value.endedBecause !== undefined && (typeof value.endedBecause !== "string" || !value.endedBecause.trim() || value.endedBecause.length > MAX_DIAGNOSTIC_ENDED_BECAUSE
     || /[\r\n]/u.test(value.endedBecause) || !(value.issueCodes as string[] | undefined)?.some((code) => DIAGNOSTIC_SUPERVISOR_ENDING_CODES.has(code)))) return null;
@@ -102,8 +102,11 @@ function parseInstructedConsequences(value: unknown): AutomationStudioActionCons
   return ordered.length === value.length && ordered.every((consequence, index) => consequence === value[index]) ? ordered : null;
 }
 
-/** The code stored refused steps may stand beside. */
-const REFUSED_STEPS_CODE = "flow_bootstrap.evidence_repeat_without_progress";
+/**
+ * The codes stored refused steps may stand beside: a stall on refused submissions, and the budget a build ran out
+ * during while its submissions were refused, where they are what the money last went on (t1056).
+ */
+const REFUSED_STEPS_CODES: ReadonlySet<string> = new Set(["flow_bootstrap.evidence_repeat_without_progress", "flow_bootstrap.evidence_iteration_limit"]);
 /** The code a stored provider throw may stand beside. */
 const PROVIDER_THROW_CODE = "flow_bootstrap.provider_transport_unknown";
 /**
@@ -309,7 +312,7 @@ function parseEvidenceLoopCounts(value: unknown): NonNullable<AutomationStudioFl
   const bounds = evidenceLoopBuildBounds();
   if (!boundedInteger(value.iterationCount, bounds.iterations) || !boundedInteger(value.decisionCount, bounds.decisions)
     || !boundedInteger(value.toolCallCount, bounds.toolCalls)
-    || !boundedInteger(value.evidenceBytes, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxEvidenceBytes)) return null;
+    || !boundedInteger(value.evidenceBytes, AUTOMATION_STUDIO_LLM_EVIDENCE_ACCOUNTED_BYTES_MAX)) return null;
   // The steps are parsed by the module that declares them. A step's shape and
   // the allow-list that parses it must move together -- a field the shape gains
   // and the list does not takes the whole diagnostic down rather than arriving

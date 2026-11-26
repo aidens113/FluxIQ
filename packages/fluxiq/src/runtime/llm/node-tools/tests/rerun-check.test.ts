@@ -54,7 +54,7 @@ function requests(options: { ranWith?: boolean } = {}) {
 
 // The instruction's read names a1 ("confirm everyone ...") lasting, as the service asks it (t174-w83); `lasting: null` is a build with no reading of the instruction.
 const loop = (decide: ReturnType<typeof vi.fn>, executeTool: ReturnType<typeof requests>["executeTool"], lasting: ReadonlySet<string> | null = new Set(["a1"])) => runAutomationStudioLlmEvidenceLoop({
-  tools, decide, executeTool, maxIterations: 12, maxToolCalls: 12, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { stalled: () => new Error("stalled") },
+  tools, decide, executeTool, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { stalled: () => new Error("stalled") },
   ...(lasting ? { lastingActs: async () => lasting } : {})
 });
 const confirmAmara = { kind: "tool_call", callId: "confirm-amara-1", toolId: "press", input: { target: "Confirm Amara" }, add: true, act: "a1" };
@@ -418,7 +418,7 @@ describe("a checked rerun that takes the new argument", () => {
       kind: "llm_evidence_tool_execution" as const, evidence: { ok: true }, resultCode: "core.replay.verified", effectApplied: false,
       draft: { actionId: "library.enter", input: value, ranWith: { parameters: { target: "resolved", text: "3" } }, effect: "mutate" as const, proposes: true }
     }));
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, draft: { seed: [seed] }, dryRun: false, lastingActs: async () => new Set(["a1"]), maxIterations: 3, maxToolCalls: 4 });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, draft: { seed: [seed] }, dryRun: false, lastingActs: async () => new Set(["a1"])});
     const kept = result.steps?.find((step) => step.id === "d1");
     expect(kept).toMatchObject({ actionId: "library.press", toolId: "press", input: { node: "library.press", parameters: { text: "1" } }, effectApplied: true });
     expect(kept?.priorExecution).toBeUndefined();
@@ -436,7 +436,7 @@ describe("a checked rerun that takes the new argument", () => {
     // No put-back is needed for this fixture: it isolates dependent test marks.
     delete seed[1]!.replay;
     const executeTool = async ({ value }: { value: JsonObject }) => ({ kind: "llm_evidence_tool_execution" as const, evidence: { ok: true }, resultCode: value.replay === "verify" ? "core.replay.verified" : "core.replay.replayed", effectApplied: value.replay !== "verify" });
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, draft: { seed }, dryRun: false, lastingActs: async () => new Set(["a1"]), controlParameterKeys: CONTROL_PARAMETER_KEYS, maxIterations: 4, maxToolCalls: 8 });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, draft: { seed }, dryRun: false, lastingActs: async () => new Set(["a1"]), controlParameterKeys: CONTROL_PARAMETER_KEYS});
     const steps = (result as { steps: AutomationStudioFlowDraftStep[] }).steps;
     expect(steps[0]!.replayed).toBeDefined();
     expect(steps[1]!.checkedCandidate).toBeDefined();

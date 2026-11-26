@@ -125,7 +125,7 @@ describe("a candidate tool offered in the final counted slot", () => {
       return { kind: "tool_call", callId: `call.${iteration}`, toolId: iteration === 1 ? "core.submit_candidate" : "core.test_candidate", input: { revision: iteration }, usage: { totalTokens: 100, estimatedCostUsd: iteration === 1 ? 0.06 : 0.01 } };
     });
     const result = await runAutomationStudioLlmEvidenceLoop({ tools: finishingTools, decide, executeTool, draft: false, discoveryOnly: true,
-      completionSchema: { type: "object" }, maxIterations: 20, maxToolCalls: 20, budget: { maxDurationMs: 10_000, maxCostUsd: 0.1, now: () => now } });
+      completionSchema: { type: "object" }, budget: { maxDurationMs: 10_000, maxCostUsd: 0.1, now: () => now } });
     const last = decide.mock.calls[1]![0] as unknown as { evidence: Array<{ value: unknown }> };
     expect(last.evidence.at(-1)?.value).toMatchObject({ decisionsLeft: 1, secondsLeft: 6, costLeftUsd: 0.04 });
     expect(executeTool).toHaveBeenCalledTimes(1);

@@ -19,6 +19,7 @@ import type { AutomationStudioTrainingModeSettings } from "../../../training-mod
 import { resolveAutomationStudioResultCheckSchedule } from "../../../../result-verification/check-schedule/index.ts";
 import type { AutomationStudioLlmProviderResolution, AutomationStudioRuntimeAdaptationContext } from "../../../../../framework/automation-service/service.ts";
 import { annotateAutomationStudioRunDetailWithRuntimeLlm } from "../annotate.ts";
+import { AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES } from "../run-budget.ts";
 import type { AutomationStudioRuntimeRecoveryPorts } from "../ports.ts";
 
 // What bounds a recovery, driven through the whole recovery path.
@@ -96,26 +97,29 @@ describe("what bounds a recovery", () => {
   // Every decision call fails as the provider's own invalid output -- a spent
   // call, not a fault -- so the exploration asks again. Three such answers once
   // stopped it on the no-progress guard (t1049), and twenty-four the
-  // exploration's own call allowance (t1057); neither does now. It asks again
-  // until the purse is gone -- here a declared forty calls, of which the
-  // diagnosis took one and the patch's one is held. The patch still runs.
+  // exploration's own call allowance (t1057), then a declared forty calls; none
+  // does now (t1056). Each answer is billed, as a real provider bills one, and
+  // the exploration asks again until the purse cannot hold another call beside
+  // the patch's. The patch still runs.
   it("asks again past the old guards when every decision comes back unusable, until the purse, then still patches", async () => {
-    const run = await annotate({ looks: 40, unusableDecisions: "all", maxCallsPerRun: 40 });
+    const run = await annotate({ looks: 400, unusableDecisions: "all" });
 
-    expect(run.taskKinds).toEqual(["runtime_diagnosis", ...Array.from({ length: 38 }, () => "evidence_tool_decision"), "runtime_patch"]);
+    const decisions = run.taskKinds.filter((kind) => kind === "evidence_tool_decision").length;
+    expect(decisions).toBeGreaterThan(38);
+    expect(run.taskKinds[0]).toBe("runtime_diagnosis");
+    expect(run.taskKinds.at(-1)).toBe("runtime_patch");
     expect(run.executed).toEqual([]);
     expect(explorationStage(run.detail)).toMatchObject({
       status: "failed",
-      detail: { requested: true, outcome: "budget_exhausted", endedBy: "llm_budget.run_call_limit", unusableDecisions: 38, actions: 0 }
+      detail: { requested: true, outcome: "budget_exhausted", endedBy: "llm_budget.run_cost_limit", unusableDecisions: decisions, actions: 0 }
     });
     expect(explorationStage(run.detail)?.detail).not.toHaveProperty("stopReason");
     // Each unusable answer is on the receipt, charged, with its code.
-    expect(costAccounting(run.detail)).toMatchObject({ calls: 40, explorationCalls: 38, pendingCalls: 0 });
+    expect(costAccounting(run.detail)).toMatchObject({ calls: decisions + 2, explorationCalls: decisions, pendingCalls: 0 });
     expect(receipt(run.detail).filter((call) => call.taskKind === "evidence_tool_decision").map((call) => call.validation)).toEqual(
-      Array.from({ length: 38 }, () => ({ ok: false, issueCodes: ["llm.provider_output_invalid"] }))
+      Array.from({ length: decisions }, () => ({ ok: false, issueCodes: ["llm.provider_output_invalid"] }))
     );
     expect(patchIntervention(run.detail)).toMatchObject({ kind: "runtime_patch", validation: { ok: true } });
-    expect(budgetCodes(run.detail)).toEqual([]);
   });
 
   // One answer that fails Core's own checks is a step that did not advance,
@@ -180,27 +184,24 @@ describe("what bounds a recovery", () => {
     expect(budgetCodes(run.detail)).toEqual([]);
   });
 
-  // The patch's call is held back from a declared call count. Six calls, and a
-  // model that would keep looking for forty: without the hold the exploration
-  // takes calls two to six and the patch is refused, so a recovery that found
-  // what was wrong proposes nothing. With it, the purse refuses the
-  // exploration's fifth decision on its declared call count -- the held call is
-  // one pending call on the run's ledger (t1057; until then the exploration's
-  // own call ceiling was lowered and named `provider_call_limit`) -- and the
-  // sixth call is the patch.
-  it("leaves the patch its call when an exploration would otherwise use every declared call", async () => {
-    const run = await annotate({ looks: 40, maxCallsPerRun: 6 });
+  // The patch's call is held back from the purse. A model that would keep looking
+  // at two cents a call: without the hold the exploration spends the purse and
+  // the patch is refused, so a recovery that found what was wrong proposes
+  // nothing. With it, the purse refuses the exploration's last decision on cost
+  // -- the held call is one pending call on the run's ledger (t1057) -- and the
+  // last call is the patch. It was a declared count of six calls until no count
+  // bounded a run (t1056).
+  it("leaves the patch its call when an exploration would otherwise spend the purse", async () => {
+    // Each call spends close to its share, so the exploration, not a count, uses the purse up to the patch's hold.
+    const run = await annotate({ looks: 400, costUsd: 0.004 });
 
-    expect(run.taskKinds).toEqual(["runtime_diagnosis", "evidence_tool_decision", "evidence_tool_decision", "evidence_tool_decision", "evidence_tool_decision", "runtime_patch"]);
+    expect(run.taskKinds[0]).toBe("runtime_diagnosis");
+    expect(run.taskKinds.at(-1)).toBe("runtime_patch");
     expect(explorationStage(run.detail)).toMatchObject({
       status: "failed",
-      detail: { requested: true, outcome: "budget_exhausted", endedBy: "llm_budget.run_call_limit" }
+      detail: { requested: true, outcome: "budget_exhausted", endedBy: "llm_budget.run_cost_limit" }
     });
-    // The trace's `providerCalls` counts loop iterations, including the fifth
-    // that the exploration refused before any provider was asked; the receipt
-    // and the task list above are what the provider actually answered.
-    expect(costAccounting(run.detail)).toMatchObject({ calls: 6, explorationCalls: 4, pendingCalls: 0 });
-    expect(budgetCodes(run.detail)).toEqual([]);
+    expect(costAccounting(run.detail)).toMatchObject({ pendingCalls: 0 });
     // The patch ran, answered, and its repair went on to be applied or proposed.
     expect(patchIntervention(run.detail)).toMatchObject({ kind: "runtime_patch", validation: { ok: true } });
     expect((run.detail.metadata?.llmGate as JsonObject | undefined)?.ok).toBe(true);
@@ -219,7 +220,8 @@ describe("what bounds a recovery", () => {
   // guidance grew (t252 merged with t254): refused unsent as over its window,
   // which is right, but not what this case is about.
   it("holds an explore_and_adapt recovery to the run's budget, not to the training budget", async () => {
-    const declaredCalls = 26;
+    // The run's even share is its ceiling over Core's shares: no call count is declared (t1056; it was twenty-six).
+    const declaredCalls = AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES;
     const share = CEILING / declaredCalls;
     const maxOutputTokens = 1_000;
     const replyAtPeak = estimateAutomationStudioDeepSeekCostUsd(0, maxOutputTokens);
@@ -234,7 +236,7 @@ describe("what bounds a recovery", () => {
       requests,
       asked: {
         intent: "explore_and_adapt",
-        resolution: { maxCallsPerRun: declaredCalls, maxTotalTokensPerRun: 100_000, maxEstimatedCostUsd: CEILING, maxTotalEstimatedCostUsd: CEILING, tokenLimits: { maxInputTokens, maxOutputTokens, maxTotalTokens: maxInputTokens + maxOutputTokens } }
+        resolution: { maxTotalTokensPerRun: 100_000, maxEstimatedCostUsd: CEILING, maxTotalEstimatedCostUsd: CEILING, tokenLimits: { maxInputTokens, maxOutputTokens, maxTotalTokens: maxInputTokens + maxOutputTokens } }
       }
     });
 
@@ -358,7 +360,8 @@ function provider(options: Options, taskKinds: string[]): AutomationStudioLlmPro
       if (request.expectedOutput === "evidence_tool_decision") {
         decisionCalls += 1;
         if (options.unusableDecisions === "all") {
-          throw new AutomationStudioLlmProviderError("llm.provider_output_invalid", "The reply did not satisfy the requested structure.");
+          // Billed, as a real provider bills a reply it could not shape (`paid`): one billed nothing is the provider failing (t1056).
+          throw new AutomationStudioLlmProviderError("llm.provider_output_invalid", "The reply did not satisfy the requested structure.", false, undefined, undefined, undefined, undefined, undefined, undefined, { inputTokens: 1_200, outputTokens: 200, totalTokens: 1_400, estimatedCostUsd: 0.002 });
         }
         if (options.unusableDecisions?.includes(decisionCalls)) {
           return { response: { kind: "diagnosis", summary: "Not a decision." }, usage: { inputTokens: 1_200, outputTokens: 200, totalTokens: 1_400, estimatedCostUsd: 0.002 } };

@@ -84,7 +84,7 @@ describe("Automation Studio LLM evidence loop", () => {
     await expect(runAutomationStudioLlmEvidenceLoop({ tools, signal: controller.signal, decide: async () => ({ kind: "complete", result: {} }), executeTool: async () => ({}) }))
       .resolves.toMatchObject({ ok: false, code: "llm_evidence_loop.cancelled", accounting: { iterations: 0 } });
     let asked = 0;
-    await expect(runAutomationStudioLlmEvidenceLoop({ tools, maxIterations: 1, decide: async () => (asked += 1) <= 3 ? { kind: "tool_call", callId: `call.${asked}`, toolId: "inspect", input: { at: asked } } : { kind: "complete", result: {} }, executeTool: async () => ({ ok: true }) }))
+    await expect(runAutomationStudioLlmEvidenceLoop({ tools, decide: async () => (asked += 1) <= 3 ? { kind: "tool_call", callId: `call.${asked}`, toolId: "inspect", input: { at: asked } } : { kind: "complete", result: {} }, executeTool: async () => ({ ok: true }) }))
       .resolves.toMatchObject({ ok: true, accounting: { iterations: 4, toolCalls: 3 } });
   });
 
@@ -305,7 +305,7 @@ describe("the total the loop gathers", () => {
     const calls: object[] = [];
     let call = 0;
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, maxIterations: 26, maxToolCalls: 27,
+      tools, 
       decide: async ({ evidence }) => {
         shown.push(evidence);
         call += 1;
@@ -329,7 +329,7 @@ describe("the total the loop gathers", () => {
   it("never ends evidence_limit, however much is gathered", async () => {
     let call = 0;
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, maxIterations: 12, maxToolCalls: 12, unusableDecisions: { stalled: () => new Error("stalled") },
+      tools, unusableDecisions: { stalled: () => new Error("stalled") },
       decide: async () => (call += 1) <= 11 ? pageCall(call) : { kind: "complete", result: {} },
       executeTool: async ({ value }) => ({ page: value.page ?? null, text: "x".repeat(200_000) })
     });
@@ -628,7 +628,7 @@ describe("the opening arrival (F31)", () => {
       const executeTool = vi.fn(async (call: { callId: string }) => { order.push(`run:${call.callId}`); return arrived; });
       const decide = vi.fn(async () => { order.push("decide"); return complete; });
       const result = await runAutomationStudioLlmEvidenceLoop({
-        tools: [runNode({ input: look, arrival })], decide, executeTool, maxIterations: 3, maxToolCalls: 3, dryRun: false, unusableDecisions: { stalled }
+        tools: [runNode({ input: look, arrival })], decide, executeTool, dryRun: false, unusableDecisions: { stalled }
       });
       // The arrival, not the look, and no provider call before it.
       expect(executeTool).toHaveBeenCalledTimes(1);
@@ -647,7 +647,7 @@ describe("the opening arrival (F31)", () => {
       const decide = vi.fn().mockResolvedValueOnce({ kind: "tool_call", callId: "call.1", toolId: "core.run_node", input: look }).mockResolvedValueOnce(complete);
       await runAutomationStudioLlmEvidenceLoop({
         tools: [runNode({ input: look, arrival })], decide, executeTool: vi.fn().mockResolvedValueOnce(arrived).mockResolvedValueOnce(looked),
-        maxIterations: 3, maxToolCalls: 3, dryRun: false, unusableDecisions: { stalled }
+        dryRun: false, unusableDecisions: { stalled }
       });
       const history = JSON.stringify(shownAt(decide, 1).find((entry) => entry.toolId === "core.evidence_history")?.value ?? null);
       expect(history).toContain("initial.core.run_node");
@@ -658,7 +658,7 @@ describe("the opening arrival (F31)", () => {
       const decide = vi.fn().mockResolvedValueOnce(complete);
       const result = await runAutomationStudioLlmEvidenceLoop({
         tools: [runNode({ input: look, arrival })], decide, executeTool: vi.fn().mockRejectedValue(new Error("offline")),
-        maxIterations: 3, maxToolCalls: 3, dryRun: false, toolFailures: "observe", unusableDecisions: { stalled }
+        dryRun: false, toolFailures: "observe", unusableDecisions: { stalled }
       });
       expect(result.steps.filter((step) => step.disposition === "kept")).toEqual([]);
       expect(result.trace[0]).toMatchObject({ iteration: 0, callId: "initial.core.run_node", resultCode: "llm_evidence_loop.tool_failed" });
@@ -668,7 +668,7 @@ describe("the opening arrival (F31)", () => {
     it("takes the free look exactly as before when no arrival is declared", async () => {
       const executeTool = vi.fn().mockResolvedValue({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: false, draft: { actionId: "web.output.dom-capture", effect: "observe", proposes: false } });
       const result = await runAutomationStudioLlmEvidenceLoop({
-        tools: [runNode({ input: look })], decide: vi.fn().mockResolvedValueOnce(complete), executeTool, maxIterations: 3, maxToolCalls: 3, dryRun: false, unusableDecisions: { stalled }
+        tools: [runNode({ input: look })], decide: vi.fn().mockResolvedValueOnce(complete), executeTool, dryRun: false, unusableDecisions: { stalled }
       });
       expect(executeTool.mock.calls[0]![0]).toMatchObject({ callId: "initial.core.run_node", value: look });
       expect(result.steps.map((step) => step.disposition)).toEqual(["taken"]);
@@ -718,7 +718,7 @@ describe("the route the person named, in the loop", () => {
     const seen: string[] = [];
     const unsubscribe = automationStudioActivityHub.subscribe((event) => seen.push(event.label));
     const result = await runWithAutomationStudioActivity({ kind: "build", id: "b1", projectId: "p1" }, () => runAutomationStudioLlmEvidenceLoop(observeAutomationStudioEvidenceLoop(automationStudioLlmEvidenceLoopRouteChecked({
-      tools: routeTools, decide, executeTool: routePressing, maxIterations: 8, maxToolCalls: 8, dryRun: false, propagateDecisionErrors: true, checkCompletion,
+      tools: routeTools, decide, executeTool: routePressing, dryRun: false, propagateDecisionErrors: true, checkCompletion,
       unusableDecisions: { stalled: () => new Error("stalled") },
       draft: { route, routeCheck }
     })))).finally(unsubscribe);
@@ -754,7 +754,7 @@ describe("the route the person named, in the loop", () => {
   it("is never asked by the loop itself: only a caller's composition asks it", async () => {
     const routeCheck = vi.fn(async () => undefined);
     const decide = vi.fn().mockResolvedValueOnce(routePress(1, "r1")).mockResolvedValue(routeComplete);
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: routeTools, decide, executeTool: routePressing, maxIterations: 4, maxToolCalls: 4, dryRun: false, propagateDecisionErrors: true, draft: { routeCheck } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: routeTools, decide, executeTool: routePressing, dryRun: false, propagateDecisionErrors: true, draft: { routeCheck } });
     expect(result.ok).toBe(true);
     expect(routeCheck).not.toHaveBeenCalled();
   });

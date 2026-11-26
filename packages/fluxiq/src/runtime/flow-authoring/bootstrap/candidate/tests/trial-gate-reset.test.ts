@@ -84,7 +84,7 @@ async function run(steps: Step[], port: (request: AutomationStudioCandidateTrial
     trial: { candidateId: "candidate.reset", port },
     ...(options.reset === false ? {} : { siteReset: fake.ledger, siteResetSettleMs: 0 }),
     loop: {
-      tools: [runNode], maxIterations: steps.length, maxToolCalls: steps.length + 2,
+      tools: [runNode], 
       unusableDecisions: { stalled: () => new Error("stalled") },
       executeTool: fake.executeTool,
       decide: async ({ evidence, tools }) => {
@@ -334,7 +334,7 @@ describe("candidate trial reset settlement (L1)", () => {
       } },
       siteReset: ledger, siteResetSettleMs: 0,
       loop: {
-        tools: [runNode], maxIterations: 3, maxToolCalls: 4,
+        tools: [runNode], 
         executeTool,
         decide: async ({ iteration, evidence }) => {
           if (iteration === 1) return { kind: "tool_call", toolId: "core.submit_candidate", callId: "submit", input: plan } as unknown as Decision;

@@ -165,6 +165,8 @@ export type AutomationStudioFlowBootstrapRoundProgress = {
   accounting: Readonly<AutomationStudioLlmEvidenceLoopAccounting>;
   /** Which allowance ran out, where the round ran out of one. */
   exhaustion?: AutomationStudioLlmEvidenceLoopExhaustion;
+  /** The unreadable replies a budget ran out during: what the money last went on, said by the budget's ending (t1056). */
+  unreadable?: AutomationStudioLlmEvidenceLoopUnreadable;
 };
 
 /** How one live round ended, read for what the build does next. */
@@ -177,21 +179,6 @@ export type AutomationStudioFlowBootstrapRoundEnding =
   | {
     kind: "unfinished";
     stopped: AutomationStudioFlowBootstrapUnfinishedStop;
-    steps: AutomationStudioFlowDraftStep[];
-    lastIssueCodes: readonly string[];
-    completionAttempts: number;
-    progress: AutomationStudioFlowBootstrapRoundProgress;
-  }
-  /**
-   * The provider's replies kept arriving unreadable, each asked again with a
-   * note of what could not be read, until an unbroken run of them reached its
-   * limit (`../../llm/unreadable-reply.ts`): ended as exactly that, with how
-   * many tries it took. `stopped` is the stop a later build is told.
-   */
-  | {
-    kind: "unreadable";
-    stopped: "unusable_decisions";
-    unreadable: AutomationStudioLlmEvidenceLoopUnreadable;
     steps: AutomationStudioFlowDraftStep[];
     lastIssueCodes: readonly string[];
     completionAttempts: number;

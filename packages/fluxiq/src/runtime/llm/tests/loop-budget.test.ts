@@ -98,7 +98,7 @@ describe("an evidence loop given a budget", () => {
       .mockResolvedValueOnce(look(1, 10_000)).mockResolvedValueOnce(look(2, 10_000))
       .mockResolvedValueOnce({ kind: "complete", result: {}, usage: { totalTokens: 10_000 } });
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 20, maxToolCalls: 20,
+      tools, decide, 
       budget: { maxTotalTokens: 200_000, maxTokensPerDecision: 20_000, maxCostUsd: 1 },
       executeTool: async ({ value }) => ({ page: value.page ?? null, text: "x".repeat(900) })
     });
@@ -118,7 +118,7 @@ describe("an evidence loop given a budget", () => {
       .mockResolvedValueOnce(look(1, 30_000))
       .mockResolvedValueOnce({ kind: "complete", result: { plan: true }, usage: { totalTokens: 30_000 } });
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 20, maxToolCalls: 20, completionSchema: { type: "object" },
+      tools, decide, completionSchema: { type: "object" },
       budget: { maxTotalTokens: 100_000, maxTokensPerDecision: 20_000 },
       executeTool: async () => ({ facts: ["ready"] })
     });
@@ -133,14 +133,14 @@ describe("an evidence loop given a budget", () => {
 
   it("ends iteration_limit, never at a budget refusal, once nothing is left", async () => {
     const decide = vi.fn().mockResolvedValue(look(1, 30_000));
-    await expect(runAutomationStudioLlmEvidenceLoop({ tools, decide, maxIterations: 20, maxToolCalls: 20, budget: { maxTotalTokens: 10_000, maxTokensPerDecision: 20_000 }, executeTool: async () => ({}) }))
+    await expect(runAutomationStudioLlmEvidenceLoop({ tools, decide, budget: { maxTotalTokens: 10_000, maxTokensPerDecision: 20_000 }, executeTool: async () => ({}) }))
       .resolves.toMatchObject({ ok: false, code: "llm_evidence_loop.iteration_limit" });
     expect(decide).not.toHaveBeenCalled();
 
     // A last decision that asks for a tool anyway is not run.
     const executeTool = vi.fn().mockResolvedValue({});
     const final = vi.fn().mockResolvedValueOnce(look(1, 30_000)).mockResolvedValueOnce(look(2, 30_000));
-    await expect(runAutomationStudioLlmEvidenceLoop({ tools, decide: final, maxIterations: 20, maxToolCalls: 20, budget: { maxTotalTokens: 100_000, maxTokensPerDecision: 20_000 }, executeTool }))
+    await expect(runAutomationStudioLlmEvidenceLoop({ tools, decide: final, budget: { maxTotalTokens: 100_000, maxTokensPerDecision: 20_000 }, executeTool }))
       .resolves.toMatchObject({ ok: false, code: "llm_evidence_loop.iteration_limit", accounting: { toolCalls: 1 } });
     expect(executeTool).toHaveBeenCalledTimes(1);
   });
@@ -157,7 +157,7 @@ describe("an evidence loop given a budget", () => {
       .mockResolvedValueOnce(look(1, 30_000))
       .mockResolvedValueOnce({ kind: "complete", result: {}, usage: { totalTokens: 30_000 } });
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 20, maxToolCalls: 20, unusableDecisions: { stalled },
+      tools, decide, unusableDecisions: { stalled },
       checkCompletion: () => ({ ok: false, issueCodes: ["plan.handle_ambiguous"], feedback: { issue: "plan.handle_ambiguous" } }),
       budget: { maxTotalTokens: 100_000, maxTokensPerDecision: 20_000 },
       executeTool: async () => ({ facts: ["ready"] })
@@ -206,7 +206,7 @@ describe("an evidence loop given a budget", () => {
       // $0.04 left at a $0.06 average: the count says one, offers only completion, and is answered with a call.
       .mockResolvedValueOnce({ ...look(2, 1_000), usage: { totalTokens: 1_000, estimatedCostUsd: 0.01 } })
       .mockResolvedValueOnce({ kind: "complete", result: { plan: true }, usage: { totalTokens: 1_000, estimatedCostUsd: 0.01 } });
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, maxIterations: 20, maxToolCalls: 20, completionSchema: { type: "object" }, budget: { maxCostUsd: 0.1 }, executeTool });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, completionSchema: { type: "object" }, budget: { maxCostUsd: 0.1 }, executeTool });
 
     expect(result).toMatchObject({ ok: true, result: { plan: true }, accounting: { iterations: 3 } });
     expect(decide).toHaveBeenCalledTimes(3);
@@ -232,7 +232,7 @@ describe("an evidence loop given a budget", () => {
     const shown: Shown[][] = [];
     const completionSchema = { type: "object" };
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, maxIterations: 20, maxToolCalls: 20, completionSchema, budget: { maxCostUsd: 0.1 },
+      tools, completionSchema, budget: { maxCostUsd: 0.1 },
       unusableDecisions: { stalled: () => new Error("stalled") },
       // Each completion is refused, so the build spends on into its last cents.
       checkCompletion: () => ({ ok: false, issueCodes: ["plan.cannot_answer"], feedback: { issue: "plan.cannot_answer" } }),
@@ -267,7 +267,7 @@ describe("an evidence loop given a budget", () => {
       now += 4_000;
       return budgetOf(evidence as Shown[])?.decisionsLeft === 1 ? { kind: "complete", result: {} } : look(1 + decide.mock.calls.length, 1_000);
     });
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, maxIterations: 20, maxToolCalls: 20, budget: { maxDurationMs: 10_000, now: () => now }, executeTool: async ({ value }) => ({ page: value.page ?? null }) });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, budget: { maxDurationMs: 10_000, now: () => now }, executeTool: async ({ value }) => ({ page: value.page ?? null }) });
 
     expect(result).toMatchObject({ ok: true, accounting: { iterations: 2 } });
     expect(budgetOf(decide.mock.calls[1]![0].evidence as Shown[])).toMatchObject({ decisionsLeft: 1, secondsLeft: 6 });
@@ -527,7 +527,7 @@ describe("an evidence loop's clock and its environment", () => {
       await onDecision();
       return budgetOf(evidence as Shown[])?.decisionsLeft === 1 ? { kind: "complete", result: {} } : look(1 + decide.mock.calls.length, 1_000);
     });
-    return { decide, result: runAutomationStudioLlmEvidenceLoop({ tools, decide, environment, maxIterations: 20, maxToolCalls: 20, budget, executeTool: async ({ value }) => ({ page: value.page ?? null }) }) };
+    return { decide, result: runAutomationStudioLlmEvidenceLoop({ tools, decide, environment, budget, executeTool: async ({ value }) => ({ page: value.page ?? null }) }) };
   };
 
   it("counts down to its deadline on the environment's virtual clock when the budget names no clock", async () => {

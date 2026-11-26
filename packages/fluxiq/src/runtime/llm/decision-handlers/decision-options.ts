@@ -9,5 +9,5 @@ export function automationStudioLlmEvidenceLoopDecisionOptions(context: Automati
   const { record } = context.loops;
   const decided = (record.data().decisions ?? []).filter((each) => each.decision === "change_approach").length;
   // A person can be asked only through a caller that takes the signal (t1056: every loop is offered the decision).
-  return automationStudioLlmLoopDecisionOptions({ approachesChanged: Math.max(decided, record.approaches), persisting: record.persisting, personReachable: context.input.loopSignal !== undefined });
+  return automationStudioLlmLoopDecisionOptions({ approachesChanged: Math.max(decided, record.approaches), persisting: record.persisting, personReachable: context.input.personReachable ?? context.input.loopSignal !== undefined });
 }

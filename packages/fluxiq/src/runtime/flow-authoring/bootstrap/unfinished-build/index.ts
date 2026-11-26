@@ -18,7 +18,6 @@ export * from "./not/finished.ts";
 export * from "./phases.ts";
 export * from "./progress.ts";
 export * from "./provider-unavailable.ts";
-export * from "./replies-unreadable.ts";
 export * from "./reserve-judging.ts";
 export * from "./round-ending.ts";
 export * from "./seed-signature.ts";

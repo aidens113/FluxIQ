@@ -10,7 +10,7 @@
 import { describe, expect, it } from "vitest";
 import { bootstrapAdaptationAsFlowAdaptation, parseAutomationStudioFlowBootstrapEvidenceSteps, type AutomationStudioBootstrapAdaptation } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioLlmEvidenceLoopTrace } from "../../../../../runtime/llm/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../../../runtime/loop-limits/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS } from "../../../../../runtime/loop-limits/index.ts";
 import { bootstrapAdaptationAuditEvent } from "../audit-event.ts";
 import { evidenceTraceAuditDetail, sanitizeEvidenceLoopTrace } from "../evidence-trace.ts";
 
@@ -372,7 +372,7 @@ describe("what a build's created-audit counts", () => {
   // ends a round (t1056), so a trace past them is kept too.
   it("keeps every round of a build that finished after repairs, numbered across the build, however many decisions it made", () => {
     const rounds = AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS;
-    const perRound = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations;
+    const perRound = 64; // The per-round turn ceiling there once was (gone since t1056).
     const whole: AutomationStudioLlmEvidenceLoopTrace[] = Array.from({ length: perRound * rounds }, (_, index) => [
       { iteration: index + 1, decision: "amend_draft" as const, resultCode: "llm_evidence_loop.draft_rerun" },
       { iteration: index + 1, decision: "tool_call" as const, callId: `rerun.${index + 1}`, toolId: "core.run_node", evidenceBytes: 1 }

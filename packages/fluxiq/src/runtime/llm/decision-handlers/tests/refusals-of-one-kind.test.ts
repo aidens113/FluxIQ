@@ -30,7 +30,7 @@ function site() {
 
 const built = ["A", "B", "C"].map((target) => ({ kind: "tool_call", callId: `press.${target}`, toolId: "press", input: { target }, add: true }));
 const loop = (decide: ReturnType<typeof vi.fn>, stalled = true) => runAutomationStudioLlmEvidenceLoop({
-  tools: [press], decide, executeTool: site(), maxIterations: 30, maxToolCalls: 30, dryRun: false, propagateDecisionErrors: stalled,
+  tools: [press], decide, executeTool: site(), dryRun: false, propagateDecisionErrors: stalled,
   ...(stalled ? { unusableDecisions: { stalled: () => stalledError } } : {})
 });
 

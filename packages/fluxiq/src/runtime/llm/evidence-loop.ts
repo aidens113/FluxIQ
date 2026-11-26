@@ -1,6 +1,6 @@
 import { runAgentIterations, type AgentIterationResult } from "../agents/iteration/index.ts";
 import type { JsonObject, JsonValue } from "../../core/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_REDIRECT_AT_STEPS_WITHOUT_PROGRESS } from "../loop-limits/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_REDIRECT_AT_STEPS_WITHOUT_PROGRESS } from "../loop-limits/index.ts";
 import {
   AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID,
   automationStudioFlowDraftComposeInPlace, automationStudioFlowDraftSettleLoopCovered,
@@ -83,7 +83,6 @@ import { AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID, automationStudioLl
 import { createAutomationStudioLlmRerunProvenance, type AutomationStudioLlmRerunScope } from "./rerun-provenance/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_NODES_TOOL_ID } from "./node-reruns/index.ts";
 import { automationStudioLlmEvidenceBatchMember, automationStudioLlmEvidenceToolAdmission, automationStudioLlmPriorNodesLoop, automationStudioLlmPriorNodesSettlementContext, automationStudioLlmPriorNodesUnsettled } from "./prior-nodes/index.ts";
-export { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS };
 export * from "./repeat-guard/loop-detection/index.ts"; // Loop detection's facts, its replay over a saved log (the Lab's `loop-replay/`) and the attempt's record.
 /** What a loop may be configured with, in `loop-configuration.ts` with the arithmetic that reads it. */
 export type { AutomationStudioLlmEvidenceLoopInput } from "./loop-configuration.ts";
@@ -335,7 +334,7 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
     failure(draftSteps, "llm_evidence_loop.iteration_limit", trace, accounting, automationStudioLlmEvidenceLoopExhaustion({
       bound, iterations: accounting.iterations, draftSteps, completionAttempts: counters.completionAttempts,
       unusableInARow: counters.unusableInARow, lastIssueCodes, lastRemaining, purseRefusal: costRefusal, outstandingIssueCodes: noProgress.outstanding
-    }));
+    }), unreadable.streak()); // What the money last went on, where its replies arrived unreadable (t1056).
   // The dry run (`../flow-draft/dry-run.ts`): before a completed result is
   // accepted, the draft is run again from where its first step started, with no
   // model attached, and a result whose draft did not replay clean is refused
@@ -666,11 +665,12 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
       const unusableUsage = automationStudioLlmFailedDecisionUsage(input.unusableDecisions !== undefined && thrown instanceof AutomationStudioLlmUnusableDecisionError ? thrown : undefined);
       automationStudioLlmEvidenceLoopAddUsage(accounting, unusableUsage);
       if (unusableUsage) reportedDecisions += 1;
-      // A reply the provider sent and billed nothing for, which could not be read, is the provider failing, not the model
-      // deciding: it joins the run of unanswered calls, which ends the loop as the provider failing (t1056). With no count
-      // ending a loop, such replies would otherwise be asked again, unpaid, until the clock.
-      const unbilledUnreadable = thrown instanceof AutomationStudioLlmUnusableDecisionError && automationStudioLlmReplyUnreadable(thrown.issueCodes) && !(unusableUsage && ((unusableUsage.totalTokens ?? 0) > 0 || (unusableUsage.estimatedCostUsd ?? 0) > 0));
-      if (input.unusableDecisions && thrown instanceof AutomationStudioLlmUnusableDecisionError && (automationStudioLlmProviderUnanswered(thrown.issueCodes) || unbilledUnreadable)) {
+      // A reply the provider refused as unusable -- unreadable, or not what was asked -- and billed nothing for is the
+      // provider failing, not the model deciding: it joins the run of unanswered calls, which ends the loop as the provider
+      // failing when the same failure comes again (t1056). With no count ending a loop, such replies would otherwise be
+      // asked again, unpaid, until the clock. A reply the provider billed is the model's, asked again and paid for.
+      const unbilledProviderReply = thrown instanceof AutomationStudioLlmUnusableDecisionError && thrown.issueCodes.length > 0 && thrown.issueCodes.every((code) => code.startsWith("llm.provider_")) && !(unusableUsage && ((unusableUsage.totalTokens ?? 0) > 0 || (unusableUsage.estimatedCostUsd ?? 0) > 0));
+      if (input.unusableDecisions && thrown instanceof AutomationStudioLlmUnusableDecisionError && (automationStudioLlmProviderUnanswered(thrown.issueCodes) || unbilledProviderReply)) {
         recordRow({ iteration, decision: "unusable", resultCode: thrown.issueCodes[0]!, ...(unusableUsage ? { usage: unusableUsage } : {}) });
         if (!unanswered.unanswered(thrown.issueCodes[0]!)) return { kind: "continue" };
         return { kind: "complete", result: failure(draftSteps, "llm_evidence_loop.provider_unavailable", trace, accounting, undefined, undefined, unanswered.summary()) };

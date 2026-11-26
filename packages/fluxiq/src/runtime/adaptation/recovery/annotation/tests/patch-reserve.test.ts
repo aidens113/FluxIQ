@@ -84,7 +84,7 @@ describe("holdAutomationStudioRecoveryPatchReserve", () => {
   });
 
   it("takes no hold the run cannot afford, and releasing it is harmless", () => {
-    const runBudget = new AutomationStudioLlmRunBudgetLedger({ maxCallsPerRun: 5, maxTotalTokensPerRun: 5_000, maxOutputTokensPerRun: 5_000, maxEstimatedCostUsdPerRun: 1 });
+    const runBudget = new AutomationStudioLlmRunBudgetLedger({ maxTotalTokensPerRun: 5_000, maxOutputTokensPerRun: 5_000, maxEstimatedCostUsdPerRun: 1 });
     const reserve = holdAutomationStudioRecoveryPatchReserve({ runBudget, runId: "run.one", maxEstimatedCostUsd: 0.1 });
 
     expect(runBudget.snapshot("run.one").pendingCalls).toBe(0);

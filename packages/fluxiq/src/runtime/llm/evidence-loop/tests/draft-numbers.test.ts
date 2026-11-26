@@ -27,7 +27,7 @@ describe("the draft each decision reads", () => {
       .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 2, change: "keep", act: "a1" }] })
       .mockResolvedValueOnce({ kind: "complete", result: { flow: "ready" } });
     const executeTool = vi.fn().mockResolvedValueOnce(worked).mockResolvedValueOnce(looked);
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [press, lookTool], decide, executeTool, maxIterations: 6, maxToolCalls: 6, dryRun: false, unusableDecisions: { stalled } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [press, lookTool], decide, executeTool, dryRun: false, unusableDecisions: { stalled } });
     expect(draftAt(decide, 1).map((line) => line.step)).toEqual([1]);
     // Decision 3 reads the look as step 2, the number its amendment resolves to.
     expect(draftAt(decide, 2)).toMatchObject([{ step: 1 }, { step: 2, disposition: "look" }]);

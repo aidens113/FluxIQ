@@ -70,8 +70,6 @@ async function replay(decisions: readonly JsonObject[]) {
     tools: library,
     decide,
     executeTool: page,
-    maxIterations: 20,
-    maxToolCalls: 20,
     dryRun: false,
     unusableDecisions: { stalled: () => new Error("stalled") }
   });
@@ -176,7 +174,7 @@ describe("replaying the recorded amendment stall", () => {
       if (at === 4) throw new AutomationStudioLlmUnusableDecisionError(["llm_output.invalid_evidence_decision"]);
       return script[at - 1] ?? { kind: "complete", result: { summary: "done" } };
     });
-    await runAutomationStudioLlmEvidenceLoop({ tools: library, decide, executeTool: page, maxIterations: 20, maxToolCalls: 20, dryRun: false, unusableDecisions: { stalled: () => new Error("stalled") } });
+    await runAutomationStudioLlmEvidenceLoop({ tools: library, decide, executeTool: page, dryRun: false, unusableDecisions: { stalled: () => new Error("stalled") } });
     const check = shown[4]!.find((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID)!.value as { accepted: { reply: { decision: { oneOf: JsonObject[] } } } };
     expect(check.accepted.reply.decision.oneOf.map((shape) => shape.kind)).toEqual(["tool_call", "complete", "amend_draft"]);
   });

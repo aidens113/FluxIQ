@@ -483,12 +483,21 @@ async function explorationDecision(
  */
 function spentWithoutDecision(result: AutomationStudioLlmTaskResult): boolean {
   if (!result.provider) return false;
+  // A failure the provider billed nothing for, after the harness's own retries of a transient fault, is the provider
+  // failing, not a spent call to ask again: no count ends the exploration (t1056), so asked again it would go on,
+  // unpaid, until the clock. It ends the exploration as that failure; a billed one is asked again and the purse ends it.
+  if (!billed(result)) return false;
   return result.diagnostics
     .filter((diagnostic) => diagnostic.severity === "error")
     .every((diagnostic) => diagnostic.code.startsWith("llm_output.") || automationStudioLlmProviderFailureSpendsCall({
       code: diagnostic.code,
       status: providerStatus(diagnostic.metadata)
     }));
+}
+
+/** Whether the failed call cost anything the provider reported. */
+function billed(result: AutomationStudioLlmTaskResult): boolean {
+  return (result.usage?.totalTokens ?? 0) > 0 || (result.usage?.estimatedCostUsd ?? 0) > 0;
 }
 
 function providerStatus(metadata: unknown): number | undefined {

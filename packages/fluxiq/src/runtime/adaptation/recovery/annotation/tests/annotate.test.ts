@@ -224,39 +224,21 @@ describe("annotateAutomationStudioRunDetailWithRuntimeLlm", () => {
     }
   });
 
-  // A resolver that says how many calls a run makes is taken at its word, and
-  // reaching it is a limit being reached, not the loop breaking. Two calls
-  // buy the diagnosis and one look, and the exploration then stops on the
-  // run's call count, named as such.
-  it("ends the exploration in budget exhaustion when the resolver's own call count runs out", async () => {
+  // A call count a resolver or a Flow's settings still states ends nothing (t1056): no count of calls ends a run. The
+  // exploration that once stopped on two calls runs as it would with none declared.
+  it.each([
+    ["the resolver's", { maxCallsPerRun: 2 }],
+    ["the Flow's configured", { maxCallsPerRun: "undeclared", flowMetadata: { llmExecutionSettings: { tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 }, maxCalls: 2, timeoutMs: 20_000, maxEstimatedCostUsd: 0.25, retryCount: 0 } } }]
+  ] as const)("does not end the exploration on %s call count", async (_whose, options) => {
     const executed: string[] = [];
-    const detail = await annotate({ executed, maxCallsPerRun: 2 });
+    const detail = await annotate({ executed, ...options });
 
     expect(executed).toEqual(["test.inspect"]);
     expect(explorationStage(detail)).toMatchObject({
-      status: "failed",
-      detail: { requested: true, outcome: "budget_exhausted", endedBy: "llm_budget.run_call_limit" }
+      status: "completed",
+      detail: { requested: true, outcome: "evidence_gathered", observedActions: 1, providerCalls: 2 }
     });
-    expect((detail.metadata?.llmGate as JsonObject | undefined)?.costAccounting).toMatchObject({ calls: 2, explorationCalls: 1 });
-  });
-
-  // The host's resolver declares no count since grants went; the Flow's own
-  // `llmExecutionSettings.maxCalls` is the count, read from the Flow the
-  // recovery already loads (`run-munnq7vz-98c3481c` ran past it in a build).
-  it("ends the exploration on the Flow's configured call count when the resolver declares none", async () => {
-    const executed: string[] = [];
-    const detail = await annotate({
-      executed,
-      maxCallsPerRun: "undeclared",
-      flowMetadata: { llmExecutionSettings: { tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 }, maxCalls: 2, timeoutMs: 20_000, maxEstimatedCostUsd: 0.25, retryCount: 0 } }
-    });
-
-    expect(executed).toEqual(["test.inspect"]);
-    expect(explorationStage(detail)).toMatchObject({
-      status: "failed",
-      detail: { requested: true, outcome: "budget_exhausted", endedBy: "llm_budget.run_call_limit" }
-    });
-    expect((detail.metadata?.llmGate as JsonObject | undefined)?.costAccounting).toMatchObject({ calls: 2, explorationCalls: 1 });
+    expect((detail.metadata?.llmGate as JsonObject | undefined)?.costAccounting).toMatchObject({ calls: 3, explorationCalls: 2 });
   });
 
   // The conflation this removed: an intervention limit counts interventions,

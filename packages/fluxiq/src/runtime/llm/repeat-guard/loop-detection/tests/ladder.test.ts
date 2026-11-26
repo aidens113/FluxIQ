@@ -42,7 +42,7 @@ const answer = (before: string, after: string, fields: JsonObject) => ({ kind: "
 const coveredButton = () => vi.fn(async () => answer("s1", "s1", { evidence: { ok: false, code: "target_unobserved" }, effectApplied: false, resultCode: "web.action.rejected.target_covered", resultReason: "target_covered", ...click }));
 
 const loop = (decide: ReturnType<typeof vi.fn>, executeTool: unknown, extra: Record<string, unknown> = {}) => runAutomationStudioLlmEvidenceLoop({
-  tools, decide, executeTool: executeTool as AutomationStudioLlmEvidenceLoopInput["executeTool"], maxIterations: 60, maxToolCalls: 60, dryRun: false, propagateDecisionErrors: true,
+  tools, decide, executeTool: executeTool as AutomationStudioLlmEvidenceLoopInput["executeTool"], dryRun: false, propagateDecisionErrors: true,
   unusableDecisions: { stalled: () => stalledError }, ...extra
 });
 
@@ -450,7 +450,7 @@ describe("the same fix again", () => {
       ? answer("s1", "s1", { evidence: { ok: true, digest: "d1" }, effectApplied: false, resultCode: "candidate.accepted" })
       : answer("s1", "s1", { evidence: { ok: false, code: "candidate.trial_no" }, effectApplied: true, resultCode: "candidate.trial_no" }));
     const record = automationStudioLlmLoopAttemptRecord();
-    const run = (decide: ReturnType<typeof vi.fn>) => runAutomationStudioLlmEvidenceLoop({ tools: submitTools, decide, executeTool: executeTool as unknown as AutomationStudioLlmEvidenceLoopInput["executeTool"], maxIterations: 20, maxToolCalls: 20, dryRun: false, draft: false, discoveryOnly: true, finishingTools: finishing, attemptRecord: record });
+    const run = (decide: ReturnType<typeof vi.fn>) => runAutomationStudioLlmEvidenceLoop({ tools: submitTools, decide, executeTool: executeTool as unknown as AutomationStudioLlmEvidenceLoopInput["executeTool"], dryRun: false, draft: false, discoveryOnly: true, finishingTools: finishing, attemptRecord: record });
     const script = (flow: string) => vi.fn().mockResolvedValueOnce(call(1, "submit", { flow, summary: "first words" })).mockResolvedValueOnce(call(2, "test", { revision: 1 })).mockResolvedValue({ kind: "complete", result: { done: true } });
 
     await run(script("step one"));

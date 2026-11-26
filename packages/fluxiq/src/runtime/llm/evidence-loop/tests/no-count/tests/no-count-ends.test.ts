@@ -184,7 +184,7 @@ describe("a loop with no loop signal", () => {
     decisionsAsked.reset();
     const decide = decisions(FAR, (index) => ({ kind: "tool_call", callId: `press.${index}`, toolId: "press", input: { target: `Control ${index}` } }));
 
-    const result = await unsignalled(decide, { maxIterations: 4, maxToolCalls: 4 });
+    const result = await unsignalled(decide, { });
 
     expect(result).toMatchObject({ ok: true });
     expect(result.accounting.iterations).toBe(FAR + 1);

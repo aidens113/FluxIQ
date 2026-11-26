@@ -35,7 +35,7 @@ const run = async (rerunOutcome: "worked" | "refused" | "threw", amendments: Jso
   const executeTool = vi.fn().mockResolvedValueOnce(worked).mockResolvedValueOnce(refused).mockResolvedValueOnce(worked);
   if (rerunOutcome === "threw") executeTool.mockRejectedValueOnce(new Error("page gone"));
   else executeTool.mockResolvedValueOnce(rerunOutcome === "worked" ? worked : refused);
-  const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, maxIterations: 8, maxToolCalls: 8, dryRun: false, unusableDecisions: { stalled }, ...(draft ? { draft } : {}) });
+  const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, dryRun: false, unusableDecisions: { stalled }, ...(draft ? { draft } : {}) });
   return { result, decide };
 };
 

@@ -51,7 +51,7 @@ async function replayedOutput(partOf: typeof owing, runPart = false): Promise<un
   if (runPart) decide.mockResolvedValueOnce({ kind: "tool_call", callId: "part", toolId: "core.run_flow", input: { from: 1 } });
   decide.mockResolvedValueOnce({ kind: "complete", result: { summary: "Read the entries." } });
   const result = await runAutomationStudioLlmEvidenceLoop({
-    tools: [tool], decide, executeTool, propagateDecisionErrors: true, maxIterations: 6, maxToolCalls: 6, minToolCalls: 1,
+    tools: [tool], decide, executeTool, propagateDecisionErrors: true, minToolCalls: 1,
     nodeOf: automationStudioLlmNodeDescriptions({ registry, resolution }).definition,
     definitionOf: (id: string) => registry.get(id, resolution),
     ...(partOf ? { partOf } : {})

@@ -125,7 +125,7 @@ describe("one attempt to finish", () => {
     const tools = [{ toolId: "press", description: "Press.", inputSchema: { type: "object" }, effect: "mutate" as const }];
     let attempts = 0;
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, maxIterations: 6, maxToolCalls: 6, dryRun: false, unusableDecisions: { stalled: () => new Error("stalled") },
+      tools, dryRun: false, unusableDecisions: { stalled: () => new Error("stalled") },
       executeTool: async () => ({ kind: "llm_evidence_tool_execution" as const, evidence: { ok: true }, effectApplied: true }),
       decide: vi.fn()
         .mockResolvedValueOnce({ kind: "tool_call", callId: "c1", toolId: "press", input: { target: "a" } })

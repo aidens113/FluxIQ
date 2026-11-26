@@ -53,7 +53,8 @@ describe("the Flow Bootstrap budget", () => {
 describe("a declared call count", () => {
   it("bounds nothing: the loop is handed no turns, no calls and no declared count, whatever the resolution says", () => {
     for (const maxCallsPerRun of [1, 12, 26, 48, 500]) {
-      const resolution: Pick<AutomationStudioLlmProviderResolution, "maxCallsPerRun" | "maxTotalEstimatedCostUsd"> = { maxCallsPerRun, maxTotalEstimatedCostUsd: 2 };
+      // A resolution no longer has a call count to declare (t1056); one an old host still sends is read by nothing.
+      const resolution = { maxCallsPerRun, maxTotalEstimatedCostUsd: 2 } as Pick<AutomationStudioLlmProviderResolution, "maxTotalEstimatedCostUsd">;
       const limits = automationStudioFlowBootstrapEvidenceLoopLimits(resolution);
       expect(limits).toEqual({ loop: { minToolCalls: 1, budget: { maxCostUsd: 2, maxDurationMs: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_DURATION_MS } } });
     }

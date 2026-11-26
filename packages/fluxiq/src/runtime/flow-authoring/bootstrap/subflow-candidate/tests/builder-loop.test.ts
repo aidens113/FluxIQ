@@ -59,7 +59,7 @@ async function build(steps: Array<(evidence: readonly Entry[]) => JsonObject>, o
       return { partial: true as const, scope: "subflow" as const, identity: { ...request.proposal.scope }, revision: request.proposal.revision, digest: request.proposal.digest, verdict: "yes" as const, feedback: {}, entryPrepared: true };
     } } }),
     loop: {
-      tools: [look, ...offeredAlso], maxIterations: options.iterations ?? steps.length, maxToolCalls: options.toolCalls ?? steps.length + 2,
+      tools: [look, ...offeredAlso], 
       ...(options.purse ? { purse: options.purse } : {}),
       unusableDecisions: { stalled: () => new Error("stalled") },
       executeTool: async (call) => {
@@ -322,7 +322,7 @@ describe("a judge's advice repeated to the same builder", () => {
       scope: testScope(), siblings: [...SIBLINGS], submission: testSubmission(), repeatedAdvice: shared,
       trial: { port: async (request: AutomationStudioSubflowTrialRequest) => ({ partial: true as const, scope: "subflow" as const, identity: { ...request.proposal.scope }, revision: request.proposal.revision, digest: request.proposal.digest, entryPrepared: true, ...structuredClone(answers.shift()!) }) },
       loop: {
-        tools: [look], maxIterations: steps.length, maxToolCalls: steps.length + 2,
+        tools: [look], 
         unusableDecisions: { stalled: () => new Error("stalled") },
         executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: false, targetsUnchanged: true }),
         decide: async ({ evidence }) => steps[index++]!(evidence as readonly Entry[])
@@ -424,7 +424,7 @@ describe("advice to add a field a read was refused incomplete_text for (S5, t743
         scope: testScope(), siblings: [...SIBLINGS], submission: testSubmission(),
         trial: { port: async (request: AutomationStudioSubflowTrialRequest) => ({ partial: true as const, scope: "subflow" as const, identity: { ...request.proposal.scope }, revision: request.proposal.revision, digest: request.proposal.digest, entryPrepared: true, ...structuredClone(answer) }) },
         loop: {
-          tools: [look], maxIterations: steps.length, maxToolCalls: steps.length + 2,
+          tools: [look], 
           unusableDecisions: { stalled: () => new Error("stalled") },
           executeTool: async (call) => (call.toolId === "core.run_node" && call.callId.startsWith("initial.") ? refusedRead() : { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: false, targetsUnchanged: true }),
           decide: async ({ evidence }) => steps[index++]!(evidence as readonly Entry[])
@@ -474,7 +474,7 @@ describe("explicit client examples in the actual submit tool", () => {
         captured.push(((tool.inputSchema.properties as JsonObject).flow as JsonObject).description as string);
         throw stop;
       },
-      loop: { tools: [], maxIterations: 1, maxToolCalls: 1,
+      loop: { tools: [], 
         executeTool: async () => { throw new Error("no tool should execute"); },
         decide: async () => { throw new Error("no model should execute"); }
       }

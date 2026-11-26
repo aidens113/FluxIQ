@@ -27,7 +27,7 @@ describe("evidence-loop draft progress", () => {
     });
 
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools: [press], decide, executeTool, maxIterations: 8, maxToolCalls: 8,
+      tools: [press], decide, executeTool, 
       unusableDecisions: { stalled }
     });
 

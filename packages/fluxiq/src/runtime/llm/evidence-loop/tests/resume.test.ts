@@ -158,7 +158,7 @@ describe("a continued build", () => {
     const decide = vi.fn().mockRejectedValue(new Error("recorded run ended"));
     await runAutomationStudioLlmEvidenceLoop({
       tools: [{ toolId: "press", description: "Press.", inputSchema: { type: "object" }, effect: "mutate" }],
-      decide, executeTool, maxIterations: 1, maxToolCalls: 1,
+      decide, executeTool, 
       unusableDecisions: { stalled: () => new Error("stalled") },
       draft: { seed: [replayable(1), replayable(2)], resume: { revision: 1, stopped: "iterations", outstandingIssueCodes: [] } }
     });
@@ -195,7 +195,7 @@ describe("the opening of a round whose draft already holds the Flow", () => {
   const round = async (draft: Parameters<typeof runAutomationStudioLlmEvidenceLoop>[0]["draft"]) => {
     const executeTool = vi.fn(async (_call: { callId: string; toolId: string; value: JsonObject }) => arrived);
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools: [runNode], decide: vi.fn().mockRejectedValue(new Error("recorded run ended")), executeTool, maxIterations: 1, maxToolCalls: 2, dryRun: false,
+      tools: [runNode], decide: vi.fn().mockRejectedValue(new Error("recorded run ended")), executeTool, dryRun: false,
       unusableDecisions: { stalled: () => new Error("stalled") },
       ...(draft === undefined ? {} : { draft })
     });
@@ -207,7 +207,7 @@ describe("the opening of a round whose draft already holds the Flow", () => {
     const executeTool = vi.fn(async (_call: { callId: string; toolId: string; value: JsonObject }) => looked);
     const decide = vi.fn().mockRejectedValue(new Error("recorded run ended"));
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools: [runNode], decide, executeTool, maxIterations: 1, maxToolCalls: 2, dryRun: false,
+      tools: [runNode], decide, executeTool, dryRun: false,
       unusableDecisions: { stalled: () => new Error("stalled") }, draft
     });
     return { result, executeTool, decide };
@@ -275,7 +275,7 @@ describe("the opening of a round whose draft already holds the Flow", () => {
     const lookOnly: AutomationStudioLlmEvidenceTool = { ...runNode, initialObservation: { input: look } };
     const executeTool = vi.fn(async (_call: { callId: string; toolId: string; value: JsonObject }) => looked);
     await runAutomationStudioLlmEvidenceLoop({
-      tools: [lookOnly], decide: vi.fn().mockRejectedValue(new Error("recorded run ended")), executeTool, maxIterations: 1, maxToolCalls: 2, dryRun: false,
+      tools: [lookOnly], decide: vi.fn().mockRejectedValue(new Error("recorded run ended")), executeTool, dryRun: false,
       unusableDecisions: { stalled: () => new Error("stalled") }, draft: { seed: [] }
     });
 

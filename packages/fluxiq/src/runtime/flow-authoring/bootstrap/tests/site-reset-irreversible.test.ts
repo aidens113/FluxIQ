@@ -97,7 +97,7 @@ async function run(steps: Step[]) {
     siteReset: made.ledger,
     siteResetSettleMs: 0,
     loop: {
-      tools: [runNode], maxIterations: steps.length, maxToolCalls: steps.length + 2,
+      tools: [runNode], 
       unusableDecisions: { stalled: () => new Error("stalled") },
       executeTool: made.wrapper.executeTool,
       decide: async ({ evidence }) => {

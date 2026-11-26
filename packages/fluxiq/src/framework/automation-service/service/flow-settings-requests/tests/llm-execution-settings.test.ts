@@ -3,7 +3,8 @@
 import { describe, expect, it } from "vitest";
 
 import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_MAX_USD } from "../../../../../flows/authoring/model/index.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP } from "../../../../../runtime/llm/flow-execution-limits/index.ts";
+/** The most calls the settings check lets a Flow store (`../llm-execution-settings.ts`); it bounds no run. */
+const AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP = 250;
 import { assertFlowLlmExecutionSettings } from "../index.ts";
 
 describe("Flow LLM execution settings API validation", () => {

@@ -425,9 +425,10 @@ describe("a brief whose builder never reads the input the plan gives it", () => 
     const returned = (dispatched?.returns as JsonObject[] | undefined)?.[0];
     expect(returned, JSON.stringify(dispatched)).toMatchObject({ subflowKey: "second", outcome: "blocked" });
     const reason = String(returned!.reason);
-    expect(reason).toContain("allowance could not pay");
-    // The plan's advice (t672) rode on the stall a count of refusals forced; the allowance's ending does not carry it
-    // (open question in t1056's report). Each refusal above told the builder its issue as it came.
+    // Loop detection, not a count, ends the builder's round on the repeated refusal (t1056), and the return names the
+    // refused submission and, since no other subflow hands `titles` on, the advice to give it where it is used (t672).
+    expect(reason).toContain("core.submit_subflow answered subflow.scope_refused (subflow.input_unread: input \"titles\")");
+    expect(reason).toContain("The plan gives this subflow a value the person gives the Flow, and no step of it reads that value: if another subflow is the one that uses it, change the plan with project.amend_plan");
     expect(reason).not.toMatch(/subflow\.scope_refused:[0-9a-f]{8}/u);
     expect(reason).not.toContain("candidate.last_submission");
   });

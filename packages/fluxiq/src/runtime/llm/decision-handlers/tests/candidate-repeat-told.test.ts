@@ -37,7 +37,7 @@ function loopWith(executeTool: AutomationStudioLlmEvidenceLoopInput["executeTool
   for (const decision of decisions) decide.mockResolvedValueOnce(decision);
   decide.mockRejectedValue(new Error("script exhausted"));
   const run = runAutomationStudioLlmEvidenceLoop({
-    tools: [look, submit], decide, executeTool, maxIterations: 20, maxToolCalls: 20, draft: false, dryRun: false, discoveryOnly: true, propagateDecisionErrors: true,
+    tools: [look, submit], decide, executeTool, draft: false, dryRun: false, discoveryOnly: true, propagateDecisionErrors: true,
     unusableDecisions: { stalled: () => stalledError }
   });
   return { decide, run };

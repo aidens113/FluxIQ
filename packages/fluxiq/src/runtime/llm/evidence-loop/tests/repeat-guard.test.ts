@@ -56,7 +56,7 @@ function site(busy = 0) {
 }
 
 const loop = (decide: ReturnType<typeof vi.fn>, executeTool: ReturnType<typeof site>) => runAutomationStudioLlmEvidenceLoop({
-  tools, decide, executeTool, maxIterations: 30, maxToolCalls: 30, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { stalled: () => stalledError }
+  tools, decide, executeTool, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { stalled: () => stalledError }
 });
 
 describe("a call already tried on this same page", () => {
@@ -115,7 +115,7 @@ describe("a call already tried on this same page", () => {
         evidence: { ok: false, code: "retry_allowed" }, effectApplied: false, resultCode: "client.timeout", resultReason: "retry_allowed",
         ...(failure ? { failure } : {}), draft: { effect: "mutate", proposes: true }
       }));
-      await expect(runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, maxIterations: 10, maxToolCalls: 10, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { stalled: () => stalledError } })).resolves.toMatchObject({ ok: true });
+      await expect(runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { stalled: () => stalledError } })).resolves.toMatchObject({ ok: true });
       expect(executeTool).toHaveBeenCalledTimes(1);
     }
   });
@@ -194,7 +194,7 @@ const builtDraft = [
   { kind: "tool_call", callId: "press.1", toolId: "press", input: { target: "Confirm" }, add: true, act: "a1" }
 ];
 const partLoop = (decide: ReturnType<typeof vi.fn>, executeTool: ReturnType<typeof requests>) => runAutomationStudioLlmEvidenceLoop({
-  tools, decide, executeTool, maxIterations: 40, maxToolCalls: 40, propagateDecisionErrors: true, checkCompletion: refusingPlan,
+  tools, decide, executeTool, propagateDecisionErrors: true, checkCompletion: refusingPlan,
   unusableDecisions: { stalled: () => stalledError }
 });
 const replays = (executeTool: ReturnType<typeof requests>) => executeTool.mock.calls.filter(([call]) => (call as { value: JsonObject }).value.replay !== undefined);
@@ -306,7 +306,7 @@ function itemPage() {
 }
 
 const rerunLoop = (decide: ReturnType<typeof vi.fn>, executeTool: ReturnType<typeof itemPage>, stalled = true) => runAutomationStudioLlmEvidenceLoop({
-  tools: nodeTools, decide, executeTool, maxIterations: 30, maxToolCalls: 60, dryRun: false, propagateDecisionErrors: stalled,
+  tools: nodeTools, decide, executeTool, dryRun: false, propagateDecisionErrors: stalled,
   ...(stalled ? { unusableDecisions: { stalled: () => stalledError } } : {})
 });
 
@@ -446,7 +446,7 @@ describe("a rerun that changed nothing, sent again", () => {
       .mockResolvedValueOnce(rerun)
       .mockResolvedValueOnce(rerun)
       .mockResolvedValue(complete);
-    await expect(runAutomationStudioLlmEvidenceLoop({ tools: nodeTools, decide, executeTool, maxIterations: 12, maxToolCalls: 20, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { stalled: () => stalledError } })).resolves.toMatchObject({ ok: true });
+    await expect(runAutomationStudioLlmEvidenceLoop({ tools: nodeTools, decide, executeTool, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { stalled: () => stalledError } })).resolves.toMatchObject({ ok: true });
     expect(attempted).toBe(3);
     expect(executeTool.mock.calls.filter(([request]) => request.value.node === "web.output.dom-click")).toHaveLength(3);
     for (const index of [2, 3]) expect(shownAt(decide, index).some((entry) => entry.toolId === "core.repeat_check")).toBe(false);
@@ -465,7 +465,7 @@ describe("a rerun that changed nothing, sent again", () => {
       .mockResolvedValueOnce({ kind: "tool_call", callId: "look.1", toolId: "look", input: {} })
       .mockResolvedValueOnce(rerun)
       .mockResolvedValue(complete);
-    await expect(runAutomationStudioLlmEvidenceLoop({ tools: nodeTools, decide, executeTool, maxIterations: 12, maxToolCalls: 20, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { stalled: () => stalledError } })).resolves.toMatchObject({ ok: true });
+    await expect(runAutomationStudioLlmEvidenceLoop({ tools: nodeTools, decide, executeTool, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { stalled: () => stalledError } })).resolves.toMatchObject({ ok: true });
     expect(executeTool.mock.calls.filter(([request]) => request.value.node === "web.output.dom-click")).toHaveLength(1);
     expect(shownAt(decide, 4).find((entry) => entry.toolId === "core.repeat_check")?.value).toMatchObject({ then: { outcome: "same_amendment", resultCode: "client.declined", resultReason: "retry_allowed", rerunFailed: true } });
   });
@@ -507,7 +507,7 @@ describe("a rerun sent as a check, then the same input as a plain call", () => {
       .mockResolvedValue(complete);
 
     await runAutomationStudioLlmEvidenceLoop({
-      tools: nodeTools, decide, executeTool, maxIterations: 12, maxToolCalls: 12, dryRun: false, propagateDecisionErrors: true,
+      tools: nodeTools, decide, executeTool, dryRun: false, propagateDecisionErrors: true,
       unusableDecisions: { stalled: () => stalledError }, lastingActs: async () => new Set(["a1"])
     }).catch(() => undefined);
 

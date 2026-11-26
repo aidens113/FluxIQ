@@ -4,7 +4,8 @@ import { assertFlowLlmExecutionSettings } from "../handlers/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_MAX_USD } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioLlmProvider } from "../../../../runtime/llm/harness/index.ts";
 import { automationStudioLlmResolutionWithinFlowSettings } from "../../../../runtime/llm/flow-execution-limits/index.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP } from "../../../../runtime/llm/flow-execution-limits/index.ts";
+/** The most calls the settings check lets a Flow store; it bounds no run (t1056). */
+const AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP = 250;
 import { AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS } from "../../../../runtime/llm/index.ts";
 
 // The Flow's stored `llmExecutionSettings` were saved and returned but never
