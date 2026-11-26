@@ -133,7 +133,9 @@ describe("a FluxNode run's lasting act", () => {
 
   it("resumes an explore execution under its original task after an intervening run", async () => {
     const lane = await fluxNodeLane(cleanups);
-    const first = await lane.run({ spec: renewCardSpec(), inputs: { note: "moving house" }, options: { mode: "explore", budgetUsd: 0.001 } }, { script: [pressCard()] });
+    // Each call is held and charged at $0.001 (`./library-lane.ts`), and an attempt keeps one judge call back: $0.002
+    // pays for the press beside that reserve, and the completion after it does not fit.
+    const first = await lane.run({ spec: renewCardSpec(), inputs: { note: "moving house" }, options: { mode: "explore", budgetUsd: 0.002 } }, { script: [pressCard()] });
     expect(first.result).toMatchObject({ status: "budget_out", resumeHandle: expect.any(String), cost: { calls: 1 } });
     expect(lane.library.renewals.card).toBe(1);
     const other = await lane.run({ name: NAME, inputs: { note: "new address" } }, { ...explore, answers: nothingAsked });
@@ -156,10 +158,13 @@ describe("a FluxNode run's lasting act", () => {
         { id: "later", kind: "map", target: { fluxNode: later }, inputs: { note: { field: "note" } }, as: "later", concurrency: 1 }
       ] },
       inputs: { jobs: [{ note: "same note" }, { note: "same note" }] },
-      options: { budgetUsd: 0.0011 }, idempotencyKey: "two-rounds"
+      options: { budgetUsd: 0.0025 }, idempotencyKey: "two-rounds"
     };
     // The new child first declares itself action-only (t984), a one-line call, then presses: the purse pays for both
     // and not for the completion, so the child ends with its act landed and unconfirmed, the boundary this resumes over.
+    // Each call is held at $0.001 beside one judge call kept back ($0.001); the declaration reports $0.0001. At $0.0025
+    // the press is still offered (the loop counts more than its three wrap-up decisions left, which offer no new act,
+    // `runtime/llm/loop-budget.ts`) and paid for, and the completion ($0.0011 spent, $0.001 held, $0.001 kept) is not.
     const first = await lane.run(request, { taskProcessing: null, declarationUsd: 0.0001, script: [pressCard()] });
     expect(first.result.status).toBe("budget_out");
     expect(lane.library.renewals.card).toBe(4); // One learned separately, two complete children, one partial child.

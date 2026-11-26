@@ -110,7 +110,6 @@ describe("AutomationStudioService recording persistence", () => {
           }
         },
         tokenLimits: { maxInputTokens: 4_000, maxOutputTokens: 1_000, maxTotalTokens: 5_000 },
-        maxCallsPerRun: 2
       }),
       llmEvidenceRuntime: {
         // The web domain's raw-payload keys apart from `selector`: this
@@ -250,7 +249,6 @@ describe("AutomationStudioService recording persistence", () => {
           usage: { inputTokens: 5, outputTokens: 3, totalTokens: 8 }
         }) },
         tokenLimits: { maxInputTokens: 4_000, maxOutputTokens: 1_000, maxTotalTokens: 5_000 },
-        maxCallsPerRun: 2
       }),
       llmEvidenceRuntime: {
         domainId: "test.domain", deniedEvidenceKeys: ["html", "innerHtml", "outerHtml", "pageSource", "cookies", "headers", "selector"], tools: [],

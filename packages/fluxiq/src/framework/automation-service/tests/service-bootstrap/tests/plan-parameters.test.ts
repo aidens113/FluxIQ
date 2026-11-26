@@ -186,7 +186,7 @@ function typingPlan(selector: JsonValue, text: JsonValue = "Ada"): JsonObject {
  * step its test can run. The judge of a finished build's test says yes, and is
  * counted in `requests`.
  */
-async function create(plans: JsonObject[], options: { binding?: AutomationStudioLlmEvidenceRuntimeBinding; maxCallsPerRun?: number; types?: true } = {}) {
+async function create(plans: JsonObject[], options: { binding?: AutomationStudioLlmEvidenceRuntimeBinding; types?: true } = {}) {
   const requests: AutomationStudioLlmTaskRequest[] = [];
   let decided = 0;
   // The build reads its instruction when it starts (t976, b2ee9ed45), apart from the plans scripted here.
@@ -205,7 +205,7 @@ async function create(plans: JsonObject[], options: { binding?: AutomationStudio
   const { project, flow } = await seeded(example);
   const instance = new AutomationStudioService({
     dataDir: tempRoot,
-    llmProviderResolver: (() => ({ provider, maxCallsPerRun: options.maxCallsPerRun ?? 6 })) as never,
+    llmProviderResolver: (() => ({ provider })) as never,
     llmEvidenceRuntime: automationStudioReplayingBinding(options.binding ?? typingBinding())
   }).bindNativeNodeRuntime(typingRuntime());
   services.add(instance);
@@ -322,10 +322,10 @@ describe("creating a Flow whose nodes name what the exploration showed", () => {
     expect(diagnostic).toMatchObject({ code: "flow_bootstrap.evidence_budget_exhausted", ending: { bound: "cost" }, issueCodes: ["bootstrap.handle_resolution_unavailable"] });
   });
 
-  // A build whose every call was refused still ends under the last refusal's name. The run's declared count of two is
-  // read by nothing (t1056): the purse ends it.
+  // A build whose every call was refused still ends under the last refusal's name. No count of calls ends it (t1056):
+  // the purse does.
   it("names the last refusal when a build's calls all go on refused plans", async () => {
-    const run = await create([typingPlan({ handle: "target.99" }), typingPlan({ handle: NAME_FIELD.handle }, UNREADABLE_TEXT)], { maxCallsPerRun: 2 });
+    const run = await create([typingPlan({ handle: "target.99" }), typingPlan({ handle: NAME_FIELD.handle }, UNREADABLE_TEXT)]);
     const diagnostic = await rejectedGenerationDiagnostic(run.generation);
 
     expect(run.requests.length).toBeGreaterThan(2);

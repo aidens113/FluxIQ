@@ -118,7 +118,7 @@ async function build(script: {
   const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
   const instance = new AutomationStudioService({
     dataDir: tempRoot,
-    llmProviderResolver: (() => ({ provider, maxCallsPerRun: 24, maxEstimatedCostUsd: 0.25 })) as never,
+    llmProviderResolver: (() => ({ provider, maxEstimatedCostUsd: 0.25 })) as never,
     llmEvidenceRuntime: shop.binding
   }).bindNativeNodeRuntime(shop.native);
   services.add(instance);
@@ -441,7 +441,7 @@ async function reserveBuild(judge: Array<"yes" | "no">) {
   const provider: AutomationStudioLlmProvider = { ...scripted, estimateCostUsd: ({ inputTokens, outputTokens }) => (inputTokens + outputTokens) * RESERVE_PER_TOKEN_USD };
   const instance = new AutomationStudioService({
     dataDir: tempRoot,
-    llmProviderResolver: (() => ({ provider, tokenLimits: { maxInputTokens: 992_000, maxOutputTokens: 8_000, maxTotalTokens: 1_000_000 }, maxCallsPerRun: 24, maxEstimatedCostUsd: 0.1, maxTotalEstimatedCostUsd: 0.1, timeoutMs: 20_000 })) as never,
+    llmProviderResolver: (() => ({ provider, tokenLimits: { maxInputTokens: 992_000, maxOutputTokens: 8_000, maxTotalTokens: 1_000_000 }, maxEstimatedCostUsd: 0.1, maxTotalEstimatedCostUsd: 0.1, timeoutMs: 20_000 })) as never,
     llmEvidenceRuntime: evidenceRuntime
   });
   instance.bindNativeNodeRuntime(runtime);

@@ -19,7 +19,8 @@ import { estimateAutomationStudioDeepSeekCostUsd } from "../../models/providers/
 // reported more than their holds overshot the purse on every call, the judging kept back was spent by the overshoot
 // rather than on judging, and the build ended at its budget without its final judged run. So an unpriced call is held
 // at the larger of the default's price for it and the most a call on the purse has reported costing (`observedUsd`,
-// kept by `./observed-cost.ts`), and the judging pair kept back is priced the same way.
+// kept by `./observed-cost.ts`); a judge's call, at no less than the most a judge's call reported, which is what the
+// judging pair is then kept back at (`./harness-hold.ts`).
 
 /**
  * `provider`'s prices, and for any call it does not price, the larger of Core's default model's price and `observedUsd`

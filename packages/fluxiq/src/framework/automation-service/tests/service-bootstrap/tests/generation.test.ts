@@ -45,7 +45,6 @@ function createService(input: {
   const resolver = input.resolver ?? (() => ({
     provider,
     tokenLimits: { maxInputTokens: 992_000, maxOutputTokens: 8_000, maxTotalTokens: 1_000_000 },
-    maxCallsPerRun: 1,
     maxEstimatedCostUsd: 0.1,
     timeoutMs: 20_000
   }));
@@ -141,7 +140,6 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     const resolver = vi.fn().mockReturnValue({
       provider,
       tokenLimits: { maxInputTokens: 992_000, maxOutputTokens: 8_000, maxTotalTokens: 1_000_000 },
-      maxCallsPerRun: 1,
       maxEstimatedCostUsd: 0.1,
       timeoutMs: 20_000
     });
@@ -252,7 +250,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     const { project, flow } = await seeded(single);
     const instance = createService({
       provider,
-      resolver: () => ({ provider, maxCallsPerRun: 4 }), // Four, so its first decision is before the last three, which offer no tools (`llm/loop-budget.ts`).
+      resolver: () => ({ provider }),
       evidenceRuntime: automationStudioReplayingBinding({ domainId: "test.domain", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect bounded domain evidence.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: { scope: "current" } } }], executeTool })
     });
     const result = await instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true });
@@ -378,7 +376,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     const { project, flow } = await seeded(domainTest);
     const instance = createService({
       provider,
-      resolver: () => ({ provider, maxCallsPerRun: 4 }), // Four, so its first decision may still add a step.
+      resolver: () => ({ provider }),
       evidenceRuntime: automationStudioReplayingBinding({ domainId: "domain.test", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect bounded domain evidence.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } }], executeTool: async (input: { value: JsonObject }) => input.value.keep ? keptRead({ schemaVersion: "evidence.v1", facts: [{ role: "button" }] }) : ({ schemaVersion: "evidence.v1", facts: [{ role: "button" }] }) }), // Same domain as the project below: a runtime bound for one domain offers a Flow in another nothing.
       reusableLlmContext: {
         enabled: true,

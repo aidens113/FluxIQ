@@ -160,7 +160,7 @@ describe("a Flow creation's one purse", () => {
       executeTool: async (input) => ({ kind: "llm_evidence_tool_execution", evidence: { changed: input.callId }, effectApplied: true, resultCode: "example.acted" })
     });
     const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
-    const instance = service(provider, acting, { maxCallsPerRun: 4 });
+    const instance = service(provider, acting);
     const request = { projectId: project.id, flowId: flow.flowId, evidenceGuided: true as const, caller: caller() };
 
     await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation(request));
@@ -180,7 +180,7 @@ describe("a Flow creation's one purse", () => {
       return { response: { kind: "evidence_tool_decision", summary: "Looking.", decision: lookingDecision(request, requests.length) }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 } };
     });
     const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
-    const instance = service(provider, LOOKING, { maxCallsPerRun: 2 });
+    const instance = service(provider, LOOKING);
     // A creation that has spent its whole ceiling: a build that read this could send nothing.
     const stored: AutomationStudioFlowBootstrapCreationSpend = { kind: "flow_creation_spend", projectId: project.id, flowId: flow.flowId, spentUsd: CEILING, builds: 3, createdAt: 1_000, updatedAt: 2_000 };
     await spends(instance).save(stored);
@@ -208,7 +208,7 @@ describe("a Flow creation's one purse", () => {
     }), estimateCostUsd: ({ outputTokens }: { inputTokens: number; outputTokens: number }) => { heldReplies.push(outputTokens); return 0.001; } };
     const defaults = AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS;
     const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
-    const instance = service(provider, LOOKING, { tokenLimits: { ...defaults.tokenLimits }, maxCallsPerRun: 2 });
+    const instance = service(provider, LOOKING, { tokenLimits: { ...defaults.tokenLimits } });
 
     await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller() }));
 
@@ -253,7 +253,7 @@ describe("a Flow creation's one purse", () => {
       return { response: { kind: "evidence_tool_decision", summary: "Step.", decision }, usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: decisionCost } };
     });
     const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
-    const instance = service(provider, shopBinding(), { maxCallsPerRun: 24 });
+    const instance = service(provider, shopBinding());
     const instruction = await instance.getFlowInstruction(project.id, "instruction.build");
     await instance.saveFlowInstruction(project.id, { ...instruction!, body: "Read the paper towels listed on the shelf, and give me a table of each one's name and price.", updatedAt: Date.now() });
 
@@ -362,7 +362,7 @@ describe("a Flow creation's one purse", () => {
       return { response: { kind: "evidence_tool_decision", summary: "Looking.", decision: lookingDecision(request, requests.length) }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 } };
     });
     const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
-    const instance = service(provider, LOOKING, { maxCallsPerRun: 2 });
+    const instance = service(provider, LOOKING);
     const now = Date.now();
     const brief = {
       schemaVersion: "0.1" as const, instructionId: "instruction.repair", title: "Repair the result", body: "The last run's result was refuted; build the Flow again.",

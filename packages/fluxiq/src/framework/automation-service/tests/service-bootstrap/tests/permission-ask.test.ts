@@ -200,7 +200,7 @@ async function checkoutBuild() {
   };
   const { project, flow } = await seeded(example);
   // Said how to run its steps again, so the build's test can run the Flow whole; its replay calls press nothing.
-  const instance = new AutomationStudioService({ dataDir: tempRoot, llmProviderResolver: (() => ({ provider, maxCallsPerRun: 6 })) as never, llmEvidenceRuntime: automationStudioReplayingBinding(binding) });
+  const instance = new AutomationStudioService({ dataDir: tempRoot, llmProviderResolver: (() => ({ provider })) as never, llmEvidenceRuntime: automationStudioReplayingBinding(binding) });
   services.add(instance);
   const generation = instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller(), permissionAskTimeoutMs: 30_000, taskActs: ["move_money"] });
   return { instance, project, flow, acted, generation };
@@ -238,7 +238,7 @@ describe("a build that never explored", () => {
     const { project, flow } = await seeded(example);
     const instance = new AutomationStudioService({
       dataDir: tempRoot,
-      llmProviderResolver: (() => ({ provider: mockProvider(), maxCallsPerRun: 2 })) as never,
+      llmProviderResolver: (() => ({ provider: mockProvider() })) as never,
       llmEvidenceRuntime: {
         domainId: "example",
         deniedEvidenceKeys: [],
@@ -308,7 +308,7 @@ async function build(options: { waitMs?: number } = {}) {
   const { project, flow } = await seeded(example);
   const instance = new AutomationStudioService({
     dataDir: tempRoot,
-    llmProviderResolver: (() => ({ provider, maxCallsPerRun: 6 })) as never,
+    llmProviderResolver: (() => ({ provider })) as never,
     // Said how to run its steps again, so the build's test can run the Flow whole; its replay calls refund nothing.
     llmEvidenceRuntime: automationStudioReplayingBinding(binding)
   });

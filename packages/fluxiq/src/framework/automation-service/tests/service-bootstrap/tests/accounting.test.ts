@@ -44,7 +44,6 @@ function createService(input: {
   const resolver = input.resolver ?? (() => ({
     provider,
     tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 },
-    maxCallsPerRun: 1,
     maxEstimatedCostUsd: 0.1,
     timeoutMs: 20_000
   }));
@@ -145,7 +144,6 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     const resolver = vi.fn(() => ({
       provider: mockProvider(),
       tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 },
-      maxCallsPerRun: 2,
       maxEstimatedCostUsd: 0.1,
       timeoutMs: 20_000
     }));
@@ -216,7 +214,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       ...(evidenceGuided ? {
         evidenceRuntime,
         provider: evidenceProvider,
-        resolver: () => ({ provider: evidenceProvider, maxCallsPerRun: 3 })
+        resolver: () => ({ provider: evidenceProvider })
       } : {})
     });
     const harness = vi.fn().mockRejectedValue(thrown());

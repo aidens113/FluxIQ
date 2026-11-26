@@ -176,7 +176,7 @@ function jsonResponse(content: JsonObject): Response {
 async function createHarness(options: {
   failReauthorProvider: boolean;
   pauseReauthorProvider?: boolean;
-  /** The run's intent. Absent is `build_and_adapt` with four calls; present, the resolution states no call budget of its own. */
+  /** The run's intent. Absent is `build_and_adapt`. No resolution states a call budget (t1056): the run's dollars bound it. */
   intent?: AutomationStudioRuntimeSessionLlmIntent;
   /** The re-author's first decision completes its seeded draft unchanged: it says the Flow needs no change (W17). */
   reauthorFindsNothing?: boolean;
@@ -322,7 +322,7 @@ async function createHarness(options: {
       resolverObservations.push({ input });
       const resolution = resolveForCaller(input);
       if (!resolution) return undefined;
-      return options.intent ? resolution : { ...resolution, maxCallsPerRun: 4 };
+      return resolution;
     },
     llmEvidenceRuntime: runtime,
   })

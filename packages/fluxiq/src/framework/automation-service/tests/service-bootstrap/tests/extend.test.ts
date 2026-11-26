@@ -181,8 +181,6 @@ async function serviceWithAppliedFlow(input: { decide(request: AutomationStudioL
       return {
         provider,
         tokenLimits: { maxInputTokens: 992_000, maxOutputTokens: 8_000, maxTotalTokens: 1_000_000 },
-        // Two reruns of the carried steps, at most one step of its own, the completion, and the judge.
-        maxCallsPerRun: 6,
         maxEstimatedCostUsd: 0.1,
         timeoutMs: 20_000
       };

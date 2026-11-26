@@ -199,7 +199,7 @@ async function build(options: { noThread?: boolean; port?: (real: AutomationStud
   const { project, flow } = await seeded(example);
   const instance = new AutomationStudioService({
     dataDir: tempRoot,
-    llmProviderResolver: (() => ({ provider, maxCallsPerRun: 6 })) as never,
+    llmProviderResolver: (() => ({ provider })) as never,
     // Said how to run its steps again, so the build's test can run the Flow whole; its replay calls never reach `calls`.
     llmEvidenceRuntime: automationStudioReplayingBinding(binding)
   });

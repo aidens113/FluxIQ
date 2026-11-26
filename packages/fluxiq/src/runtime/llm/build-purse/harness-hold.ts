@@ -5,24 +5,34 @@ import { automationStudioLlmBuildPursePriced } from "./priced.ts";
 
 /**
  * Studio retains its exact user-facing refusal wording; the framework owns multi-scope reservation and settlement. A
- * provider that prices no call is held as priced at Core's default model, never as free, and never below what a call on
- * the purse was seen to cost (`./priced.ts`, t1056): what each settled call reported is noted for that.
+ * provider that prices no call is held as priced at Core's default model, never as free, and never below what such calls
+ * on the purse were seen to cost (`./priced.ts`, t1056): what each settled call reported is noted for that.
  */
 export function automationStudioLlmBuildPurseHoldCall(input: Omit<Parameters<typeof holdCall>[0], "diagnostic">): ReturnType<typeof holdCall> {
   const purses = observedCost.inScope();
   const held = holdCall({
     ...input,
-    ...priced(input.provider, input.judgePricing, () => observedCost.of(purses)),
+    ...priced(input, purses),
     diagnostic: (refusal, scope) => refusalDiagnostic(refusal, scope === "active" ? "build" : "Flow")
   });
   if (!held?.ok) return held;
-  return { ok: true, hold: { settle: (usage) => { observedCost.note(purses, usage); held.hold.settle(usage); }, release: () => held.hold.release() } };
+  const settle = (usage: Parameters<typeof held.hold.settle>[0]): void => {
+    observedCost.note(purses, usage, input.judge === true);
+    held.hold.settle(usage);
+  };
+  return { ok: true, hold: { settle, release: () => held.hold.release() } };
 }
 
-/** The call's pricing and its judge's, one priced wrapper where the judge is priced as the call is (`./priced.ts`). */
-function priced(provider: Parameters<typeof holdCall>[0]["provider"], judgePricing: Parameters<typeof holdCall>[0]["judgePricing"], observedUsd: () => number): Pick<Parameters<typeof holdCall>[0], "provider" | "judgePricing"> {
-  const call = automationStudioLlmBuildPursePriced(provider, observedUsd);
-  return { provider: call, ...(judgePricing ? { judgePricing: judgePricing === provider ? call : automationStudioLlmBuildPursePriced(judgePricing, observedUsd) } : {}) };
+/**
+ * The call's pricing and its judge's (`./priced.ts`). Where a provider prices nothing, a judge's call, and the judging
+ * kept back from every other call, are held at no less than the most a judge's call on the purse reported costing, as
+ * the purse holds judging at the largest judge call priced so far (`agents/budget/judging-reserve.ts`); any other call
+ * at no less than the most any call reported. The judge's pricing is always handed over, so the reserve is priced as a
+ * judge's call is.
+ */
+function priced(input: Pick<Parameters<typeof holdCall>[0], "provider" | "judgePricing" | "judge">, purses: Parameters<typeof observedCost.of>[0]): Pick<Parameters<typeof holdCall>[0], "provider" | "judgePricing"> {
+  const judging = automationStudioLlmBuildPursePriced(input.judgePricing ?? input.provider, () => observedCost.of(purses, "judge"));
+  return { provider: input.judge ? judging : automationStudioLlmBuildPursePriced(input.provider, () => observedCost.of(purses, "any")), judgePricing: judging };
 }
 
 function refusalDiagnostic(refusal: AutomationStudioLlmBuildPurseRefusal, purseWhose: "build" | "Flow"): AutomationStudioLlmDiagnostic {

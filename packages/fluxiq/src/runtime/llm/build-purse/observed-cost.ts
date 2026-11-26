@@ -5,11 +5,14 @@ import type { AutomationStudioLlmUsageSummary } from "../../models/contracts/ind
 //
 // The purse keeps the same figure for its own rule on an unpriced call (`agents/budget/settlement-ledger.ts`,
 // `largestReportedUsd`), but only for a call it was handed no price for. Studio now hands every call a price
-// (`./priced.ts`), so it keeps the figure itself: what each settled call on the purses it was held on reported, the
-// largest of them, so that an unpriced call is never held below what such calls were seen to cost.
+// (`./priced.ts`), so it keeps the figure itself: the most any settled call on the purses it was held on reported, and
+// apart from that the most a judge's call reported, which is what judging is held at (`agents/budget/judging-reserve.ts`
+// holds the judging kept back at the largest judge call priced, never at a decision).
 
-/** The most a settled call reported costing, per purse. A purse that is gone takes its figure with it. */
-const largest = new WeakMap<AutomationStudioLlmBuildPurse, number>();
+type Observed = { any: number; judge: number };
+
+/** The most a settled call reported costing, per purse. A purse that is gone takes its figures with it. */
+const largest = new WeakMap<AutomationStudioLlmBuildPurse, Observed>();
 
 export const automationStudioLlmBuildPurseObservedCost = Object.freeze({
   /** The purses a call made now is held on: the build's and the Flow's, each with the purses it was carved from. */
@@ -20,14 +23,17 @@ export const automationStudioLlmBuildPurseObservedCost = Object.freeze({
     }
     return [...purses];
   },
-  /** The most a settled call on any of `purses` reported costing; nothing before one has. */
-  of(purses: readonly AutomationStudioLlmBuildPurse[]): number {
-    return purses.reduce((most, purse) => Math.max(most, largest.get(purse) ?? 0), 0);
+  /** The most a settled call on any of `purses` reported costing -- any call, or a judge's -- or nothing before one has. */
+  of(purses: readonly AutomationStudioLlmBuildPurse[], kind: keyof Observed): number {
+    return purses.reduce((most, purse) => Math.max(most, largest.get(purse)?.[kind] ?? 0), 0);
   },
-  /** Record what a call settled on `purses` reported costing, where it reported a cost. */
-  note(purses: readonly AutomationStudioLlmBuildPurse[], usage: AutomationStudioLlmUsageSummary | undefined): void {
+  /** Record what a call settled on `purses` reported costing, where it reported a cost; `judge` when it was a judge's. */
+  note(purses: readonly AutomationStudioLlmBuildPurse[], usage: AutomationStudioLlmUsageSummary | undefined, judge: boolean): void {
     const reported = usage?.estimatedCostUsd;
     if (typeof reported !== "number" || !Number.isFinite(reported) || reported <= 0) return;
-    for (const purse of purses) largest.set(purse, Math.max(largest.get(purse) ?? 0, reported));
+    for (const purse of purses) {
+      const seen = largest.get(purse) ?? { any: 0, judge: 0 };
+      largest.set(purse, { any: Math.max(seen.any, reported), judge: judge ? Math.max(seen.judge, reported) : seen.judge });
+    }
   }
 });

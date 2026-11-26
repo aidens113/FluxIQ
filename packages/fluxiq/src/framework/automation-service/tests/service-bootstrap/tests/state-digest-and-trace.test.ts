@@ -118,7 +118,7 @@ async function build(options: { digests?: boolean } = {}) {
   const { project, flow } = await seeded(example);
   const instance = new AutomationStudioService({
     dataDir: tempRoot,
-    llmProviderResolver: (() => ({ provider, maxCallsPerRun: 6 })) as never,
+    llmProviderResolver: (() => ({ provider })) as never,
     llmEvidenceRuntime: automationStudioReplayingBinding(binding(asked, options.digests !== false))
   });
   services.add(instance);
