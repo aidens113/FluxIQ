@@ -68,6 +68,12 @@ const CLOSING_SEPARATOR = /^(?: and | & )$/iu;
 const ORDERING_PHRASE = /^(?:sorted|ordered|ranked|(?:sort|order) by)(?: |$)|(?:^| )(?:first|last)$/iu;
 
 /**
+ * A word ending an item that says the list is complete ("columns title only"): no part of the name (t1051).
+ * Only after a name, so "only child" keeps its first word.
+ */
+const COMPLETE_LIST_WORD = /(?<=\S) (?:only|just|exactly)$/iu;
+
+/**
  * A list whose closing item ran on past a column name (header): the names read
  * before it, and the item's leading words that could be a name, longest first.
  */
@@ -96,7 +102,7 @@ export function automationStudioFlowBootstrapInstructionColumns(instructionText:
     const piece = pieces[index]!.replace(/^[^A-Za-z0-9]+/u, "");
     const colon = piece.indexOf(":");
     const explained = colon >= 0;
-    const name = (explained ? piece.slice(0, colon) : piece).replace(/[^A-Za-z0-9]+$/u, "").replace(/\s+/gu, " ").trim();
+    const name = (explained ? piece.slice(0, colon) : piece).replace(/[^A-Za-z0-9]+$/u, "").replace(/\s+/gu, " ").trim().replace(COMPLETE_LIST_WORD, "");
     if (!name) continue;
     if (ORDERING_PHRASE.test(name)) break;
     if (name.split(" ").length > MAX_COLUMN_WORDS) {
