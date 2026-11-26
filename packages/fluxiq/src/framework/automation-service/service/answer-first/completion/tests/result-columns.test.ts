@@ -82,8 +82,23 @@ describe("a refused completion over rows that lack columns the request names", (
     expect(judgeCalls).toHaveLength(0);
   });
 
-  it("still asks the judge where a held column shares a word with a named one, so a name read with a word too many is never refused here", async () => {
+  // t1051: the contract reader reads the names as written, so a held column that only shares a word with a named one is
+  // another column ("copies held" is not "copies", "due" is not "due date") and the rows are refused with no judge.
+  it("refuses before any judge where a held column only shares a word with a named one (t1051)", async () => {
     const answer = await made([{ id: "title", label: "Title" }, { id: "copies held", label: "Copies" }, { id: "due", label: "Due" }], [{ title: "Tide Tables", "copies held": "1", due: "Friday" }], { verdict: "yes", reason: "It was judged to be what was asked for.", checkedWhat: "the loans" }).check({ summary: "Shown." });
+    expect(answer.ok).toBe(false);
+    expect(answer.ok ? [] : answer.issueCodes).toEqual(["answer_first.not_asked_table"]);
+    expect(judgeCalls).toHaveLength(0);
+  });
+
+  it("reads \"columns title only\" as title, so rows holding a title go to the judge (t1051)", async () => {
+    const answer = await made([{ id: "title", label: "Title" }], [{ title: "Tide Tables" }], { verdict: "yes", reason: "It was judged to be what was asked for.", checkedWhat: "the loans" }, "Show me my loans as a table with columns title only.").check({ summary: "Shown." });
+    expect(judgeCalls).toHaveLength(1);
+    expect(answer.ok).toBe(true);
+  });
+
+  it("takes a named column held in the singular or plural as that column (t1051)", async () => {
+    const answer = await made([{ id: "title", label: "Title" }, { id: "copy", label: "Copy" }, { id: "due dates", label: "Due dates" }], [{ title: "Tide Tables", copy: "1", "due dates": "Friday" }], { verdict: "yes", reason: "It was judged to be what was asked for.", checkedWhat: "the loans" }).check({ summary: "Shown." });
     expect(judgeCalls).toHaveLength(1);
     expect(answer.ok).toBe(true);
   });
