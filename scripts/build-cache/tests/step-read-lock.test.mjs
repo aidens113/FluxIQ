@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { mkdir, mkdtemp, readdir, rm, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -102,12 +102,49 @@ test("a new reader queues behind a writer that is waiting for earlier readers", 
   await (await late.done).release();
 });
 
+/**
+ * A clock the test moves, so staleness never depends on how late a heartbeat ran on a
+ * loaded machine: every lock in the test reads it, and heartbeats stamp files with it.
+ */
+function fakeClock() {
+  const clock = { t: Date.now(), now: () => clock.t };
+  return clock;
+}
+
+/** A file's modification time, or 0 while it is absent or in transition. */
+function mtimeOf(file) {
+  try {
+    return statSync(file).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Moves `clock` forward `steps` times by `stepMs` (each less than the stale bound), and after
+ * each move waits until every file in `paths` bears the new time: the heartbeat has run.
+ * A lock judges a file by the clock as it stood before it read it, and the clock only
+ * moves once the files bear the last time, so no machine speed can make a heartbeating
+ * holder look more than one step old. A holder that does not heartbeat is left more than
+ * the stale bound old by the end.
+ */
+async function advanceWhileHeartbeating(clock, paths, steps, stepMs) {
+  for (let step = 0; step < steps; step += 1) {
+    clock.t += stepMs;
+    for (const file of paths) {
+      while (mtimeOf(file) < clock.t - 1) await delay(5);
+    }
+  }
+}
+
 test("a writer waiting on readers keeps its own lock young, so a second writer never judges it stale", async () => {
-  const reader = await acquireStepReadLock(lockPath, { ...FAST, staleMs: 150, heartbeatMs: 20 });
-  const first = track(acquireStepLock(lockPath, { ...FAST, staleMs: 150 }));
+  const clock = fakeClock();
+  const reader = await acquireStepReadLock(lockPath, { ...FAST, staleMs: 150, heartbeatMs: 20, now: clock.now });
+  const first = track(acquireStepLock(lockPath, { ...FAST, staleMs: 150, now: clock.now }));
   while (!existsSync(lockPath)) await delay(10);
-  const second = track(acquireStepLock(lockPath, { ...FAST, staleMs: 150 }));
-  await delay(500);
+  const second = track(acquireStepLock(lockPath, { ...FAST, staleMs: 150, now: clock.now }));
+  // 10 x 100 ms of the lock clock is far past the 150 ms bound: only heartbeats keep both files young.
+  await advanceWhileHeartbeating(clock, [lockPath, reader.path], 10, 100);
   assert.equal(first.settled, false);
   assert.equal(second.settled, false);
   await reader.release();
@@ -140,9 +177,10 @@ test("a reader entry untouched past the stale bound is removed even when its pid
 });
 
 test("a live reader's heartbeat keeps a writer with a short stale bound waiting", async () => {
-  const reader = await acquireStepReadLock(lockPath, { ...FAST, staleMs: 100, heartbeatMs: 20 });
-  const writer = track(acquireStepLock(lockPath, { ...FAST, staleMs: 100 }));
-  await delay(400);
+  const clock = fakeClock();
+  const reader = await acquireStepReadLock(lockPath, { ...FAST, staleMs: 100, heartbeatMs: 20, now: clock.now });
+  const writer = track(acquireStepLock(lockPath, { ...FAST, staleMs: 100, now: clock.now }));
+  await advanceWhileHeartbeating(clock, [reader.path], 8, 50);
   assert.equal(writer.settled, false, "a heartbeated reader is never broken");
   assert.equal(existsSync(reader.path), true);
   reader.assertHeld();
@@ -185,7 +223,20 @@ test("a build of a step waits for its read lock, then decides again", async () =
     const stepLock = path.join(repo, "packages", "contracts", "node_modules", ".cache", "fluxiq-core-build", "contracts-build.json.lock");
     const reader = await acquireStepReadLock(stepLock, FAST);
     const build = track(runScratch(repo, "contracts:build", "off"));
-    await delay(400);
+    // The build queues for the step by creating the writer lock file, and heartbeats that
+    // file once it has seen a live reader and is waiting on it. Age the file, then wait for
+    // the heartbeat to make it young again: that is the build observably waiting, which no
+    // fixed time can promise on a loaded machine.
+    while (!existsSync(stepLock)) {
+      assert.equal(build.settled, false, "the build must not finish before it queues for the step");
+      await delay(10);
+    }
+    const aged = new Date(Date.now() - 60_000);
+    await utimes(stepLock, aged, aged);
+    while (statSync(stepLock).mtimeMs < Date.now() - 30_000) {
+      assert.equal(build.settled, false, "the build must not finish while the reader holds the step");
+      await delay(10);
+    }
     assert.equal(build.settled, false);
     assert.deepEqual(await runsIn(repo), [], "nothing was built under the reader");
     await reader.release();
