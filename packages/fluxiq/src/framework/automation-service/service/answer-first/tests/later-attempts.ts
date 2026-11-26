@@ -185,3 +185,31 @@ export function toldTo(request: AutomationStudioLlmTaskRequest | undefined): Jso
   const note = request?.context.evidenceLoop?.evidence.find((entry) => entry.toolId === "core.attempt_note");
   return note?.value as JsonObject | undefined;
 }
+
+/**
+ * A service's deadlines on a clock the test drives: a Flow run's own deadline starts and waits, and passes only when `pass` is
+ * called, never by the wall clock. A region's timeout keeps the real timer. Nothing here changes how long anything may take.
+ */
+export function deadlineClock(owner: object): { pass(): void; readonly started: number } {
+  const waiting = new Set<() => void>();
+  let started = 0;
+  automationStudioAnswerFirstAttemptPorts(owner).startTimer = (wait, delayMs, fire) => {
+    if (wait.kind !== "run_deadline") {
+      const real = setTimeout(fire, delayMs);
+      real.unref?.();
+      return { cancel: () => clearTimeout(real) };
+    }
+    started += 1;
+    waiting.add(fire);
+    return { cancel: () => {
+      waiting.delete(fire);
+    } };
+  };
+  const pass = (): void => {
+    for (const fire of [...waiting]) {
+      waiting.delete(fire);
+      fire();
+    }
+  };
+  return { pass, get started() { return started; } };
+}

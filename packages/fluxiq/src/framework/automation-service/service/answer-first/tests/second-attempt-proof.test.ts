@@ -9,7 +9,7 @@ import { parseAutomationStudioSavedState } from "@fluxiq/contracts/automation";
 import { automationStudioAnswerFirstSavedStateOf, automationStudioAnswerFirstStepsDigest } from "../index.ts";
 import { LOANS_OUTPUT, savedStep } from "./fake-library-engine.ts";
 import { complete, judgedYes, READ_LOANS, RENEW_CARD, RENEW_LOAN } from "./fake-library.ts";
-import { readLoans, toldTo } from "./later-attempts.ts";
+import { deadlineClock, readLoans, toldTo } from "./later-attempts.ts";
 import { ACTION_ONLY, BOTH_TASK, honestFirstAttempt, honestFirstAttemptWithCard, LOAN_STEP, LOAN_TASK, onceEach, PERMITTED, READ_STEP, LISTED, repeatOverRows } from "./honest-attempts.ts";
 import { ATLAS, BIRDS, CLOCKS, DUNES, forwardFrom, pressCardByHand, pressLoanByHand, siteLane, TITLES, writeStep } from "./library-site.ts";
 
@@ -265,7 +265,14 @@ describe("limits on a saved Flow's run go on to the result", () => {
     await lane.attempt(honestFirstAttempt());
     const flow = await lane.service.getFlow(lane.projectId, "flow.loans");
     await lane.service.saveFlow({ projectId: lane.projectId, flow: { ...flow!, executionDefaults: { timeoutMs: 400 } } });
-    over(({ nodeId }) => nodeId === READ_LOANS ? new Promise(() => undefined) : undefined);
+    // The deadline is the test's to pass: it passes when the run reaches the step that never answers, and not before.
+    const clock = deadlineClock(lane.service);
+    over(({ nodeId }) => {
+      if (nodeId !== READ_LOANS) return undefined;
+      expect(clock.started).toBeGreaterThan(0);
+      clock.pass();
+      return new Promise(() => undefined);
+    });
     const second = await lane.attempt({ ...again, script: [readLoans("again"), complete("Listed them.")] });
     expect(toldTo(second.decisions[0])?.flowRun).toMatchObject({ stoppedAt: READ_STEP, happened: expect.stringMatching(/time this Flow is allowed/u) });
     expect(second.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow_then_explore" });
