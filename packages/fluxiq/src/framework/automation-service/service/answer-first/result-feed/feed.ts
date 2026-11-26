@@ -70,6 +70,7 @@ import { readAutomationStudioAnswerFirstResultEvidence } from "./read-evidence.t
 import { automationStudioAnswerFirstListMoveOf, automationStudioAnswerFirstListMovePaging } from "./list-move.ts";
 import { automationStudioAnswerFirstListPagerEvents } from "./list-pager.ts";
 import { automationStudioAnswerFirstReadPlaces } from "./place-of.ts";
+import { automationStudioAnswerFirstLeftReads } from "./left-reads.ts";
 
 /** What the latest decision says its call is: a step the draft adds as it runs, or a rerun of a kept step. Absent: a look. */
 export type AutomationStudioAnswerFirstResultIntent =
@@ -132,7 +133,15 @@ const CARRIED_SOURCE = "carried";
 const PUBLICATION_TRACKING_MISSING = "The attempt's pending-publication metadata is unavailable. Restore the exact private record before publishing an answer; a later read cannot prove which earlier answer publications need retirement. The original source records and processing reference are preserved.";
 
 export function automationStudioAnswerFirstResultFeed(input: { instructionText: string; readRowsKey: string | undefined; processing?: AutomationStudioAnswerFirstProcessingDeclaration | undefined; processingReferenceTimeMs?: number | null | undefined; requiresDataOutput?: true | undefined; inputs?: Readonly<Record<string, JsonValue>> | undefined; publicationTrackingComplete?: boolean | undefined; sourceRecorded?: ((refs: readonly AutomationStudioResultEvidenceSourceRef[], call?: AutomationStudioAnswerFirstRowCall) => void) | undefined }): AutomationStudioAnswerFirstResultFeed {
-  const port = automationStudioAnswerFirstResultPort(input.instructionText);
+  /** Every page that left the ledger, kept as the judge's evidence (`./left-reads.ts`, t1067): every change to the ledger goes through this port. */
+  const left = automationStudioAnswerFirstLeftReads();
+  const ledgerPort = automationStudioAnswerFirstResultPort(input.instructionText);
+  const port: AutomationStudioAnswerFirstResultPort = { ...ledgerPort, record: (events, counts) => {
+    const before = ledgerPort.ledger();
+    const line = ledgerPort.record(events, counts);
+    left.changed(before, ledgerPort.ledger());
+    return line;
+  } };
   const stage = automationStudioAnswerFirstDataStage(input.processing, input.processingReferenceTimeMs, input.requiresDataOutput === true || automationStudioFlowBootstrapInstructionAsk(input.instructionText).records, input.inputs);
   const reference = input.processingReferenceTimeMs ?? Date.now();
   let legacyRefusal: string | undefined;
@@ -268,10 +277,15 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
       ...(ledger.contract.sure && ledger.contract.columns.length ? { answerContract: { columns: ledger.contract.columns } } : {}),
       // A working read goes with its rows, page by page, as a page of the answer and a look do (t1048): run-mwvgjb8c-5a1f2ae3's
       // first read kept the right row and reached the judge as a count, so the judge passed a dearer row it could see. A
-      // working step that has read no page yet is said by its count.
-      working: ledger.steps.filter((step) => !group.includes(step)).flatMap((step): AutomationStudioResultEvidenceBundle["working"][number][] => step.pages.length
-        ? step.pages.map((read) => page({ ...read, version: step.reads }, step.id, step.version, step.position))
-        : [{ step: step.id, position: step.position, ...(step.reads.listKey === undefined ? {} : { listKey: step.reads.listKey }), kept: 0 }]),
+      // working step that has read no page yet is said by its count. Every read that ran and left the draft follows, page by
+      // page, under the step and version it was read under (`./left-reads.ts`, t1067): the draft decides the Flow, not what
+      // the judge may see. A step that left holds no position in the draft.
+      working: [
+        ...ledger.steps.filter((step) => !group.includes(step)).flatMap((step): AutomationStudioResultEvidenceBundle["working"][number][] => step.pages.length
+          ? step.pages.map((read) => page({ ...read, version: step.reads }, step.id, step.version, step.position))
+          : [{ step: step.id, position: step.position, ...(step.reads.listKey === undefined ? {} : { listKey: step.reads.listKey }), kept: 0 }]),
+        ...left.reads().map((gone) => page({ ...gone.page, version: gone.step.reads }, gone.step.id, gone.step.version))
+      ],
       looks: ledger.looks.map((read) => page(read, "look", 1)),
       ...(processed ? processingEvidence() : {})
     };

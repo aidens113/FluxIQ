@@ -9,6 +9,7 @@ import { automationStudioReadJudgeEvidenceFormat } from "./format.ts";
 import { automationStudioReadJudgeEvidenceHistory } from "./history.ts";
 import { automationStudioReadJudgeWitnessAssociation } from "./witness-association.ts";
 import { AutomationStudioJudgeEvidenceRetry } from "./retry.ts";
+import { AutomationStudioJudgePageViews } from "./page-views.ts";
 
 /** One semantic request copy for Flow-less, completed-run and build judges; original rows/accounts/private evidence remain untouched. */
 export function automationStudioResultJudgeSummary(summary: AutomationStudioRunResultSummary, options: AutomationStudioResultTrailSemanticOptions): AutomationStudioRunResultSummary {
@@ -152,7 +153,11 @@ export function automationStudioResultJudgeSummary(summary: AutomationStudioRunR
   const uniqueGaps = gaps.filter((gap, at) => gaps.findIndex((other) => other.source === gap.source && JSON.stringify(other.codes) === JSON.stringify(gap.codes)) === at);
   entries.splice(insert < 0 ? entries.length : insert, 0, ["evidenceProjection", { version: 1, missing: uniqueGaps }]);
   const screened = automationStudioResultEvidenceScreen(Object.fromEntries(entries), options.deniedEvidenceKeys);
-  return { ...screened.value, withheld: withheld || screened.withheld } as unknown as AutomationStudioRunResultSummary;
+  const shown = { ...screened.value, withheld: withheld || screened.withheld } as unknown as AutomationStudioRunResultSummary;
+  // The pages of the views a judge needs, as the decider read them: kept beside this copy, never in it, for a judge asked
+  // on its own request (`./page-views.ts`, t1067). The before view only where a lasting act ran, as above.
+  if (stateRequired) AutomationStudioJudgePageViews.keep(shown, AutomationStudioJudgePageViews.read({ endView: held.endView, witnesses: held.witnesses }, lastingActs || lastingSteps, options.deniedEvidenceKeys));
+  return shown;
 }
 
 function object(value: JsonValue | undefined): JsonObject | undefined {

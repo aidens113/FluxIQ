@@ -7,12 +7,23 @@
 // everything a first ask sent, so the bytes before it are the first ask's. A judge continuing the decider's
 // conversation sends its whole message after the decider's cached blocks
 // (`../../models/providers/anthropic/continuation.ts`), so the note is after that prefix too.
+//
+// **With the pages a judge on its own request needs (t1067).** An ask after an unreadable reply is always asked on its
+// own request: a continuing judge goes standalone at its first unreadable reply (`./asks.ts`), and any other judge was
+// standalone from the start. Such a request holds no decider conversation, so no page: `run-mwy3btww-31d32e0d`'s
+// standalone judges said unsure for want of what the page showed. So the page views kept beside the judge's summary
+// (`../judge-evidence/page-views.ts`: the end view, the before view where a lasting act ran, within the page budget)
+// go in here, just before the note, after everything the first ask sent.
 
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
+import { AutomationStudioJudgePageViews } from "../judge-evidence/index.ts";
 
-/** The judge's copy of `summary` with the note on what could not be read of its last reply (`said`), and the steer of a repeat (`steer`), last. */
+/** The judge's copy of `summary` with the note on what could not be read of its last reply (`said`), and the steer of a repeat (`steer`), last, after the page views kept beside it (header). */
 export function automationStudioResultSummaryWithUnreadableNote<TSummary extends AutomationStudioRunResultSummary>(summary: TSummary, said: string, steer?: string): TSummary {
-  const { unreadableReply: _earlier, ...rest } = summary;
+  const { unreadableReply: _earlier, pageViews: _shown, ...rest } = summary as TSummary & { pageViews?: unknown };
+  const pageViews = AutomationStudioJudgePageViews.of(summary);
   const unreadableReply = `Your last reply to this check could not be read: ${said}. Answer the same question again with exactly one JSON object of the outputSchema and nothing before or after it, every quote and backslash inside its strings escaped.${steer ? ` ${steer}` : ""}`;
-  return { ...rest, unreadableReply } as TSummary;
+  const noted = { ...rest, ...(pageViews === undefined ? {} : { pageViews }), unreadableReply } as TSummary;
+  AutomationStudioJudgePageViews.keep(noted, pageViews);
+  return noted;
 }

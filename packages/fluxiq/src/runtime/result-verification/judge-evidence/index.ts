@@ -5,6 +5,7 @@ export { automationStudioResultJudgeSummary } from "./summary.ts";
 export { automationStudioJudgeEvidenceJsonValue } from "./json-value.ts";
 export { automationStudioStoredJudgeFinding } from "./stored-finding.ts";
 export { AutomationStudioJudgeEvidenceRetry } from "./retry.ts";
+export { AutomationStudioJudgePageViews } from "./page-views.ts";
 export { AutomationStudioJudgeEvidenceOrigins } from "./origins.ts";
 export { automationStudioJudgeEvidenceReplacement } from "./replacement.ts";
 export type { AutomationStudioJudgeEvidenceHistory } from "./history.ts";
