@@ -7,7 +7,7 @@ import type { AutomationStudioFlowPort } from "../../../flows/authoring/model/in
 import { buildAutomationStudioFlowBootstrapRoutingContext, type AutomationStudioFlowBootstrapRoutingContext } from "../../../runtime/flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioHostRuntimeBoundary } from "../../../runtime/native-nodes/index.ts";
 import { observeAutomationStudioRouteState, readAutomationStudioRouteState, type AutomationStudioRouteStateObservation } from "./observe.ts";
-import { automationStudioSignRouteEffect, automationStudioSignRouteState, type AutomationStudioRouteSignatures } from "./signatures/index.ts";
+import { automationStudioRouteSignaturesValue, automationStudioSignRouteEffect, automationStudioSignRouteState, type AutomationStudioRouteSignatures } from "./signatures/index.ts";
 
 /** What a Flow build routes with, kept current as its exploration moves the page. */
 export type AutomationStudioBuildRouting = {
@@ -87,8 +87,18 @@ export type AutomationStudioBuildRouting = {
    * elsewhere, or after a call that threw, has no known "before" and records
    * none. A run reads the effect for a step it cannot run: the site may
    * already have done what the step does (`../executor/state-routing/`).
+   *
+   * **A step an earlier attempt ran (t1062).** This routing belongs to one
+   * attempt, and knows only the digests of pages this attempt saw. A step kept
+   * from an earlier attempt carries what that attempt's routing signed for it
+   * (`routeSignatures`, stamped as it was kept: `./signed-steps.ts`), and each
+   * part this routing did not sign is read from there. Without it a Flow run
+   * from saved steps had no effect on any node, so a press an earlier attempt
+   * held to a look was never looked at and never pressed again
+   * (`SVC/answer-first/run-acts/run-gate.ts`; company-website
+   * `run-mwxk0spp-0e94cbfe`: the booking widget's Next, every replay).
    */
-  signaturesOf(step: { stateBefore?: string | undefined; stateAfter?: string | undefined }): AutomationStudioRouteSignatures | undefined;
+  signaturesOf(step: { stateBefore?: string | undefined; stateAfter?: string | undefined; routeSignatures?: JsonObject | undefined }): AutomationStudioRouteSignatures | undefined;
 };
 
 /** The tool id a situation is shown under in the window. */
@@ -259,8 +269,11 @@ export async function startAutomationStudioBuildRouting(input: {
     signaturesOf: (step) => {
       const before = step.stateBefore === undefined ? undefined : signatures.get(step.stateBefore);
       const after = step.stateAfter === undefined ? undefined : signatures.get(step.stateAfter);
-      const effect = step.stateBefore === undefined || step.stateAfter === undefined ? undefined : effects.get(effectKey(step.stateBefore, step.stateAfter));
-      return before || after || effect ? { ...(before ? { before } : {}), ...(after ? { after } : {}), ...(effect ? { effect } : {}) } : undefined;
+      const own = step.stateBefore === undefined || step.stateAfter === undefined ? undefined : effects.get(effectKey(step.stateBefore, step.stateAfter));
+      // Each part this attempt did not sign, from what an earlier attempt signed for the step (header, t1062).
+      const carried = step.routeSignatures === undefined ? undefined : automationStudioRouteSignaturesValue(step.routeSignatures);
+      const signed = { before: before ?? carried?.before, after: after ?? carried?.after, effect: own ?? carried?.effect };
+      return signed.before || signed.after || signed.effect ? { ...(signed.before ? { before: signed.before } : {}), ...(signed.after ? { after: signed.after } : {}), ...(signed.effect ? { effect: signed.effect } : {}) } : undefined;
     },
     observing: (decide) => async (decision) => {
       // What the page is now, once anything has had to learn it.
