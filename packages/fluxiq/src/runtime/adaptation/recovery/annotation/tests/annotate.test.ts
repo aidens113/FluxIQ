@@ -219,7 +219,7 @@ describe("annotateAutomationStudioRunDetailWithRuntimeLlm", () => {
       const offered: string[][] = [];
       await annotate({ executed, offered, allowExternalSideEffects });
 
-      expect(offered[0], String(allowExternalSideEffects)).toEqual(["test.inspect", "test.reveal", "core.run_flow"]); // `core.run_flow` is offered from the first decision (page-diff D11).
+      expect(offered[0], String(allowExternalSideEffects)).toEqual(["test.inspect", "test.reveal", "core.loop_decision", "core.run_flow"]); // `core.run_flow` is offered from the first decision (page-diff D11), and `core.loop_decision` because the exploration takes loop detection's signal (t1057).
       expect(executed, String(allowExternalSideEffects)).toEqual(["test.inspect"]);
     }
   });

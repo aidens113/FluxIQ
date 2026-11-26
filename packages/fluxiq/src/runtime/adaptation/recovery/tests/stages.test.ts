@@ -135,8 +135,8 @@ describe("automationStudioRuntimeRecoveryTrace", () => {
   // to stop producing.
   it.each([
     ["found something", "evidence_gathered", "exploration.completed", "completed"],
-    ["ran out of budget", "budget_exhausted", "action_limit", "failed"],
-    ["was refused", "unsafe_action_blocked", "destructive_action_refused", "refused"],
+    ["ran out of budget", "budget_exhausted", "llm_budget.run_cost_limit", "failed"],
+    ["needed a person", "user_intervention_required", "operator_approval_required", "refused"],
     ["found nothing", "no_evidence_found", "exploration.completed", "completed"]
   ])("records an exploration that %s as its own stage record", (_label, outcome, endedBy, status) => {
     const plan = planAutomationStudioRuntimeRecovery({ deterministic: deterministic(), result: diagnosisResult({ explorationNeeded: true }), policy: policy() });
@@ -189,6 +189,7 @@ function exploration(overrides: Partial<AutomationStudioRuntimeExploration>): Au
     actions: 1,
     observedActions: 0,
     refusedActions: 0,
+    repeatedActions: 0,
     unusableDecisions: 0,
     accounting: { iterations: 2, toolCalls: 1, evidenceBytes: 40, inputTokens: 0, cacheHitInputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 },
     trace: [],

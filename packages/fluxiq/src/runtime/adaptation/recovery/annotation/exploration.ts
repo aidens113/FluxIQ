@@ -250,9 +250,11 @@ export async function runAutomationStudioRecoveryExploration(
   // and the patch, because it is model spend on this run. That budget is bounded
   // by tokens and money, not by a small call count -- a two-call run is what
   // once ended every real exploration in `budget_exhausted` before it looked at
-  // anything -- and the exploration's own ledger adds the clock. When the run budget refuses the next decision, the
+  // anything -- and the exploration's own ledger adds the clock. It has no call
+  // or action allowance of its own (t1057): the purse is what pays, and what
+  // ends it. When the run budget refuses the next decision, the
   // refusal is what ended the exploration, and it is kept so the ending can be
-  // named as tokens or as money rather than as a fault.
+  // named as tokens, money or declared calls rather than as a fault.
   let runBudgetRefusal: AutomationStudioLlmRunBudgetDiagnostic["code"] | undefined;
   const capture = input.binding.captureStateDigest?.bind(input.binding);
   const stateDigest = capture === undefined ? undefined : (request: AutomationStudioExplorationStateDigestRequest) => capture({
@@ -286,8 +288,8 @@ export async function runAutomationStudioRecoveryExploration(
   // `failed` is the loop saying it could not be driven, which is what a refused
   // decision looks like from inside it. Here the reason is known and it is a
   // limit, not a fault, so it is renamed -- and only here, because the
-  // exploration's own ledger always outranks this: a wall clock or an action cap
-  // that fired first leaves an outcome that is not `failed` and is left alone.
+  // exploration's own ledger always outranks this: a clock that fired first
+  // leaves an outcome that is not `failed` and is left alone.
   const ended = !runBudgetRefusal || exploration.outcome !== "failed" ? exploration : {
     ...exploration,
     outcome: AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_RUN_BUDGET[runBudgetRefusal],

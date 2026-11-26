@@ -4,6 +4,7 @@ import {
   AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_RUN_BUDGET,
   AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_STOP_REASON,
   AUTOMATION_STUDIO_EXPLORATION_OUTCOMES,
+  AUTOMATION_STUDIO_EXPLORATION_REFUSALS,
   AUTOMATION_STUDIO_EXPLORATION_STOP_REASONS,
   automationStudioExplorationCompletionOutcome,
   isAutomationStudioExplorationOutcome
@@ -15,19 +16,20 @@ import {
 // silent, and a table whose rows all say the same thing is how four different
 // endings become one.
 describe("exploration outcomes", () => {
-  it("is a closed set, with the four confusable endings as four different members", () => {
+  // `unsafe_action_blocked` is gone (t1057): a refusal is shown to the model and ends nothing, so no ending produced it.
+  it("is a closed set, with the confusable endings as different members", () => {
     expect([...AUTOMATION_STUDIO_EXPLORATION_OUTCOMES]).toEqual([
       "evidence_gathered",
       "no_evidence_found",
       "budget_exhausted",
       "no_progress",
-      "unsafe_action_blocked",
       "user_intervention_required",
       "cancelled",
       "failed"
     ]);
-    // Ran out of budget, found nothing, was refused, succeeded: four values.
-    expect(new Set(["budget_exhausted", "no_evidence_found", "unsafe_action_blocked", "evidence_gathered"]).size).toBe(4);
+    // Ran out of budget, found nothing, needs a person, succeeded: four values.
+    expect(new Set(["budget_exhausted", "no_evidence_found", "user_intervention_required", "evidence_gathered"]).size).toBe(4);
+    expect(isAutomationStudioExplorationOutcome("unsafe_action_blocked")).toBe(false);
     expect(new Set(AUTOMATION_STUDIO_EXPLORATION_OUTCOMES).size).toBe(AUTOMATION_STUDIO_EXPLORATION_OUTCOMES.length);
     expect(isAutomationStudioExplorationOutcome("budget_exhausted")).toBe(true);
     expect(isAutomationStudioExplorationOutcome("recovered")).toBe(false);
@@ -111,10 +113,11 @@ describe("exploration outcomes", () => {
   // time" are three different things to do next, so a trace must never report
   // one where it meant another.
   it("keeps going in circles apart from running out of money, tokens or time", () => {
-    // No count of steps without progress stops an exploration (t1049), so `no_progress` is no stop reason; going in
-    // circles is the repeat window's, and its outcome is still apart from the budget's.
+    // No count stops an exploration (t1049, t1057), so neither `no_progress` nor the old `repeat_window` is a stop
+    // reason; the loop's own repeat handling is what ends one in circles, and its outcome is apart from the budget's.
     expect(AUTOMATION_STUDIO_EXPLORATION_STOP_REASONS).not.toContain("no_progress");
-    const circling = AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_STOP_REASON.repeat_window;
+    expect(AUTOMATION_STUDIO_EXPLORATION_STOP_REASONS).not.toContain("repeat_window");
+    const circling = AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_LOOP_FAILURE["llm_evidence_loop.repeat_without_progress"];
     expect(circling).toBe("no_progress");
     const money = AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_RUN_BUDGET["llm_budget.run_cost_limit"];
     const tokens = AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_RUN_BUDGET["llm_budget.run_total_limit"];
@@ -124,20 +127,17 @@ describe("exploration outcomes", () => {
     expect(circling).not.toBe(time);
   });
 
-  // A refusal is not a budget, and being stopped is not being empty. If these
-  // ever agreed, the runner could report one where it meant the other and no
-  // test above would notice.
-  it("gives budget limits, refusals and a person's decision three different outcomes", () => {
-    expect(AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_STOP_REASON.action_limit).toBe("budget_exhausted");
-    expect(AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_STOP_REASON.repeat_window).toBe("no_progress");
-    expect(AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_STOP_REASON.destructive_action_refused).toBe("unsafe_action_blocked");
-    expect(AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_STOP_REASON.out_of_scope_refused).toBe("unsafe_action_blocked");
+  // t1057: the ledger stops only on its clocks and a person's request. The four counts it once stopped on -- actions,
+  // provider calls, repeats of one action and refusals -- and the refusal kinds as stop reasons are gone; the
+  // refusal kinds survive as what a refusal was, never as an ending.
+  it("stops only on a clock or a person's request, and keeps refusals as evidence, never as a stop reason", () => {
+    expect([...AUTOMATION_STUDIO_EXPLORATION_STOP_REASONS]).toEqual(["wall_clock_expired", "recovery_deadline_expired", "operator_approval_required"]);
+    for (const gone of ["action_limit", "provider_call_limit", "repeat_window", "refusal_limit", "destructive_action_refused", "out_of_scope_refused"]) {
+      expect(AUTOMATION_STUDIO_EXPLORATION_STOP_REASONS as readonly string[]).not.toContain(gone);
+    }
+    expect([...AUTOMATION_STUDIO_EXPLORATION_REFUSALS]).toEqual(["destructive_action_refused", "out_of_scope_refused"]);
     expect(AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_STOP_REASON.operator_approval_required).toBe("user_intervention_required");
-    expect(new Set([
-      AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_STOP_REASON.action_limit,
-      AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_STOP_REASON.destructive_action_refused,
-      AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_STOP_REASON.operator_approval_required
-    ]).size).toBe(3);
+    expect(AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_STOP_REASON.wall_clock_expired).toBe("budget_exhausted");
   });
 
   // Phase D's rule, at this layer: success is constructible only from something

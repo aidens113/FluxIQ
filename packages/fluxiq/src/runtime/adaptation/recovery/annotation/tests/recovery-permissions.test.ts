@@ -54,7 +54,7 @@ describe("a recovery under its permission gate", () => {
   it("offers the acting option while the policy forbids external side effects, and never a destructive one", async () => {
     const run = await recover({ permittedConsequences: ["delete"] });
 
-    expect(run.offered[0]).toEqual(["test.look", "test.press", "core.run_flow"]); // `core.run_flow` is offered from the first decision (page-diff D11).
+    expect(run.offered[0]).toEqual(["test.look", "test.press", "core.loop_decision", "core.run_flow"]); // `core.run_flow` is offered from the first decision (page-diff D11), and `core.loop_decision` because the exploration takes loop detection's signal (t1057).
   });
 
   it("refuses an uncovered press as evidence and continues to the patch without a mid-run question", async () => {

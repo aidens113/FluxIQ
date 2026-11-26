@@ -88,9 +88,10 @@ describe("the limits a caller's default resolution and a recovery share", () => 
     // 1,000-token reply.
     const cacheHits = Math.round(30_000 * 0.618);
     const reported = { inputTokens: 30_000, outputTokens: 1_000, totalTokens: 31_000, estimatedCostUsd: estimateAutomationStudioDeepSeekCostUsd(30_000, 1_000, cacheHits) };
+    // The exploration has no call allowance of its own (t1057): it spends until the purse refuses.
     let decisions = 0;
     let refusal: string | undefined;
-    while (decisions < AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS.maxProviderCalls) {
+    for (;;) {
       const reservation = runBudget.reserve({
         runId: "run.one",
         requestId: `exploration.${decisions}`,
@@ -111,7 +112,7 @@ describe("the limits a caller's default resolution and a recovery share", () => 
     // the moment its worst case would eat into the patch's share, which is
     // still held, and what the run spent never passes the ceiling.
     const spent = runBudget.snapshot("run.one");
-    if (refusal !== undefined) expect(refusal).toBe("llm_budget.run_cost_limit");
+    expect(refusal).toBe("llm_budget.run_cost_limit");
     expect(spent.pendingCalls).toBe(1);
     expect(spent.budgetBreaches).toBe(0);
     expect(spent.estimatedCostUsd).toBeLessThan(budget.ledger.maxEstimatedCostUsdPerRun);

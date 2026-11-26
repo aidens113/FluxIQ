@@ -9,7 +9,7 @@ import {
 import { resolveAutomationStudioExplorationBudget } from "../exploration-budget.ts";
 import {
   isAutomationStudioExplorationOutcome,
-  type AutomationStudioExplorationStopReason
+  type AutomationStudioExplorationRefusal
 } from "../exploration-outcome.ts";
 import { startAutomationStudioRecoveryDeadline } from "../recovery-deadline.ts";
 import {
@@ -50,18 +50,20 @@ describe("runAutomationStudioRuntimeExploration", () => {
     expect(run.reason.length).toBeGreaterThan(0);
   });
 
-  it("gives budget exhaustion, emptiness, refusal and success four different outcomes in one comparison", async () => {
+  // A refusal is no longer an ending (t1057): it is shown to the model and the exploration goes on, so the
+  // confusable endings are the clock, emptiness, a fault and success.
+  it("gives budget exhaustion, emptiness, a fault and success four different outcomes in one comparison", async () => {
     const runs = await Promise.all(SCENARIOS().map(async ([label, , , scenario]) => [label, await explore(scenario)] as const));
     const byLabel = new Map(runs);
 
-    const budget = byLabel.get("run out of actions")!;
+    const budget = byLabel.get("run out of its own time")!;
     const empty = byLabel.get("completion that gathered nothing")!;
-    const refused = byLabel.get("destructive action")!;
+    const broken = byLabel.get("decision the loop cannot read")!;
     const success = await explore({ decisions: [call("test.inspect", { area: "one" }), complete({ finding: "x" })] });
 
-    expect(new Set([budget.outcome, empty.outcome, refused.outcome, success.outcome]).size).toBe(4);
+    expect(new Set([budget.outcome, empty.outcome, broken.outcome, success.outcome]).size).toBe(4);
     // And the only one of the four carrying a finding is the one that found something.
-    expect([budget.result, empty.result, refused.result]).toEqual([undefined, undefined, undefined]);
+    expect([budget.result, empty.result, broken.result]).toEqual([undefined, undefined, undefined]);
     expect(success.result).toEqual({ finding: "x" });
   });
 
@@ -302,18 +304,126 @@ describe("runAutomationStudioRuntimeExploration", () => {
     expect(run.result).toBeUndefined();
   });
 
-  it("charges refused actions against the action budget rather than only the successful ones", async () => {
+  // A refused action is still an action: it is recorded, by kind, and never counted as observed. A run of only
+  // refusals that then completes found nothing, which is a fact, where "success" would be a claim.
+  it("records refused actions, by kind, apart from the observed ones, and ends on none of them", async () => {
     const run = await explore({
-      decisions: [call("test.inspect", { area: "one" }), call("test.inspect", { area: "two" }), call("test.inspect", { area: "three" })],
-      budget: { maxActions: 2, maxRefusedActions: 9 },
+      decisions: [call("test.inspect", { area: "one" }), call("test.inspect", { area: "two" }), call("test.inspect", { area: "three" }), complete({ finding: "guessed" })],
       execute: refusingExecution("test.refused.scope")
     });
 
-    expect(run.outcome).toBe("budget_exhausted");
-    expect(run.stopReason).toBe("action_limit");
-    expect(run.actions).toBe(2);
-    expect(run.refusedActions).toBe(2);
+    expect(run.outcome).toBe("no_evidence_found");
+    expect(run.stopReason).toBeUndefined();
+    expect(run.actions).toBe(3);
+    expect(run.refusedActions).toBe(3);
+    expect(run.refusals).toEqual({ out_of_scope_refused: 3 });
     expect(run.observedActions).toBe(0);
+    expect(automationStudioExplorationTraceEvent({ requested: true, exploration: run }).detail).toMatchObject({ refusedActions: 3, refusals: { out_of_scope_refused: 3 } });
+  });
+
+  // The same refused press, asked for twenty-eight times: the refusal is shown once and every repeat is answered
+  // from what the loop already holds, never run again and never an ending. The loop decision is offered from the
+  // first step; asking for a person before the model has changed approach and met the repeat again is answered
+  // "not yet", and the exploration goes on to its answer.
+  it("answers a refused press asked for again and again from memory, and goes on to its answer", async () => {
+    const pressed: string[] = [];
+    const refusedPress = () => call("test.reveal", { control: "Continue" });
+    const run = await explore({
+      decisions: [
+        call("test.inspect", { area: "one" }),
+        ...Array.from({ length: 14 }, refusedPress),
+        call("core.loop_decision", { decision: "change_approach", approach: "Press the other button." }),
+        ...Array.from({ length: 14 }, refusedPress),
+        call("core.loop_decision", { decision: "ask_person", question: "Which account is meant?", why: "Two accounts match the instruction and it names neither." }),
+        complete({ finding: "the press is refused" })
+      ],
+      execute: async (input) => {
+        if (input.toolId === "test.reveal") pressed.push(input.callId);
+        return input.toolId === "test.reveal" ? refusingExecution("test.refused.destructive")(input) : defaultExecution(input);
+      }
+    });
+    const codes = run.trace.map((step) => step.resultCode);
+
+    expect(pressed).toHaveLength(1);
+    expect(codes.filter((code) => code === "llm_evidence_loop.already_answered")).toHaveLength(27);
+    expect(codes).toContain("core.loop_decision.carried_out");
+    expect(codes).toContain("core.loop_decision.ask_person_not_offered");
+    expect(run.outcome).toBe("evidence_gathered");
+    expect(run.refusals).toEqual({ destructive_action_refused: 1 });
+    expect(run.result).toEqual({ finding: "the press is refused" });
+  });
+});
+
+// t1057 (user, 2026-11-24: "THERE SHOULDNT BE ANY ARBITRARY FUCKING CALL LIMIT THAT RANDOMLY JUST RESETS
+// EVERYTHING"). The ledger ended an exploration at 24 actions, 24 provider calls, the third attempt of one action and
+// the second refusal. None of those counts ends anything now: a repeat or a refusal is told to the model, loop
+// detection and the model's own loop decision follow, and only the answer, the purse, the clock or a person ends it.
+describe("no count ends a recovery exploration (t1057)", () => {
+  it("runs far past the old twenty-four actions and provider calls to its answer", async () => {
+    let decisions = 0;
+    const steps = Array.from({ length: 60 }, (_, index) => call("test.inspect", { area: `area.${index}` }));
+    const run = await explore({ decisions: [...steps, complete({ finding: "the control moved" })], onDecide: () => { decisions += 1; } });
+
+    expect(run.outcome).toBe("evidence_gathered");
+    expect(run.stopReason).toBeUndefined();
+    expect(run.actions).toBe(60);
+    expect(decisions).toBe(61);
+    expect(run.result).toEqual({ finding: "the control moved" });
+  });
+
+  it("runs a cycle of the same actions across mutations on, steered, to its answer", async () => {
+    const shown: string[][] = [];
+    const cycle = Array.from({ length: 6 }, () => [call("test.inspect", {}), call("test.reveal", {})]).flat();
+    const run = await explore({
+      decisions: [...cycle, complete({ finding: "the control appears after revealing" })],
+      onDecide: (decision) => { shown.push(((decision as { evidence?: readonly { toolId: string }[] }).evidence ?? []).map((entry) => entry.toolId)); },
+      execute: async (input) => ({ kind: "llm_evidence_tool_execution", evidence: { observed: input.toolId }, effectApplied: input.toolId === "test.reveal", resultCode: "test.ok" })
+    });
+
+    expect(run.outcome).toBe("evidence_gathered");
+    expect(run.stopReason).toBeUndefined();
+    // Past the third attempt of one action, which ended it before t1057 (four actions in). The loop's own repeat
+    // guard refuses some of the twelve unrun, which is steering, not an ending.
+    expect(run.actions).toBeGreaterThan(4);
+    expect(run.accounting.iterations).toBe(13);
+    // The ledger still keeps what was tried and how often: evidence, never a stop.
+    expect(run.repeatedActions).toBe(run.actions - 2);
+    // Steered: the model was told it keeps repeating itself.
+    expect(shown.flat().some((toolId) => toolId === "core.no_progress" || toolId === "core.loop_check")).toBe(true);
+  });
+
+  it("runs on through refused actions, showing each refusal to the model, to its answer", async () => {
+    const shown: string[] = [];
+    const refused = Array.from({ length: 6 }, (_, index) => call("test.inspect", { area: `outside.${index}` }));
+    const run = await explore({
+      decisions: [...refused, call("test.reveal", { area: "inside" }), complete({ finding: "the control is inside" })],
+      onDecide: (decision) => { shown.push(JSON.stringify((decision as { evidence?: unknown }).evidence ?? [])); },
+      execute: async (input) => input.toolId === "test.inspect" ? refusingExecution("test.refused.scope")(input) : defaultExecution(input)
+    });
+
+    expect(run.outcome).toBe("evidence_gathered");
+    expect(run.stopReason).toBeUndefined();
+    expect(run.refusedActions).toBe(6);
+    expect(run.observedActions).toBe(1);
+    expect(run.result).toEqual({ finding: "the control is inside" });
+    // What was refused, and why, is in front of the model on the next decision.
+    expect(shown[1]).toContain("test.refused.scope");
+  });
+
+  it("still never runs a stated lasting act a third time on one target, and goes on to its answer", async () => {
+    const pressed: string[] = [];
+    const press = () => call("test.reveal", { control: "Save", consequences: ["send"] });
+    const run = await explore({
+      decisions: [press(), press(), press(), press(), call("test.inspect", { area: "after" }), complete({ finding: "saved" })],
+      execute: async (input) => {
+        if (input.toolId === "test.reveal") pressed.push(input.callId);
+        return defaultExecution(input);
+      }
+    });
+
+    expect(pressed).toHaveLength(2);
+    expect(run.outcome).toBe("evidence_gathered");
+    expect(run.stopReason).toBeUndefined();
   });
 });
 
@@ -334,22 +444,24 @@ describe("automationStudioExplorationTraceEvent", () => {
     expect(JSON.stringify(event)).not.toContain("the control moved");
   });
 
-  it("records a circling exploration as failed, with the repeat guard that stopped it", async () => {
+  // A circling exploration was recorded as failed on the repeat window that stopped it at the third attempt. No
+  // count stops it now (t1057): it goes on to its answer, and what it repeated is on the record as evidence.
+  it("records what a circling exploration repeated, as evidence, and the answer it went on to", async () => {
     const run = await explore({
-      decisions: [call("test.inspect", {}), call("test.reveal", {}), call("test.inspect", {}), call("test.reveal", {}), call("test.inspect", {})],
-      budget: { maxActions: 8, maxRepeatsPerAction: 2 }
+      decisions: [call("test.inspect", {}), call("test.reveal", {}), call("test.inspect", {}), call("test.reveal", {}), call("test.inspect", {}), complete({ finding: "revealed" })]
     });
     const event = automationStudioExplorationTraceEvent({ requested: true, exploration: run });
 
-    expect(event).toMatchObject({ stage: "exploration", status: "failed" });
-    expect(event.detail).toMatchObject({ outcome: "no_progress", endedBy: "repeat_window", stopReason: "repeat_window" });
-    expect(event.detail).not.toHaveProperty("noProgressReason");
+    expect(event).toMatchObject({ stage: "exploration", status: "completed" });
+    expect(event.detail).toMatchObject({ outcome: "evidence_gathered", endedBy: "exploration.completed", repeatedActions: run.actions - 2 });
+    expect(Number(event.detail?.repeatedActions)).toBeGreaterThan(0);
+    expect(event.detail).not.toHaveProperty("stopReason");
   });
 
   it.each([
     ["budget_exhausted", "failed"],
     ["no_progress", "failed"],
-    ["unsafe_action_blocked", "refused"],
+    ["user_intervention_required", "refused"],
     ["no_evidence_found", "completed"]
   ])("reports a %s exploration as a %s stage", (outcome, status) => {
     const event = automationStudioExplorationTraceEvent({
@@ -366,7 +478,7 @@ type Scenario = {
   decisions: unknown[];
   execute?: ExploreExecute;
   budget?: Parameters<typeof resolveAutomationStudioExplorationBudget>[0];
-  classifyRefusal?: (resultCode: string) => AutomationStudioExplorationStopReason | undefined;
+  classifyRefusal?: (resultCode: string) => AutomationStudioExplorationRefusal | undefined;
   recoveryDeadline?: ReturnType<typeof startAutomationStudioRecoveryDeadline>;
   startedAtMs?: number;
   signal?: AbortSignal;
@@ -384,37 +496,24 @@ type ExploreExecute = (input: { callId: string; toolId: string; value: JsonObjec
 function SCENARIOS(): Array<[string, string, string, Scenario]> {
   return [
     ["completion that gathered nothing", "no_evidence_found", "exploration.completed", { decisions: [complete({ finding: "guessed" })] }],
+    // Refusals are shown to the model and end nothing (t1057), so a run of only refusals that completes found
+    // nothing; the destructive and the out-of-scope kinds alike.
     ["completion after only refusals", "no_evidence_found", "exploration.completed", {
       decisions: [call("test.inspect", { area: "one" }), complete({ finding: "guessed" })],
-      budget: { maxRefusedActions: 9 },
       execute: refusingExecution("test.refused.scope")
     }],
-    ["run out of actions", "budget_exhausted", "action_limit", {
-      decisions: [call("test.inspect", { area: "one" }), call("test.inspect", { area: "two" }), call("test.inspect", { area: "three" })],
-      budget: { maxActions: 2 }
-    }],
-    ["run out of provider calls", "budget_exhausted", "provider_call_limit", {
-      decisions: [call("test.inspect", { area: "one" }), call("test.inspect", { area: "two" }), call("test.inspect", { area: "three" })],
-      budget: { maxActions: 8, maxProviderCalls: 2 }
+    ["completion after a destructive action was refused", "no_evidence_found", "exploration.completed", {
+      decisions: [call("test.inspect", { area: "one" }), call("test.inspect", { area: "two" }), complete({ finding: "guessed" })],
+      execute: refusingExecution("test.refused.destructive")
     }],
     ["run out of its own time", "budget_exhausted", "wall_clock_expired", {
       decisions: [call("test.inspect", { area: "one" }), complete({ finding: "too late" })],
       budget: { maxDurationMs: 5_000 },
       advanceClockAfterAction: 6_000
     }],
-    ["cycle of the same action across mutations", "no_progress", "repeat_window", {
-      decisions: [call("test.inspect", {}), call("test.reveal", {}), call("test.inspect", {}), call("test.reveal", {}), call("test.inspect", {})],
-      budget: { maxActions: 8, maxRepeatsPerAction: 2 }
-    }],
-    ["destructive action", "unsafe_action_blocked", "destructive_action_refused", {
-      decisions: [call("test.inspect", { area: "one" }), complete({ finding: "unreached" })],
-      budget: { maxRefusedActions: 1 },
-      execute: refusingExecution("test.refused.destructive")
-    }],
-    ["action outside its scope", "unsafe_action_blocked", "out_of_scope_refused", {
-      decisions: [call("test.inspect", { area: "one" }), complete({ finding: "unreached" })],
-      budget: { maxRefusedActions: 1 },
-      execute: refusingExecution("test.refused.scope")
+    // A cycle across mutations once ended `repeat_window` at its third turn; it now runs on to its answer.
+    ["cycle of the same action across mutations", "evidence_gathered", "exploration.completed", {
+      decisions: [call("test.inspect", {}), call("test.reveal", {}), call("test.inspect", {}), call("test.reveal", {}), call("test.inspect", {}), complete({ finding: "revealed" })]
     }],
     // Only the permission gate raises `operator_approval_required`, with a
     // request in hand: here the domain asks before a consequential step and
@@ -448,10 +547,9 @@ const TOOLS: AutomationStudioLlmEvidenceTool[] = [
  * Core is handed an opaque string and never learns to read one, which is what
  * keeps the semantic refusal (decision L3) in the domain that owns the meaning.
  */
-function classifyTestRefusal(resultCode: string): AutomationStudioExplorationStopReason | undefined {
+function classifyTestRefusal(resultCode: string): AutomationStudioExplorationRefusal | undefined {
   if (resultCode === "test.refused.destructive") return "destructive_action_refused";
   if (resultCode === "test.refused.scope") return "out_of_scope_refused";
-  if (resultCode === "test.refused.operator") return "operator_approval_required";
   return undefined;
 }
 
@@ -528,6 +626,7 @@ function blankExploration(): AutomationStudioRuntimeExploration {
     actions: 0,
     observedActions: 0,
     refusedActions: 0,
+    repeatedActions: 0,
     unusableDecisions: 0,
     accounting: { iterations: 0, toolCalls: 0, evidenceBytes: 0, inputTokens: 0, cacheHitInputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 },
     trace: [],

@@ -459,10 +459,11 @@ async function annotateRunDetail(input: AutomationStudioRuntimeRecoveryAnnotatio
     // Every call that comes after the exploration has its call, its tokens and
     // its money set aside before the exploration may spend anything, and handed
     // back the moment it ends. A checkable refusal adds one for the re-plan; a
-    // patch that could follow adds one for itself.
+    // patch that could follow adds one for itself. The exploration then spends
+    // the rest of the purse, with no allowance of its own (t1057).
     const reservedCalls = (refusalIsCheckable ? 1 : 0) + (patchCouldFollow ? 1 : 0);
     const patchReserve = scope && reservedCalls > 0
-      ? holdAutomationStudioRecoveryPatchReserve({ runBudget, runId: input.detail.summary.runId, declaredCallsPerRun: purse.budget.declaredCallsPerRun, tokenLimits: requestedTokenLimits, maxEstimatedCostUsd: maxEstimatedCostUsdPerCall(), reservedCalls, ...(provider?.estimateCostUsd ? { estimateCostUsd: provider.estimateCostUsd.bind(provider) } : {}) })
+      ? holdAutomationStudioRecoveryPatchReserve({ runBudget, runId: input.detail.summary.runId, tokenLimits: requestedTokenLimits, maxEstimatedCostUsd: maxEstimatedCostUsdPerCall(), reservedCalls, ...(provider?.estimateCostUsd ? { estimateCostUsd: provider.estimateCostUsd.bind(provider) } : {}) })
       : undefined;
     try {
       explorationResult = scope ? await runAutomationStudioRecoveryExploration({
@@ -493,7 +494,6 @@ async function annotateRunDetail(input: AutomationStudioRuntimeRecoveryAnnotatio
         ...(providerResolution?.timeoutMs !== undefined ? { timeoutMs: providerResolution.timeoutMs } : {}),
         maxEstimatedCostUsd: maxEstimatedCostUsdPerCall,
         recoveryDeadline,
-        ...(patchReserve?.explorationBudget ? { budget: patchReserve.explorationBudget } : {}),
         ...(input.graphOptions?.signal ? { signal: input.graphOptions.signal } : {})
       }) : undefined;
     } finally {
