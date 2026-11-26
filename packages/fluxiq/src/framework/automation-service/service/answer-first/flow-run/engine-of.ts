@@ -3,6 +3,7 @@
 
 import { AutomationStudioServiceTrialCollaboratorRegistry, automationStudioServiceTrialEnvironment } from "../../trial-ports/index.ts";
 import type { AutomationStudioAnswerFirstAttemptInput } from "../attempt/index.ts";
+import { automationStudioAnswerFirstAttemptPorts } from "../attempt/ports.ts";
 import type { AutomationStudioAnswerFirstFlowRunEngine } from "./ports.ts";
 
 /** What a service gives a Flow run of `input`'s Flow. Throws for an owner that is no service, which the run reads as a run that could not start. */
@@ -18,7 +19,11 @@ export function automationStudioAnswerFirstFlowRunEngineOf(input: Pick<Automatio
     currentBaseDigest: environment.currentBaseDigest,
     snapshots: environment.snapshots,
     deprecatedPublicationIds: environment.deprecatedPublicationIds,
-    graphOptions: environment.graphOptions,
+    // A deadline's timer is the service's own where it set one (`../attempt/ports.ts`); unset, the options keep the engine's real timers.
+    graphOptions: (run) => {
+      const startTimer = automationStudioAnswerFirstAttemptPorts(input.owner).startTimer;
+      return startTimer ? { ...environment.graphOptions(run), startTimer } : environment.graphOptions(run);
+    },
     domainReadings: environment.domainReadings,
     ...(native ? { definitions: () => native.listDefinitions() } : {})
   };

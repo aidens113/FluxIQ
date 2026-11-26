@@ -56,7 +56,13 @@ describe("source batch evidence after processing", () => {
     expect(bundle.processing).toEqual(processing);
     expect(automationStudioResultEvidenceFromBatches({ datasets: ["answer"], entries: [entry()] })).not.toHaveProperty("processing");
   });
-  it.each([{ pages: [] }, { ...entry().evidence, pages: [{ ...page(), kept: 2 }] }, { ...entry().evidence, pages: [{ ...page(), rows: ["not a row"], kept: 1 }] }])("rejects corrupt evidence instead of presenting it as a valid empty page", (evidence) => {
+  it("keeps a working read's page with its rows and an older bundle's working count (t1048)", () => {
+    const working = { ...page([{ title: "Cheaper chair" }]), source: "capture.working", step: "finder" };
+    const stored = entry([{ title: "Chair" }]);
+    const bundle = automationStudioResultEvidenceFromBatches({ datasets: ["answer"], entries: [{ ...stored, evidence: { ...stored.evidence, working: [working, { step: "older", kept: 4 }] } }] });
+    expect(bundle.working).toEqual([working, { step: "older", kept: 4 }]);
+  });
+  it.each([{ pages: [] }, { ...entry().evidence, pages: [{ ...page(), kept: 2 }] }, { ...entry().evidence, pages: [{ ...page(), rows: ["not a row"], kept: 1 }] }, { ...entry().evidence, working: [{ ...page([{ title: "A" }]), kept: 3 }] }])("rejects corrupt evidence instead of presenting it as a valid empty page", (evidence) => {
     expect(() => automationStudioResultEvidenceFromBatches({ datasets: ["answer"], entries: [{ datasetId: "answer", batchKey: "bad", evidence: evidence as JsonObject }] })).toThrow(/evidence is invalid/u);
   });
 });

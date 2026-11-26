@@ -1,6 +1,7 @@
 // The order the Flow-less judge's summary is summarised in when both the run trail and the declared result's evidence
 // (`resultEvidence`, t905) are present (t963, t965): resultEvidence's looks and pages before any trail entry, the trail's
-// asked before its found, the acts, and the rows last. Coverage, working reads and the answer contract are never
+// asked before its found, the acts, and the rows last. A working read's page goes with its rows (t1048) and is summarised
+// after the looks and before the pages; coverage, a working read said only by its count and the answer contract are never
 // summarised, and every summarised item still names what it stood for. A kind of site no realistic scenario uses
 // (a lending library's reading room).
 import { describe, expect, it } from "vitest";
@@ -71,13 +72,28 @@ describe("the judge's summary told more briefly, with a trail and result evidenc
     expect(entries(all[rowsAt - 1]).every((entry: any) => entry.asked["core.summarised"] && entry.found["core.summarised"])).toBe(true);
   });
 
-  it("never summarises the coverage, the working reads or the answer contract, at any size", () => {
+  it("never summarises the coverage, a working read said only by its count or the answer contract, at any size", () => {
     for (const form of forms()) {
       expect(form.resultEvidence.coverage).toEqual(shown(evidence.coverage));
       expect(form.resultEvidence.working).toEqual(shown(evidence.working));
       expect(form.resultEvidence.answerContract).toEqual(shown(evidence.answerContract));
       expect(form.summarised.items.filter((item: string) => /coverage|working|answerContract/.test(item))).toEqual([]);
     }
+  });
+
+  it("summarises working reads' pages after the looks and before the pages, and says so in the request (t1048)", () => {
+    const working = { ...page, source: "working", step: "finder", version: 1 };
+    const all = automationStudioFlowLessSummaryFitting(sent(summary({ resultEvidence: { ...evidence, working: [working] } }))).map(shown);
+
+    expect(all[0].summarised.items).toEqual(["resultEvidence.looks"]);
+    expect(all[0].resultEvidence.working).toEqual([shown(working)]);
+    expect(all[1].summarised.items).toEqual(["resultEvidence.looks", "resultEvidence.working"]);
+    expect(all[1].resultEvidence.working["core.summarised"]).toMatchObject({ item: "resultEvidence.working", kind: "list", entries: 1 });
+    expect(all[1].resultEvidence.pages).toEqual([shown(page)]);
+    expect(all[2].summarised.items).toEqual(["resultEvidence.looks", "resultEvidence.working", "resultEvidence.pages"]);
+    // Leaving them out is said in plain words, never done silently.
+    expect(all[1].summarised.note).toContain("summarised 2 of the evidence items");
+    expect(all[1].summarised.note).toContain("answer unknown");
   });
 
   it("drops nothing: every summarised item says what it stood for, and the trail entries keep their identity", () => {

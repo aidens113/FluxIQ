@@ -156,12 +156,22 @@ describe("a build test's judge whose replies could not be read", () => {
         throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "Reply was not JSON.", false, 200);
       }
     };
-    const verdict = await judge(provider, { deadlineMs: 150 })({ summary: runMuw60j7cRunSummary() });
+    // The deadline and the provider's 5 ms are on a clock the test drives, so the deadline passes by what the test advances, never by how loaded the machine is.
+    vi.useFakeTimers();
+    let verdict: Awaited<ReturnType<ReturnType<typeof judge>>>;
+    let asked: number;
+    try {
+      const judging = judge(provider, { deadlineMs: 150 })({ summary: runMuw60j7cRunSummary() });
+      await vi.advanceTimersByTimeAsync(150);
+      verdict = await judging;
+      asked = seen.length;
+      await vi.advanceTimersByTimeAsync(100);
+      expect(seen.length).toBe(asked);
+    } finally {
+      vi.useRealTimers();
+    }
     // The cause is said: the replies could not be read, asked again until the deadline.
     expect(verdict).toMatchObject({ verdict: "not_judged", why: expect.stringMatching(/^Until its deadline passed, the judge's reply could not be read: it was asked \d+ times, so the test was not judged\.$/) });
-    const asked = seen.length;
     expect(asked).toBeGreaterThan(2);
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(seen.length).toBe(asked);
   });
 });

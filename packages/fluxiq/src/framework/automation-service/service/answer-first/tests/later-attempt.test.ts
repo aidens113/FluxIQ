@@ -11,7 +11,7 @@ import { AutomationStudioAnswerFirstTaskMemoryStoreError } from "../task-memory/
 import { savedStep } from "./fake-library-engine.ts";
 import { complete, LOOK_TOOL, RENEW_CARD, RENEW_LOAN, runNode, toolCall } from "./fake-library.ts";
 import { judgedNo, pendingAsk } from "./endings/support.ts";
-import { laterAttempts, readLoans, toldTo } from "./later-attempts.ts";
+import { deadlineClock, laterAttempts, readLoans, toldTo } from "./later-attempts.ts";
 
 vi.setConfig({ testTimeout: 180_000 });
 
@@ -249,9 +249,16 @@ describe("a later attempt at the same task", () => {
     await lane.attempt(cardAttempt);
     const flow = await lane.service.getFlow(lane.projectId, "flow.loans");
     await lane.service.saveFlow({ projectId: lane.projectId, flow: { ...flow!, executionDefaults: { timeoutMs: 400 } } });
-    lane.target.over = ({ nodeId, signal }) => nodeId === RENEW_CARD ? new Promise((resolve) => signal?.addEventListener("abort", () => resolve({ status: "failed", route: "failed", message: "Gave up.", failure: { category: "action_failed", code: "library.gave_up", retryable: false } }), { once: true })) : undefined;
+    // The deadline is the test's to pass: it passes when the run reaches the step that never answers, and not before.
+    const clock = deadlineClock(lane.service);
+    lane.target.over = ({ nodeId, signal }) => {
+      if (nodeId !== RENEW_CARD) return undefined;
+      expect(clock.started).toBeGreaterThan(0);
+      clock.pass();
+      return new Promise((resolve) => signal?.addEventListener("abort", () => resolve({ status: "failed", route: "failed", message: "Gave up.", failure: { category: "action_failed", code: "library.gave_up", retryable: false } }), { once: true }));
+    };
     const second = await lane.attempt({ instruction: CARD_TASK, permittedConsequences: ["modify_existing"], runAgain: true, script: [complete("Listed, and the card may have been renewed.")] });
-    expect(toldTo(second.decisions[0])?.flowRun).toMatchObject({ stoppedAt: CARD_STEP });
+    expect(toldTo(second.decisions[0])?.flowRun).toMatchObject({ stoppedAt: CARD_STEP, happened: expect.stringMatching(/time this Flow is allowed/u) });
     expect(second.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow_then_explore" });
   });
 });

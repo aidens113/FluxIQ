@@ -6,6 +6,11 @@
 export type AutomationStudioAnswerFirstAttemptPorts = {
   /** Waits for `ms`, or until `signal` aborts, whichever is first. Never rejects. */
   sleep(ms: number, signal?: AbortSignal): Promise<void>;
+  /**
+   * The timer a Flow run's own deadline and its regions' timeouts run on (`../../../../engine/automation/composite/child-bounds.ts`).
+   * Absent: the engine's real timers, as before. A test sets it so a deadline passes exactly when it means to.
+   */
+  startTimer?: ((wait: { readonly kind: "region_timeout" | "run_deadline" }, delayMs: number, fire: () => void) => { cancel(): void }) | undefined;
 };
 
 const PORTS = new WeakMap<object, AutomationStudioAnswerFirstAttemptPorts>();
