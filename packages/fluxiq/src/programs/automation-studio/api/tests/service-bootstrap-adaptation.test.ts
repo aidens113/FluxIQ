@@ -314,7 +314,6 @@ describe("AutomationStudioService Flow Bootstrap adaptations", () => {
       llmProviderResolver: async () => ({
         provider,
         tokenLimits: { maxInputTokens: 992_000, maxOutputTokens: 8_000, maxTotalTokens: 1_000_000 },
-        maxCallsPerRun: 1,
         maxEstimatedCostUsd: 0.25,
         timeoutMs: 20_000
       })

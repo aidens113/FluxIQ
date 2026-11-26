@@ -273,6 +273,8 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
   // refused again, or nothing when the loop should ask again. No count of them in
   // a row ends anything (t1056). Refused for the same issues again, it is a step
   // without progress, which steers and ends nothing (t1049).
+  /** The same decision refused the same way, with nothing between: how many in a row (t1056). */
+  let sameRefusalInARow = 0;
   const unusable = (step: AutomationStudioLlmEvidenceLoopTrace, issueCodes: readonly string[], transition?: RowTransition): { error: unknown } | undefined => {
     counters.unusableInARow += 1;
     lastIssueCodes = issueCodes;
@@ -280,11 +282,18 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
     const issueSet = automationStudioLlmUnusableDecisionIssueSet(issueCodes);
     // A refused completion also counts when the same draft was refused the same way before, whatever ran between (`./evidence-progress/no-progress.ts`).
     const sameDraftRefusedAgain = transition !== undefined && noProgress.refusedAgain(automationStudioFlowDraftReplaySignature(draftSteps), issueSet);
-    if (noProgress.sameIssuesAgain(issueSet) || sameDraftRefusedAgain) noProgress.stepped();
+    const sameIssues = noProgress.sameIssuesAgain(issueSet);
+    if (sameIssues || sameDraftRefusedAgain) noProgress.stepped();
     else noProgress.restarted();
+    // The same decision refused the same way, nothing between: one more in a row (t1056).
+    sameRefusalInARow = counters.unusableInARow > 1 && sameIssues ? sameRefusalInARow + 1 : 1;
     recordRow(step, transition);
     // It is also one more repeat refused in a row, beside the identical part runs it sat between (`repeat-guard/outcomes.ts`, run-musr9pv3-f4bf6256); with a loop signal, loop detection's ladder decides (`./evidence-loop/refused-again.ts`, t1014).
-    const repeatsStall = sameDraftRefusedAgain && automationStudioLlmEvidenceRefusedAgainEnds(handling, step.iteration, handling.repeats.refusedAgain(step.iteration), { caught: automationStudioLlmEvidenceLoopCaught, raise: automationStudioLlmEvidenceLoopRaise });
+    const ladder = { caught: automationStudioLlmEvidenceLoopCaught, raise: automationStudioLlmEvidenceLoopRaise };
+    // A decision refused the same way again and again, before it is acted on, climbs the same ladder (`./evidence-loop/refused-again.ts`, t1056).
+    const repeatsStall = sameDraftRefusedAgain
+      ? automationStudioLlmEvidenceRefusedAgainEnds(handling, step.iteration, handling.repeats.refusedAgain(step.iteration), ladder)
+      : transition === undefined && automationStudioLlmEvidenceRefusedAgainEnds(handling, step.iteration, sameRefusalInARow, ladder, AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID);
     if (!repeatsStall) {
       // A refused completion is the one stall the redirection has something
       // specific to say about: its issue codes are what stand between the

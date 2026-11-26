@@ -59,9 +59,11 @@ describe("creating a Flow through an exploration, with no grant", () => {
   }, 30_000);
 
   // Six unreadable replies in a row once ended a build with calls left (`flow_bootstrap.model_replies_unreadable`). No
-  // count of unreadable replies ends one now (t1056): each, paid for, is asked again with its note, and the run's budget
-  // -- here its tokens, the run's `maxCalls` times one request's -- ends a build whose replies never become readable.
-  it("asks again after every unreadable reply, each paid for, until the run's budget ends it", async () => {
+  // count of unreadable replies ends one now (t1056): each, paid for, is asked again with its note. The same unreadable
+  // reply again is a repeat loop detection catches, and at the top of its ladder the build's round ends (`loopSignal`);
+  // the build opens a fresh round, as it does for any round that stalled, and its limit on live rounds ends a build
+  // whose replies never become readable.
+  it("asks again after every unreadable reply, each paid for, and opens fresh rounds until its limit on rounds ends it", async () => {
     const run = await create({ maxCalls: 12, reply: () => "malformed" });
 
     const n = run.sentIterations.length;
@@ -71,8 +73,9 @@ describe("creating a Flow through an exploration, with no grant", () => {
       retryable: true,
       providerInvocation: "attempted",
       evidenceLoop: { decisionCount: n, toolCallCount: 0 },
-      ending: { kind: "budget_exhausted", bound: "tokens", tried: { rounds: 1, decisions: n, stepsInFlow: 0 } }
+      ending: { kind: "budget_exhausted", bound: "rounds", tried: { decisions: n, stepsInFlow: 0 } }
     });
+    expect(run.failure?.ending?.tried.rounds).toBeGreaterThan(1);
     // Every malformed reply was paid for and counted (`runtime/llm/reply-account.ts`).
     expect(run.failure?.accounting?.inputTokens).toBeGreaterThanOrEqual(1_200 * n);
     expect(run.failure?.evidenceLoop?.steps?.filter((step) => step.toolId === "core.decision_unusable" && step.resultCode === "llm.provider_malformed_response").length).toBeGreaterThan(6);

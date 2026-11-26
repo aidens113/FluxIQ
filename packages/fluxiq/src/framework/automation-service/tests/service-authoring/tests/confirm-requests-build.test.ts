@@ -243,7 +243,7 @@ async function build(script: { decisions: JsonObject[]; judge: ("yes" | "no")[];
   const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
   const instance = new AutomationStudioService({
     dataDir: tempRoot,
-    llmProviderResolver: (() => ({ provider, maxCallsPerRun: 24, maxEstimatedCostUsd: 0.25 })) as never,
+    llmProviderResolver: (() => ({ provider, maxEstimatedCostUsd: 0.25 })) as never,
     llmEvidenceRuntime: domain.binding
   });
   instance.bindNativeNodeRuntime(nativeRuntime());

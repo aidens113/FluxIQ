@@ -30,6 +30,11 @@
 // So a request is a prefix of the next through the whole window, except where
 // the offer changed: then the miss starts in the schema, once.
 //
+// A new round is a new conversation, so the prefix holds within each round. Since t1056 a build's round ends at the
+// top of loop detection's ladder (`loopSignal`, `framework/.../flow-bootstrap-commands/loop-signal.ts`): here the model
+// keeps completing with a result the check refuses, loop detection ends the round, and the build tests what it has and
+// opens a repair round (`core.resumed`). Its first request starts a fresh window; within it the prefix holds again.
+//
 // Declared view members are references from their first appearance. Their
 // historical bytes stay fixed while the latest whole views move in a tail.
 // Compare captured serialized provider request bodies as UTF8, not JS offsets.
@@ -53,6 +58,12 @@ const TOOL_ID = "demo.act";
 type Sent = { wire: string; system: string; user: string; payload: SentPayload };
 type SentEntry = { callId: string; toolId: string; value: unknown };
 type SentPayload = { outputSchema?: unknown; context: { evidenceLoop: { evidence: SentEntry[]; tools?: unknown }; routing?: { situations?: unknown[] }; flowBootstrap?: { routing?: { situations?: unknown[]; situationsShown?: string } } } };
+
+/** Whether `later` opens a new round (a repair, `core.resumed`): a fresh window, never a continuation of `earlier`'s (header). */
+function freshRound(earlier: Sent, later: Sent): boolean {
+  const resumed = (request: Sent) => request.payload.context.evidenceLoop.evidence.filter((entry) => entry.toolId === "core.resumed").length;
+  return resumed(later) > resumed(earlier) || (resumed(later) > 0 && later.payload.context.evidenceLoop.evidence.length < earlier.payload.context.evidenceLoop.evidence.length);
+}
 
 let tempRoot: string;
 beforeEach(async () => { tempRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-request-prefix-")); });
@@ -86,6 +97,7 @@ describe("the cached prefix of a build's decisions", () => {
     for (let index = 1; index < sent.length; index += 1) {
       const earlier = sent[index - 1]!;
       const later = sent[index]!;
+      if (freshRound(earlier, later)) continue;
       // Nothing is declared a view here, so every result stays whole.
       expect(later.payload.context.evidenceLoop.evidence.some((entry) => JSON.stringify(entry.value).includes("supersededBy"))).toBe(false);
       const shared = sharedToolResults(earlier.payload.context.evidenceLoop.evidence, later.payload.context.evidenceLoop.evidence);
@@ -132,6 +144,7 @@ describe("the cached prefix of a build's decisions", () => {
     for (let index = 1; index < sent.length; index += 1) {
       const earlier = sent[index - 1]!;
       const later = sent[index]!;
+      if (freshRound(earlier, later)) continue;
       const history = earlier.payload.context.evidenceLoop.evidence.filter(isToolResult);
       const shared = sharedToolResults(earlier.payload.context.evidenceLoop.evidence, later.payload.context.evidenceLoop.evidence);
       expect(shared, "all prior tool/route history is immutable, including the immediately previous view").toBe(history.length);
@@ -234,7 +247,7 @@ async function build(reply: (call: number) => JsonObject, observedStateKeys?: re
   service.bindLlmExecutionProvider((input) => {
     const resolution = resolveForCaller(input);
     if (!resolution) return undefined;
-    return { ...resolution, maxCallsPerRun: 8, tokenLimits, maxTotalTokensPerRun: tokenLimits.maxTotalTokens * 8, timeoutMs: 25_000, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 };
+    return { ...resolution, tokenLimits, maxTotalTokensPerRun: tokenLimits.maxTotalTokens * 8, timeoutMs: 25_000, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 };
   });
   service.bindLlmEvidenceRuntime(binding(observedStateKeys));
   try {

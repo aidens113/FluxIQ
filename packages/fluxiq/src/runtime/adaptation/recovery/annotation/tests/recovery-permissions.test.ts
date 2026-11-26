@@ -172,7 +172,7 @@ async function recover(setup: Setup): Promise<Recovery> {
   };
   run.detail = await annotateAutomationStudioRunDetailWithRuntimeLlm({
     ports: {
-      resolveLlmProvider: () => ({ provider, maxCallsPerRun: 6 }),
+      resolveLlmProvider: () => ({ provider }),
       llmEvidenceRuntime: {
         domainId: "test.domain",
         deniedEvidenceKeys: [],

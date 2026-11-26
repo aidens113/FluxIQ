@@ -55,7 +55,7 @@ describe("annotateAutomationStudioRunDetailWithRuntimeLlm", () => {
   it("explores and re-plans when the model says the goal is gone, so the refusal is checked against the page", async () => {
     const executed: string[] = [];
     const taskKinds: string[] = [];
-    const detail = await annotate({ executed, taskKinds, maxCallsPerRun: 6, patchNeeded: false, stillAchievable: "no" });
+    const detail = await annotate({ executed, taskKinds, patchNeeded: false, stillAchievable: "no" });
 
     expect(taskKinds.at(0)).toBe("runtime_diagnosis");
     expect(taskKinds.at(-1)).toBe("runtime_diagnosis");
@@ -100,7 +100,7 @@ describe("annotateAutomationStudioRunDetailWithRuntimeLlm", () => {
   // was not the fix.
   it("turns the refusal into a patch request when looking changes the model's mind", async () => {
     const taskKinds: string[] = [];
-    const detail = await annotate({ executed: [], taskKinds, maxCallsPerRun: 6, patchNeeded: false, stillAchievable: "no", replan: { patchNeeded: true } });
+    const detail = await annotate({ executed: [], taskKinds, patchNeeded: false, stillAchievable: "no", replan: { patchNeeded: true } });
 
     expect(taskKinds.filter((kind) => kind === "runtime_diagnosis")).toHaveLength(2);
     expect(planStage(detail)).toMatchObject({ detail: { patchRequested: true, replanned: true, replanChangedDecision: true } });
@@ -117,7 +117,7 @@ describe("annotateAutomationStudioRunDetailWithRuntimeLlm", () => {
   // that cannot disagree with the first.
   it("makes the re-plan at the plan stage, carrying the explored packets and its own earlier answer", async () => {
     const requests: AutomationStudioLlmTaskRequest[] = [];
-    await annotate({ executed: [], requests, maxCallsPerRun: 6, captureFailureEvidence: true, patchNeeded: false, stillAchievable: "no" });
+    await annotate({ executed: [], requests, captureFailureEvidence: true, patchNeeded: false, stillAchievable: "no" });
     const replanRequest = requests.find((request) => request.taskKind === "runtime_diagnosis" && request.context.stage === "plan");
 
     expect(replanRequest).toBeDefined();
@@ -131,7 +131,7 @@ describe("annotateAutomationStudioRunDetailWithRuntimeLlm", () => {
   // than the refusal it replaced; recording it as a checked refusal would be a
   // claim no call backs up.
   it("leaves the original refusal standing, marked unchecked, when the re-plan returns no diagnosis", async () => {
-    const detail = await annotate({ executed: [], maxCallsPerRun: 6, patchNeeded: false, stillAchievable: "no", replanFails: true });
+    const detail = await annotate({ executed: [], patchNeeded: false, stillAchievable: "no", replanFails: true });
 
     expect((detail.metadata?.llmGate as JsonObject | undefined)).toMatchObject({
       patchSkippedCode: "llm.runtime_patch_goal_unachievable",
@@ -224,11 +224,11 @@ describe("annotateAutomationStudioRunDetailWithRuntimeLlm", () => {
     }
   });
 
-  // A call count a resolver or a Flow's settings still states ends nothing (t1056): no count of calls ends a run. The
-  // exploration that once stopped on two calls runs as it would with none declared.
+  // A call count a Flow's settings still state ends nothing (t1056): no count of calls ends a run, and a resolver
+  // declares none. The exploration that once stopped on two calls runs as it would with none declared.
   it.each([
-    ["the resolver's", { maxCallsPerRun: 2 }],
-    ["the Flow's configured", { maxCallsPerRun: "undeclared", flowMetadata: { llmExecutionSettings: { tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 }, maxCalls: 2, timeoutMs: 20_000, maxEstimatedCostUsd: 0.25, retryCount: 0 } } }]
+    ["no declared", {}],
+    ["the Flow's configured", { flowMetadata: { llmExecutionSettings: { tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 }, maxCalls: 2, timeoutMs: 20_000, maxEstimatedCostUsd: 0.25, retryCount: 0 } } }]
   ] as const)("does not end the exploration on %s call count", async (_whose, options) => {
     const executed: string[] = [];
     const detail = await annotate({ executed, ...options });
@@ -248,7 +248,7 @@ describe("annotateAutomationStudioRunDetailWithRuntimeLlm", () => {
   // progress, and the exploration runs.
   it("does not read the intervention limit as a provider-call limit", async () => {
     const executed: string[] = [];
-    const detail = await annotate({ executed, maxCallsPerRun: "undeclared", maxInterventionsPerRun: 1 });
+    const detail = await annotate({ executed, maxInterventionsPerRun: 1 });
 
     expect(executed).toEqual(["test.inspect"]);
     expect(explorationStage(detail)).toMatchObject({

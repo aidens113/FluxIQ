@@ -26,10 +26,19 @@ const receiptPolicy = { isTaskKind, isStage: isAutomationStudioLoopStage };
 // recoveries of cheap calls before their money did; Studio's limits take no count at all now.
 const policy = { ...receiptPolicy, defaultCostCeilingUsd: AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, maxCallsPerRun: Number.POSITIVE_INFINITY, recordLimit: AUTOMATION_STUDIO_LLM_RUN_CALL_RECORD_LIMIT };
 
+/**
+ * The limits without a call count. Studio's type has none, but one can still arrive through an untyped spread (a
+ * resolver's or a fixture's object), and the generic ledger would honour it over the policy's Infinity (t1056).
+ */
+function withoutCallCount(limits: AutomationStudioLlmRunBudgetLimits): AutomationStudioLlmRunBudgetLimits {
+  const { maxCallsPerRun: _dropped, ...rest } = limits as ModelRunBudgetLimits;
+  return rest;
+}
+
 /** Studio binds its configured defaults and exact receipt vocabulary to the generic ledger. */
 export class AutomationStudioLlmRunBudgetLedger extends ModelRunBudgetLedger {
   constructor(limits: AutomationStudioLlmRunBudgetLimits) {
-    super(limits, policy);
+    super(withoutCallCount(limits), policy);
   }
   override reserve(input: AutomationStudioLlmRunBudgetReservationInput): AutomationStudioLlmRunBudgetReservation { return super.reserve(input); }
   override callRecords(runId: string): { calls: AutomationStudioLlmRunCallRecord[]; omitted: number } {

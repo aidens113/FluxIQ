@@ -291,13 +291,13 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
   });
 
   // The loop used to stop at `min(calls, 8)` decisions, then at the
-  // resolution's call count. No count of calls bounds a build now (t1056): the
-  // resolution's twelve is read by nothing, a model that finishes takes the
-  // decisions it needs, and one that never finishes gathers until its purse is
-  // nearly spent, when the build tests and judges the Flow it has.
+  // resolution's call count of twelve. No count of calls bounds a build now
+  // (t1056): a model that finishes takes the decisions it needs, and one that
+  // never finishes gathers until its purse cannot pay for another decision
+  // beside the judging it keeps back.
   it.each([
     { looks: 10, calls: 11, finishes: true },
-    // Never finishing: past the resolution's twelve, until the purse.
+    // Never finishing: past the old count of twelve, until the purse.
     { looks: 1_000, calls: 12, finishes: false }
   ])("lets an evidence-guided bootstrap keep gathering past eight decisions, and past any call count (%o)", async ({ looks, calls, finishes }) => {
     const requests: AutomationStudioLlmTaskRequest[] = [];
@@ -318,7 +318,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     const { project, flow } = await seeded(single);
     const instance = createService({
       provider,
-      resolver: () => ({ provider, maxCallsPerRun: 12, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 }),
+      resolver: () => ({ provider, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 }),
       evidenceRuntime: automationStudioReplayingBinding({
         domainId: "test.domain",
         deniedEvidenceKeys: [],
@@ -328,17 +328,26 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     });
     const generation = instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true });
 
-    const result = await generation;
-    await expect(instance.getFlowBootstrapAdaptation(project.id, flow.flowId, result.adaptationId)).resolves.toMatchObject({ status: "proposed" });
+    const result = finishes ? await generation : undefined;
+    const diagnostic = finishes ? undefined : await rejectedGenerationDiagnostic(generation);
     // A build that finishes then asks the judge of its test twice, its yes confirmed by a second call (murwcmx2, C-H):
-    // provider calls that are not decisions. One that never finishes is tested and judged as its purse runs low.
+    // provider calls that are not decisions.
     const decisions = requests.filter((request) => !isJudgeRequest(request));
-    if (finishes) {
+    if (result) {
+      await expect(instance.getFlowBootstrapAdaptation(project.id, flow.flowId, result.adaptationId)).resolves.toMatchObject({ status: "proposed" });
       expect(decisions).toHaveLength(calls);
       expect(requests).toHaveLength(calls + 2);
     } else {
+      // One that never finishes gathers past the old count until the purse refuses a decision beside the judging pair
+      // it keeps back (this provider prices nothing, so it is held at Core's default model's rates). The Flow that round
+      // left is one kept read: this stand-in's reads name no node (`keptRead`), so no plan can be written from it, the
+      // stopped draft's completion check refuses it, and it is neither tested nor judged (the reserve is not spent on a
+      // Flow that cannot be built). The build ends at its budget with that draft kept for the next build.
       expect(decisions.length).toBeGreaterThan(calls);
-      expect(requests.filter(isJudgeRequest)).toHaveLength(2);
+      expect(requests.some(isJudgeRequest)).toBe(false);
+      expect(diagnostic).toMatchObject({ code: "flow_bootstrap.evidence_budget_exhausted",
+        ending: { kind: "budget_exhausted", bound: "cost", tried: { tested: "not_tested", stepsInFlow: 1 } } });
+      expect(diagnostic?.evidenceLoop?.incompleteDraft).toMatchObject({ steps: 1 });
     }
     // A new Flow's settings carry the run cost ceiling ($0.10 since 2026-10-01;
     // was $0.25), and the build's
@@ -403,7 +412,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     expect(stored?.auditEvents[0]?.detail).toMatchObject({ reusableContext: { status: "hit", sourceRunIds: ["run.prior"], sourceAdaptationIds: ["adaptation.prior"] } });
   });
 
-  // No count of calls ends it (t1056; the resolution's three is read by nothing): each decision costs five cents, so the
+  // No count of calls ends it (t1056; the resolution's old count of three is gone): each decision costs five cents, so the
   // build's purse is spent after a few.
   it("asks again after an unknown tool and returns the closed budget reason with content-free counts", async () => {
     // The build reads its instruction when it starts (t976, b2ee9ed45): answered apart from the decisions scripted here.
@@ -414,7 +423,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     const { project, flow } = await seeded(single);
     const instance = createService({
       provider,
-      resolver: () => ({ provider, maxCallsPerRun: 3 }),
+      resolver: () => ({ provider }),
       evidenceRuntime: { domainId: "test.domain", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect bounded evidence.", inputSchema: { type: "object" } }], executeTool: vi.fn() }
     });
     const diagnostic = await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation({
@@ -438,6 +447,10 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       evidenceLoop: { iterationCount: decided, decisionCount: decided, toolCallCount: 0 },
       totalProviderCallCount: decided + 1
     });
-    expect((diagnostic as unknown as { evidenceLoop: { steps: { resultCode: string }[] } }).evidenceLoop.steps.map((step) => step.resultCode)).toEqual(Array(decided).fill("llm_evidence_loop.unknown_tool_refused"));
+    // Each decision is a refused unknown tool. Loop detection may add its own row where it steers the repeat (`core.decision_check`,
+    // `loop_steered`): a note on the trace, not a decision, and never an ending.
+    const steps = (diagnostic as unknown as { evidenceLoop: { steps: { toolId: string; resultCode: string }[] } }).evidenceLoop.steps;
+    expect(steps.filter((step) => step.toolId !== "core.decision_check").map((step) => step.resultCode)).toEqual(Array(decided).fill("llm_evidence_loop.unknown_tool_refused"));
+    expect(steps.filter((step) => step.toolId === "core.decision_check").every((step) => step.resultCode === "llm_evidence_loop.loop_steered")).toBe(true);
   });
 });

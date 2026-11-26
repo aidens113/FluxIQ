@@ -39,6 +39,8 @@ export function automationStudioLlmEvidenceRepeatStall(
  * codes; this one says which answer stranded the builder. Nothing more is refused.
  */
 const LAST_REFUSAL = "llm_evidence_loop.last_refusal:";
+/** The digest of its issues a submission refusal's code ends in (`../../flow-authoring/bootstrap/candidate/submission/`). */
+const ISSUES_DIGEST = /:[0-9a-f]{8}$/u;
 
 /** The newest call or look the history records as refused under a code of its own (not a refused repeat), as one code, or none. */
 function lastRefusal(context: AutomationStudioLlmEvidenceDecisionHandlerContext): string[] {
@@ -47,7 +49,9 @@ function lastRefusal(context: AutomationStudioLlmEvidenceDecisionHandlerContext)
     const decision = records[index]!.decision;
     if ((decision.kind !== "call" && decision.kind !== "look") || decision.refused !== true) continue;
     const code = decision.resultCode;
-    if (code && code !== "ok" && code !== AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_REFUSED_CODE) return [`${LAST_REFUSAL}${code}`];
+    // Named by its family: a refusal code's digest of its issues (`family:1a2b3c4d`) is Core's key, never words a return may
+    // carry (t630). Since t1056 a refused repeat reaches this stall at the top of loop detection's ladder, so it is said here.
+    if (code && code !== "ok" && code !== AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_REFUSED_CODE) return [`${LAST_REFUSAL}${code.replace(ISSUES_DIGEST, "")}`];
   }
   return [];
 }

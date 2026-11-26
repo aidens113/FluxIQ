@@ -98,7 +98,6 @@ async function repairedRun(): Promise<{ service: AutomationStudioService; projec
         }
       },
       tokenLimits: { maxInputTokens: 4000, maxOutputTokens: 1000, maxTotalTokens: 5000 },
-      maxCallsPerRun: 2,
       maxEstimatedCostUsd: 0.1,
       maxTotalEstimatedCostUsd: 0.15
     })

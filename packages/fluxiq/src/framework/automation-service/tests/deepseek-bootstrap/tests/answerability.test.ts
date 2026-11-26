@@ -70,14 +70,25 @@ describe("creating a Flow through an exploration, with no grant", () => {
     });
 
     // Decision 10 ends the first round: it is accepted, not refused, so the
-    // second round starts its own count at 1. Twenty-six decisions in all.
-    expect(run.sentIterations).toEqual([
+    // second round starts its own count at 1. Its completion at 16 is judged no
+    // again, with the fix named, so a third round repairs again. The measured run
+    // had no calls left by then (26 of 26). No count of calls ends a build now
+    // (t1056): the third round's model sends the completion it is not offered
+    // again and again, loop detection catches the repeat, and at the top of its
+    // ladder the build's round ends (`loopSignal`). It once went on 870 times,
+    // until the purse, because a decision refused before it was acted on never
+    // reached the ladder (`runtime/llm/evidence-loop.ts`, t1056).
+    const third = run.sentIterations.slice(26);
+    expect(run.sentIterations.slice(0, 26)).toEqual([
       ...Array.from({ length: 10 }, (_, index) => index + 1),
       ...Array.from({ length: 16 }, (_, index) => index + 1)
     ]);
+    expect(third.length).toBeGreaterThan(0);
+    expect(third.length).toBeLessThanOrEqual(10);
+    expect(third).toEqual(Array.from({ length: third.length }, (_, index) => index + 1));
     // Two judgements, each asked twice: both Flows read no row, and the judge says so.
     expect(run.judgeRequests).toHaveLength(4);
-    expect(run.revealed).toHaveLength(30);
+    expect(run.revealed).toHaveLength(30 + third.length);
     expect(run.observations.every((observation) => observation.offeredDecisionKinds.length > 0)).toBe(true);
     expect(feedbackRows(run.observations[9], "core.amendment_check")).toEqual([{ toolId: "core.amendment_check", issueCodes: ["already_so"] }]);
     // Nothing was refused for answerability: no decision was shown a completion check, in either round.
@@ -90,12 +101,13 @@ describe("creating a Flow through an exploration, with no grant", () => {
     }
 
     // What each judge read is the test of the whole Flow, run again from its start: the six steps added, and then those
-    // six with the thirteen looks the repair ran, each a step of this harness that the framework drafts in (t1037).
-    expect(run.judgeRequests.map((request) => request.stepCount)).toEqual([6, 6, 19, 19]);
+    // six with the fourteen looks the repair ran, each a step of this harness that the framework drafts in (t1037). The
+    // fourteenth fell in a wrap-up the call count once set and was not run; no count sets one now (t1056).
+    expect(run.judgeRequests.map((request) => request.stepCount)).toEqual([6, 6, 20, 20]);
 
     // The second round is a repair of the judged Flow, told the judge's account: what it observed, what was asked, and
     // its advice.
-    const secondRound = run.observations.slice(10);
+    const secondRound = run.observations.slice(10, 26);
     expect(secondRound).toHaveLength(16);
     expect(secondRound.map((observation) => observation.iteration)).toEqual(Array.from({ length: 16 }, (_, index) => index + 1));
     for (const observation of secondRound) {
@@ -113,11 +125,11 @@ describe("creating a Flow through an exploration, with no grant", () => {
     // Its first decision is told to look first at the page the test left, so it
     // may look or amend but not complete; from the second every kind is listed. A tool
     // call is offered in two shapes since t244: a domain tool, and `core.run_flow`
-    // (`llm/node-tools/run-flow.ts`).
-    expect(secondRound[0]?.offeredDecisionKinds).toEqual(["amend_draft", "tool_call", "tool_call"]);
+    // (`llm/node-tools/run-flow.ts`), and a third since t1056: `core.loop_decision`, offered to every loop with tools.
+    expect(secondRound[0]?.offeredDecisionKinds).toEqual(["amend_draft", "tool_call", "tool_call", "tool_call"]);
     // The wrap-up and the last decision keep the same list, so the head of the request does not change (t869); their budget entry says what runs.
     expect(secondRound.slice(1).map((observation) => observation.offeredDecisionKinds)).toEqual(
-      Array.from({ length: 15 }, () => ["complete", "amend_draft", "tool_call", "tool_call"])
+      Array.from({ length: 15 }, () => ["complete", "amend_draft", "tool_call", "tool_call", "tool_call"])
     );
     expect(secondRound.every((observation) => observation.registeredRecordProducerCount === 1)).toBe(true);
     expect(secondRound.every((observation) => observation.visibleRecordProducerCount === 1)).toBe(true);
@@ -131,19 +143,18 @@ describe("creating a Flow through an exploration, with no grant", () => {
     }
 
     // The repair's Flow, tested whole, was judged the same no as the round before, so the repair made no progress.
-    // The judge named its fix and did not say the request can no longer be had, so the build would take one more
-    // round (t195-w37: "not doable" only when there is absolutely no way) -- but it had spent every call it had, so
-    // it ends on that budget, honestly, and a retry carries on from the Flow so far.
+    // The judge named its fix and did not say the request can no longer be had (t195-w37: "not doable" only when there
+    // is absolutely no way): the build takes one more round, which loop detection ends on the repeated completion, and
+    // the build ends not finished, honestly, and a retry carries on from the Flow so far.
     expect(run.failure).toMatchObject({
-      code: "flow_bootstrap.evidence_budget_exhausted",
-      stage: "provider_output_validation",
+      code: "flow_bootstrap.build_not_finished",
       retryable: true,
       providerInvocation: "attempted",
       providerResponse: "received",
-      // Twenty-six decisions at 1,200 in and 150 out, and four judge calls at 400 and 40.
-      accounting: { provider: "deepseek", model: "deepseek-flash", inputTokens: 32_800, outputTokens: 4_060, totalTokens: 36_860 },
-      evidenceLoop: { iterationCount: 26, decisionCount: 26, toolCallCount: 21, evidenceBytes: expect.any(Number) },
-      ending: { kind: "budget_exhausted", tried: { rounds: 2, decisions: 26, stepsInFlow: 19, tested: "replayed_clean" } }
+      accounting: { provider: "deepseek", model: "deepseek-flash" },
+      evidenceLoop: { iterationCount: 26 + third.length, decisionCount: 26 + third.length },
+      // The third round changed nothing since the judge's no, so its Flow was not run again.
+      ending: { kind: "not_finished", tried: { rounds: 3, decisions: 26 + third.length, tested: "not_tested" } }
     });
     // No round ran out of decisions -- each ended on a completion the judge sent back -- so there is no exhaustion to
     // report, and no completion was refused, so there is no issue code either.
@@ -162,7 +173,8 @@ describe("creating a Flow through an exploration, with no grant", () => {
       // Both completions are accepted: the check still observes that no step produces a record, and says so in the
       // record, but it no longer carries an issue code that refuses.
       expect.objectContaining({ iteration: 10, toolId: "core.decision_complete", progress: expect.objectContaining({ answerabilityState: "first_observed" }), answerability: { recordsRequested: true, recordProducerPresent: false, recordStorePresent: false } }),
-      expect.objectContaining({ iteration: 24, resultCode: "llm_evidence_loop.not_offered" }),
+      // No call count sets a wrap-up any more (t1056), so the look at 24 runs.
+      expect.objectContaining({ iteration: 24, toolId: "demo.look", resultCode: "demo.action.succeeded" }),
       expect.objectContaining({ iteration: 26, toolId: "core.decision_complete", answerability: { recordsRequested: true, recordProducerPresent: false, recordStorePresent: false } })
     ]));
     expect(run.result).toBeUndefined();
@@ -204,7 +216,7 @@ describe("creating a Flow through an exploration, with no grant", () => {
     expect(run.observations[11]).toMatchObject({
       iteration: 2,
       completionFeedback: [],
-      offeredDecisionKinds: ["complete", "amend_draft", "tool_call", "tool_call"],
+      offeredDecisionKinds: ["complete", "amend_draft", "tool_call", "tool_call", "tool_call"],
       resumed: {
         code: "llm_evidence_loop.repair",
         draftSteps: 6,

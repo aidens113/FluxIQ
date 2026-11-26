@@ -86,7 +86,7 @@ async function appliedPressFlow() {
   });
   const service = new AutomationStudioService({
     dataDir,
-    llmProviderResolver: () => ({ provider, maxCallsPerRun: 12, maxEstimatedCostUsd: 0.1 }),
+    llmProviderResolver: () => ({ provider, maxEstimatedCostUsd: 0.1 }),
     llmEvidenceRuntime: {
       domainId: "example", deniedEvidenceKeys: [],
       resolvePlanNodeParameters: ({ parameters }) => ({ status: "resolved", parameters }),

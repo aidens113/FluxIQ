@@ -19,8 +19,6 @@ const DECISION_USD = 0.001;
 const READING_USD = DECISION_USD;
 /** The build's purse: dollars, never a count of calls (t1056). */
 const PURSE_USD = 0.03;
-/** The unusable replies in a row that once ended a loop (t1056 removed the backstop). */
-const OLD_BACKSTOP = 12;
 
 type Reply = (call: number, latest: { revision?: number; digest?: string } | undefined) => Record<string, unknown>;
 
@@ -68,18 +66,25 @@ describe("a candidate build survives an unusable reply and accounts for its spen
     } finally { await build.close(); }
   }, 60_000);
 
-  // No count of unusable replies in a row ends the loop (t1056; it was twelve): each is asked again on the same model
-  // and paid for, and the purse ends a build that never gets a usable one.
-  it("unusable replies in a row are each asked again far past the old backstop, until the purse ends the build, with its spend", async () => {
+  // No count of unusable replies in a row ends the loop (t1056; it was twelve). The same unusable reply sent again and
+  // again is a repeat with no new evidence, so loop detection steers it and, at its ladder's top, ends the round as a
+  // build's `loopSignal` says (`../loop-signal.ts`). A candidate build has no repair round, so its stall is its ending,
+  // reported with every call it paid for (`../../candidate-failure/stall-code.ts`).
+  it("the same unusable reply again and again is steered by loop detection, which ends the round at its ladder's top, with its spend", async () => {
     const build = await candidateBuild((call) => call === 1 ? { kind: "tool_call", callId: "look", toolId: "inspect", input: { area: "item" } } : malformedSubmission);
     try {
       if (build.settled.ok) throw new Error(`expected the build to end, got ${build.settled.result.status}`);
-      expect(build.calls()).toBeGreaterThan(1 + OLD_BACKSTOP);
       // The decisions and the start's reading (t976).
       const spent = build.calls() * DECISION_USD + READING_USD;
       const diagnostic = (build.settled.error as { diagnostic?: Record<string, unknown> }).diagnostic;
-      expect(diagnostic).toMatchObject({ code: "flow_bootstrap.evidence_iteration_limit", providerInvocation: "attempted", accounting: { estimatedCostUsd: expect.closeTo(spent, 6) },
-        evidenceLoop: { exhausted: { bound: "budget", budgetBound: "cost" } } });
+      expect(diagnostic).toMatchObject({ code: "flow_bootstrap.evidence_unusable_decision", providerInvocation: "attempted", issueCodes: ["llm_output.invalid_evidence_decision"],
+        accounting: { estimatedCostUsd: expect.closeTo(spent, 6) } });
+      const checks = (diagnostic?.evidenceLoop as { steps: { toolId: string; resultCode?: string }[] }).steps
+        .filter((step) => step.toolId === "core.decision_check").map((step) => step.resultCode);
+      // Steered first, then the ladder's top: never ended on a first repeat, and never by a count of replies.
+      expect(checks[0]).toBe("llm_evidence_loop.loop_steered");
+      expect(checks.at(-1)).toBe("llm_evidence_loop.loop_change_approach");
+      expect(build.calls()).toBeLessThan(PURSE_USD / DECISION_USD);
       // The creation's purse, the per-build ceiling, holds the same spend the failure reports.
       expect(build.creationSpend?.spentUsd).toBeCloseTo(spent, 6);
     } finally { await build.close(); }

@@ -156,8 +156,12 @@ describe("a Flow build that stops with nothing in its Flow", () => {
   });
 
   // A purse is dollars, never a count of calls (t1056): the build runs, steered, until its purse refuses the next call.
+  // This provider prices nothing, so each call is held at Core's default model's rates (`llm/build-purse/priced.ts`):
+  // a decision's request of about 20,000 tokens at about $0.007, beside a judging pair kept back at about $0.008, while
+  // each decision reports costing $0.001. A purse of $0.02 left room for four decisions, too few to show that no count
+  // ended it; $0.05 pays for well past the old counts before the hold no longer fits.
   it("ends at its budget as a budget hit, with what was tried, how far it got and what blocked it", async () => {
-    const { requests, generation } = await buildEmpty("same", 0.02);
+    const { requests, generation } = await buildEmpty("same", 0.05);
 
     const diagnostic = await rejectedGenerationDiagnostic(generation);
 

@@ -27,7 +27,7 @@ describe("a candidate build's exploration in the chat", () => {
       return { response: { kind: "evidence_tool_decision", summary: "Scripted", decision }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 } };
     }, { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }));
     const described: Array<{ projectId: string; flowId: string; toolId: string }> = [];
-    const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 12, maxEstimatedCostUsd: 0.1 }),
+    const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxEstimatedCostUsd: 0.1 }),
       llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: [{ toolId: "web.output.dom-click", description: "Click", inputSchema: { type: "object" }, effect: "observe" }],
         executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { seen: true }, effectApplied: false, targetsUnchanged: true }),
         describeCall: (call) => { described.push({ projectId: call.projectId, flowId: call.flowId, toolId: call.toolId }); return call.toolId === "web.output.dom-click" ? { target: "Add to cart" } : undefined; } } });

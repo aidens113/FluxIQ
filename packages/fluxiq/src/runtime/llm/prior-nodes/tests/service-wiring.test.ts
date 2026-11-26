@@ -36,7 +36,7 @@ describe("actual service startup passes canonical runtime authority", () => {
         : { kind: "complete", result: {} };
       return { response: { kind: "evidence_tool_decision", summary: "Deterministic wiring probe", decision }, usage: { inputTokens: 10, outputTokens: 2, totalTokens: 12, estimatedCostUsd: 0.0001 } };
     });
-    const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 16, maxEstimatedCostUsd: 0.1 }),
+    const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxEstimatedCostUsd: 0.1 }),
       llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Read current facts.", effect: "observe", inputSchema: { type: "object" } }],
         executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: false }) }
     }).bindNativeNodeRuntime(native());

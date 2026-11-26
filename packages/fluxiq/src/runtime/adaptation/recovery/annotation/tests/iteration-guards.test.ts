@@ -268,8 +268,6 @@ type Options = {
   /** The domain refuses every look as out of its scope, and says so through its refusal classifier. */
   refuse?: boolean;
   maxTokensPerRun?: number;
-  /** A call count the resolver declares. */
-  maxCallsPerRun?: number;
   /** A person asked the model into the run, and what its resolver says the run may spend. */
   asked?: { intent: "diagnose_and_adapt" | "explore_and_adapt"; resolution: Omit<AutomationStudioLlmProviderResolution, "provider"> };
   /** The training settings say their budget is already spent. */
@@ -327,11 +325,9 @@ function budgetCodes(detail: AutomationStudioFlowRunDetail): string[] {
 
 function ports(options: Options, taskKinds: string[], executed: string[]): AutomationStudioRuntimeRecoveryPorts {
   return {
-    // No call count declared unless a case says so: Core's backstop applies,
-    // and the guards bound the run.
+    // No call count: the guards and the purse bound the run (t1056).
     resolveLlmProvider: () => ({
       provider: provider(options, taskKinds),
-      ...(options.maxCallsPerRun === undefined ? {} : { maxCallsPerRun: options.maxCallsPerRun }),
       ...(options.asked?.resolution ?? {})
     }),
     llmEvidenceRuntime: binding(options, executed),

@@ -85,7 +85,7 @@ export function inRunRepairWorld(options: { scripts?: InRunRepairScript[]; behav
   };
   const context = inRunRepairContext(options);
   const ports: AutomationStudioRuntimeRecoveryPorts = {
-    resolveLlmProvider: () => ({ provider, maxCallsPerRun: 6, maxTotalTokensPerRun: 100_000, tokenLimits: { maxInputTokens: 40_000, maxOutputTokens: 4_000, maxTotalTokens: 44_000 } }),
+    resolveLlmProvider: () => ({ provider, maxTotalTokensPerRun: 100_000, tokenLimits: { maxInputTokens: 40_000, maxOutputTokens: 4_000, maxTotalTokens: 44_000 } }),
     llmEvidenceRuntime: evidenceBinding(),
     reusableLlmContextEnabled: false,
     flowInstructionSet: async () => [],

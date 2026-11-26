@@ -233,7 +233,7 @@ async function twoBuilders() {
     seen[subflowKey] = evidence.map((entry) => structuredClone(entry));
     return decision(builderDecision(subflowKey, evidence));
   });
-  const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 120, maxEstimatedCostUsd: 0.2 }), llmEvidenceRuntime: domain.binding });
+  const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxEstimatedCostUsd: 0.2 }), llmEvidenceRuntime: domain.binding });
   service.bindNativeNodeRuntime(domain.runtime);
   const builds = automationStudioTestSettledBuilds(service, dataDir);
   cleanups.push(builds.cleanup);

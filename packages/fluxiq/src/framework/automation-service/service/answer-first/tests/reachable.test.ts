@@ -114,7 +114,7 @@ describe("what an attempt's wiring reaches", () => {
       library,
       instruction: "Renew the card and list every loan.",
       permittedConsequences: ["modify_existing"],
-      resolver: { maxCallsPerRun: 12 },
+      resolver: {},
       judge: [judged],
       before: (service) => { automationStudioAnswerFirstAttemptPorts(service).sleep = async () => undefined; },
       script: [runNode("read", READ_LOANS, {}, [], { add: true }), runNode("card", RENEW_CARD, {}, ["modify_existing"], { add: true }), ...Array.from({ length: 40 }, () => decide)]

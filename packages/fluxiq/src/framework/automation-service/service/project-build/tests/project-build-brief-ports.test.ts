@@ -161,7 +161,7 @@ async function build(input: {
     return decision(builderDecision(subflowKey, evidence, (seen) => input.builderFirst?.(subflowKey, seen), askedActs(input.plan, subflowKey)));
   });
   const service = new AutomationStudioService({
-    dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 80, maxEstimatedCostUsd: 0.1 }),
+    dataDir, llmProviderResolver: () => ({ provider, maxEstimatedCostUsd: 0.1 }),
     llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: input.tools, executeTool: input.executeTool, ...(input.startState ? { startState: input.startState } : {}), resolvePlanNodeParameters: (request: Parameters<typeof automationStudioTestDeclaredStepResolution>[0]) => automationStudioTestDeclaredStepResolution(request, input.stepControl) } as unknown as NonNullable<AutomationStudioServiceOptions["llmEvidenceRuntime"]>,
     ...(input.prepareStart ? { prepareCandidateStart: input.prepareStart } : {})
   });

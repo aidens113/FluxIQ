@@ -14,8 +14,8 @@ import { automationStudioLlmBuildCallRecord, automationStudioLlmRunCallRecord } 
 
 const RESERVED = { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.1 };
 
-function ledger(maxCallsPerRun?: number): AutomationStudioLlmRunBudgetLedger {
-  return new AutomationStudioLlmRunBudgetLedger({ ...(maxCallsPerRun ? { maxCallsPerRun } : {}), maxTotalTokensPerRun: 10_000_000, maxOutputTokensPerRun: 10_000_000, maxEstimatedCostUsdPerRun: 10 });
+function ledger(): AutomationStudioLlmRunBudgetLedger {
+  return new AutomationStudioLlmRunBudgetLedger({ maxTotalTokensPerRun: 10_000_000, maxOutputTokensPerRun: 10_000_000, maxEstimatedCostUsdPerRun: 10 });
 }
 
 function reserve(budget: AutomationStudioLlmRunBudgetLedger, requestId: string, extra: Partial<Parameters<AutomationStudioLlmRunBudgetLedger["reserve"]>[0]> = {}) {
@@ -91,7 +91,7 @@ describe("the run ledger's per-call receipt", () => {
   });
 
   it("keeps at most the record limit and says how many calls it left out", () => {
-    const budget = ledger(AUTOMATION_STUDIO_LLM_RUN_CALL_RECORD_LIMIT + 3);
+    const budget = ledger();
     for (let index = 0; index < AUTOMATION_STUDIO_LLM_RUN_CALL_RECORD_LIMIT + 3; index += 1) {
       reserve(budget, `request.${index}`, { maxEstimatedCostUsd: 0.000_001 }).complete({ inputTokens: 1, outputTokens: 1, totalTokens: 2, estimatedCostUsd: 0 });
     }

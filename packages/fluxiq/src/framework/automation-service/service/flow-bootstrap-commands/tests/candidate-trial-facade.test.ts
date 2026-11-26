@@ -24,7 +24,7 @@ function draftStore(service: AutomationStudioService) { return (service as unkno
 async function adaptations(service: AutomationStudioService, projectId: string, flowId: string): Promise<unknown[]> { return await (service as any).bootstrapAdaptations.listFlowBootstrapAdaptations(projectId, flowId); }
 
 /** One candidate build: explore once, submit, test, then complete until the build ends. */
-async function candidateBuild(options: { judge?: Judged[]; maxCallsPerRun?: number; service?: Partial<AutomationStudioServiceOptions> } = {}) {
+async function candidateBuild(options: { judge?: Judged[]; service?: Partial<AutomationStudioServiceOptions> } = {}) {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-candidate-trial-facade-"));
   const judgeRequests: AutomationStudioLlmTaskRequest[] = [];
   const judged = options.judge ?? ["yes", "yes"];
@@ -45,7 +45,7 @@ async function candidateBuild(options: { judge?: Judged[]; maxCallsPerRun?: numb
       : { kind: "complete", result: { revision: latest?.revision, digest: latest?.digest } };
     return { response: { kind: "evidence_tool_decision", summary: "Scripted", decision }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 } };
   });
-  const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: options.maxCallsPerRun ?? 12, maxEstimatedCostUsd: 0.1 }),
+  const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxEstimatedCostUsd: 0.1 }),
     llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect", inputSchema: { type: "object" }, effect: "observe" }],
       executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { seenOnlyWhileExploring: "exploration-marker", leftover: true }, effectApplied: false, targetsUnchanged: true }) },
     ...options.service });
@@ -84,7 +84,7 @@ describe("a candidate trial through the actual service", () => {
     // A split's no is asked once more to name its defect (t725), and says no again; its defect names nothing Core's
     // record holds, so it is asked once more to list each (t752), and the script's unknown answers. Each is a re-ask
     // with Core's words (`recheck`), never an ask after an unreadable reply (t979: every reply here is read).
-    const run = await candidateBuild({ judge: second === "no" ? ["yes", "no", "no"] : ["yes", second], maxCallsPerRun: 8 });
+    const run = await candidateBuild({ judge: second === "no" ? ["yes", "no", "no"] : ["yes", second] });
     await expect(run.build()).rejects.toThrow();
     expect(run.judgeRequests).toHaveLength(second === "no" ? 4 : 2);
     expect(run.judgeRequests.some((request) => request.context.resultSummary?.unreadableReply !== undefined)).toBe(false);

@@ -66,7 +66,7 @@ describe("Automation Studio LLM run budget ledger", () => {
   });
 
   it("restores only internally consistent settled receipts and retains reserved charge provenance", () => {
-    const limits = { maxCallsPerRun: 4, maxTotalTokensPerRun: 1000, maxOutputTokensPerRun: 500, maxEstimatedCostUsdPerRun: 0.1 };
+    const limits = { maxTotalTokensPerRun: 1000, maxOutputTokensPerRun: 500, maxEstimatedCostUsdPerRun: 0.1 };
     const source = new AutomationStudioLlmRunBudgetLedger(limits);
     const hold = source.reserve({ runId: "run.restore", requestId: "request.unknown_usage", estimatedInputTokens: 10, maxOutputTokens: 20, maxEstimatedCostUsd: 0.01, allowance: "exploration" });
     if (hold.ok) hold.lease.complete();
@@ -127,6 +127,19 @@ describe("Automation Studio LLM run budget ledger", () => {
 
     const total = new AutomationStudioLlmRunBudgetLedger({ maxTotalTokensPerRun: 100, maxOutputTokensPerRun: 100 });
     expect(total.reserve({ runId: "run.two", requestId: "request.large", estimatedInputTokens: 75, maxOutputTokens: 50 })).toMatchObject({ ok: false, diagnostic: { code: "llm_budget.run_total_limit" } });
+  });
+
+  // Studio's limits type has no call count, but an object built elsewhere -- a resolver's, spread in -- can still carry
+  // one. The ledger drops it, so no count of calls ends a run however it arrives (t1056).
+  it("drops a call count that arrives through an untyped spread: a third call past a declared two is admitted", () => {
+    const declared = { maxCallsPerRun: 2, maxTotalTokensPerRun: 1_000, maxOutputTokensPerRun: 500, maxEstimatedCostUsdPerRun: 1 };
+    const ledger = new AutomationStudioLlmRunBudgetLedger(declared);
+    for (const requestId of ["request.one", "request.two", "request.three"]) {
+      const call = ledger.reserve({ runId: "run.declared", requestId, estimatedInputTokens: 10, maxOutputTokens: 10, maxEstimatedCostUsd: 0.01 });
+      expect(call).toMatchObject({ ok: true });
+      if (call.ok) call.lease.complete({ inputTokens: 10, outputTokens: 10, totalTokens: 20, estimatedCostUsd: 0.01 });
+    }
+    expect(ledger.snapshot("run.declared")).toMatchObject({ calls: 3, budgetBreaches: 0 });
   });
 
   it("rejects invalid identifiers/numbers and charges invalid usage at the reservation", () => {

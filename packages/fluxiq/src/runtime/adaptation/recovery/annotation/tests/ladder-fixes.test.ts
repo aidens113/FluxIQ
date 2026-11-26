@@ -78,7 +78,7 @@ async function recover(options: RecoverOptions): Promise<AutomationStudioFlowRun
     ports: {
       resolveLlmProvider: () => {
         options.onResolve?.();
-        return { provider, maxCallsPerRun: 4, ...(options.tokenLimits ? { tokenLimits: options.tokenLimits } : {}) };
+        return { provider, ...(options.tokenLimits ? { tokenLimits: options.tokenLimits } : {}) };
       },
       reusableLlmContextEnabled: false,
       flowInstructionSet: async () => [],

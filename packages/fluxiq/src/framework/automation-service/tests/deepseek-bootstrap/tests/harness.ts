@@ -140,7 +140,6 @@ export async function create(options: {
     if (!resolution) return undefined;
     return {
       ...resolution,
-      maxCallsPerRun: options.maxCalls,
       tokenLimits,
       maxTotalTokensPerRun: options.maxTotalTokensPerRun ?? tokenLimits.maxTotalTokens * options.maxCalls,
       timeoutMs: 25_000,

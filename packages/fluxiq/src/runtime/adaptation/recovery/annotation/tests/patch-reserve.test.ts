@@ -7,7 +7,7 @@ import { holdAutomationStudioRecoveryPatchReserve } from "../patch-reserve.ts";
 // of its own (t1057): the purse, with these shares held, is what ends it.
 describe("holdAutomationStudioRecoveryPatchReserve", () => {
   it("holds one patch-sized call on the ledger until it is released", () => {
-    const runBudget = ledger(26);
+    const runBudget = ledger();
     spendOne(runBudget, "request.diagnosis");
     const reserve = holdAutomationStudioRecoveryPatchReserve({ runBudget, runId: "run.one", maxEstimatedCostUsd: 2 / 26 });
 
@@ -17,23 +17,25 @@ describe("holdAutomationStudioRecoveryPatchReserve", () => {
     expect(runBudget.snapshot("run.one")).toMatchObject({ calls: 1, pendingCalls: 0, totalTokens: 1_400 });
   });
 
-  // Until t1057 a declared call count also lowered the exploration's own call ceiling to what remained after the
-  // patch. The ledger does that now by itself: each held call is one pending call, so the exploration's decisions are
-  // refused on the purse's own call code once only the held calls are left.
-  it("leaves a declared call count's last calls to what comes after the exploration, on the ledger itself", () => {
-    const runBudget = ledger(6);
-    spendOne(runBudget, "request.diagnosis");
-    const reserve = holdAutomationStudioRecoveryPatchReserve({ runBudget, runId: "run.one", maxEstimatedCostUsd: 0.01, reservedCalls: 2 });
+  // The reserve is money kept back for the calls after the exploration, never a slot in a count of calls: no count of
+  // calls ends a run (t1056). The exploration spends the purse down to what is held and is refused there for money,
+  // on the purse's own cost code; released, the held dollars pay for the re-plan and the patch.
+  it("keeps back the price of every call after the exploration, so the exploration is refused only for money", () => {
+    const runBudget = ledger(0.1);
+    spendOne(runBudget, "request.diagnosis", 0.01);
+    const reserve = holdAutomationStudioRecoveryPatchReserve({ runBudget, runId: "run.one", maxEstimatedCostUsd: 0.02, reservedCalls: 2 });
+    expect(runBudget.snapshot("run.one")).toMatchObject({ calls: 1, pendingCalls: 2 });
 
-    // 6 declared, 1 spent on the diagnosis, 2 held: three exploration decisions fit, and the fourth is refused.
-    for (const id of ["explore.1", "explore.2", "explore.3"]) spendOne(runBudget, id);
-    const refused = runBudget.reserve({ runId: "run.one", requestId: "explore.4", estimatedInputTokens: 1_000, maxOutputTokens: 1_000, maxEstimatedCostUsd: 0.01 });
-    expect(refused.ok ? undefined : refused.diagnostic.code).toBe("llm_budget.run_call_limit");
+    // $0.10 purse, $0.01 spent on the diagnosis, $0.04 held: two $0.02 decisions fit, and a third, which the purse
+    // alone could pay for, is refused because it would spend the held dollars.
+    for (const id of ["explore.1", "explore.2"]) spendOne(runBudget, id, 0.02);
+    const refused = runBudget.reserve({ runId: "run.one", requestId: "explore.3", estimatedInputTokens: 1_000, maxOutputTokens: 1_000, maxEstimatedCostUsd: 0.02 });
+    expect(refused.ok ? undefined : refused.diagnostic.code).toBe("llm_budget.run_cost_limit");
     reserve.release();
-    // Both held calls are back for the re-plan and the patch.
-    spendOne(runBudget, "request.replan");
-    spendOne(runBudget, "request.patch");
-    expect(runBudget.snapshot("run.one")).toMatchObject({ calls: 6, pendingCalls: 0 });
+    // The held dollars are back for the re-plan and the patch.
+    spendOne(runBudget, "request.replan", 0.02);
+    spendOne(runBudget, "request.patch", 0.02);
+    expect(runBudget.snapshot("run.one")).toMatchObject({ calls: 5, pendingCalls: 0, estimatedCostUsd: expect.closeTo(0.09, 6) });
   });
 
   // A recovery that will re-plan after looking makes two calls after the
@@ -42,12 +44,12 @@ describe("holdAutomationStudioRecoveryPatchReserve", () => {
   // leave the re-plan affordable and the patch not, so a run that looked,
   // changed its mind and knew what to repair would propose nothing.
   it("holds a share for every call that comes after the exploration, not only the patch's", () => {
-    const runBudget = ledger(26);
+    const runBudget = ledger();
     spendOne(runBudget, "request.diagnosis");
     const tokenLimits = { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 };
     const reserve = holdAutomationStudioRecoveryPatchReserve({ runBudget, runId: "run.one", tokenLimits, maxEstimatedCostUsd: 0.01, reservedCalls: 2 });
 
-    // One pending call per held call: 26 declared, 1 spent, 2 held.
+    // One pending reservation per held call: 1 spent, 2 held.
     expect(runBudget.snapshot("run.one").pendingCalls).toBe(2);
     // Two calls' worth of tokens is held, not one, each sized on the diagnosis
     // this run already made (1,200 input tokens) plus the reply's allowance:
@@ -93,17 +95,17 @@ describe("holdAutomationStudioRecoveryPatchReserve", () => {
   });
 });
 
-function ledger(maxCallsPerRun: number | undefined): AutomationStudioLlmRunBudgetLedger {
+function ledger(purseUsd = 2): AutomationStudioLlmRunBudgetLedger {
   return new AutomationStudioLlmRunBudgetLedger({
-    ...(maxCallsPerRun === undefined ? {} : { maxCallsPerRun }),
     maxTotalTokensPerRun: 100_000,
     maxOutputTokensPerRun: 100_000,
-    maxEstimatedCostUsdPerRun: 2
+    maxEstimatedCostUsdPerRun: purseUsd
   });
 }
 
-function spendOne(runBudget: AutomationStudioLlmRunBudgetLedger, requestId: string): void {
-  const lease = runBudget.reserve({ runId: "run.one", requestId, estimatedInputTokens: 8_000, maxOutputTokens: 2_000, maxEstimatedCostUsd: 0.01 });
+/** One call, held at `usd` and, when a price is given, charged exactly that. */
+function spendOne(runBudget: AutomationStudioLlmRunBudgetLedger, requestId: string, usd?: number): void {
+  const lease = runBudget.reserve({ runId: "run.one", requestId, estimatedInputTokens: 8_000, maxOutputTokens: 2_000, maxEstimatedCostUsd: usd ?? 0.01 });
   if (!lease.ok) throw new Error(lease.diagnostic.code);
-  lease.lease.complete({ inputTokens: 1_200, outputTokens: 200, totalTokens: 1_400 });
+  lease.lease.complete({ inputTokens: 1_200, outputTokens: 200, totalTokens: 1_400, ...(usd === undefined ? {} : { estimatedCostUsd: usd }) });
 }

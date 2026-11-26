@@ -46,7 +46,7 @@ it("carries declared arrival identity into the real model checklist and build ju
       parameters: [{ id: "destination", label: "Destination", valueType: "string", required: false }, { id: "amount", label: "Amount", valueType: "number", required: false }], outputAction: { fixedOutputId: id } }))
   }, { packageId: "example.package", packageVersion: "1.0.0", implementations: Object.fromEntries([arrive, increment].map((id) => [id, () => ({ status: "success", route: "success", outputs: { success: true } })])) });
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-arrival-proof-"));
-  const service = new AutomationStudioService({ dataDir, llmProviderResolver: (() => ({ provider, maxCallsPerRun: 12, maxEstimatedCostUsd: 0.1 })) as never, llmEvidenceRuntime: binding });
+  const service = new AutomationStudioService({ dataDir, llmProviderResolver: (() => ({ provider, maxEstimatedCostUsd: 0.1 })) as never, llmEvidenceRuntime: binding });
   try {
     service.bindNativeNodeRuntime(runtime);
     const { project, flow } = await blankFixture(service, "active", "example");

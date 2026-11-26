@@ -1,23 +1,28 @@
 import { automationStudioLlmBuildPurseHoldCall as holdCall, type AutomationStudioLlmBuildPurseRefusal } from "../../agents/budget/index.ts";
 import type { AutomationStudioLlmDiagnostic } from "../../models/limits/index.ts";
+import { automationStudioLlmBuildPurseObservedCost as observedCost } from "./observed-cost.ts";
 import { automationStudioLlmBuildPursePriced } from "./priced.ts";
 
 /**
  * Studio retains its exact user-facing refusal wording; the framework owns multi-scope reservation and settlement. A
- * provider that prices no call is held as priced at Core's default model, never as free (`./priced.ts`, t1056).
+ * provider that prices no call is held as priced at Core's default model, never as free, and never below what a call on
+ * the purse was seen to cost (`./priced.ts`, t1056): what each settled call reported is noted for that.
  */
 export function automationStudioLlmBuildPurseHoldCall(input: Omit<Parameters<typeof holdCall>[0], "diagnostic">): ReturnType<typeof holdCall> {
-  return holdCall({
+  const purses = observedCost.inScope();
+  const held = holdCall({
     ...input,
-    ...priced(input.provider, input.judgePricing),
+    ...priced(input.provider, input.judgePricing, () => observedCost.of(purses)),
     diagnostic: (refusal, scope) => refusalDiagnostic(refusal, scope === "active" ? "build" : "Flow")
   });
+  if (!held?.ok) return held;
+  return { ok: true, hold: { settle: (usage) => { observedCost.note(purses, usage); held.hold.settle(usage); }, release: () => held.hold.release() } };
 }
 
 /** The call's pricing and its judge's, one priced wrapper where the judge is priced as the call is (`./priced.ts`). */
-function priced(provider: Parameters<typeof holdCall>[0]["provider"], judgePricing: Parameters<typeof holdCall>[0]["judgePricing"]): Pick<Parameters<typeof holdCall>[0], "provider" | "judgePricing"> {
-  const call = automationStudioLlmBuildPursePriced(provider);
-  return { provider: call, ...(judgePricing ? { judgePricing: judgePricing === provider ? call : automationStudioLlmBuildPursePriced(judgePricing) } : {}) };
+function priced(provider: Parameters<typeof holdCall>[0]["provider"], judgePricing: Parameters<typeof holdCall>[0]["judgePricing"], observedUsd: () => number): Pick<Parameters<typeof holdCall>[0], "provider" | "judgePricing"> {
+  const call = automationStudioLlmBuildPursePriced(provider, observedUsd);
+  return { provider: call, ...(judgePricing ? { judgePricing: judgePricing === provider ? call : automationStudioLlmBuildPursePriced(judgePricing, observedUsd) } : {}) };
 }
 
 function refusalDiagnostic(refusal: AutomationStudioLlmBuildPurseRefusal, purseWhose: "build" | "Flow"): AutomationStudioLlmDiagnostic {

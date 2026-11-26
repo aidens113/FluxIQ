@@ -65,7 +65,7 @@ describe("a round that cannot go on is not an ending", () => {
       }
       return moved++ === 9 ? runNode("read", READ_LOANS, {}, [], { add: true }) : complete("Listed.");
     };
-    const attempt = await scriptedAttempt({ taskProcessing: { process: {} }, library, resolver: { maxCallsPerRun: 5 }, before: noWaiting(), script: Array.from({ length: 80 }, () => decide) }, cleanups);
+    const attempt = await scriptedAttempt({ taskProcessing: { process: {} }, library, resolver: {}, before: noWaiting(), script: Array.from({ length: 80 }, () => decide) }, cleanups);
     const answer = expectReached(attempt);
     expect(answer.result?.rows?.totalRows).toBe(3);
     // One round: no fresh round's note was ever shown, and nothing said it carried on.

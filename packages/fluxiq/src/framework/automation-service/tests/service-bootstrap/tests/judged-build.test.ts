@@ -492,10 +492,21 @@ describe("a build the judging reserve stopped, through the service (t254 stage 2
 // completion of the unchanged draft into a whole test. Reuse this file's
 // closed seed and per-test service lifetime. The purse is dollars, never a
 // count of calls (t1056): these cases once ran under a test-scoped allowance
-// of five calls, and now each decision costs five cents of a 25-cent purse.
+// of five calls (the reading, two decisions and the judging pair kept back).
+// Now the provider prices every call at two cents of a 25-cent purse, and the
+// judging pair (four cents) is kept back from every call that is not a judge's.
+// Two cents a call leaves the first decision well clear of the wrap-up (three
+// decisions left offer no tools, `runtime/llm/loop-budget.ts`), so the model can
+// still add its step.
 describe("completion readiness through the public service", () => {
-  /** What each decision costs: five of them spend the 25-cent purse. */
-  const DECISION_USD = 0.05;
+  /**
+   * What the provider prices, and each decision reports, every call at. A reply
+   * never reports costing more than its call was held at: a fixture whose
+   * replies did (t1056 round 2 had these report five cents against a hold of
+   * about two and a half) overshot the purse on every call, so the judging kept
+   * back was spent by the overshoot and never on judging.
+   */
+  const CALL_USD = 0.02;
   const NODE = "domain.example.click";
   const REFUSAL = "example.handle.ambiguous:parameters";
 
@@ -522,11 +533,11 @@ describe("completion readiness through the public service", () => {
         : finish ? { kind: "complete", result: { summary: "Inspect the specimen." } }
           : { kind: "tool_call", callId: `call.look.${decisions}`, toolId: "example.inspect", input: { area: decisions } };
       return { response: { kind: "evidence_tool_decision", summary: "Inspect.", decision },
-        usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: DECISION_USD } };
+        usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: CALL_USD } };
     });
     // This is a scripted provider under the supported test-owned build purse;
     // pricing establishes its reserve without an external provider request.
-    const provider: AutomationStudioLlmProvider = { ...scripted, estimateCostUsd: ({ inputTokens, outputTokens }) => (inputTokens + outputTokens) * 1e-6 };
+    const provider: AutomationStudioLlmProvider = { ...scripted, estimateCostUsd: () => CALL_USD };
     const binding: AutomationStudioLlmEvidenceRuntimeBinding = {
       domainId: "example", deniedEvidenceKeys: [], runsNodes: {},
       tools: [{ toolId: "example.inspect", description: "Inspect the active target.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } }],
@@ -591,13 +602,16 @@ describe("completion readiness through the public service", () => {
     const run = await buildReadyDraft(true, false);
     const result = await run.generation;
     expect(result.status).toBe("proposed");
-    expect(run.requests.map(isJudgeRequest)).toEqual([false, false, true, true]);
+    // The reading and nine decisions spend 20 cents; a tenth, held at two beside the four kept back, would cross the
+    // 25-cent ceiling, so it is refused unsent and the reserve stops the round. The kept-back pair then judges the Flow.
+    expect(run.readings()).toBe(1);
+    expect(run.requests.map(isJudgeRequest)).toEqual([...Array(9).fill(false), true, true]);
     expect(run.resolutions()).toBe(1);
     expect(run.events[0]).toBe("resolve");
     expect(run.events.slice(1)).toContain("replay");
     expect(run.events.slice(-2)).toEqual(["judge", "judge"]);
     const stored = await run.instance.getFlowBootstrapAdaptation(run.project.id, run.flow.flowId, result.adaptationId);
     expect(stored?.buildPlan.plan.subflows[0]?.nodes.map((node) => node.definitionId)).toEqual([NODE]);
-    expect(stored?.summary).toContain("model call allowance");
+    expect(stored?.summary).toContain("spending limit");
   });
 });

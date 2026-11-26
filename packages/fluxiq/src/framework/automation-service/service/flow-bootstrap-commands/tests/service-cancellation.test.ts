@@ -11,7 +11,7 @@ it("cancels before provider dispatch and does not persist a proposal", async () 
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-cancel-before-"));
   let calls = 0;
   const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => {
-    calls++; return { provider: mockProvider(), maxCallsPerRun: 1, maxEstimatedCostUsd: 0.1 };
+    calls++; return { provider: mockProvider(), maxEstimatedCostUsd: 0.1 };
   } });
   try {
     const { project, flow } = await blankFixture(service);
@@ -36,7 +36,7 @@ it("refuses a late successful provider result and leaves the accepted Flow uncha
     calls++; started(); await new Promise<void>((resolve) => { release = resolve; });
     return { response: { kind: "flow_bootstrap", summary: "Late success", plan: plan() }, usage: { inputTokens: 120, outputTokens: 80, totalTokens: 200, estimatedCostUsd: 0.002 } };
   }, { inputTokens: 120, outputTokens: 80, totalTokens: 200, estimatedCostUsd: 0.002 }));
-  const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 1, maxEstimatedCostUsd: 0.1 }) });
+  const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxEstimatedCostUsd: 0.1 }) });
   try {
     const { project, flow } = await blankFixture(service);
     const propose = vi.spyOn(service, "createFlowBootstrapAdaptation");
@@ -65,7 +65,7 @@ it("cancels during an actual evidence tool and never dispatches another provider
     return { response: { kind: "evidence_tool_decision", summary: "Inspect", decision: { kind: "tool_call", callId: `inspect-${calls}`, toolId: "inspect", input: {} } }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 } };
   }, { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }));
   const service = new AutomationStudioService({ dataDir,
-    llmProviderResolver: () => ({ provider, maxCallsPerRun: 12, maxEstimatedCostUsd: 0.1 }),
+    llmProviderResolver: () => ({ provider, maxEstimatedCostUsd: 0.1 }),
     llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect", inputSchema: { type: "object" }, effect: "observe" }], executeTool: async () => {
       tools++; started(); await new Promise<void>(resolve => { release = resolve; }); return { looked: true };
     } }

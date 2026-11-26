@@ -101,12 +101,12 @@ describe("automationStudioLlmResolverWithDomainInstructions", () => {
 
   it("decorates a resolution's provider and keeps every other field", async () => {
     const { provider, ran } = recordingProvider();
-    const resolver = automationStudioLlmResolverWithDomainInstructions((_input: { flowId: string }) => ({ provider, maxCallsPerRun: 3 }), () => binding({ version: "web.v1", text: INSTRUCTIONS.text }));
+    const resolver = automationStudioLlmResolverWithDomainInstructions((_input: { flowId: string }) => ({ provider, maxEstimatedCostUsd: 0.3 }), () => binding({ version: "web.v1", text: INSTRUCTIONS.text }));
 
     const resolved = await resolver!({ flowId: "f" });
     await resolved.provider.runTask(REQUEST);
 
-    expect(resolved.maxCallsPerRun).toBe(3);
+    expect(resolved.maxEstimatedCostUsd).toBe(0.3);
     expect(ran[0]?.domainInstructions).toEqual(INSTRUCTIONS);
   });
 

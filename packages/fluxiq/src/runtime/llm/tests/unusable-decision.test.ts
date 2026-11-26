@@ -294,7 +294,10 @@ describe("the evidence loop after an unusable decision", () => {
 
     expect(result).toMatchObject({ ok: true, accounting: { iterations: 5, toolCalls: 1 } });
     expect(stalled).not.toHaveBeenCalled();
-    expect(result.trace.map((step) => step.decision)).toEqual(["tool_call", "unusable", "unusable", "unusable", "complete"]);
+    // The third identical one is a repeat loop detection catches and steers (t1056), told as a row of its own; the
+    // model then goes on.
+    expect(result.trace.map((step) => step.decision)).toEqual(["tool_call", "unusable", "unusable", "unusable", "tool_call", "complete"]);
+    expect(result.trace[4]).toMatchObject({ resultCode: "llm_evidence_loop.loop_steered" });
   });
 
   // No streak ends a loop (t1056): each unusable decision is asked again, errors propagated or not.

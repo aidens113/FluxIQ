@@ -12,9 +12,9 @@
 // as its own reservation on the run's own ledger. The exploration's decisions
 // are refused by the ledger, on the ordinary named codes, as soon as they would
 // eat into it, and the holds are handed back unspent the moment the exploration
-// ends. One reservation per call is what keeps a declared call count honest: the
-// ledger counts each pending reservation as one call, so two calls held as one
-// reservation left the exploration a call that belonged to the patch.
+// ends. One reservation per call keeps each call's price held: two calls held
+// as one reservation were priced as one, and left the exploration money that
+// belonged to the patch. No count of calls bounds the run (t1056); only money does.
 //
 // The exploration has no call or action allowance of its own any more (t1057):
 // it spends the purse until the purse can pay only for what was held, and ends

@@ -157,7 +157,7 @@ describe("a project build its time limit stops", () => {
     });
     const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-project-build-time-limit-"));
     const service = new AutomationStudioService({
-      dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 60, maxEstimatedCostUsd: 0.1 }),
+      dataDir, llmProviderResolver: () => ({ provider, maxEstimatedCostUsd: 0.1 }),
       llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect", inputSchema: { type: "object" }, effect: "observe" }],
         executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { seen: true }, effectApplied: false, targetsUnchanged: true }) }
     });
@@ -270,7 +270,7 @@ const TEST_THREE_TEXT = "Its one part did not pass its own test. Left: a part te
 async function serviceWith(provider: ReturnType<typeof mockProvider>) {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-project-build-time-limit-"));
   const service = new AutomationStudioService({
-    dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 60, maxEstimatedCostUsd: 0.1 }),
+    dataDir, llmProviderResolver: () => ({ provider, maxEstimatedCostUsd: 0.1 }),
     llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect", inputSchema: { type: "object" }, effect: "observe" }],
       executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { seen: true }, effectApplied: false, targetsUnchanged: true }) }
   });

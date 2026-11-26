@@ -4,6 +4,7 @@ export * from "./allowance-book.ts";
 export * from "./build-call-reserves.ts";
 export * from "./flow-scope.ts";
 export * from "./harness-hold.ts";
+export * from "./observed-cost.ts";
 export * from "./priced.ts";
 export * from "./judge-backstop.ts";
 export * from "./projected-cost.ts";
