@@ -27,6 +27,7 @@ import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioResultTrailStep } from "../../contracts/index.ts";
 import { automationStudioResultTrailSemanticStep, type AutomationStudioResultTrailSemanticOptions } from "../semantic/index.ts";
 import { automationStudioResultFrameworkOutcome } from "../framework-outcome.ts";
+import { automationStudioJudgePassedOverFinding } from "../../judge-evidence/index.ts";
 import { automationStudioRecordBatchKey } from "../../../../engine/automation/records/index.ts";
 
 /** One traced attempt, as far as this reads it. */
@@ -94,6 +95,12 @@ function stepOf(attempt: TracedAttempt, node: Node | undefined, keys: readonly s
     ...(Object.keys(found).length ? { found } : {})
   };
   if (semantic === undefined) return step;
+  // A step the Flow's routing passed over, with no outputs and no failure, is Core's own routing record, never page
+  // evidence: it reaches the judge in Core's words and raises no gap (`../../judge-evidence/passed-over.ts`, t1053).
+  const framework = automationStudioResultFrameworkOutcome({ ...attempt, consequences: node?.metadata?.declaredConsequences });
+  if (semantic.judgeEvidenceVersion === 1 && attempt.skipped !== undefined && attempt.skipped !== false && outputs === undefined && attempt.failure === undefined) {
+    return { ...step, framework, judgeEvidence: automationStudioJudgePassedOverFinding(attempt.skipped) };
+  }
   // The projector reads actual outputs/states, before the legacy view/capture
   // heuristic above. Only its screened finding enters the durable checkpoint.
   const recordOutput = parameters?.recordOutput;
@@ -106,7 +113,7 @@ function stepOf(attempt: TracedAttempt, node: Node | undefined, keys: readonly s
     ...(after === undefined ? {} : { after }),
     ...(diff === undefined ? {} : { changed: diff })
   };
-  return automationStudioResultTrailSemanticStep(step, { source: "flow-attempt", definitionId: step.did, evidence: envelope, ...(asked === undefined ? {} : { asked }), ...(step.on === undefined ? {} : { on: step.on }) }, semantic, automationStudioResultFrameworkOutcome({ ...attempt, consequences: node?.metadata?.declaredConsequences }));
+  return automationStudioResultTrailSemanticStep(step, { source: "flow-attempt", definitionId: step.did, evidence: envelope, ...(asked === undefined ? {} : { asked }), ...(step.on === undefined ? {} : { on: step.on }) }, semantic, framework);
 }
 
 /** What stands in for the host's capture of a page the views show (header). */
