@@ -10,6 +10,7 @@ import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_REDIRECT_AT_STEPS_WITHOUT_PROGRESS } from "../../../../../runtime/loop-limits/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { automationStudioAnsweringInstructionReading } from "./instruction-reading.ts";
 import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
@@ -199,18 +200,26 @@ describe("a Flow build that stops before its Flow is ready", () => {
 
 // Run 38 (cause C8): a build's first round ended on refused repeats with the
 // Flow it started from unchanged, and the phases opened a second round that
-// repeated it exactly. The service now hands the phases the signature of the
+// repeated it exactly. The service hands the phases the signature of the
 // Flow the first round starts from -- here the kept draft a continuation
-// carries on (t240).
-describe("a continuation whose first round ends on repeats with the kept draft unchanged", () => {
-  it("ends not finished after that one round, never opening an identical second round", async () => {
+// carries on (t240). Since t1049 no count of steps without progress ends the
+// round: a continuation circling on presses that do nothing is steered, runs
+// until its purse (here the run's twelve calls) is gone, and still never
+// opens an identical second round.
+describe("a continuation that circles on repeats with the kept draft unchanged", () => {
+  it("runs, steered, until its purse is gone, never opening an identical second round", async () => {
     let building = 1;
     let call = 0;
     const second: number[] = [];
+    // The tool ids of what each of the second build's decisions was shown.
+    const shownInSecond: string[][] = [];
     const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
-    const provider = mockProvider(async () => {
+    const provider = mockProvider(async (request) => {
       call += 1;
-      if (building === 2) second.push(call);
+      if (building === 2) {
+        second.push(call);
+        shownInSecond.push((request.context.evidenceLoop?.evidence ?? []).map((entry) => entry.toolId));
+      }
       // The first build adds a step each call until its calls run out; the second presses again and again, adding nothing, to no effect.
       const decision: JsonObject = { kind: "tool_call", callId: `call.${call}`, toolId: "example.act", input: { press: call }, ...(building === 1 ? { add: true } : {}) };
       return { response: { kind: "evidence_tool_decision", summary: "Step.", decision }, usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 } };
@@ -235,9 +244,15 @@ describe("a continuation whose first round ends on repeats with the kept draft u
     building = 2;
     const diagnostic = await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation(request));
 
-    // Not finished, not "not doable" (t195-w37): a route is still open; another identical round would only repeat it.
-    expect(diagnostic.code).toBe("flow_bootstrap.build_not_finished");
-    expect(diagnostic.ending).toMatchObject({ kind: "not_finished", tried: { rounds: 1 } });
-    expect(diagnostic.ending?.message).toContain("kept retrying the same things, which had already failed or done nothing, and left the Flow just as it started");
+    // The purse ends it -- the run's twelve calls -- not a count of steps without progress, and in one round: no
+    // identical second round is opened.
+    expect(diagnostic.code).toBe("flow_bootstrap.evidence_budget_exhausted");
+    expect(diagnostic.ending).toMatchObject({ kind: "budget_exhausted", bound: "calls", tried: { rounds: 1, decisions: 12 } });
+    // Its words say the limit it met, never that it kept retrying the same: that came from the removed count.
+    expect(diagnostic.ending?.message).toContain("stopped at its limit of 12 model calls");
+    expect(diagnostic.ending?.message).not.toContain("kept retrying the same");
+    // Steered: from the third press that did nothing, the model was told so, and on the decisions after.
+    const steered = shownInSecond.filter((shown) => shown.includes("core.no_progress")).length;
+    expect(steered).toBeGreaterThan(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_REDIRECT_AT_STEPS_WITHOUT_PROGRESS);
   });
 });
