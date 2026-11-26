@@ -39,21 +39,25 @@ describe("runAutomationStudioRecoveryExploration", () => {
     expect(exploration.stopReason).not.toBe("wall_clock_expired");
   });
 
-  it("ends in unsafe_action_blocked when the domain refuses what the model asked for", async () => {
+  // A refusal once ended the exploration `unsafe_action_blocked`. It is shown to the model now, recorded by kind,
+  // and the exploration goes on to its answer (t1057); one built on refusals alone found nothing.
+  it("shows the domain's refusal to the model, records it, and goes on to its answer", async () => {
     const calls: string[] = [];
     const { exploration } = await runAutomationStudioRecoveryExploration({
       ...base(calls, "test.refused.unsafe"),
-      recoveryDeadline: startAutomationStudioRecoveryDeadline({ startedAtMs: Date.now() }),
-      budget: resolveAutomationStudioExplorationBudget({ maxRefusedActions: 1 })
+      provider: sequenceProvider(calls, ["test.inspect"]),
+      recoveryDeadline: startAutomationStudioRecoveryDeadline({ startedAtMs: Date.now() })
     });
 
-    expect(calls).toEqual(["provider", "test.inspect"]);
+    expect(calls).toEqual(["provider", "test.inspect", "provider"]);
     expect(exploration).toMatchObject({
-      outcome: "unsafe_action_blocked",
-      stopReason: "destructive_action_refused",
+      outcome: "no_evidence_found",
+      endedBy: "exploration.completed",
       refusedActions: 1,
+      refusals: { destructive_action_refused: 1 },
       observedActions: 0
     });
+    expect(exploration.stopReason).toBeUndefined();
     expect(exploration.result).toBeUndefined();
   });
 
@@ -147,7 +151,8 @@ describe("runAutomationStudioRecoveryExploration", () => {
 
     expect(exploration.outcome).toBe("evidence_gathered");
     expect(offered.length).toBeGreaterThan(0);
-    for (const toolIds of offered) expect([...toolIds].sort()).toEqual(declared.harnessOptions!.options.map((option) => option.toolId).sort());
+    // Beside them, only `core.loop_decision`, offered from the first decision because the exploration takes loop detection's signal (t1057).
+    for (const toolIds of offered) expect([...toolIds].sort()).toEqual([...declared.harnessOptions!.options.map((option) => option.toolId), "core.loop_decision"].sort());
     expect(calls.filter((call) => call.startsWith("plain:"))).toEqual([]);
   });
 
@@ -170,7 +175,7 @@ describe("runAutomationStudioRecoveryExploration", () => {
     });
 
     expect(calls).toEqual(["provider", "plain:test.inspect", "provider"]);
-    expect(offered).toEqual([["test.inspect"], ["test.inspect"]]);
+    expect(offered).toEqual([["test.inspect", "core.loop_decision"], ["test.inspect", "core.loop_decision"]]); // `core.loop_decision`: the exploration takes loop detection's signal (t1057).
     expect(exploration.outcome).toBe("evidence_gathered");
     expect(explored).toEqual([{ evidenceId: automationStudioExploredEvidenceLabel(1), toolId: "test.inspect", packet: page }]);
   });

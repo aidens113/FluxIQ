@@ -1313,7 +1313,19 @@ a grant.
   deadline (`AUTOMATION_STUDIO_RECOVERY_MAX_DURATION_MS`), new in this release.
   An exploration once also stopped as `no_progress` after 3 consecutive steps
   that brought back nothing new; that count was removed in t1049, and the
-  budget's `maxStepsWithoutProgress` with it.
+  budget's `maxStepsWithoutProgress` with it. t1057 removed the rest: the
+  exploration budget has no `maxActions`, `maxProviderCalls`,
+  `maxRepeatsPerAction` or `maxRefusedActions` (a caller passing one is
+  ignored); the stop reasons `action_limit`, `provider_call_limit`,
+  `repeat_window`, `refusal_limit`, `destructive_action_refused` and
+  `out_of_scope_refused`, and the outcome `unsafe_action_blocked`, are gone. A
+  domain's `classifyRefusal` now answers in `AutomationStudioExplorationRefusal`
+  (`destructive_action_refused` or `out_of_scope_refused`), which records what a
+  refusal was and ends nothing; `AutomationStudioRuntimeExploration` gains
+  `repeatedActions` and, when any refusal was classified, `refusals`.
+  `holdAutomationStudioRecoveryPatchReserve` no longer takes
+  `declaredCallsPerRun` or returns `explorationBudget`: it holds one reservation
+  per call after the exploration, and the purse ends the exploration.
 - **The ledger.** `AutomationStudioLlmRunBudgetLimits.maxCallsPerRun` is
   optional. `AutomationStudioLlmRunBudgetLease` gains a required `release()`,
   which returns a reservation unspent, so a host implementing the lease must

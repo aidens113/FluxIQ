@@ -16,7 +16,7 @@ import { AutomationStudioActionPermissionGate, type AutomationStudioActionConseq
 import type { AutomationStudioAsk, AutomationStudioAskAnswer, AutomationStudioParkingPort } from "../../../automation-parking/index.ts";
 import { automationStudioHarnessOptionRegistry, type AutomationStudioLlmEvidenceTool } from "../../../llm/index.ts";
 import { resolveAutomationStudioExplorationBudget } from "../exploration-budget.ts";
-import { automationStudioExplorationTraceEvent, runAutomationStudioRuntimeExploration } from "../runtime-exploration.ts";
+import { automationStudioExplorationTraceEvent, runAutomationStudioRuntimeExploration, type AutomationStudioExplorationRefusalClassifier } from "../runtime-exploration.ts";
 
 const TOOLS: AutomationStudioLlmEvidenceTool[] = [
   { toolId: "shop.look", description: "Read the order in view.", inputSchema: { type: "object" }, effect: "observe" },
@@ -189,20 +189,24 @@ describe("a recovery exploration that needs permission", () => {
 
   // Only the gate raises the reason, because only the gate holds a request to
   // raise it with. A domain's own code read as one is a refusal nobody can
-  // answer, and is reported as the refusal it is.
-  it("reports a domain code read as operator approval as the refusal it is", async () => {
+  // answer, and is recorded as the refusal it is -- which ends nothing (t1057):
+  // the model is shown it and the exploration goes on to its answer.
+  it("records a domain code read as operator approval as the refusal it is, and goes on", async () => {
+    const decisions: JsonObject[] = [{ kind: "tool_call", callId: "call.one", toolId: "shop.look", input: {} }, { kind: "complete", result: { finding: "nothing reachable" } }];
+    let index = 0;
     const refused = await runAutomationStudioRuntimeExploration({
       loop: {
         tools: TOOLS,
         executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "shop.approval" }, effectApplied: false, resultCode: "shop.approval" })
       },
-      decide: async () => ({ kind: "tool_call", callId: "call.one", toolId: "shop.look", input: {} }),
-      budget: resolveAutomationStudioExplorationBudget({ maxDurationMs: 60_000, maxRefusedActions: 1 }),
-      classifyRefusal: () => "operator_approval_required",
+      decide: async () => decisions[index++] ?? { kind: "complete", result: {} },
+      budget: resolveAutomationStudioExplorationBudget({ maxDurationMs: 60_000 }),
+      classifyRefusal: (() => "operator_approval_required") as unknown as AutomationStudioExplorationRefusalClassifier,
       now: () => 1_000
     });
 
-    expect(refused).toMatchObject({ outcome: "unsafe_action_blocked", stopReason: "destructive_action_refused" });
+    expect(refused).toMatchObject({ outcome: "no_evidence_found", refusedActions: 1, refusals: { destructive_action_refused: 1 } });
+    expect(refused.stopReason).toBeUndefined();
     expect(refused.permissionRequest).toBeUndefined();
   });
 });

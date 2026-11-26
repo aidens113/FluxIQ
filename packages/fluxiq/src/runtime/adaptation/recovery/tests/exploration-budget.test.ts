@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../../../llm/index.ts";
 import {
   AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS,
   AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS,
@@ -7,7 +6,7 @@ import {
   automationStudioExplorationScopeAllows,
   resolveAutomationStudioExplorationBudget
 } from "../exploration-budget.ts";
-import { AUTOMATION_STUDIO_EXPLORATION_STOP_REASONS, type AutomationStudioExplorationStopReason } from "../exploration-outcome.ts";
+import { AUTOMATION_STUDIO_EXPLORATION_STOP_REASONS, type AutomationStudioExplorationRefusal } from "../exploration-outcome.ts";
 import {
   AUTOMATION_STUDIO_RECOVERY_MAX_DURATION_CEILING_MS,
   automationStudioRecoveryDeadlineExpired,
@@ -16,55 +15,47 @@ import {
 } from "../recovery-deadline.ts";
 
 describe("resolveAutomationStudioExplorationBudget", () => {
-  it("defaults to a budget inside every one of Core's ceilings", () => {
+  it("defaults to a budget inside Core's ceiling", () => {
     const budget = resolveAutomationStudioExplorationBudget();
 
     expect(budget).toEqual(AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS);
-    expect(budget.maxActions).toBeLessThanOrEqual(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxActions);
-    expect(budget.maxProviderCalls).toBeLessThanOrEqual(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxProviderCalls);
     expect(budget.maxDurationMs).toBeLessThanOrEqual(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxDurationMs);
   });
 
   // The model sees every page an exploration looks at (2026-09-30): the budget
-  // has no evidence-bytes stop, only counts, the clock and the run's cost.
+  // has no evidence-bytes stop, only the clock and the run's cost.
   it("has no evidence-bytes stop", () => {
     expect("maxEvidenceBytes" in AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS).toBe(false);
     expect("maxEvidenceBytes" in AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS).toBe(false);
     expect("maxEvidenceBytes" in resolveAutomationStudioExplorationBudget()).toBe(false);
   });
 
-  // The three ceilings that bound the loop are Core's own, written out in the
-  // budget because reading them back at module-evaluation time closes an import
-  // cycle through `llm/harness/intervention.ts`. Pinned here so the copy cannot
-  // drift above what the loop would actually accept.
-  it("keeps its loop ceilings equal to the evidence loop's own limits", () => {
-    expect(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxActions).toBe(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls);
-    expect(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxProviderCalls).toBe(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations);
+  // t1057 (user, 2026-11-24: "THERE SHOULDNT BE ANY ARBITRARY FUCKING CALL LIMIT THAT RANDOMLY JUST RESETS
+  // EVERYTHING"). The budget held four counts that each ended an exploration: twenty-four actions, twenty-four
+  // provider calls, two attempts of one action and two refusals. None of them is in the budget now, and an old
+  // caller that still asks for one is not obeyed.
+  it("has no count of actions, provider calls, repeats or refusals, and ignores a caller that asks for one", () => {
+    for (const key of ["maxActions", "maxProviderCalls", "maxRepeatsPerAction", "maxRefusedActions", "maxStepsWithoutProgress"]) {
+      expect(key in AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS).toBe(false);
+      expect(key in AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS).toBe(false);
+    }
+    const stale = resolveAutomationStudioExplorationBudget({ maxActions: 1, maxProviderCalls: 1, maxRepeatsPerAction: 1, maxRefusedActions: 1 } as unknown as Parameters<typeof resolveAutomationStudioExplorationBudget>[0]);
+    expect(stale).toEqual(AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS);
   });
 
   // Clamped downwards, never upwards, and never thrown: a recovery is already a
   // failure being handled, and refusing the budget would leave it unbounded.
-  it("clamps an over-large or nonsensical request down into range", () => {
-    const budget = resolveAutomationStudioExplorationBudget({
-      maxDurationMs: 9_000_000,
-      maxActions: 400,
-      maxProviderCalls: 400,
-      maxRefusedActions: 0,
-      maxRepeatsPerAction: Number.NaN
-    });
-
-    expect(budget.maxDurationMs).toBe(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxDurationMs);
-    expect(budget.maxActions).toBe(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxActions);
-    expect(budget.maxProviderCalls).toBe(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxProviderCalls);
-    expect(budget.maxRefusedActions).toBe(1);
-    expect(budget.maxRepeatsPerAction).toBe(AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS.maxRepeatsPerAction);
+  it("clamps an over-large or nonsensical clock down into range", () => {
+    expect(resolveAutomationStudioExplorationBudget({ maxDurationMs: 9_000_000 }).maxDurationMs).toBe(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxDurationMs);
+    expect(resolveAutomationStudioExplorationBudget({ maxDurationMs: Number.NaN }).maxDurationMs).toBe(AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS.maxDurationMs);
+    expect(resolveAutomationStudioExplorationBudget({ maxDurationMs: 0 }).maxDurationMs).toBe(1);
   });
 
   // Decision L3 mechanically: there is no value a caller can pass. The cast is
   // the test -- it is how a future call site would try, and the assertion is
   // that trying changes nothing.
   it("has no way to turn destructive actions on", () => {
-    const budget = resolveAutomationStudioExplorationBudget({ maxActions: 3 });
+    const budget = resolveAutomationStudioExplorationBudget({ maxDurationMs: 3_000 });
     const forced = resolveAutomationStudioExplorationBudget({ allowDestructive: true } as unknown as Parameters<typeof resolveAutomationStudioExplorationBudget>[0]);
 
     expect(budget.allowDestructive).toBe(false);
@@ -89,76 +80,71 @@ describe("automationStudioExplorationScopeAllows", () => {
 });
 
 describe("AutomationStudioExplorationBudgetLedger", () => {
-  it("admits actions up to the cap and then names the cap that stopped it", () => {
-    const ledger = ledgerFor({ maxActions: 2 });
+  // t1057: no count ends an exploration. The ledger keeps admitting actions and provider calls far past the old
+  // twenty-four of each, and its signal stays unaborted.
+  it("keeps admitting actions and provider calls far past the old allowances", () => {
+    const ledger = ledgerFor();
 
-    expect(ledger.admitAction("a")).toEqual({ admitted: true });
-    expect(ledger.admitAction("b")).toEqual({ admitted: true });
-    expect(ledger.admitAction("c")).toEqual({ admitted: false, stopReason: "action_limit" });
-    expect(ledger.stopReason).toBe("action_limit");
-    expect(ledger.signal.aborted).toBe(true);
-    ledger.close();
-  });
+    for (let index = 0; index < 200; index += 1) {
+      expect(ledger.admitProviderCall()).toEqual({ admitted: true });
+      expect(ledger.admitAction(`inspect.${index}`)).toEqual({ admitted: true });
+      ledger.recordAction(step(`inspect.${index}`));
+    }
 
-  // The mutation the scoping report named: count only the successes and the
-  // budget stops bounding anything, because a run can be refused indefinitely.
-  it("charges a refused action against the action count, not only a successful one", () => {
-    const ledger = ledgerFor({ maxActions: 2, maxRefusedActions: 5 });
-
-    ledger.admitAction("a");
-    ledger.recordAction(step("a", "out_of_scope_refused"));
-    ledger.admitAction("b");
-    ledger.recordAction(step("b"));
-
-    expect(ledger.actions).toBe(2);
-    expect(ledger.refusedActions).toBe(1);
-    expect(ledger.observedActions).toBe(1);
-    expect(ledger.admitAction("c")).toEqual({ admitted: false, stopReason: "action_limit" });
-    ledger.close();
-  });
-
-  // The gap Core's loop cannot see: it refuses the identical request inside one
-  // mutation epoch, so a cycle with a mutation between each repeat is legal to
-  // it. The ledger counts identity for the whole exploration instead.
-  it("stops a cycle that repeats one action across mutations", () => {
-    const ledger = ledgerFor({ maxActions: 8, maxRepeatsPerAction: 2 });
-
-    expect(ledger.admitAction("inspect")).toEqual({ admitted: true });
-    expect(ledger.admitAction("reveal")).toEqual({ admitted: true });
-    expect(ledger.admitAction("inspect")).toEqual({ admitted: true });
-    expect(ledger.admitAction("reveal")).toEqual({ admitted: true });
-    expect(ledger.admitAction("inspect")).toEqual({ admitted: false, stopReason: "repeat_window" });
-    ledger.close();
-  });
-
-  it("stops once the refusal allowance is spent, keeping the refusal's own reason", () => {
-    const ledger = ledgerFor({ maxActions: 8, maxRefusedActions: 2 });
-
-    ledger.admitAction("a");
-    ledger.recordAction(step("a", "destructive_action_refused"));
     expect(ledger.stopReason).toBeUndefined();
-    ledger.admitAction("b");
-    ledger.recordAction(step("b", "destructive_action_refused"));
-
-    expect(ledger.stopReason).toBe("destructive_action_refused");
-    expect(ledger.signal.aborted).toBe(true);
+    expect(ledger.signal.aborted).toBe(false);
+    expect(ledger.providerCalls).toBe(200);
+    expect(ledger.actions).toBe(200);
     ledger.close();
   });
 
-  it("caps provider calls separately from actions", () => {
-    const ledger = ledgerFor({ maxActions: 8, maxProviderCalls: 2 });
+  // A cycle with a mutation between each repeat once ended at its third turn (`repeat_window`). It is loop
+  // detection's to catch now; the ledger keeps how often each identical action was attempted, as evidence.
+  it("admits a cycle that repeats one action across mutations, and keeps how often it was repeated", () => {
+    const ledger = ledgerFor();
 
-    expect(ledger.admitProviderCall()).toEqual({ admitted: true });
-    expect(ledger.admitProviderCall()).toEqual({ admitted: true });
-    expect(ledger.admitProviderCall()).toEqual({ admitted: false, stopReason: "provider_call_limit" });
-    expect(ledger.providerCalls).toBe(2);
+    for (let turn = 0; turn < 6; turn += 1) {
+      expect(ledger.admitAction("inspect")).toEqual({ admitted: true });
+      expect(ledger.admitAction("reveal")).toEqual({ admitted: true });
+    }
+
+    expect(ledger.stopReason).toBeUndefined();
+    expect(ledger.actions).toBe(12);
+    expect(ledger.repeatedActions).toBe(10);
     ledger.close();
+  });
+
+  // The second refusal once ended an exploration on the refusal's own reason. A refusal is feedback every time
+  // now: it is recorded, by kind, and never counted as observed, and it ends nothing.
+  it("records refusals by kind, apart from observed actions, and never stops on them", () => {
+    const ledger = ledgerFor();
+
+    for (const signature of ["a", "b", "c", "d"]) {
+      ledger.admitAction(signature);
+      ledger.recordAction(step(signature, "out_of_scope_refused"));
+    }
+    ledger.admitAction("e");
+    ledger.recordAction(step("e", "destructive_action_refused"));
+    ledger.admitAction("f");
+    ledger.recordAction(step("f"));
+
+    expect(ledger.stopReason).toBeUndefined();
+    expect(ledger.signal.aborted).toBe(false);
+    expect(ledger.actions).toBe(6);
+    expect(ledger.refusedActions).toBe(5);
+    expect(ledger.observedActions).toBe(1);
+    expect(ledger.refusals).toEqual({ out_of_scope_refused: 4, destructive_action_refused: 1 });
+    ledger.close();
+  });
+
+  it("names only its clocks and a person's request as reasons it can stop", () => {
+    expect([...AUTOMATION_STUDIO_EXPLORATION_STOP_REASONS].sort()).toEqual(["operator_approval_required", "recovery_deadline_expired", "wall_clock_expired"]);
   });
 
   it("stops on its own clock and says it was this exploration's", () => {
     let nowMs = 1_000;
     const ledger = new AutomationStudioExplorationBudgetLedger({
-      budget: resolveAutomationStudioExplorationBudget({ maxDurationMs: 5_000, maxActions: 8 }),
+      budget: resolveAutomationStudioExplorationBudget({ maxDurationMs: 5_000 }),
       startedAtMs: nowMs,
       now: () => nowMs
     });
@@ -167,6 +153,8 @@ describe("AutomationStudioExplorationBudgetLedger", () => {
     nowMs += 6_000;
 
     expect(ledger.admitAction("b")).toEqual({ admitted: false, stopReason: "wall_clock_expired" });
+    expect(ledger.admitProviderCall()).toEqual({ admitted: false, stopReason: "wall_clock_expired" });
+    expect(ledger.signal.aborted).toBe(true);
     ledger.close();
   });
 
@@ -175,7 +163,7 @@ describe("AutomationStudioExplorationBudgetLedger", () => {
   it("stops on the recovery's clock when that is the nearer one, and says which", () => {
     let nowMs = 1_000;
     const ledger = new AutomationStudioExplorationBudgetLedger({
-      budget: resolveAutomationStudioExplorationBudget({ maxDurationMs: 60_000, maxActions: 8 }),
+      budget: resolveAutomationStudioExplorationBudget({ maxDurationMs: 60_000 }),
       startedAtMs: nowMs,
       now: () => nowMs,
       recoveryDeadline: startAutomationStudioRecoveryDeadline({ startedAtMs: 0, maxDurationMs: 3_000 })
@@ -188,37 +176,27 @@ describe("AutomationStudioExplorationBudgetLedger", () => {
     ledger.close();
   });
 
-  it("keeps the first reason when something else aborts afterwards", () => {
-    const ledger = ledgerFor({ maxActions: 1 });
+  it("keeps the first reason when something else is recorded afterwards", () => {
+    let nowMs = 0;
+    const ledger = new AutomationStudioExplorationBudgetLedger({
+      budget: resolveAutomationStudioExplorationBudget({ maxDurationMs: 1_000 }),
+      startedAtMs: 0,
+      now: () => nowMs
+    });
 
     ledger.admitAction("a");
-    expect(ledger.admitAction("b")).toEqual({ admitted: false, stopReason: "action_limit" });
+    nowMs = 2_000;
+    expect(ledger.admitAction("b")).toEqual({ admitted: false, stopReason: "wall_clock_expired" });
     ledger.recordAction(step("a", "destructive_action_refused"));
 
-    expect(ledger.stopReason).toBe("action_limit");
+    expect(ledger.stopReason).toBe("wall_clock_expired");
     ledger.close();
   });
 
-  it("keeps admitting a loop that is still learning, well past any old call count", () => {
-    const ledger = ledgerFor({ maxActions: 24, maxProviderCalls: 24 });
-
-    for (let index = 0; index < 20; index += 1) {
-      expect(ledger.admitProviderCall()).toEqual({ admitted: true });
-      expect(ledger.admitAction(`inspect.${index}`)).toEqual({ admitted: true });
-      ledger.recordAction(step(`inspect.${index}`));
-    }
-
-    expect(ledger.stopReason).toBeUndefined();
-    expect(ledger.providerCalls).toBe(20);
-    ledger.close();
-  });
-
-  // t1049 (user, 2026-11-24: "THERE SHOULDNT BE ANY ARBITRARY FUCKING CALL LIMIT THAT RANDOMLY JUST RESETS
-  // EVERYTHING"). The ledger once stopped an exploration `no_progress` after three steps in a row that learned
-  // nothing new. Steps that each bring back nothing new now stop nothing, however many there are: the evidence loop
-  // steers the model instead, and the exploration ends on its answer, its clock or the run's purse.
+  // t1049 (user, 2026-11-24). The ledger once stopped an exploration `no_progress` after three steps in a row that
+  // learned nothing new. Steps that each bring back nothing new now stop nothing, however many there are.
   it("never stops on steps that bring back nothing new, however many there are", () => {
-    const ledger = ledgerFor({ maxActions: 24, maxProviderCalls: 24 });
+    const ledger = ledgerFor();
 
     for (let index = 0; index < 20; index += 1) {
       expect(ledger.admitProviderCall()).toEqual({ admitted: true });
@@ -229,20 +207,6 @@ describe("AutomationStudioExplorationBudgetLedger", () => {
     expect(ledger.stopReason).toBeUndefined();
     expect(ledger.signal.aborted).toBe(false);
     expect(AUTOMATION_STUDIO_EXPLORATION_STOP_REASONS).not.toContain("no_progress");
-    expect("maxStepsWithoutProgress" in resolveAutomationStudioExplorationBudget()).toBe(false);
-    expect("maxStepsWithoutProgress" in AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS).toBe(false);
-    ledger.close();
-  });
-
-  it("stops on a spent refusal allowance, named by the refusal", () => {
-    const ledger = ledgerFor({ maxActions: 8, maxRefusedActions: 3 });
-
-    for (const signature of ["a", "b", "c"]) {
-      ledger.admitAction(signature);
-      ledger.recordAction(step(signature, "out_of_scope_refused"));
-    }
-
-    expect(ledger.stopReason).toBe("out_of_scope_refused");
     ledger.close();
   });
 
@@ -278,14 +242,14 @@ describe("startAutomationStudioRecoveryDeadline", () => {
   });
 });
 
-/** What one completed step tells the ledger: whether it was refused, and why. The signature names it for the reader. */
-function step(_signature: string, refused?: AutomationStudioExplorationStopReason): { refused?: AutomationStudioExplorationStopReason } {
+/** What one completed step tells the ledger: whether it was refused, and how. The signature names it for the reader. */
+function step(_signature: string, refused?: AutomationStudioExplorationRefusal): { refused?: AutomationStudioExplorationRefusal } {
   return refused ? { refused } : {};
 }
 
-function ledgerFor(overrides: Parameters<typeof resolveAutomationStudioExplorationBudget>[0]): AutomationStudioExplorationBudgetLedger {
+function ledgerFor(): AutomationStudioExplorationBudgetLedger {
   return new AutomationStudioExplorationBudgetLedger({
-    budget: resolveAutomationStudioExplorationBudget({ maxDurationMs: 60_000, ...overrides }),
+    budget: resolveAutomationStudioExplorationBudget({ maxDurationMs: 60_000 }),
     startedAtMs: 0,
     now: () => 0
   });

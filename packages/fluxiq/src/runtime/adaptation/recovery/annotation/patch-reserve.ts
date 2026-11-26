@@ -7,13 +7,20 @@
 // patch was then refused, so a recovery that had found exactly what was wrong
 // proposed nothing. That is the one outcome the loop exists to avoid.
 //
-// So before the exploration starts, the patch's share is set aside: one call,
-// and that call's worst case in tokens and money, held as a reservation on the
-// run's own ledger. The exploration's decisions are refused by the ledger, on
-// the ordinary named codes, as soon as they would eat into it, and the hold is
-// handed back unspent the moment the exploration ends. When a call count was
-// declared, the exploration's own call ceiling is also lowered to what remains
-// after the patch, so the usual ending is the exploration's own named limit.
+// So before the exploration starts, the share of every call that comes after it
+// is set aside: each call, and that call's worst case in tokens and money, held
+// as its own reservation on the run's own ledger. The exploration's decisions
+// are refused by the ledger, on the ordinary named codes, as soon as they would
+// eat into it, and the holds are handed back unspent the moment the exploration
+// ends. One reservation per call is what keeps a declared call count honest: the
+// ledger counts each pending reservation as one call, so two calls held as one
+// reservation left the exploration a call that belonged to the patch.
+//
+// The exploration has no call or action allowance of its own any more (t1057):
+// it spends the purse until the purse can pay only for what was held, and ends
+// there `budget_exhausted` on the purse's own code. Until t1057 a declared call
+// count also lowered the exploration's own call ceiling to what remained after
+// the patch, which ended it on `provider_call_limit` instead.
 //
 // A held call is sized on the largest call this run has already made -- the
 // diagnosis, which carried the same failure evidence and context the patch
@@ -27,26 +34,16 @@ import {
   type AutomationStudioLlmRunBudgetLedger,
   type AutomationStudioLlmTokenLimits
 } from "../../../llm/index.ts";
-import {
-  AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS,
-  resolveAutomationStudioExplorationBudget,
-  type AutomationStudioExplorationBudget
-} from "../exploration-budget.ts";
 
 export type AutomationStudioRecoveryPatchReserve = {
-  /** The exploration's budget with the patch's call already taken off. Absent
-   * when no call count was declared, so the exploration keeps its defaults. */
-  explorationBudget?: AutomationStudioExplorationBudget;
-  /** Hand the held share back, just before the patch spends it. Safe to call more than once. */
+  /** Hand the held shares back, just before the patch spends them. Safe to call more than once. */
   release(): void;
 };
 
-/** Set the patch's share aside on the run's ledger, before the exploration starts. */
+/** Set the share of each call after the exploration aside on the run's ledger, before the exploration starts. */
 export function holdAutomationStudioRecoveryPatchReserve(input: {
   runBudget: AutomationStudioLlmRunBudgetLedger;
   runId: string;
-  /** The call count the resolver declared, when it declared one. */
-  declaredCallsPerRun?: number | undefined;
   /** The limits the patch request will be made with. */
   tokenLimits?: Partial<AutomationStudioLlmTokenLimits> | undefined;
   /** What the patch request will reserve against the purse. */
@@ -69,30 +66,27 @@ export function holdAutomationStudioRecoveryPatchReserve(input: {
   const limits = resolveAutomationStudioLlmTokenLimits(input.tokenLimits).limits;
   const made = input.runBudget.callRecords(input.runId).calls.map((call) => call.charged.inputTokens);
   const heldInputTokens = made.length ? Math.min(limits.maxInputTokens, Math.max(...made)) : limits.maxInputTokens;
-  const hold = input.runBudget.reserve({
-    runId: input.runId,
-    requestId: "recovery.patch-reserve",
-    estimatedInputTokens: heldInputTokens * reservedCalls,
-    maxOutputTokens: limits.maxOutputTokens * reservedCalls,
-    maxEstimatedCostUsd: heldCostUsd(input.estimateCostUsd, heldInputTokens, limits.maxOutputTokens, input.maxEstimatedCostUsd) * reservedCalls
-  });
-  // A hold the run cannot afford is not taken: the run cannot pay for the
-  // patch either, and the exploration will be refused on the same numbers.
-  const release = hold.ok ? () => hold.lease.release() : () => undefined;
-  if (input.declaredCallsPerRun === undefined) return { release };
-  // Declared calls minus those already made minus the ones held back. Clamped to at
-  // least one by the resolver; a hold that leaves no call makes the ledger
-  // refuse that one, so the exploration still ends on a named limit.
-  const remaining = input.declaredCallsPerRun - input.runBudget.snapshot(input.runId).calls - reservedCalls;
-  return {
-    release,
-    explorationBudget: resolveAutomationStudioExplorationBudget({
-      maxProviderCalls: remaining,
-      // An action follows each decision but the last, plus a first look, so
-      // actions are raised with the calls rather than binding before them.
-      maxActions: Math.max(AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS.maxActions, remaining + 1)
-    })
-  };
+  const heldCost = heldCostUsd(input.estimateCostUsd, heldInputTokens, limits.maxOutputTokens, input.maxEstimatedCostUsd);
+  const leases: Array<{ release(): void }> = [];
+  for (let call = 1; call <= reservedCalls; call += 1) {
+    const hold = input.runBudget.reserve({
+      runId: input.runId,
+      requestId: reservedCalls === 1 ? "recovery.patch-reserve" : `recovery.patch-reserve.${call}`,
+      estimatedInputTokens: heldInputTokens,
+      maxOutputTokens: limits.maxOutputTokens,
+      maxEstimatedCostUsd: heldCost
+    });
+    if (hold.ok) {
+      leases.push(hold.lease);
+      continue;
+    }
+    // A hold the run cannot afford is not taken, nor any part of it: the run
+    // cannot pay for every call after the exploration either, and the
+    // exploration will be refused on the same numbers.
+    for (const lease of leases) lease.release();
+    return { release: () => undefined };
+  }
+  return { release: () => { for (const lease of leases.splice(0)) lease.release(); } };
 }
 
 function heldCostUsd(price: ((tokens: { inputTokens: number; outputTokens: number }) => number) | undefined, inputTokens: number, outputTokens: number, ceilingUsd: number): number {

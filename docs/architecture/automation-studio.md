@@ -2537,14 +2537,27 @@ its own name:
    exploration it stops reports `recovery_deadline_expired`, as distinct from
    its own `wall_clock_expired`. The per-call timeout, 20 seconds by default and
    45 at most, still catches a single hung call.
-4. **No count of steps without progress (t1049).** Three steps in a row that
-   brought back nothing new used to stop an exploration `no_progress`. No such
-   count ends anything now (user, 2026-11-24: "THERE SHOULDNT BE ANY ARBITRARY
-   FUCKING CALL LIMIT THAT RANDOMLY JUST RESETS EVERYTHING"): the evidence loop
-   tells the model plainly what it keeps repeating, and the exploration goes on
-   to its answer, its clock or the run's purse. The outcome `no_progress` now
-   means only that a repeat guard stopped it (`repeat_window`, or the loop's
-   own repeat refusals).
+4. **No count ends an exploration (t1049, t1057).** Three steps in a row that
+   brought back nothing new used to stop an exploration `no_progress`, and its
+   ledger stopped it at 24 actions (`action_limit`), 24 provider calls
+   (`provider_call_limit`), the third attempt of one identical action
+   (`repeat_window`) or the second refused action (`unsafe_action_blocked`). No
+   such count ends anything now (user, 2026-11-24: "THERE SHOULDNT BE ANY
+   ARBITRARY FUCKING CALL LIMIT THAT RANDOMLY JUST RESETS EVERYTHING"). The
+   exploration hands its evidence loop loop detection's signal, as the
+   answer-first rounds do, so none of the loop's own counts of turns, calls,
+   looks, refusals or unusable replies ends it either. A repeat is caught by
+   loop detection and the model is asked how to go on (`core.loop_decision`); a
+   change of approach goes on in place. A refusal is shown to the model as the
+   action's result and recorded by kind (`destructive_action_refused`,
+   `out_of_scope_refused`), never as an ending. A stated lasting act on one
+   target is still refused from its third landing: that is safety, not a count.
+   The ledger keeps what was tried, how often an identical action was repeated
+   (`repeatedActions`) and what was refused (`refusals`), on the exploration and
+   its trace, as evidence. The outcome `no_progress` now means only that the
+   loop ended on the model's own loop decision that it needs a person
+   (`llm_evidence_loop.loop_ask_person`): nobody is asked in the middle of a
+   Flow, so the exploration ends there with what it gathered.
 5. **Unusable decisions.** A decision call that reached the provider and came
    back as nothing the exploration can act on is asked again rather than ending
    the exploration. That covers a reply that failed Core's checks (an
@@ -2556,21 +2569,24 @@ its own name:
    refusal, a key Secret Keys would not release, or a provider refusing the
    request, ends the exploration.
 6. **The patch reserve.** Before an exploration starts, the recovery reserves
-   one patch-sized call on the run ledger, sized on the largest call the run
+   one call-sized reservation on the run ledger for each call that follows it
+   (the patch, and a re-plan when one may come), sized on the largest call the run
    has already made (the diagnosis, which carries the same evidence and
    context) and priced by the provider under the per-call cost ceiling. It was
    sized on the token limits, which at the window profile made one held call
    the whole purse. The ledger refuses, on its ordinary codes, any exploration
    decision that would eat into that reservation, and the recovery releases it
-   just before the patch. A reservation the run cannot afford is not taken.
-   When the resolution declares a call count, the exploration's own call
-   ceiling is lowered to what remains after the patch, so a long exploration
-   ends on its own limit and the patch still runs.
+   just before the patch. A reservation the run cannot afford is not taken, nor
+   any part of it. Each held call is one pending call on the ledger, so when
+   the resolution declares a call count the purse refuses the exploration's
+   decisions on that count (`llm_budget.run_call_limit`) once only the held
+   calls are left, and the patch still runs. The exploration has no call
+   ceiling of its own (t1057).
 
-Call counts survive only as backstops that a working recovery should not meet.
-The run ledger stops at 250 calls (`llm_budget.run_call_limit`), or at the
-resolution's call limit when it declares one. An exploration also stops at 24
-decisions and 24 actions by default, and at most 64 of each.
+The run ledger still stops at 250 calls (`llm_budget.run_call_limit`), or at the
+resolution's call limit when it declares one. The 250 is Core's run backstop in
+`runtime/llm/flow-execution-limits/run-call-backstop.ts`, outside the recovery;
+an exploration has no count of its own.
 
 Every call is itemized. The run ledger writes one record at the moment it
 counts a call, so the records and the totals cannot disagree, and a recovered
@@ -2728,7 +2744,7 @@ proposal-only patch call is still told the flag.
 
 An exploration shows the model a tool that failed rather than ending on it: the
 loop runs with `toolFailures: "observe"`, as a build does, and the gate's
-request and the exploration ledger's limits stop it through its signal.
+request and the exploration ledger's clock stop it through its signal (no count does, t1057).
 
 ### Repair targets and their refusals
 
