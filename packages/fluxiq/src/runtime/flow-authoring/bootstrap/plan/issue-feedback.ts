@@ -302,8 +302,8 @@ const UNKNOWN_HANDLE = /^[a-z]+\.handle\.unknown(?::|$)/u;
 /** A handle that names a detected repeating structure (`extraction.1`). */
 const EXTRACTION_HANDLE = /^extraction\.\d+$/u;
 /** Where such a handle comes from (header, t645): fixed words, naming no domain's tool. */
-const EXTRACTION_FROM = "A handle written extraction.N names a repeating structure (a list or a table of rows) that a detection of that structure found on the page you looked at: it exists only once you have detected the structure from one of its items, which mints the handle and its fields. "
-  + "Copying one from an example or another builder's script names nothing here. Detect the structure first and write the handle its answer gives; to hand on one value that is not a row of a list, read it with a step that reads that one element instead.";
+const EXTRACTION_FROM = "A handle written extraction.N names a repeating structure (a list or a table of rows) that the page view showed: it exists only once a list read has found the structure, from a handle in the view or its words, which mints the handle and its fields. "
+  + "Copying one from an example or another builder's script names nothing here. Let the list read find its own list and write the handle its answer gives; to hand on one value that is not a row of a list, read it with a step that reads that one element instead.";
 /** The keys a written handle reference carries (`../../llm/harness-options/plan-node-handles.ts`). */
 const HANDLE_KEY = "handle", LOCATION_KEY = "location";
 

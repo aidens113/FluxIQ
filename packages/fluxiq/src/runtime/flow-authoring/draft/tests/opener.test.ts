@@ -25,7 +25,7 @@ describe("a step added to the Flow", () => {
       { from: "s0", to: "s1", disposition: "kept" }, { from: "s1", to: "s2", disposition: "kept" },
       { from: "s2", to: "s3" }, { from: "s3", to: "s3", look: true }, { from: "s3", to: "s4" }
     ]);
-    applyAutomationStudioFlowDraftAmendments(steps, [{ step: 5, change: "add" }]);
+    applyAutomationStudioFlowDraftAmendments(steps, [{ step: 5, change: "keep" }]);
     expect(inFlow(steps)).toEqual([1, 2, 3, 5]);
   });
 
@@ -73,7 +73,7 @@ describe("a step added to the Flow", () => {
       { from: "s0", to: "home", disposition: "kept" }, { from: "home", to: "results" }, { from: "results", to: "itemA" },
       { from: "itemA", to: "results" }, { from: "results", to: "itemB" }, { from: "itemB", to: "itemB2" }
     ]);
-    applyAutomationStudioFlowDraftAmendments(steps, [{ step: 6, change: "add" }]);
+    applyAutomationStudioFlowDraftAmendments(steps, [{ step: 6, change: "keep" }]);
     expect(inFlow(steps)).toEqual([1, 2, 5, 6]);
   });
 
@@ -121,7 +121,7 @@ describe("a read the model ran and never added", () => {
       { from: "results", to: "results", look: true }, { from: "results", to: "results-scrolled" }, { from: "results-scrolled", to: "results-page5" }
     ]);
     read(steps[5]!); read(steps[6]!);
-    applyAutomationStudioFlowDraftAmendments(steps, [{ step: 7, change: "add" }]);
+    applyAutomationStudioFlowDraftAmendments(steps, [{ step: 7, change: "keep" }]);
     expect(inFlow(steps)).toEqual([1, 2, 3, 4, 7]);
     expect(steps[5]!.disposition).toBe("taken");
   });

@@ -51,32 +51,18 @@ describe("saying when a step runs", () => {
     expect(draft.every((step) => step.disposition === "kept")).toBe(true);
   });
 
-  it("fills in what the model left out: the check before it, and a span of one", () => {
+  it("fills in what the model left out: a span of one, over the step before it", () => {
     const draft = steps();
-    const report = applyAutomationStudioFlowDraftAmendments(draft, [
-      { step: 2, change: "only_if" },
-      { step: 4, change: "repeat" }
-    ]);
+    const report = applyAutomationStudioFlowDraftAmendments(draft, [{ step: 4, change: "repeat" }]);
 
     expect(report.refused).toEqual([]);
-    expect(draft[1]?.routing).toEqual({ kind: "only_if", check: "d1" });
     expect(draft[3]?.routing).toEqual({ kind: "repeat", through: "d4", over: "d3" });
   });
 
-  it("keeps naming the same step after the draft is renumbered under it", () => {
-    const draft = steps();
-    applyAutomationStudioFlowDraftAmendments(draft, [{ step: 3, change: "only_if", check: 2 }]);
-    // The guard is moved to the front, so every position the statement could
-    // have been written in now names a different step.
-    applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "reorder", to: 1 }]);
-
-    expect(draft.map((step) => step.id)).toEqual(["d2", "d1", "d3", "d4"]);
-    expect(draft.find((step) => step.id === "d3")?.routing).toEqual({ kind: "only_if", check: "d2" });
-  });
-
+  // No edit writes a condition any more; a step carried from a saved Flow may still hold one.
   it("puts a step back the way it was found, statement and all", () => {
     const draft = steps();
-    applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "optional" }]);
+    draft[1]!.routing = { kind: "optional" };
     const report = applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "keep" }]);
 
     expect(report).toEqual({ applied: 1, refused: [] });
@@ -88,11 +74,11 @@ describe("saying when a step runs", () => {
   // as nothing rather than as work.
   it("refuses a statement that says what is already true, or that names a step the Flow does not have", () => {
     const draft = steps();
-    applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "optional" }]);
-    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "optional" }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "already_so" }] });
-    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 3, change: "on_failed", to: 9 }])).toEqual({ applied: 0, refused: [{ step: 3, reason: "no_such_step" }] });
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "repeat", over: 1 }])).toEqual({ applied: 1, refused: [] });
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "repeat", over: 1 }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "already_so" }] });
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 3, change: "repeat", while: 9 }])).toEqual({ applied: 0, refused: [{ step: 3, reason: "no_such_step" }] });
     applyAutomationStudioFlowDraftAmendments(draft, [{ step: 4, change: "drop" }]);
-    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 3, change: "on_failed", to: 4 }])).toEqual({ applied: 0, refused: [{ step: 3, reason: "not_a_kept_step" }] });
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 3, change: "repeat", over: 1, through: 4 }])).toEqual({ applied: 0, refused: [{ step: 3, reason: "not_a_kept_step" }] });
   });
 
   // Live run run-munuj2os-c205ee3a put repeat on the listing, over itself.
@@ -104,14 +90,14 @@ describe("saying when a step runs", () => {
     expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "repeat", over: 1 }])).toEqual({ applied: 1, refused: [] });
   });
 
-  it("refuses a guard for the first step, which has nothing before it", () => {
+  it("refuses a repeat over the step before the first step, which has nothing before it", () => {
     const draft = steps();
-    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 1, change: "only_if" }])).toEqual({ applied: 0, refused: [{ step: 1, reason: "no_step_before_it" }] });
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 1, change: "repeat" }])).toEqual({ applied: 0, refused: [{ step: 1, reason: "no_step_before_it" }] });
   });
 
   it("shows the statement back in the numbers the model reads", () => {
     const draft = steps();
-    applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "only_if", check: 1 }]);
+    draft[1]!.routing = { kind: "only_if", check: "d1" };
     const value = automationStudioFlowDraftEntry({ steps: draft })?.value as { steps: { step: number; runs?: string }[] };
 
     expect(value.steps[1]?.runs).toBe("only if step 1 succeeded");
@@ -119,10 +105,11 @@ describe("saying when a step runs", () => {
   });
 });
 
+// The conditions below are carried from a saved Flow or written by the test (`../sometimes-present.ts`): no edit writes one.
 describe("a replay of a draft that branches", () => {
   it("does not refuse the proposal for a step the Flow would not always run", () => {
     const draft = steps(3);
-    applyAutomationStudioFlowDraftAmendments(draft, [{ step: 1, change: "optional" }]);
+    draft[0]!.routing = { kind: "optional" };
     const conditional = automationStudioFlowDraftConditionalStepIds(draft);
 
     expect([...conditional]).toEqual(["d1"]);
@@ -137,7 +124,7 @@ describe("a replay of a draft that branches", () => {
 
   it("still refuses an unconditional step that did not replay", () => {
     const draft = steps(3);
-    applyAutomationStudioFlowDraftAmendments(draft, [{ step: 1, change: "optional" }]);
+    draft[0]!.routing = { kind: "optional" };
     const verdict = automationStudioFlowDraftDryRunVerdict({
       attempt: 1,
       reset: "ok",
@@ -175,10 +162,8 @@ describe("a replay of a draft that branches", () => {
 
   it("counts the guard of a conditional step, and the step a failure recovers into, as conditional too", () => {
     const draft = steps(4);
-    applyAutomationStudioFlowDraftAmendments(draft, [
-      { step: 2, change: "only_if", check: 1 },
-      { step: 3, change: "on_failed", to: 4 }
-    ]);
+    draft[1]!.routing = { kind: "only_if", check: "d1" };
+    draft[2]!.routing = { kind: "on_failed", to: "d4" };
 
     expect([...automationStudioFlowDraftConditionalStepIds(draft)].sort()).toEqual(["d1", "d2", "d4"]);
   });
@@ -271,13 +256,9 @@ describe("a repeat that runs again while its last step succeeds", () => {
     expect(automationStudioFlowDraftRepeatOrderProblem(draft, at(2), { kind: "repeat", through: "d1", while: "d1", most: 5 })).toBe("span_broken");
   });
 
-  it("is refused as a position there is not when its while is before it, and taken off, through and no over, when a move breaks it", () => {
+  it("is refused as a position there is not when its while is before it", () => {
     const draft = steps(4);
     expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 3, change: "repeat", while: 1 }])).toEqual({ applied: 0, refused: [{ step: 3, reason: "no_such_position" }] });
     expect(draft[2]!.routing).toBeUndefined();
-    applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "repeat", while: 3 }]);
-    const report = applyAutomationStudioFlowDraftAmendments(draft, [{ step: 3, change: "reorder", to: 1 }]);
-    expect(report.refused).toEqual([{ step: 2, reason: "repeat_taken_off", takenOff: "span_broken", through: 3, now: 3, throughNow: 1 }]);
-    expect(draft.find((step) => step.id === "d2")!.routing).toBeUndefined();
   });
 });

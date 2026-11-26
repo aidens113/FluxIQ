@@ -682,7 +682,7 @@ function fromDraft(
  * A missing step may be written as well as run (t252, D8), and `bind` lifts a
  * step's value into a binding.
  */
-const DRAFT_SCRIPT_NOTE = "The Flow is the steps in your draft that are in the Flow. Correct it with amend_draft decisions -- add, drop, reorder, rerun, repeat, bind -- or run or write the step it is missing and add it (write true adds it), then finish again.";
+const DRAFT_SCRIPT_NOTE = "The Flow is the steps in your draft that are in the Flow. Correct it with amend_draft decisions -- keep, drop, result, repeat, unrepeat, bind, rerun -- or run or write the step it is missing (a step that works joins the Flow; write true writes it), then finish again.";
 
 /** The plan a refusal is about, and where its nodes are defined. */
 type RefusalSubject = { plan: unknown; registry: AutomationStudioNodeRegistry; resolution: AutomationStudioNodeRegistryResolution };

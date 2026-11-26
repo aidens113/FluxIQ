@@ -74,7 +74,6 @@ export type AutomationStudioLlmEvidenceLoopRanFacts = {
   stateAfter: string | undefined;
   /** Not the model's to be counted: a rerun, measured as its amendment, a check or a batch member. */
   notCounted: boolean;
-  draftKey: string | undefined;
   /** What the call really ran with, which names its target by fingerprint where the input names it by handle. */
   ranWith: JsonObject | undefined;
   /** The domain's name for what the call acts on, asked before it ran. */
@@ -83,13 +82,13 @@ export type AutomationStudioLlmEvidenceLoopRanFacts = {
 
 /** A call ran: what it showed, the steer that follows from it, and how the round stops if refusing has already not worked. */
 export function automationStudioLlmEvidenceLoopRan(context: AutomationStudioLlmEvidenceDecisionHandlerContext, iteration: number, facts: AutomationStudioLlmEvidenceLoopRanFacts): Extract<AutomationStudioLlmEvidenceRefusedRepeatNext, { kind: "stalled" | "end" | "recover" }> | undefined {
-  const { decision, answer, execution, returned, effect, refused, stateBefore, stateAfter, notCounted, draftKey, ranWith, targetWords } = facts;
+  const { decision, answer, execution, returned, effect, refused, stateBefore, stateAfter, notCounted, ranWith, targetWords } = facts;
   const { finishingTools, planning, readRowsKey } = context.input;
   const rows = automationStudioLlmLoopRowDigests(answer, readRowsKey);
   const fix = finishingTools?.submit === decision.toolId;
   const call: AutomationStudioLlmLoopCall = {
     callId: decision.callId, toolId: decision.toolId, input: decision.input, context: context.contextOf(decision.toolId), stateBefore, stateAfter, effect,
-    effectApplied: execution.effectApplied, refused, ...(execution.resultCode ? { resultCode: execution.resultCode } : {}), ...(rows ? { rows } : {}), answer: automationStudioLlmLoopDigest(answer), draftKey,
+    effectApplied: execution.effectApplied, refused, ...(execution.resultCode ? { resultCode: execution.resultCode } : {}), ...(rows ? { rows } : {}), answer: automationStudioLlmLoopDigest(answer),
     ...(ranWith ? { ranAs: ranWith } : {}), ...(targetWords !== undefined ? { targetWords } : {}), ...placeOf(returned),
     // Stated lasting: what the call declared it would lastingly do, or an act of the instruction it says it does.
     ...(automationStudioFlowDraftDeclaresLasting(decision.input.consequences) || decision.act !== undefined ? { lasting: true } : {}),

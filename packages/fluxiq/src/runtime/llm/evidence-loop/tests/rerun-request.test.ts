@@ -137,7 +137,7 @@ describe("the rerun a decision asked for", () => {
 
   it("leaves a decision's other amendments alone, refusing none of them here", () => {
     const resolved = automationStudioLlmEvidenceRerunRequest(
-      [{ step: 1, change: "exploratory" }, { step: 99, change: "drop" }],
+      [{ step: 1, change: "keep" }, { step: 99, change: "drop" }],
       steps,
       offered
     );

@@ -40,7 +40,9 @@ function decisions(...then: JsonObject[]) {
   for (const decision of [...built, ...then]) decide.mockResolvedValueOnce(decision);
   return decide.mockResolvedValue(complete);
 }
-const keep = (step: number) => ({ kind: "amend_draft", amendments: [{ step, change: "keep" }] });
+// An unrepeat of a step with no repeat is refused `already_so`, whichever step it names. (A keep of a step the framework
+// put in is applied, t1037: it makes the step the model's, so it is no longer the refusal these runs need.)
+const unrepeat = (step: number) => ({ kind: "amend_draft", amendments: [{ step, change: "unrepeat" }] });
 
 describe("decisions refused for one reason, three in a row", () => {
   it("counts legacy temporary words and unsafe failure claims, while exempting only a typed temporary unacted call", () => {
@@ -69,8 +71,8 @@ describe("decisions refused for one reason, three in a row", () => {
     }
   });
 
-  it("keeps of three different steps already in the Flow: warned at the second, the round stalls at the third", async () => {
-    const decide = decisions(keep(1), keep(2), keep(3));
+  it("unrepeats of three different steps with no repeat: warned at the second, the round stalls at the third", async () => {
+    const decide = decisions(unrepeat(1), unrepeat(2), unrepeat(3));
 
     await expect(loop(decide)).rejects.toBe(stalledError);
 
@@ -81,7 +83,7 @@ describe("decisions refused for one reason, three in a row", () => {
   });
 
   it("ends the round where no stall is configured", async () => {
-    const result = await loop(decisions(keep(1), keep(2), keep(3)), false);
+    const result = await loop(decisions(unrepeat(1), unrepeat(2), unrepeat(3)), false);
     expect(result).toMatchObject({ ok: false });
     expect(JSON.stringify(result)).toContain("repeat_without_progress");
   });
@@ -95,7 +97,7 @@ describe("decisions refused for one reason, three in a row", () => {
   });
 
   it("does not stop when a decision between them landed, or the reasons differ", async () => {
-    const decide = decisions(keep(1), keep(2), { kind: "tool_call", callId: "press.D", toolId: "press", input: { target: "D" }, add: true }, keep(3), { kind: "amend_draft", amendments: [{ step: 9, change: "keep" }] });
+    const decide = decisions(unrepeat(1), unrepeat(2), { kind: "tool_call", callId: "press.D", toolId: "press", input: { target: "D" }, add: true }, unrepeat(3), { kind: "amend_draft", amendments: [{ step: 9, change: "keep" }] });
 
     await expect(loop(decide)).resolves.toMatchObject({ ok: true });
   });
@@ -117,7 +119,7 @@ describe("decisions refused for one reason, where the caller takes loop detectio
 
   it("three in a row are caught as a repeat, not a round end: the model is asked to decide, and the round goes on to its result", async () => {
     const signals: AutomationStudioLlmLoopSignal[] = [];
-    const decide = decisions(keep(1), keep(2), keep(3));
+    const decide = decisions(unrepeat(1), unrepeat(2), unrepeat(3));
 
     await expect(onTheLadder(decide, signals)).resolves.toMatchObject({ ok: true });
     expect(signals).toEqual([]);
@@ -137,7 +139,7 @@ describe("decisions refused for one reason, where the caller takes loop detectio
     const signals: AutomationStudioLlmLoopSignal[] = [];
     const decide = vi.fn();
     for (const decision of built) decide.mockResolvedValueOnce(decision);
-    decide.mockImplementation(async () => keep(1 + (decide.mock.calls.length % 3)));
+    decide.mockImplementation(async () => unrepeat(1 + (decide.mock.calls.length % 3)));
 
     await expect(onTheLadder(decide, signals)).rejects.toBe(stalledError);
     expect(signals).toHaveLength(1);

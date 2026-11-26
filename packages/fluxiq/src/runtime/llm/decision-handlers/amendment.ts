@@ -34,10 +34,11 @@ import { automationStudioRerunArgumentNote, type AutomationStudioRerunArgumentMe
 /**
  * Said before the refusals of a decision whose every amendment was a `keep` of
  * a step already in the Flow, or a `drop` of a step already out, and which
- * changed nothing (`keepOnly` below).
+ * changed nothing (`keepOnly` below): a step the framework left out is put back
+ * by keep, and a step joins by running it, with act naming the act.
  */
-const KEEP_ADDS_NOTHING_INSTRUCTION = "keep adds nothing: every amendment in this decision was keep on a step already in the Flow or drop of a step already out, and keep only leaves a step in the Flow as it is -- it adds no step and does no act or choice, so the Flow is exactly as it was. "
-  + "A step joins the Flow only by running it: an act or choice still not done on the checklist is done by running, on the page that shows its control, the call that does it, with add and act naming it. "
+const KEEP_ADDS_NOTHING_INSTRUCTION = "keep adds nothing here: every amendment in this decision was keep on a step already in the Flow or drop of a step already out, so the Flow is exactly as it was. "
+  + "keep puts back only a step the framework left out (its out line says why). A step joins the Flow by running it: an act or choice still not done on the checklist is done by running, on the page that shows its control, the call that does it, with act naming it. "
   + "Do not send keep for steps already in the Flow; this decision counts toward stopping this exploration.";
 
 /**
@@ -70,13 +71,16 @@ export function automationStudioLlmEvidenceHandleAmendment(
   // something: `rerun` replaces a step by doing it again with a corrected
   // argument. The call that follows goes the ordinary tool-call path, so it
   // is recorded, digested and checked like any other; the step it replaces
-  // is found before a reorder beside it renumbers the draft, and withdrawn
-  // only once that call has worked (`../evidence-loop/rerun-replacement.ts`).
-  const rerun = automationStudioLlmEvidenceRerunRequest(decision.amendments, draftSteps, context.toolIds, (toolId, input, at) => context.repeats.blocks(toolId, input, at), context.input.deniedEvidenceKeys, { rerunsInPlace: context.input.rerunsInPlace === true });
+  // is found before anything else of the decision applies, and withdrawn
+  // only once that call has worked (`../evidence-loop/rerun/replacement.ts`):
+  // the repair
+  // rule redoes a failing step in its place (`../../flow-authoring/draft/amendment/edits/`).
+  const edited = decision.amendments;
+  const rerun = automationStudioLlmEvidenceRerunRequest(edited, draftSteps, context.toolIds, (toolId, input, at) => context.repeats.blocks(toolId, input, at), context.input.deniedEvidenceKeys, { rerunsInPlace: context.input.rerunsInPlace === true });
   // An amendment naming the step the rerun replaces is about the step that
   // will replace it, so it waits for the rerun; the rest apply now, in order
   // (`../evidence-loop/held-amendments.ts`, live run `run-mup2i28c-6c7fc209`).
-  const split = automationStudioLlmEvidenceHeldAmendments(decision.amendments, draftSteps, rerun.request?.step);
+  const split = automationStudioLlmEvidenceHeldAmendments(edited, draftSteps, rerun.request?.step);
   const targetedStepIds = [...new Set(decision.amendments.flatMap((amendment) => {
     const step = draftSteps.find((candidate) => candidate.position === amendment.step);
     return step?.id ? [step.id] : [];
@@ -97,6 +101,9 @@ export function automationStudioLlmEvidenceHandleAmendment(
   // A claim the act judge would reject is refused as it is made (`act_not_done_there`, week report W1),
   // and so is a loop that could end only by failing (`repeat_never_ends`, run `run-mwblz4aq-0baa810a`).
   const amended = applyAutomationStudioFlowDraftAmendments(draftSteps, split.now, amendmentChecks(context));
+  // The framework's draft is composed again over the model's edits: a read named the result moves the
+  // result, a step put back or taken out settles what its neighbours are (`../../flow-authoring/draft/compose/`).
+  context.composeDraft?.();
   // Edits that put the draft back exactly as it stood changed nothing about the Flow.
   const sameDraftAs = rerun.request || !amended.applied ? undefined : amendmentMemory.after(iteration, draftSteps);
   // **Every refusal of this decision on one path, the draft's and the
@@ -160,7 +167,7 @@ export function automationStudioLlmEvidenceHandleAmendment(
   // reasons, whichever steps they named, so `keep` on another step each time is
   // caught as well as the identical one the repeat guard catches below.
   // An edit that landed and put the draft back is a toggle, not a refusal: the no-progress guard below has it.
-  const reasons = [...new Set(refusals.filter((refusal) => refusal.reason !== "repeat_taken_off").map((refusal) => refusal.reason))].sort();
+  const reasons = [...new Set(refusals.map((refusal) => refusal.reason))].sort();
   if (!rerun.request && !amended.applied && (keepOnly || reasons.length)) {
     const ended = automationStudioLlmEvidenceRefusedOfAKind(context, iteration, keepOnly ? "keep_adds_nothing" : `amendment:${reasons.join("+")}`, AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENTS_REFUSED_CODE);
     if (ended) return { kind: "end", result: ended };
@@ -253,6 +260,7 @@ export function automationStudioLlmEvidenceSettleHeldAmendments(
   if (held.retained) tellRetained(context, iteration, held.retained, attempt);
   // Held claims go to the act judge too, as the decision's others did (t285 gap 1).
   const settled = held.amendments.settle(context.draftSteps, rerun, amendmentChecks(context));
+  context.composeDraft?.(); // The held edits are edits too (above).
   const refused = settled.refused.map((refusal) => ({ ...refusal, nodeId: held.nodeId }));
   const given = context.amendmentMemory.refusals(refused);
   const refusals = [...held.refusals, ...given];
@@ -388,8 +396,7 @@ function tellRetained(context: AutomationStudioLlmEvidenceDecisionHandlerContext
  * with add and act a1, and the claim stuck. Such a claim is not made: the step
  * stays in the Flow without the act, and the model is told
  * `act_not_done_there`, with the judge's sentence, under the entry an
- * amendment refused is told under -- as a call whose add copies a step of the
- * Flow is (`./second-copy.ts`).
+ * amendment refused is told under.
  *
  * A step that only reads does no act (`../../flow-draft/amendment/apply.ts`,
  * `act_on_a_read`): the read stays in the Flow without it, and the model is told

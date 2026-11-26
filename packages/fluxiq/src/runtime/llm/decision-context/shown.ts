@@ -39,7 +39,7 @@ import { automationStudioLlmDecisionContextEntry } from "./entry.ts";
 export function automationStudioLlmDecisionContextShown(input: {
   evidence: readonly AutomationStudioLlmEvidenceEntry[];
   records: readonly AutomationStudioLlmDecisionContextRecord[];
-  draft?: { steps: readonly AutomationStudioFlowDraftStep[]; authored?: boolean | undefined; acts?: JsonValue | undefined; route?: AutomationStudioFlowDraftRoute | undefined } | undefined;
+  draft?: { steps: readonly AutomationStudioFlowDraftStep[]; acts?: JsonValue | undefined; route?: AutomationStudioFlowDraftRoute | undefined } | undefined;
   budgetEntry?: AutomationStudioLlmEvidenceEntry | undefined;
   /** The keys of a result that are a view of the target, as the domain declared them (`../context-window.ts`). */
   observedStateKeys?: readonly string[] | undefined;
@@ -47,7 +47,7 @@ export function automationStudioLlmDecisionContextShown(input: {
   pageChannel?: AutomationStudioLlmPageChannel | undefined;
 }): { shown: AutomationStudioLlmEvidenceEntry[]; draftShown?: AutomationStudioLlmEvidenceLoopDraftShown } {
   const historyEntry = automationStudioLlmDecisionContextEntry({ records: input.records });
-  const draftEntry = input.draft ? automationStudioFlowDraftEntry({ steps: input.draft.steps, authored: input.draft.authored, acts: input.draft.acts, route: input.draft.route }) : undefined;
+  const draftEntry = input.draft ? automationStudioFlowDraftEntry({ steps: input.draft.steps, acts: input.draft.acts, route: input.draft.route }) : undefined;
   const draftShown = draftEntry ? automationStudioLlmEvidenceLoopDraftShown({ value: draftEntry.value }) : undefined;
   const beside = [historyEntry, draftEntry, input.budgetEntry].filter((entry) => entry !== undefined);
   return { shown: [...automationStudioLlmEvidenceContextWindow(input.evidence, input.observedStateKeys, input.pageChannel), ...beside], ...(draftShown ? { draftShown } : {}) };

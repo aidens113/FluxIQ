@@ -6,7 +6,7 @@
 // same step is about the step that will replace it -- "do step 4 again, and
 // step 4 does a1" -- and applied first, it was judged on the step being
 // replaced. Live run `run-mup2i28c-6c7fc209`, decision 5, sent `4 rerun` beside
-// `4 add act a1`; step 4 was a refused press, so the add was refused
+// an act claimed on step 4; step 4 was a refused press, so the claim was refused
 // `did_not_work` and a rerun's success could never carry its act in the same
 // decision.
 //
@@ -14,17 +14,9 @@
 // it is applied to the step that replaced it -- or, when the rerun did not
 // work, refused `did_not_work`, which is what the rerun was. Every other
 // amendment of the decision is applied first, as before. A held amendment's
-// other step numbers (`to`, `check`, `through`, `over`) were written in the
+// other step numbers (`through`, `over`) were written in the
 // numbering the model read, which the rerun's taking its step's place shifts
-// (`./rerun-replacement.ts`), so each is read as the step it named then.
-//
-// A held move can also take off a repeat on another step
-// (`repeat_taken_off`, `../../flow-draft/amendment/repeat-revalidation.ts`).
-// That refusal is about the step whose repeat went, not the held amendment's,
-// so it keeps its own step and is told, like every other number of the
-// decision, in the numbering the model wrote: the rerun as the step it
-// replaced, and `now`, `overNow` and `throughNow` where the decision changed
-// a number.
+// (`./rerun/replacement.ts`), so each is read as the step it named then.
 //
 // A held claim of an act is put to the act judge as one applied at once is
 // (`claimRefused`, t285 gap 1), and its refusal is told in the numbers the
@@ -99,16 +91,14 @@ export function automationStudioLlmEvidenceHeldAmendments(
         const shown = new Map<number, AutomationStudioFlowDraftStep>();
         for (const step of draft) if (!shown.has(step.position)) shown.set(step.position, step);
         const moved: AutomationStudioFlowDraftAmendment = { ...amendment, step: rerun.position };
-        for (const key of ["to", "check", "through", "over"] as const) {
+        for (const key of ["through", "over"] as const) {
           const position = amendment[key];
           if (position !== undefined) moved[key] = at(position);
         }
         const result = applyAutomationStudioFlowDraftAmendments(draft, [moved], { claimRefused: options.claimRefused, loopNeverEnds: options.loopNeverEnds });
         applied += result.applied;
-        refused.push(...result.refused.map((refusal) => refusal.reason === "repeat_taken_off"
-          ? takenOffAsWritten(refusal, shown, written)
-          : refusal.reason === "act_not_done_there" || refusal.reason === "repeat_never_ends" || refusal.reason === "holds_a_repeat" || refusal.reason === "span_holds_routing"
-            ? heldRefusalAsWritten({ ...refusal, step: amendment.step }, shown, written) : { ...refusal, step: amendment.step }));
+        refused.push(...result.refused.map((refusal) => refusal.reason === "act_not_done_there" || refusal.reason === "repeat_never_ends" || refusal.reason === "holds_a_repeat" || refusal.reason === "span_holds_routing"
+          ? heldRefusalAsWritten({ ...refusal, step: amendment.step }, shown, written) : { ...refusal, step: amendment.step }));
       }
       return { applied, refused };
     }
@@ -136,33 +126,4 @@ function heldRefusalAsWritten(
     ...(refusal.through === undefined ? {} : { through: number(refusal.through) }),
     ...(refusal.routed === undefined ? {} : { routed: number(refusal.routed) })
   };
-}
-
-/**
- * A `repeat_taken_off` from a held amendment, renumbered from the draft the
- * amendment was applied to into the numbers the model wrote, with `now`,
- * `overNow` and `throughNow` where the step stands elsewhere after it.
- */
-function takenOffAsWritten(
-  refusal: AutomationStudioFlowDraftAmendmentRefusal,
-  shown: ReadonlyMap<number, AutomationStudioFlowDraftStep>,
-  written: (step: AutomationStudioFlowDraftStep) => number
-): AutomationStudioFlowDraftAmendmentRefusal {
-  const read = (position: number | undefined): { was: number; now: number } | undefined => {
-    const step = position === undefined ? undefined : shown.get(position);
-    return step ? { was: written(step), now: step.position } : position === undefined ? undefined : { was: position, now: position };
-  };
-  const step = read(refusal.step)!;
-  const over = read(refusal.over);
-  const through = read(refusal.through);
-  const told: AutomationStudioFlowDraftAmendmentRefusal = { ...refusal, step: step.was };
-  delete told.now;
-  delete told.overNow;
-  delete told.throughNow;
-  if (over) told.over = over.was;
-  if (through) told.through = through.was;
-  if (step.now !== step.was) told.now = step.now;
-  if (over && over.now !== over.was) told.overNow = over.now;
-  if (through && through.now !== through.was) told.throughNow = through.now;
-  return told;
 }

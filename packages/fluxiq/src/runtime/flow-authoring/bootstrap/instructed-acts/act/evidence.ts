@@ -249,10 +249,10 @@ export function automationStudioInstructedActEvidenceSaid(input: {
   const thereWords = there ? wordsOf(there) : undefined;
   const how = there && automationStudioInstructedActChangeShows(act, there) ? "shows it" : "names it";
   const next = input.instead !== undefined
-    ? `Step ${input.instead}${thereWords ? ` (${JSON.stringify(thereWords)})` : ""} ${how}: name ${act.id} there with amend_draft add on step ${input.instead} with act ${act.id}.`
+    ? `Step ${input.instead}${thereWords ? ` (${JSON.stringify(thereWords)})` : ""} ${how}: name ${act.id} there with {"step": ${input.instead}, "change": "keep", "act": "${act.id}"}.`
     : input.fault === "step_changed_nothing_seen"
       ? unseenWayOut(act, words)
-      : `No step in the draft names it yet: on the page where ${act.id} is done, ${act.requires?.length ? "after its choices, " : ""}run the press whose words name it with add true and act ${act.id}.`;
+      : `No step in the draft names it yet: on the page where ${act.id} is done, ${act.requires?.length ? "after its choices, " : ""}run the press whose words name it with act ${act.id}; a call that works is in the draft.`;
   return `${did}, and does not do ${act.id}. ${next}`;
 }
 
@@ -281,13 +281,13 @@ function changedNothingSeen(step: Step): boolean {
  */
 function unseenWayOut(act: AutomationStudioInstructedAct, words: string | undefined): string {
   if (words !== undefined && namesAct(act, words)) {
-    return `No step in the draft does it yet: the page ignored that press; press ${JSON.stringify(words)} again and keep the press that changes the page, with add true and act ${act.id}.`;
+    return `No step in the draft does it yet: the page ignored that press; press ${JSON.stringify(words)} again and keep the press that changes the page, run with act ${act.id}.`;
   }
   const said = [...new Set([act.verb, ...AUTOMATION_STUDIO_INSTRUCTED_ACT_KIND_WORDS[act.kind].filter((word) => automationStudioInstructedActNamesWord(act.quote, word))])]
     .map((word) => JSON.stringify(word));
   const which = said.length > 1 ? `${said.slice(0, -1).join(", ")} or ${said[said.length - 1]}` : said[0];
   const near = words !== undefined ? ` next to ${JSON.stringify(words)} -- not those words themselves --` : "";
-  return `No step in the draft does it yet: on that page, press the control whose words say it, such as ${which},${near} with add true and act ${act.id}.`;
+  return `No step in the draft does it yet: on that page, press the control whose words say it, such as ${which},${near} with act ${act.id}; a call that works is in the draft.`;
 }
 
 function choseSaid(act: AutomationStudioInstructedAct, step: Step, words: string | undefined, chooses: string | undefined): string {

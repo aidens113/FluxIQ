@@ -50,7 +50,7 @@ export function automationStudioInstructedChoiceStoodChosenSaid(input: { id: str
   const { id, of, step, words } = input;
   return `${id} stood chosen on the page when step ${step} did ${of}: the page showed "${words}" chosen, so step ${step} does ${id} too. `
     + `No step of the Flow chooses it, so a run whose page arrives with another option chosen would do ${of} without it. `
-    + `To make the Flow choose it however the page arrives, add a step that sets "${words}" chosen, which changes nothing where it already is, and name ${id} on it.`;
+    + `To make the Flow choose it however the page arrives, run a step that sets "${words}" chosen, which changes nothing where it already is, and name ${id} on it.`;
 }
 
 /** Lowercased, with every run of punctuation or space as one space, as `./choice-evidence.ts` folds. */

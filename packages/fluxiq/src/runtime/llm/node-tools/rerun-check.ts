@@ -41,7 +41,7 @@
 // names the control (`controlParameterKeys`, from its implementation bundle)
 // given a value the step neither was shown nor ran with. A rerun patch that
 // leaves it out keeps the control, so a value-only correction still takes.
-// Another control, or another kind of parameter, is a new call with add true.
+// Another control, or another kind of parameter, is a new call, which joins the Flow as it works.
 //
 // **A domain that names no such keys fails closed.** This rule keeps a lasting act
 // on the control it ran on, so with no `controlParameterKeys` every parameter is
@@ -59,7 +59,7 @@
 // action; a value whose `node` names an action other than the step's, with no
 // action declared by the answer, does not take whatever the check answered: the
 // step keeps its action, input and resolved form, and the answer says the check
-// ran nothing and that a different action is a new call with add true. The
+// ran nothing and that a different action is a new call. The
 // action is never inferred from `value.node` -- this refuses, it does not infer.
 //
 // Either way the answer says so in plain words (`rerunCheck`): checked and not
@@ -214,10 +214,10 @@ function checked(step: AutomationStudioFlowDraftStep, callId: string, toolId: st
     : !answered
     ? `${why} The check did not find the step able to run with the new argument on the page it started on (${code ?? "no answer"}), so nothing changed: step ${position} keeps the argument it ran with, as after a rerun that did not work.`
     : otherNode !== undefined
-    ? `${why} The new argument names ${otherNode}, a different action from the step's ${step.actionId}, and the check ran nothing (${code ?? "no answer"}), so it cannot make step ${position} that action: nothing changed, and step ${position} keeps ${step.actionId} and the argument it ran with. A different action is a different step: run it as a new call with add true.`
+    ? `${why} The new argument names ${otherNode}, a different action from the step's ${step.actionId}, and the check ran nothing (${code ?? "no answer"}), so it cannot make step ${position} that action: nothing changed, and step ${position} keeps ${step.actionId} and the argument it ran with. A different action is a different step: run it as a new call; it joins the Flow when it works.`
     : otherControl
-    ? `${why} The new argument names another control than the one step ${position} ran on, and the check ran nothing (${code ?? "no answer"}), so it cannot move step ${position} there: nothing changed, and step ${position} keeps the control and the argument it ran with, and its acts. Another control is another step: run it as a new call with add true and its act. To change only a value of this step, rerun it with just the keys that change.`
-    : `${why} The new argument gives ${step.actionId} ${newKinds.map((key) => `"${key}"`).join(", ")}, which step ${position} never ran with, and the check ran nothing (${code ?? "no answer"}), so nothing changed: step ${position} keeps the argument it ran with. A different kind of step is a new call with add true and its act.`;
+    ? `${why} The new argument names another control than the one step ${position} ran on, and the check ran nothing (${code ?? "no answer"}), so it cannot move step ${position} there: nothing changed, and step ${position} keeps the control and the argument it ran with, and its acts. Another control is another step: run it as a new call with its act. To change only a value of this step, rerun it with just the keys that change.`
+    : `${why} The new argument gives ${step.actionId} ${newKinds.map((key) => `"${key}"`).join(", ")}, which step ${position} never ran with, and the check ran nothing (${code ?? "no answer"}), so nothing changed: step ${position} keeps the argument it ran with. A different kind of step is a new call with its act.`;
   return { ran: noted(ran, { checked: true, doneAgain: false, acts, ...(code ? { answer: code } : {}), took, detail }), took };
 }
 

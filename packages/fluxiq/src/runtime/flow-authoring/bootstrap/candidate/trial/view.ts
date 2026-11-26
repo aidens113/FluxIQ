@@ -46,11 +46,11 @@ import { AUTOMATION_STUDIO_LLM_DESCRIBED_NODES_KEY as DESCRIBED } from "../../..
 const VIEW_NOTE = "pageAfterTrial is the page as this trial left it, with the handles to use now. A handle from a view before this trial may name a page that is no longer there.";
 
 /** What the model is told when that page could not be looked at. */
-const NO_VIEW_NOTE = "The page could not be looked at after this trial, and it may have moved: look at it again before using a handle from a view before this trial.";
+const NO_VIEW_NOTE = "The page could not be read after this trial, and it may have moved: call core.full_page before using a handle from a view before this trial.";
 
 /** The same, for a refused test whose checks moved the tab (header, t738). */
 const REFUSED_VIEW_NOTE = "No trial ran, but Core's own checks before it moved the target: pageAfterTrial is the page where it stands now, with the handles to use now. A handle from a view before this call may name a page that is no longer there.";
-const REFUSED_NO_VIEW_NOTE = "No trial ran, but Core's own checks before it moved the target, and the page could not be looked at after: look at it again before using a handle from a view before this call.";
+const REFUSED_NO_VIEW_NOTE = "No trial ran, but Core's own checks before it moved the target, and the page could not be read after: call core.full_page before using a handle from a view before this call.";
 
 /** The trial's answer, with the page it left when it ran or moved the target; any other answer as it was. */
 export async function automationStudioCandidateTrialView(input: {

@@ -171,8 +171,6 @@ async function build(script: Script, routing: Routing, options: {
       checkCompletion,
       propagateDecisionErrors: true,
       unusableDecisions: { maxConsecutive: limits.maxConsecutiveUnusableDecisions, stalled: () => new Error("stalled") },
-      // Recorded builds, whose drafts were transcripts: every step that ran was kept unless withdrawn.
-      draftAuthoring: "transcript",
       ...limits.loop,
       budget: { ...limits.loop.budget, now: () => 1_790_000_000_000 }
     });
@@ -383,7 +381,9 @@ describe("route-state captures per recorded build", () => {
       // the refusal's entry grows the shown count, so the old rule catches it (before 30, unseen 2).
       "bigbox-run6": { decisions: 37, before: 17, afterReported: 0, afterUnreported: 15, callsBeforeUnseen: 4 },
       crossborder: { decisions: 22, before: 12, afterReported: 0, afterUnreported: 10, callsBeforeUnseen: 1 },
-      "everything-store-run4": { decisions: 48, before: 30, afterReported: 0, afterUnreported: 28, callsBeforeUnseen: 2 }
+      // Run 4's rerun at 38 named the attempt the rerun at 32 replaced, which is refused since the framework drafts the Flow
+      // (t1037, `recorded-runs.ts`), so decision 39 follows no call: one capture fewer after, 27.
+      "everything-store-run4": { decisions: 48, before: 30, afterReported: 0, afterUnreported: 27, callsBeforeUnseen: 2 }
     });
   });
 

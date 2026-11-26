@@ -110,9 +110,9 @@ function refused(reading: Named, skips: boolean, coverage: { missing: readonly s
   const issues: [string, string][] = [];
   if (skips) issues.push(["bootstrap.route_shortcut", `The person named the route "${reading.quote}": the Flow goes through ${words.join(", then ")} in that order, so its first step cannot go straight to a deeper address. Rerun step 1 with startLocation, keep a step in the Flow on each place, and say which with place.`]);
   const [missing] = coverage.missing;
-  if (missing) issues.push(["bootstrap.route_place_missing", `The person named the route "${reading.quote}". No step in the Flow is on ${coverage.missing.map(place).join(", ")}: keep or add the steps that go through it, in order, and say which with place (place "${missing}").`]);
+  if (missing) issues.push(["bootstrap.route_place_missing", `The person named the route "${reading.quote}". No step in the Flow is on ${coverage.missing.map(place).join(", ")}: run, or keep, the steps that go through it, in order, and say which with place (place "${missing}").`]);
   const [late] = coverage.outOfOrder;
-  if (late) issues.push(["bootstrap.route_out_of_order", `The person named the route "${reading.quote}". ${place(late)} is reached before a place that comes earlier on it: the Flow goes through the places in order, so reorder the steps or correct their place.`]);
+  if (late) issues.push(["bootstrap.route_out_of_order", `The person named the route "${reading.quote}". ${place(late)} is reached before a place that comes earlier on it: the Flow goes through the places in order and runs its steps in the order they ran, so go through them in order or correct their place.`]);
   return issues.length ? refusal(issues) : undefined;
 }
 

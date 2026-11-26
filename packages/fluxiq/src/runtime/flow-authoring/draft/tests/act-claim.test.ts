@@ -15,7 +15,7 @@ const claims = (steps: AutomationStudioFlowDraftStep[]) => steps.map((step) => [
 describe("claiming an act on a step", () => {
   it("run 36: a claim swapped between two steps moves, so each act ends on one step", () => {
     const steps = draft();
-    applyAutomationStudioFlowDraftAmendments(steps, [{ step: 32, change: "add", act: "a3" }, { step: 34, change: "add", act: "a3.size" }]);
+    applyAutomationStudioFlowDraftAmendments(steps, [{ step: 32, change: "keep", act: "a3" }, { step: 34, change: "keep", act: "a3.size" }]);
     expect(claims(steps)).toEqual([[32, ["a3"]], [33, []], [34, ["a3.size"]]]);
     // Told the choice sat on the act's step, the model swapped them, one claim per decision.
     applyAutomationStudioFlowDraftAmendments(steps, [{ step: 32, change: "keep", act: "a3.size" }]);
@@ -54,21 +54,13 @@ describe("an act that moves off a step in the Flow", () => {
   it("says nothing of a step that keeps another act, that the same decision dropped, or a swap that leaves each with one", () => {
     const other = draft();
     other[0]!.acts = ["a1", "a3"];
-    expect(applyAutomationStudioFlowDraftAmendments(other, [{ step: 34, change: "add", act: "a3" }]).moved).toBeUndefined();
+    expect(applyAutomationStudioFlowDraftAmendments(other, [{ step: 34, change: "keep", act: "a3" }]).moved).toBeUndefined();
     const dropped = draft();
     dropped[0]!.acts = ["a3"];
-    expect(applyAutomationStudioFlowDraftAmendments(dropped, [{ step: 34, change: "add", act: "a3" }, { step: 32, change: "drop" }]).moved).toBeUndefined();
+    expect(applyAutomationStudioFlowDraftAmendments(dropped, [{ step: 34, change: "keep", act: "a3" }, { step: 32, change: "drop" }]).moved).toBeUndefined();
     const swapped = draft();
     swapped[0]!.acts = ["a3"];
     swapped[2]!.acts = ["a3.size"];
     expect(applyAutomationStudioFlowDraftAmendments(swapped, [{ step: 32, change: "keep", act: "a3.size" }, { step: 34, change: "keep", act: "a3" }]).moved).toBeUndefined();
-  });
-
-  it("names the steps by the numbers the decision leaves them at", () => {
-    const steps = draft().map((step, index) => ({ ...step, position: index + 1 }));
-    steps[0]!.acts = ["a3"];
-    // The claim moves to 3, then 3 moves to the front: the step it left is then 2.
-    const report = applyAutomationStudioFlowDraftAmendments(steps, [{ step: 3, change: "keep", act: "a3" }, { step: 3, change: "reorder", to: 1 }]);
-    expect(report.moved).toEqual([{ act: "a3", from: 2, to: 1 }]);
   });
 });

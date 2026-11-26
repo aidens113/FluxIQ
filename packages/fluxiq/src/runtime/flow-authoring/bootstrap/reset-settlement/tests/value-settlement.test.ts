@@ -100,7 +100,7 @@ describe("a value act judged by its shown value (t772)", () => {
       settleWords([{ reason: "baseline", witness: "value", location: AT }], [])
     ];
     expect(words[0]).toContain("set it back where it shows");
-    expect(words[0]).toContain("then look at the page");
+    expect(words[0]).toContain("then read the page again");
     expect(words[1]).toContain("so the value this act set can be seen");
     expect(words[2]).toContain("was never read before the build changed it");
     for (const said of words) expect(said).not.toMatch(/resetDestination|store|address|checkout|deliver|cart|basket/iu);

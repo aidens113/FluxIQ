@@ -1091,15 +1091,19 @@ produce, the **output group** (`result/output-group.ts`): the last non-intermedi
 read step writing the same named record output, in draft order, back to and including the last
 one that starts that output over (any write mode but `append`). A step naming no output, or an
 output step that does not append, is the answer alone. Looks never join the group, and a read
-the model drops from the draft leaves it, so a second read appended after a refused answer keeps
-the first read's rows exactly as the saved Flow would; the model drops or replaces the first read
-to change that. Each group step must be saved with the draft (`attempt/draft-save.ts`), and the
+the model drops from the draft leaves it, so a second read made after a refused answer keeps
+the first read's rows exactly as the saved Flow would; the model drops the first read, or
+reruns it, to change that. Each group step must be saved with the draft (`attempt/draft-save.ts`), and the
 header, change line, look line, empty refusal and published rows all read this one group.
 Reads of one domain-declared list under the same conditions and fields fold into
 that step; changing its conditions or fields starts a new version. A read replaces only its
 own domain-declared place, and unknown place remains unknown. Call parameters, addresses,
-overlapping row values and smaller counts never choose result membership. A read outside
-the draft is a look; it changes the answer only when explicitly adopted with `take`.
+overlapping row values and smaller counts never choose result membership. A read the
+framework left out of the draft (`look`, `not_the_result`, `repeat`) is not in the
+answer; the `result` edit says a read holds it and `keep` puts a left-out read
+back. Every read answer-first does not mark intermediate is a result read, and
+the asked table is the one the instruction's named columns describe
+(`runtime/flow-authoring/draft/compose/result-reads.ts`).
 The fixed result header and each read's result note describe that same ledger.
 The ending goes through
 `checkAutomationStudioTaskAttemptResult`. The call answers `status: "answered"` however
@@ -1262,7 +1266,7 @@ The user's design (2026-11-03): "next time we try that task, we try using flow &
 
 **Anything else goes on.** A step that stopped, or a judge's no, starts the rounds from the page the run left, told the step and why, with the draft seeded from the saved steps. An engine deadline, its step bound and a child Flow's bound end the run, never the attempt. The recovery's ten minutes and a run's result check are not reached, because the run refuses any model. The step bound follows the Flow's size, and the run uses the Flow's own size setting, so a long Flow that assembles also runs.
 
-**A step that made a lasting act and left the Flow.** A model may drop one, or never add it: a draft edit is not lasting, and it may be right that the step saved the wrong thing, so the edit applies and is never refused (a refusal counts toward ending a round, however often a model that insists repeats itself). Nothing un-happens: the act stays on the record and on the result. The draft marks the step `landed` on every decision until it is put back, and says once what that means: the Flow is what runs next time, so unless another step does the same a later run will not do it, and `keep` or `add` puts it back and runs nothing (`flow-authoring/draft/landed-out.ts`). The way-to-a-page guard (`amendment/strand-check.ts`) knows nothing of acts: on paid step 67's shape it puts the navigations back and lets the acts go, which is what this tells. The saved Flow holds the step out of it, so the next attempt's draft says the same. The next attempt does not press again for it: the Flow lacks the step, and a press by hand is answered as already done wherever the record carries, after a budget-out or a Stop. The same words again after an achieved attempt carry the act, so a press by hand is answered as already done there too; a person's Run again starts with an empty record, so a run judged no brings the model back to press by hand, and that press is the Run again's own.
+**A step that made a lasting act and left the Flow.** A model may drop one, or the framework may leave it out: a draft edit is not lasting, and it may be right that the step saved the wrong thing, so the edit applies and is never refused (a refusal counts toward ending a round, however often a model that insists repeats itself). Nothing un-happens: the act stays on the record and on the result. The draft marks the step `landed` on every decision until it is put back, and says once what that means: the Flow is what runs next time, so unless another step does the same a later run will not do it, and `keep` puts it back and runs nothing (`flow-authoring/draft/landed-out.ts`). The way-to-a-page guard (`amendment/strand-check.ts`) knows nothing of acts: on paid step 67's shape it puts the navigations back and lets the acts go, which is what this tells. The saved Flow holds the step out of it, so the next attempt's draft says the same. The next attempt does not press again for it: the Flow lacks the step, and a press by hand is answered as already done wherever the record carries, after a budget-out or a Stop. The same words again after an achieved attempt carry the act, so a press by hand is answered as already done there too; a person's Run again starts with an empty record, so a run judged no brings the model back to press by hand, and that press is the Run again's own.
 
 **Which acts carry (t869, the lead's call, for the person to overrule).** The same words typed again carry every act that landed or may have, however the attempt before ended: an achieved one as much as a budget-out, a Stop or a cut-off. A repeat is not pressed: the saved Flow's run reads it as already done, a press by hand is refused as already done, a round is told the acts are an earlier attempt's (`earlierActs`), and the result says each as "Already done earlier: …" rather than as this attempt's change. It is a union across attempts: attempt 3 carries what attempt 1 landed though attempt 2 landed nothing (`act-record/seed.ts`). **What says do it again** is a person's press of Run again on the answer (`run-again/`, below), which starts a new attempt with an empty record; what it was spared is kept beside its record (`acts.earlier`), so the next same words carry both. Words of the person's own that ask again ("… again", or a yes to the chat's one question at the start, which becomes part of the words the command saves) are another task with its own key, and so its own empty record. A press that declared nothing carries only where its answer said it changed something that stays (its own control flipped, or a line of the page it stayed on now reads otherwise or rose): then it is held to a look in a later attempt (`heldOnRepeat`) and stays off the result. One that changed nothing or only moved the view is not carried, and a Flow presses it as often as it says. A saved step on a control its attempt saw flip gets that state as `ensureState`, kept beside the steps (`saved.stated`, `flow-run/stated-toggles.ts`), so a later run checks before it presses; a Run again keeps it too, so a control already in its asked-for state is checked and not pressed, while a count's add (no state) presses again. A row matches an acted row across its shapes: a by-hand read, a walker pass and an engine For Each, whatever a record output renamed or dropped. A lasting act is on the persisted record as may-have-landed before it is sent, on every path. An act in doubt is refused once and told, and only a look after that opens it; what the look shows is still the model's to read, because Core reads no page. `describeCall` also answers `wouldRunWith`, the frozen parameters a call would run with, so a press by a handle no read printed is known before it is sent. What can still press twice is in `docs/working/answer-first-plan/reports/second-attempt/closing-holes.md`.
 
@@ -1830,7 +1834,7 @@ and still matches the active instructions, the draft shows it
 (`runtime/flow-authoring/draft/entry.ts`, `route`): the route in the person's words with
 each place under an id, `r1` first, or `"open"` where they named none. The
 model says which steps are on each place with `place` (`"r2"`, `"r1,r2"`,
-`none`) beside `add` on a call or on an amend_draft `add` or `keep`, stored as
+`none`) on the call that runs a step or on an amend_draft `keep`, stored as
 `places` on the step (`runtime/flow-authoring/draft/route-places/`). Unlike an act, many
 steps may be on one place, and a claim replaces only that step's own. The
 completion is refused (`flow_bootstrap.route_not_followed`) while a named
@@ -2679,12 +2683,17 @@ input -- the parameters to change, or `{}` to run the step again as it stands
 shape text, which never named the missing input. The rule that drops the rerun
 stands, and an `amend_draft` with other readable amendments is not refused.
 
-**The model authors the draft (user, 2026-09-30).** A step the loop runs is
-appended as `taken`: evidence, not a step of the Flow. It enters the Flow only
-when the model adds it, either with `add: true` on the tool call that runs it
-(no extra decision) or with an `add` amendment naming its step (`to` places it,
-`act` names the act it does). Drop, exploratory, reorder, rerun, repeat,
-only_if, on_failed and optional edit the authored Flow as before. A rerun's
+**The framework drafts the Flow and the model edits it (user, 2026-11-25).** A step
+the loop runs is appended to the draft and, when it worked, put in the Flow by
+the framework in run order; a step it leaves out says why as `out` (`look`,
+`did_not_work`, `replaced`, `repeat`, `undone`, `dead_end`, `not_the_result`).
+The rules and the model's last word are in
+[Flow Authoring](flow-authoring.md#the-framework-drafts-the-flow)
+(`runtime/flow-authoring/draft/compose/`). The model edits the draft with seven
+edits only -- `keep`, `drop`, `result`, `repeat`, `unrepeat`, `bind`, `rerun`
+(`runtime/flow-authoring/draft/amendment/edits/`). `add`, `take`, `reorder`,
+`exploratory`, `optional`, `only_if`, `on_failed` and the transcript mode are
+deleted; `add` on a call is accepted and does nothing. A rerun's
 `input` is a JSON merge patch over the argument the step ran with -- only the
 keys that change; a list replaces whole and `null` removes a key -- because the
 long free-form whole arguments it used to carry were the replies that came back
@@ -2701,23 +2710,19 @@ with (every draft step line, replaced ones included, also shows the step's own `
 just after the rerun, so every later step moved one on and its old argument
 read as a step still to fix: live run `run-musp474o-e0ed7432` reran such a
 stale listing three times and its round stopped short (t195-w41). The draft entry's
-guidance says so, and the Flow is assembled only from added steps. The loop
-option `draftAuthoring: "transcript"` keeps the old rule, under which every step
-that ran was `kept` unless withdrawn; it exists only to replay builds recorded
-under that rule (`runtime/llm/loop-configuration.ts`, `runtime/flow-authoring/draft/step.ts`).
+guidance says so, and the Flow is assembled only from steps in it.
 A step may also be written rather than run (`core.run_node` with `write: true`),
 and its values bound to a Flow input or a loop's row (`amend_draft bind`): see
 [Flow Authoring](flow-authoring.md) (t252).
 
-**A step added to the Flow brings the way to its page (t174/F41).** When a step
-joins the Flow -- `add` on its call, or an `add` or `keep` amendment -- every
-step since the last step in the Flow that the model took without deciding
-about (`taken`) and that changed the state joins with it, because the step ran
-on what they left (`runtime/flow-authoring/draft/opener.ts`, `runtime/flow-authoring/draft/path-to-step.ts`).
+**A step put back in the Flow brings the way to its page (t174/F41).** When a
+left-out step is put back with `keep`, every step since the last step in the Flow
+that the framework left out (`taken`) and that changed the state comes back with
+it, because the step ran on what they left (`runtime/flow-authoring/draft/opener.ts`,
+`runtime/flow-authoring/draft/path-to-step.ts`).
 The walk back passes over a look and a call that did not work (even where the
 page went on loading under it), and over a step that changed nothing or has no
-states; it ends at a step in the Flow or at one the model dropped or called
-exploratory. A detour -- a stretch that came back to a state already seen on
+states; it ends at a step in the Flow or at one the model dropped. A detour -- a stretch that came back to a state already seen on
 the way, such as a listing opened and left again -- is left out; the state a
 step left and the state the next one found are compared as one moment, because
 a page can go on changing between two calls. Until t174/F41 the rule brought at
@@ -2725,9 +2730,9 @@ most two steps back: live run `run-muqk4u32-0b36e58f` added 7-in-1 on an item
 page reached by a Ã—, a search, a listing in a new tab, a consent and a colour;
 the colour and the consent were kept and the rest were not, and two dry runs
 ran the item-page steps on the home page. For the same reason a refused dry
-run, given the draft, names the taken steps that changed the page on the way
+run, given the draft, names the left-out steps that changed the page on the way
 to its first `unreproducible` step and are not in the Flow (`notInFlow`:
-"Steps 3, 4 and 5 changed the page on the way to step 6 ... add them",
+"Steps 3, 4 and 5 changed the page on the way to step 6 ... put them back (amend_draft keep)",
 `runtime/flow-authoring/draft/dry-run.ts`).
 
 **Each step names the control it acted on (t174/F33).** A step's `input` names
@@ -3681,10 +3686,11 @@ no model attached. Each step answers `replayed`, `failed`, `changed` or
 cannot tell apart from a site that remembers an earlier answer). Every answer
 but `replayed` refuses the completion, on every attempt: finishing again with
 the step unchanged is refused again. The only exemptions are a step the Flow
-would not always run (marked `optional`, made `only_if` on a check, the check
-guarding such a step, a step another falls back to, or a step the host says
+would not always run (made optional by the replay that proved it only sometimes there
+(`runtime/flow-authoring/draft/sometimes-present.ts`) -- the model has no edit for it -- or
+conditional on a check, the check guarding such a step, a step another falls back to, or a step the host says
 answered an interruption, which the Flow is written with as optional) and a
-step no longer proposed (dropped, exploratory or failed), which is not
+step no longer proposed (dropped or failed), which is not
 replayed. The test, its verdict, a rerun's put-back and a partial run all read
 that one set (`automationStudioFlowDraftConditionalStepIds`), so the test
 judges the Flow as it will be written: in live run `run-murwdp4f-35f976d2`
@@ -3705,7 +3711,7 @@ Flow whose signature equals the last refused one adds one line (`unchanged`):
 nothing changed since the last test, it failed the same way again (or was not
 run again), and the steps to change (t193). Routing and
 settings are in the signature because an edit to either is an edit to the Flow:
-a step marked optional or `only_if` since the refusal is a changed Flow, and
+a step whose routing changed since the refusal (a `repeat`, or the replay's own optional) is a changed Flow, and
 the changed Flow is run (user, 2026-10-02). A refused replay that itself proved
 a step only sometimes there and made it optional passes on the Flow signature
 taken after that change, because that replay is a run of that Flow. The
@@ -4017,7 +4023,7 @@ raw results remain valid for observations and unmarked tools; raw marked
 mutation results fail closed as no applied effect.
 Evidence-decision context carries every node by name and the definitions the
 build has described beside the tool schemas, decision schema and collected
-evidence. In the decision schema, the `add` and `act` properties are explained
+evidence. In the decision schema, the `add` (accepted, and does nothing), `act` and `place` properties are explained
 once, on the first tool variant that can act, and offered bare on every other
 (`runtime/llm/evidence-loop-decision.ts`). DeepSeek still estimates the final provider projection and rejects it
 if the authoritative per-call input or total-token limits would be exceeded.

@@ -71,7 +71,7 @@ const DESCRIPTION = [
   "Run one node from the library against the live target, now, and get back what it really did: the same node, with the same parameters, that the finished Flow runs.",
   "flowBootstrap.nodeCatalog names every node; pick from those names. A node you run is described for you, under describedNodes in its first result. Give exactly the parameters its definition declares; for a node whose parameters you do not know yet, read it first with core.describe_nodes, several at once.",
   "Where a node acts on something you observed, name it under `target` as {\"handle\": \"<the handle the evidence printed, copied exactly>\"} and nothing else. Never write an address, a description or a guess of your own: a step that names something any other way is refused.",
-  "A node that reads a repeating list names it the same way, by the handle the detection tool issued, with the fields you want beside it: detect the list first, then read the rows it really returned.",
+  "A node that reads a repeating list names it the same way, by the handle of one of its lines as the evidence printed it: it finds the list itself, so nothing is detected first, and the rows it really returned are the read.",
   // A check is not a failure to try again. "Run again. A failure ends nothing"
   // is what a build read as permission to knock on a robot check until the
   // site locked it out (`run-munp80f5-c31ea417`); a page that needs a person
@@ -80,7 +80,7 @@ const DESCRIPTION = [
   "A failed node says what went wrong and how things now stand. A page that needs a person goes to the person: never press, type into or reload a check.",
   // A step may also be written, not run (t252): said on `write` itself, since
   // this description has 12 characters left under its 1,500.
-  "Run a node that only reads -- a wait, an assertion -- to check, and one that acts to make the page do what the instruction needs. A step you add keeps the parameters it ran with.",
+  "Run a node that only reads -- a wait, an assertion -- to check, and one that acts to make the page do what the instruction needs. A step keeps the parameters it ran with.",
   // "only reads" earns its place: a build that had to collect a page of
   // products into a table read "leaves nothing behind" as a question about the
   // dataset it would produce, answered `create_new` for the node that reads the

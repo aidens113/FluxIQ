@@ -177,13 +177,13 @@ describe("Automation Studio evidence-loop provider task", () => {
       secretReference: { kind: "secret_reference", id: "secret:deepseek" },
       resolveSecret: async (input) => { outbound = input.outboundBody; return "test-secret"; },
       fetchImpl: (async () => new Response(JSON.stringify({
-        choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ kind: "evidence_tool_decision", summary: "That one was only to look around.", decision: { kind: "amend_draft", amendments: [{ step: 1, change: "exploratory" }] } }) } }],
+        choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ kind: "evidence_tool_decision", summary: "That one was only to look around.", decision: { kind: "amend_draft", amendments: [{ step: 1, change: "drop" }] } }) } }],
         usage: { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 }
       }), { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch
     });
 
     await expect(provider.runTask(request({ context: { ...request().context, evidenceLoop: draftingLoop } }))).resolves.toMatchObject({
-      response: { kind: "evidence_tool_decision", decision: { kind: "amend_draft", amendments: [{ step: 1, change: "exploratory" }] } }
+      response: { kind: "evidence_tool_decision", decision: { kind: "amend_draft", amendments: [{ step: 1, change: "drop" }] } }
     });
     const body = JSON.parse(outbound) as { messages: Array<{ role: string; content: string }> };
     const userPayload = body.messages.find((message) => message.role === "user")!.content;

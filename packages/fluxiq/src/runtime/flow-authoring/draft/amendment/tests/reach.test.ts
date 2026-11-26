@@ -54,14 +54,13 @@ describe("a decision that leaves a step of the Flow with no way to its page", ()
     expect(applyAutomationStudioFlowDraftAmendments(bare, [{ step: 6, change: "drop" }, { step: 7, change: "drop" }, { step: 4, change: "drop" }, { step: 5, change: "drop" }])).toEqual({ applied: 4, refused: [] });
   });
 
-  it("says, beside an applied decision, which step it put after a step that does not leave the page it acted on", () => {
-    // The 0025 shape: the listing ran last and is added at step 2, before the navigations.
-    const draft = [step(1, HOME), step(2, HOME), step(3, HOME), step(4, FRIENDS), step(5, REQUESTS, "read", "taken")];
-    const report = applyAutomationStudioFlowDraftAmendments(draft, [{ step: 5, change: "add", to: 2 }]);
+  it("says, beside an applied decision, which step it put back after a step that does not leave the page it acted on", () => {
+    // The listing ran on the requests page; the press that reached it is out, so the step before the listing now is home.
+    const draft = [step(1, HOME), step(2, FRIENDS, "press", "dropped"), step(3, REQUESTS, "read", "taken")];
+    const report = applyAutomationStudioFlowDraftAmendments(draft, [{ step: 3, change: "keep" }]);
     expect(report.applied).toBe(1);
     expect(report.refused).toEqual([]);
-    expect(report.unreached).toEqual([{ step: 5, after: 1, reachedBy: [4] }]);
-    expect(draft.map((entry) => entry.id)).toEqual(["d1", "d5", "d2", "d3", "d4"]);
+    expect(report.unreached).toEqual([{ step: 3, after: 1, reachedBy: [2] }]);
   });
 
   it("says nothing about a step already without its way before the decision, or where the pages are unknown", () => {

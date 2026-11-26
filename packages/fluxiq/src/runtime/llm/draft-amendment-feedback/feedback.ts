@@ -16,10 +16,6 @@ export const AMENDMENT_FEEDBACK_INSTRUCTION = "The listed amendments changed not
 // (`../flow-draft/amendment/shown-numbering.ts`, t195 w45).
 export const NUMBERING_INSTRUCTION = " Every step number in one decision names the step as the draft entry you were shown numbered it, and the draft is renumbered once, after the whole decision: the next draft entry shows the new numbers.";
 
-// Said when a decision's moves took a repeat off (`repeat_taken_off`), which
-// no amendment of the model's asked for (header, run `run-musr9pv3-f4bf6256`).
-export const TAKEN_OFF_INSTRUCTION = " An entry whose reason is repeat_taken_off is a repeat Core took off after this decision's moves, not one of your amendments: next beside it says which step's repeat over which step was taken off, and why.";
-
 /** What an amendment that put the draft back exactly as it stood is recorded and shown under. */
 // Said when the decision newly left a step after one that does not bring it to its page (`unreached`).
 export const UNREACHED_INSTRUCTION = " unreached is not a refusal: those amendments were applied, and each entry names a step of the Flow that now runs after a step that does not leave the page it acted on, so when the Flow runs it runs on another page; its note says how to give it its way back.";
@@ -108,14 +104,10 @@ export function automationStudioLlmEvidenceDraftAmendmentFeedback(input: {
       ...(refusal.reason === "repeat_never_ends" && refusal.said !== undefined ? { said: refusal.said } : {}),
       // What the step offers instead, from the step the bind examined (`../flow-draft/bindable/paths.ts`, run B7).
       ...(refusal.reason === "bind_new_key" && refusal.bindable ? { bindable: refusal.bindable } : {}),
-      // A repeat Core took off was never sent, so it is never sent again (header).
-      ...(refusal.repeated && refusal.reason !== "repeat_taken_off" ? { repeated: true } : {}),
+      ...(refusal.repeated ? { repeated: true } : {}),
       next
     };
   });
-  // Entries that are only repeats Core took off refuse no amendment of the model's (header).
-  const amendmentsRefused = refused.some((refusal) => refusal.reason !== "repeat_taken_off");
-  const repeatsTakenOff = refused.length > 0 && !amendmentsRefused;
   const undone = input.sameDraftAsIteration !== undefined;
   const moved = (input.moved ?? []).map((move) => ({ step: move.from, act: move.act, to: move.to, note: movedNote(move) }));
   const unreached = (input.unreached ?? []).map((entry) => ({ step: entry.step, after: entry.after, reachedBy: [...entry.reachedBy], note: unreachedNote(entry) }));
@@ -138,9 +130,8 @@ export function automationStudioLlmEvidenceDraftAmendmentFeedback(input: {
     stepsWithoutProgress: input.stepsWithoutProgress,
     ...(Number.isFinite(input.maxStepsWithoutProgress) ? { maxStepsWithoutProgress: input.maxStepsWithoutProgress } : {}), // None where no count ends the loop (t1008).
     ...(undone ? { sameDraftAsIteration: input.sameDraftAsIteration! } : {}),
-    instruction: ((amendmentsRefused || (!undone && !onlyMoved && !repeatsTakenOff) ? AMENDMENT_FEEDBACK_INSTRUCTION : "")
+    instruction: ((refused.length || (!undone && !onlyMoved) ? AMENDMENT_FEEDBACK_INSTRUCTION : "")
       + (refused.length ? NUMBERING_INSTRUCTION : "")
-      + (refused.some((refusal) => refusal.reason === "repeat_taken_off") ? TAKEN_OFF_INSTRUCTION : "")
       + (refused.some((refusal) => refusal.repeated) ? REPEATED_INSTRUCTION : "")
       + (refused.some((refusal) => refusal.next) ? NEXT_INSTRUCTION : "")
       + (undone ? UNDONE_INSTRUCTION : "")

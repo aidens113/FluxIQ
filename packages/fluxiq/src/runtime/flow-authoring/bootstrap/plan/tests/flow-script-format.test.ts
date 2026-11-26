@@ -186,7 +186,7 @@ describe("the format's guidance on narrowing a collection", () => {
   });
 
   it("says a condition the items do not print is the site's own filter under a heading naming it, before reading every item", () => {
-    const sentence = "When the items do not print a condition the instruction asks for, look first for the site's own filter whose group heading names it, such as Format: Audiobook in a library catalogue, rather than reading every item.";
+    const sentence = "When the items do not print a condition the instruction asks for, first find the site's own filter whose group heading names it, such as Format: Audiobook in a library catalogue, rather than reading every item.";
     expect(AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT).toContain(sentence);
     expect(AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT.indexOf(sentence)).toBeLessThan(AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT.indexOf("Otherwise read the collection and narrow in the read's own condition"));
     expect(sentence).not.toMatch(/shop|store|seller|retailer|pickup|cart|order|feed|social|job|towel|valueridge/iu);

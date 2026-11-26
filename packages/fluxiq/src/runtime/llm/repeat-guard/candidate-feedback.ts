@@ -90,7 +90,7 @@ const SAME_REQUEST = "You already made this exact request -- the same tool with 
 
 const HANDLE_UNSHOWN = "You already made this exact call -- the same tool with the same input -- on this exact page, and it failed because a handle it names was never shown here (then.resultReason): no call had shown or minted that handle yet, and none has since, so it was not run. "
   + "The call itself may be right. First make the call that shows the handle: read the page below, which lists each control under its handle, "
-  + "or for a list's extraction handle detect the list's repeating structure from one of its items, which mints the handle and its fields. "
+  + "A read of a list needs no handle minted first: it names its list by a line the page shows, and finds the list itself. "
   + "Once a call has shown it, this same call may be made again with the handle exactly as shown.";
 
 /** A refused submission sent again, whose refusal listed issues; `call` is the refused call's id. */

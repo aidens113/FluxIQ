@@ -91,7 +91,7 @@ describe("a press that undoes another on the same control", () => {
     const steps = draft([{ from: "s0", to: "s1", disposition: "kept", toggle: off() }, { from: "s1", to: "s2" }, { from: "s2", to: "s3", disposition: "kept", toggle: on() }]);
     automationStudioFlowDraftDropReversals(steps);
     expect(inFlow(steps)).toEqual([]);
-    applyAutomationStudioFlowDraftAmendments(steps, [{ step: 1, change: "add" }, { step: 3, change: "add" }]);
+    applyAutomationStudioFlowDraftAmendments(steps, [{ step: 1, change: "keep" }, { step: 3, change: "keep" }]);
     automationStudioFlowDraftDropReversals(steps);
     expect(inFlow(steps)).toEqual([1, 2, 3]);
   });

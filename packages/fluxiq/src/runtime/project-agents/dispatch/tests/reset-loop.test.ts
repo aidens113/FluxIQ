@@ -7,7 +7,7 @@ import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioProjectResetPorts } from "../index.ts";
 import { gardenBrief, gardenBuild } from "./dispatch-fixture.ts";
 
-const SETTLE = "Nothing read shows where its effect would be: read the list where it would show completely and name that list's ref as resetDestination on a look that names this act under undoes.";
+const SETTLE = "Nothing read shows where its effect would be: read the list where it would show completely and name that list's ref as resetDestination on a read that names this act under undoes.";
 
 async function refusalWith(issuedRefs?: () => Array<{ ref: string; count: number }>): Promise<JsonObject> {
   const seen: unknown[] = [];

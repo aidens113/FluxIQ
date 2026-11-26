@@ -21,22 +21,15 @@ function draft(): Step[] {
   return [press(1, "t1212", "s-results", "s-product"), { ...press(2, "t1378", "s-product", "s-results", "taken"), actionId: "web.dom.type" }, press(3, "t1212", "s-results", "s-product", "taken")];
 }
 
-describe("an amendment that would add a second copy of a kept step", () => {
-  it("run murwdp4f 0046: add 3 act a3 is refused second_copy, naming step 1, and changes nothing", () => {
-    for (const change of ["add", "keep"] as const) {
+describe("an amendment that would put a second copy of a kept step in the Flow", () => {
+  it("run murwdp4f 0046: keep 3 act a3 is refused second_copy, naming step 1, and changes nothing", () => {
+    {
       const steps = draft();
       const before = structuredClone(steps);
-      const report = applyAutomationStudioFlowDraftAmendments(steps, [{ step: 3, change, act: "a3", settings: { timeoutMs: 5000 } }]);
+      const report = applyAutomationStudioFlowDraftAmendments(steps, [{ step: 3, change: "keep", act: "a3", settings: { timeoutMs: 5000 } }]);
       expect(report).toEqual({ applied: 0, refused: [{ step: 3, reason: "second_copy", copyOf: 1 }] });
       expect(steps).toEqual(before);
     }
-  });
-
-  it("names the original by the number the decision was shown, after a move in the same decision", () => {
-    const steps = [press(1, "t5", "s0", "s-results"), ...draft().map((step) => ({ ...step, position: step.position + 1, id: `d${step.position + 1}` }))];
-    const report = applyAutomationStudioFlowDraftAmendments(steps, [{ step: 2, change: "reorder", to: 1 }, { step: 4, change: "add" }]);
-    expect(report.refused).toEqual([{ step: 4, reason: "second_copy", copyOf: 2 }]);
-    expect(steps.find((step) => step.id === "d4")!.disposition).toBe("taken");
   });
 
   it("leaves a step already in the Flow, and a press from another page, alone", () => {
@@ -45,7 +38,7 @@ describe("an amendment that would add a second copy of a kept step", () => {
     expect(applyAutomationStudioFlowDraftAmendments(kept, [{ step: 3, change: "keep", act: "a3" }])).toEqual({ applied: 1, refused: [] });
     const elsewhere = draft();
     elsewhere[2]!.stateBefore = "s-results-page-2";
-    expect(applyAutomationStudioFlowDraftAmendments(elsewhere, [{ step: 3, change: "add" }])).toEqual({ applied: 1, refused: [] });
+    expect(applyAutomationStudioFlowDraftAmendments(elsewhere, [{ step: 3, change: "keep" }])).toEqual({ applied: 1, refused: [] });
     expect(elsewhere[2]!.disposition).toBe("kept");
   });
 });

@@ -40,11 +40,11 @@ describe("a choice named on a step after its act's step", () => {
 
   // Live run `run-murzln6g-11debe1d` (C3): told eight times to "make the choice
   // before the step that does a2", the model never moved step 16 -- the
-  // sentence did not say which amendment moves a step.
-  it("names the amendment that moves the choice: reorder, with to the act step's position", () => {
+  // sentence did not say how. No edit moves a step (t1037), so it says to do the act again after the choice.
+  it("names how to put the choice first: the act done again after it, named for the act, and the earlier act dropped", () => {
     const draft = [step(12, { acts: ["a1"] }), step(16, { acts: ["a1.quantity"] })];
     const said = checkAutomationStudioInstructedActs({ instructionText: TOWELS, result: { summary: "Adds the towels." }, draftSteps: draft }).choicesAfterAct?.[0]?.said;
-    expect(said).toContain("amend_draft reorder on step 16 with to 12");
+    expect(said).toContain("so do a1 again after step 16, name that step for a1, and drop step 12");
   });
 
   it("does not move a choice ahead of its recorded place: a legitimate change after the act", () => {
@@ -80,19 +80,19 @@ describe("a choice named on a step after its act's step", () => {
     expect(draft[0]?.acts).toEqual(["a1"]);
   });
 
-  it("keeps the reorder hint when both steps acted in the same recorded place", () => {
+  it("keeps the hint when both steps acted in the same recorded place", () => {
     const draft = [
       step(12, { acts: ["a1"], replay: { from: { location: "item" } } }),
       step(16, { acts: ["a1.quantity"], replay: { from: { location: "item" } } })
     ];
     const said = checkAutomationStudioInstructedActs({ instructionText: TOWELS, result: {}, draftSteps: draft }).choicesAfterAct?.[0]?.said;
-    expect(said).toContain("amend_draft reorder on step 16 with to 12");
+    expect(said).toContain("so do a1 again after step 16, name that step for a1, and drop step 12");
   });
 
   it("does not infer a different place from incomplete evidence", () => {
     const draft = [step(12, { acts: ["a1"] }), step(16, { acts: ["a1.quantity"], replay: { from: { location: "item" } } })];
     const said = checkAutomationStudioInstructedActs({ instructionText: TOWELS, result: {}, draftSteps: draft }).choicesAfterAct?.[0]?.said;
-    expect(said).toContain("amend_draft reorder on step 16 with to 12");
+    expect(said).toContain("so do a1 again after step 16, name that step for a1, and drop step 12");
   });
 });
 

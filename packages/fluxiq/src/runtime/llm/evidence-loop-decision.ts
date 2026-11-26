@@ -17,8 +17,8 @@ import type { JsonObject, JsonValue } from "../../core/index.ts";
 import { parseAutomationStudioRecordSchema, parseAutomationStudioTargetActionabilityRecord, projectAutomationStudioFailureControlRecord, type AutomationStudioFailureRecord, type AutomationStudioTargetActionabilityRecord } from "@fluxiq/contracts/automation";
 import {
   AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID,
-  AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_CHANGES,
-  AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA,
+  AUTOMATION_STUDIO_FLOW_DRAFT_EDIT_CHANGES,
+  AUTOMATION_STUDIO_FLOW_DRAFT_EDIT_SCHEMA,
   AUTOMATION_STUDIO_FLOW_DRAFT_ROUTE_PLACE_VALUE,
   type AutomationStudioFlowDraftAmendment,
   type AutomationStudioFlowDraftStepReplay,
@@ -29,7 +29,7 @@ import {
   automationStudioFlowDraftTranslateBindings,
   automationStudioAuthoredProcessingIssue,
   automationStudioAuthoredProcessingAmendmentsIssue,
-  type AutomationStudioFlowDraftAmendmentChange,
+  type AutomationStudioFlowDraftEditChange,
   type AutomationStudioFlowDraftBindingContext
 } from "../flow-authoring/draft/index.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness/index.ts";
@@ -55,6 +55,9 @@ import type { AutomationStudioLlmEvidenceToolFailureCode, AutomationStudioLlmEvi
  * there. Offered only tools that decline to act, and refused when it asked one
  * to, the model read the whole exercise as "acting is unavailable" and wrote
  * the only shape it had seen accepted.
+ *
+ * t1037 (user, 2026-11-25): Core drafts the Flow from the steps that worked, so the
+ * clauses say a step joins by working and the model edits the draft.
  *
  * The "unless the result is a Flow built from the steps you run" clause was
  * added 2026-09-30 (lane t195). A draft is the steps the build ran, so "never
@@ -83,7 +86,7 @@ import type { AutomationStudioLlmEvidenceToolFailureCode, AutomationStudioLlmEvi
  * options are each one word of one request phrase keep rows meeting each word
  * apart, never shown to meet the phrase, so a row's own text is what the read
  * tests. Its example is a venue listing, a kind of site no Lab scenario has. */
-export const AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION = "Evidence entries are the current authoritative results of prior tool calls. Declared view members in historical results carry core.view_reference with their own original callId and group from their first appearance; the rest of each result remains unchanged. The core.current_view tail contains the latest whole value for each independent group, with its source callId and optional holder. A group not present in a newer result keeps its last view; an explicitly empty or null member replaces it. Historical references are not current payloads or references to a later call. Recall preserves a separate restored-view group. A core.route_state entry with state is a screened route baseline; a later entry names baseSituation and supplies updates and removed keys. Apply that delta to its named earlier situation; omitted keys keep their earlier values. Use offered core.recall_result for original held members; to learn the target's present state, observe it now. Your goal is to produce the final structured result, not to execute the workflow that result describes. When the decision schema offers a complete variant, evaluate it first. Complete immediately once current evidence is sufficient to construct that result -- except where a core.flow_draft entry is shown: then the result is a Flow you author, and it is ready only when every act on that entry's acts checklist is done by a step you added to the Flow. Do not select a tool merely because one remains available. Use a tool only to resolve information still missing from the result; prefer observation over mutation. Use a mutating tool only when its state change is necessary to reveal otherwise unavailable evidence, such as moving to where that evidence is kept or revealing what is hidden. Never mutate merely to perform an eventual workflow step that belongs in the generated result, unless the result is a Flow built from the steps you run or write and add to it: then run steps to learn what works and add the ones the Flow needs (a look, a failed try or a detour is never added); you may also write a step without running it (core.run_node with write true) once what you have seen is enough to know its node and parameters. There, repetitive work is a loop, not a sequence: list the items with a where that keeps the ones to act on, do or write the act once on one item it kept, and state repeat, never doing it to every item; only a value a step typed, or a read's condition, is bound: one that changes between runs or rows is bound ({\"$input\": ...}, {\"$row\": ...}), never typed in, and a press's control or option is never bound; and never repeat a successful mutation merely to try another eventual-workflow value. When a condition the request asks for is not printed on the listed items, look for the site's own filter whose group heading names that condition, and prefer choosing it over opening or reading every item to test it: in a library catalogue, a request for audiobooks is met by the option Audiobook under the heading Format, a filter whose words keep exactly what the request asks. A site filter's option words do not show that each row it keeps meets the request's words; a row's own text does: on a venue listing with separate Outdoor and Weekend filters, a request for outdoor seating this weekend still needs each condition checked against row evidence, by declared result processing for data or the read's where before acting on rows. When a condition is printed on each listed item, retain it with all safe source fields, including marks, identity and date fields; requested output columns are a view, not a reason to discard source fields. With declared automatic task processing, collect candidates broadly and let Core apply the declared conditions, deduplication, order and output projection to actual rows. Do not call core.set_result_processing after each read; where offered, use it to supply missing criteria or correct them from evidence without rereading already retained originals. Without automatic processing, the offered result-processing tool still shapes the saved answer. Explicit exclusions remain authoritative. Choose a site's filter when it substantially reduces reading or supplies a condition absent from row evidence. Rows a later step acts on are still narrowed by the read's where. Getting back to a state you were already in is not progress: only a step added to the Flow, or a state you had not reached, is. Never repeat the same toolId with the same input directly. When core.run_nodes is explicitly offered with eligible prior callIds, use that tool for an intentional rerun of those exact calls; its availability does not authorize other repeated calls or bypass safety checks. Repeating an observation with different parameters is not progress. Do not call a mutating tool merely to unlock another observation. Treat a recoverable tool result shaped like {ok:false,code:string} as feedback and choose a different evidence-gathering action or complete if enough evidence is already available. An entry whose toolId starts with core. is Core's, not a tool result. The core.evidence_history entry is the record of all your decisions so far and what Core answered each; do not make again a decision it shows was refused or answered from memory. Every other core. entry is Core's answer to a recent decision: correct what it names, and when it names an earlier callId, use that entry instead of asking again. A tool that refused you, or was never offered, bounds only what you may do while gathering evidence, never what the result may contain: write the step you were not permitted to perform here into the result instead, from what you observed.";
+export const AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION = "Evidence entries are the current authoritative results of prior tool calls. Declared view members in historical results carry core.view_reference with their own original callId and group from their first appearance; the rest of each result remains unchanged. The core.current_view tail contains the latest whole value for each independent group, with its source callId and optional holder. A group not present in a newer result keeps its last view; an explicitly empty or null member replaces it. Historical references are not current payloads or references to a later call. Recall preserves a separate restored-view group. A core.route_state entry with state is a screened route baseline; a later entry names baseSituation and supplies updates and removed keys. Apply that delta to its named earlier situation; omitted keys keep their earlier values. Use offered core.recall_result for original held members; to learn the target's present state, observe it now. Your goal is to produce the final structured result, not to execute the workflow that result describes. When the decision schema offers a complete variant, evaluate it first. Complete immediately once current evidence is sufficient to construct that result -- except where a core.flow_draft entry is shown: then the result is a Flow drafted from the steps you run, and it is ready only when every act on that entry's acts checklist is done by a step in the Flow. Do not select a tool merely because one remains available. Use a tool only to resolve information still missing from the result; prefer observation over mutation. Use a mutating tool only when its state change is necessary to reveal otherwise unavailable evidence, such as moving to where that evidence is kept or revealing what is hidden. Never mutate merely to perform an eventual workflow step that belongs in the generated result, unless the result is a Flow built from the steps you run or write: then run steps to learn what works; Core drafts the Flow from the steps that worked, leaving out looks, failed tries and detours, and you edit the draft; you may also write a step without running it (core.run_node with write true) once what you have seen is enough to know its node and parameters. There, repetitive work is a loop, not a sequence: list the items with a where that keeps the ones to act on, do or write the act once on one item it kept, and state repeat, never doing it to every item; only a value a step typed, or a read's condition, is bound: one that changes between runs or rows is bound ({\"$input\": ...}, {\"$row\": ...}), never typed in, and a press's control or option is never bound; and never repeat a successful mutation merely to try another eventual-workflow value. When a condition the request asks for is not printed on the listed items, look for the site's own filter whose group heading names that condition, and prefer choosing it over opening or reading every item to test it: in a library catalogue, a request for audiobooks is met by the option Audiobook under the heading Format, a filter whose words keep exactly what the request asks. A site filter's option words do not show that each row it keeps meets the request's words; a row's own text does: on a venue listing with separate Outdoor and Weekend filters, a request for outdoor seating this weekend still needs each condition checked against row evidence, by declared result processing for data or the read's where before acting on rows. When a condition is printed on each listed item, retain it with all safe source fields, including marks, identity and date fields; requested output columns are a view, not a reason to discard source fields. With declared automatic task processing, collect candidates broadly and let Core apply the declared conditions, deduplication, order and output projection to actual rows. Do not call core.set_result_processing after each read; where offered, use it to supply missing criteria or correct them from evidence without rereading already retained originals. Without automatic processing, the offered result-processing tool still shapes the saved answer. Explicit exclusions remain authoritative. Choose a site's filter when it substantially reduces reading or supplies a condition absent from row evidence. Rows a later step acts on are still narrowed by the read's where. Getting back to a state you were already in is not progress: only a new step in the Flow, or a state you had not reached, is. Never repeat the same toolId with the same input directly. When core.run_nodes is explicitly offered with eligible prior callIds, use that tool for an intentional rerun of those exact calls; its availability does not authorize other repeated calls or bypass safety checks. Repeating an observation with different parameters is not progress. Do not call a mutating tool merely to unlock another observation. Treat a recoverable tool result shaped like {ok:false,code:string} as feedback and choose a different evidence-gathering action or complete if enough evidence is already available. An entry whose toolId starts with core. is Core's, not a tool result. The core.evidence_history entry is the record of all your decisions so far and what Core answered each; do not make again a decision it shows was refused or answered from memory. Every other core. entry is Core's answer to a recent decision: correct what it names, and when it names an earlier callId, use that entry instead of asking again. A tool that refused you, or was never offered, bounds only what you may do while gathering evidence, never what the result may contain: write the step you were not permitted to perform here into the result instead, from what you observed.";
 
 /**
  * The node call's names, restated from `./node-tools/` (`run-node.ts`,
@@ -364,6 +367,11 @@ function readReplayRecord(value: unknown): AutomationStudioFlowDraftStepReplay |
  * it costs a call and no side effect, it is offered only when there is
  * something to amend, and the loop withdraws it once a run has spent its
  * allowance of them, which no tool does.
+ *
+ * The edit shape offered is the framework's seven edits
+ * (`../flow-authoring/draft/amendment/edits/schema.ts`): the framework drafts
+ * the Flow and the model edits it (user, 2026-11-25). `authoring`: the loop
+ * keeps a draft, so a call carries `act` and `place` as well.
  */
 export function buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools: AutomationStudioLlmEvidenceTool[], completionSchema: JsonObject = { type: "object" }, allowComplete = true, allowAmend = false, authoring = false): JsonObject {
   // `add`, `act` and `place` are explained once, on the first call that can
@@ -382,7 +390,7 @@ export function buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools: Automa
         type: "object", additionalProperties: false, required: ["kind", "amendments"],
         properties: {
           kind: { const: "amend_draft" },
-          amendments: { type: "array", minItems: 1, items: structuredClone(AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA) }
+          amendments: { type: "array", minItems: 1, items: structuredClone(AUTOMATION_STUDIO_FLOW_DRAFT_EDIT_SCHEMA) }
         }
       }] : []),
       ...tools.map((tool, index) => ({
@@ -390,8 +398,8 @@ export function buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools: Automa
         properties: {
           kind: { const: "tool_call" }, callId: { type: "string", pattern: "^[a-zA-Z0-9_.:-]{1,200}$" },
           toolId: { const: tool.toolId }, input: structuredClone(tool.inputSchema),
-          // Offered where the model authors its draft: promoting the step it is
-          // taking costs no decision of its own (`../flow-draft/step.ts`, `taken`).
+          // Offered where the framework drafts the Flow: naming the act a step does, or its place on
+          // the route, costs no decision of its own (`../flow-authoring/draft/step.ts`).
           ...(authoring ? (index === explainedAt ? AUTHORING_CALL_PROPERTIES : AUTHORING_CALL_PROPERTIES_BARE) : {})
         }
       }))
@@ -399,13 +407,17 @@ export function buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools: Automa
   };
 }
 
-/** What a call may say about the draft, where the model authors it. */
+/**
+ * What a call may say about the draft, where the framework drafts it. `add` is
+ * still accepted and changes nothing: a step that works is in the Flow
+ * already (`../flow-authoring/draft/compose/`).
+ */
 const AUTHORING_CALL_PROPERTIES: JsonObject = {
-  add: { type: "boolean", description: "true: if this call works, put its step into the Flow now -- a step you run or write; write true implies add. A step you run is not in the Flow until you add it, here or with amend_draft add. Leave it out for a look, a try or a step the Flow does not need." },
-  act: { type: "string", pattern: "^a[1-9][0-9]{0,2}([.][a-z]{1,16})?$", description: "The act from the acts checklist this step does, such as a2, or the choice under it this step makes, such as a2.quantity. Implies add." },
+  add: { type: "boolean", description: "Not needed: a step that works joins the Flow by itself, and amend_draft edits what was drafted." },
+  act: { type: "string", pattern: "^a[1-9][0-9]{0,2}([.][a-z]{1,16})?$", description: "The act from the acts checklist this step does, such as a2, or the choice under it this step makes, such as a2.quantity." },
   // D phase 2 (`../flow-draft/route-places/`): which places on the route the
   // draft shows this step is on. Replaces the step's own, and no other step's.
-  place: { type: "string", pattern: AUTOMATION_STUDIO_FLOW_DRAFT_ROUTE_PLACE_VALUE.source, description: "Once the draft shows route: the places on it this step is on, such as r1, or r1,r2 for two; none clears them. Implies add." }
+  place: { type: "string", pattern: AUTOMATION_STUDIO_FLOW_DRAFT_ROUTE_PLACE_VALUE.source, description: "Once the draft shows route: the places on it this step is on, such as r1, or r1,r2 for two; none clears them." }
 };
 
 /** The same three properties without their explanation, which one variant carries. */
@@ -609,6 +621,9 @@ function bindingRefusedCode(path: string, reason: string): string {
  * said three things worth doing, and the draft it is shown next says plainly
  * which of them landed.
  */
+/** The seven edits, the only changes an amendment may name (`../flow-authoring/draft/amendment/edits/`). */
+const CHANGES: ReadonlySet<string> = new Set<string>(AUTOMATION_STUDIO_FLOW_DRAFT_EDIT_CHANGES);
+
 function readAmendments(value: unknown): AutomationStudioFlowDraftAmendment[] | undefined {
   if (!Array.isArray(value) || !value.length) return undefined;
   const read = value.map(readAmendment).filter((item): item is AutomationStudioFlowDraftAmendment => typeof item === "object");
@@ -619,16 +634,15 @@ function readAmendments(value: unknown): AutomationStudioFlowDraftAmendment[] | 
  * One amendment as the loop reads it; `rerun_needs_input` for a rerun that was
  * well formed but for its missing input, which is dropped like any amendment
  * that cannot be read and named when nothing else is left (t194-w78); nothing
- * for any other amendment that cannot be read.
+ * for any other amendment that cannot be read, a change outside the seven edits
+ * among them.
  */
 function readAmendment(item: unknown): AutomationStudioFlowDraftAmendment | "rerun_needs_input" | undefined {
-  if (!isRecord(item) || !exactKeys(item, ["step", "change", "settings", "to", "input", "check", "through", "over", "while", "most", "act", "place", "call"])) return undefined;
-  // `take` names an earlier call, not a step, and carries nothing else (`../flow-draft/amendment/types.ts`, `call`).
-  if (item.change === "take" || item.call !== undefined) return item.change === "take" && typeof item.call === "string" && item.call.trim() !== "" && exactKeys(item, ["step", "change", "call"]) && (item.step === undefined || (Number.isSafeInteger(item.step) && (item.step as number) >= 1)) ? { step: (item.step as number | undefined) ?? 0, change: "take", call: item.call.trim() } : undefined;
+  if (!isRecord(item) || !exactKeys(item, ["step", "change", "settings", "input", "through", "over", "while", "most", "act", "place"])) return undefined;
   if (item.act !== undefined && (typeof item.act !== "string" || !AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID.test(item.act))) return undefined;
   if (!validPlace(item.place)) return undefined;
   if (!Number.isSafeInteger(item.step) || (item.step as number) < 1) return undefined;
-  if (typeof item.change !== "string" || !(AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_CHANGES as readonly string[]).includes(item.change)) return undefined;
+  if (typeof item.change !== "string" || !CHANGES.has(item.change)) return undefined;
   // Explicit repeat removal changes only routing, not an act/argument or
   // another route: mixed requests must be separate amendments.
   if (item.change === "unrepeat" && !exactKeys(item, ["step", "change"])) return undefined;
@@ -636,7 +650,7 @@ function readAmendment(item: unknown): AutomationStudioFlowDraftAmendment | "rer
   if (item.input !== undefined && !isJsonObject(item.input)) return undefined;
   // Every key that names another step is one position, read the same way, so
   // a mistyped one leaves the amendment out rather than becoming step zero.
-  if (!["to", "check", "through", "over", "while"].every((key) => isPosition(item[key]))) return undefined;
+  if (!["through", "over", "while"].every((key) => isPosition(item[key]))) return undefined;
   // A repeat while its last step succeeds (`../flow-draft/routing.ts`) is a
   // loop of its own, never one over an earlier step; and its while is its
   // through. Its bound is 1 to 500 passes. Beside a repeat over a listing, the
@@ -645,20 +659,14 @@ function readAmendment(item: unknown): AutomationStudioFlowDraftAmendment | "rer
   // that is no repeat, is left out rather than read as one of them.
   if (item.while !== undefined && (item.over !== undefined || (item.through !== undefined && item.through !== item.while))) return undefined;
   if (item.most !== undefined && (!Number.isSafeInteger(item.most) || (item.most as number) < 1 || (item.most as number) > (item.while === undefined ? 10_000 : 500) || (item.while === undefined && item.change !== "repeat"))) return undefined;
-  // The three changes that need a value are dropped when it is missing,
-  // rather than applied as something else: a `rerun` with no argument would
-  // rerun the step with the argument that was already wrong, and an
-  // `on_failed` naming no step would say a failure recovers into nowhere.
-  if (item.change === "reorder" && item.to === undefined) return undefined;
+  // A `rerun` with no argument is dropped, rather than applied as something
+  // else: it would rerun the step with the argument that was already wrong.
   if (item.change === "rerun" && item.input === undefined) return "rerun_needs_input";
-  if (item.change === "on_failed" && item.to === undefined) return undefined;
   return {
     step: item.step as number,
-    change: item.change as AutomationStudioFlowDraftAmendmentChange,
+    change: item.change as AutomationStudioFlowDraftEditChange,
     ...(item.settings ? { settings: item.settings } : {}),
-    ...(item.to === undefined ? {} : { to: item.to as number }),
     ...(item.input ? { input: item.input } : {}),
-    ...(item.check === undefined ? {} : { check: item.check as number }),
     ...(item.through === undefined ? {} : { through: item.through as number }),
     ...(item.over === undefined ? {} : { over: item.over as number }),
     ...(item.while === undefined ? {} : { while: item.while as number }),

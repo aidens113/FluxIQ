@@ -102,13 +102,76 @@ refused. Live run `run-mux6pndp-16feb842` showed why: a2 ("add the towels to my
 cart") claimed on the product link read as done, so the Add to cart after the
 size and quantity was never pressed.
 
+### The framework drafts the Flow
+
+Core writes the draft; the model edits it (user, 2026-11-25: "Drafting the flow
+automatically will help in many situations, as long as the model is able and
+encouraged to edit it for more efficient flows"). Before this, a step the loop
+ran was only evidence (`taken`) until the model added it, and the audit counted
+44 `amend_draft` decisions in one round, 28 of them refused `draft_unchanged`.
+Now every call that worked is appended to the draft and put in the Flow, in run
+order (`runtime/flow-authoring/draft/compose/compose.ts`). The step's
+`disposition` is `kept` when it is in and `taken` when it is out, with the
+reason under `drafted`, shown to the model as `out`:
+
+| `out` | The step is left out because |
+| --- | --- |
+| `look` | it only looked |
+| `did_not_work` | it failed or changed nothing |
+| `replaced` | a rerun took its place |
+| `not_the_result` | it is a read that is not one of the result's reads |
+| `undone` | a later press of the same control undid it (a toggle pair, `compose/undone.ts`) |
+| `dead_end` | a detour from a press that moved the state, came back to that state with nothing lasting, or a press after the result's last read that nothing lasting follows (`compose/dead-end.ts`, `compose/after-result.ts`) |
+| `repeat` | it copies a step already in the Flow (`draft/second-copy.ts`): of two presses the first stays; of two reads of one list with nothing between them the later stays |
+
+The rules run in that order, on the facts the host stated on each call. The
+composition is pure and idempotent, so it runs after every append and every
+edit, and a later, better read moves the result while the earlier pick goes back
+out. **The model's word stands:** a step the model has ruled on, and a step
+carried from a saved Flow or an earlier attempt, is never recomposed
+(`compose/framework-step.ts`, `isRuled`). A step a loop covers (`coveredBy`)
+stays out for as long as the loop covers it.
+
+**The result's reads.** Every read that answer-first does not mark intermediate
+is a result read; the asked table is the one the instruction's named columns
+describe. Any other read is left out `not_the_result`. The `result` edit says a
+read is the answer.
+
+**Seven edits only** (`runtime/flow-authoring/draft/amendment/edits/`), each on a
+step by the number the draft shows:
+
+- `keep` puts back a step that was left out (with `act` for the act it does, and
+  `place` once the draft shows a route);
+- `drop` takes a step out;
+- `result` says this read holds the answer;
+- `repeat` repeats a step or span `over` the rows of a step, or `while` a step
+  keeps succeeding, `through` a later step, or `most` times where the
+  instruction gives a number; it puts in a left-out step it names;
+- `unrepeat` takes the repeat off;
+- `bind` lifts a value into a Flow input or a row field (below);
+- `rerun` does a step again in its place with a corrected argument, kept for
+  the repair rule.
+
+There is no `add`, `take`, `reorder`, `exploratory`, `optional`, `only_if` or
+`on_failed`, and no transcript mode: nothing moves a step, and a step that
+should not run unconditionally is a repeat, a bind or a drop. The decision parser
+leaves an amendment with any other word out as unreadable.
+
+**There is no look command.** The page arrives whole once per address, then as
+changes, and `core.full_page` gives the whole page again; a step that only
+looked is out of the Flow as `look`. `core.run_flow` is always offered; before
+any step can run it is refused `run_flow.nothing_to_run`
+(`runtime/llm/node-tools/run/flow.ts`).
+
 ### Recorded And Written Steps
 
 A step enters the draft one of two ways, and both become the same kind of Flow
 node.
 
-- **Recorded.** `core.run_node` runs the node live; the step is evidence
-  (`taken`) until the model adds it (`add: true`, or `amend_draft add`).
+- **Recorded.** `core.run_node` runs the node live; the framework drafts the
+  step into the Flow when it worked, as [The framework drafts the Flow](#the-framework-drafts-the-flow)
+  says. The model never adds a step: `add` on a call is accepted and does
+  nothing.
 - **Written.** `core.run_node` with `write: true`
   (`runtime/llm/node-tools/run/node.ts`). The host checks the call as it would
   a live one -- node, parameters, the target resolved into its frozen identity,
@@ -119,8 +182,7 @@ node.
   at write time, because nothing is done; the build's test and the plan-time
   `flow_step` gate gate the step with the declaration it carries.
 
-`write` implies `add` (the decision parse, `runtime/llm/evidence-loop-decision.ts`).
-Core keeps `written: true` on the step only beside the written result code, so
+A written step joins the Flow as it is written. Core keeps `written: true` on the step only beside the written result code, so
 a host that ignored `write` and acted produces an ordinary recorded step, never
 a false "written" (`runtime/llm/evidence-loop/call-record.ts`). A written step
 is proposable whatever `effectApplied` says and is never `did_not_work`
@@ -138,12 +200,12 @@ An amendment is refused where it would make a kept repeat unassemblable.
 Withdrawing a repeat's source or span endpoint returns `holds_a_repeat`;
 the author must remove or change the repeat first. Introducing routed steps
 inside a repeat body returns `span_holds_routing`, identifying the affected
-repeat, endpoint and routed step. This covers routing changes, moves and
-adding previously excluded steps, while preserving valid shared-source repeats.
+repeat, endpoint and routed step. This covers routing changes and putting back steps the framework left
+out, while preserving valid shared-source repeats.
 Refused edits retain the prior valid step state and ordering.
 
-Rerunning a source rebinds and reorders its replacement before withdrawing the
-old step. Loop-covered cleanup preserves referenced steps, and held feedback
+Rerunning a source rebinds its replacement and puts it in the old step's place
+before withdrawing the old step. Loop-covered cleanup preserves referenced steps, and held feedback
 renumbers repeat references when the shown draft changes. Save/assembly
 validation remains strict; a refusal never silently removes a working repeat.
 
@@ -154,11 +216,13 @@ The authored draft entry (`runtime/flow-authoring/draft/entry.ts`) shows, per st
 rendered back in the form the model writes (`runtime/flow-authoring/draft/binding-render.ts`),
 and, after a test, `passes`: how many times a repeated step ran. Once for the
 draft it shows `inputs: [{name, test, steps}]`, the Flow inputs the proposed
-steps declare (`runtime/flow-authoring/draft/flow-inputs.ts`). Its instruction tells the
-model it may write a step once it knows the node and parameters, that
-repetitive work is a loop (list with a `where`, do or write the act on one kept
-row, then `repeat` over the listing), to prefer writing a lasting act a loop
-does, and the binding forms.
+steps declare (`runtime/flow-authoring/draft/flow-inputs.ts`). Its instruction (`FRAMEWORK_INSTRUCTION`) tells the
+model that Core drafts the Flow from the calls that worked, which lines are left
+out and why, the seven edits, that what did something lasting is never done
+again for a draft edit, and that repetitive work is a loop (list with a `where`
+keeping only the items to act on, act on one kept row, then `repeat` over the
+listing; for a list that continues, read it, move it on once, then `repeat` the
+read `while` the step that moves it on), never done by hand to every item.
 
 ### Cancelling Choices And Changed Test Evidence
 
@@ -166,11 +230,13 @@ The host may attach `toggle: {key, to}` to a mutating recorded step. Core
 compares the opaque control key and `on`/`off`; it does not interpret browser
 targets. `runtime/flow-authoring/draft/reversal.ts` removes opposite presses only when
 no kept proposable step between them could use or return the temporary state.
-An intervening action or exported read preserves both presses. Conditional
-steps and an explicit model decision to restore a removed step are preserved.
-Removed steps retain `cancels` and an `out` explanation; their old act claims
-are cleared so they cannot continue claiming instruction coverage. A drop or
-`exploratory` of a kept half runs the reversal rule only after the strand
+An intervening action or exported read preserves both presses. An explicit model
+decision to restore a removed step (`keep`) is preserved, and a pair with a half
+the model ruled on is undone together or not at all
+(`runtime/flow-authoring/draft/compose/undone.ts`). Removed steps retain
+`cancels` and an `out` explanation (`undone`); their old act claims
+are cleared so they cannot continue claiming instruction coverage. A drop of a
+kept half runs the reversal rule only after the strand
 check (`runtime/flow-authoring/draft/amendment/apply.ts`): a drop put back because it
 strands a kept step never takes its partner out with it.
 
@@ -180,9 +246,9 @@ for the whole build. Core compares codes for equality and reads nothing else.
 The parse keeps it only on a statement whose `effect` is `observe` and only
 when it is a code; anything else is withheld, never refused.
 
-### A Second Copy Of A Step Is Not Added
+### A Second Copy Of A Step Is Left Out
 
-A step joining the Flow that copies a step already in it is not added
+A step that copies a step already in the Flow is left out of it, as `repeat`
 (`runtime/flow-authoring/draft/second-copy.ts`; live run `run-murwdp4f-35f976d2`, C9,
 added a second press of the 3-Pack link from the same results page).
 Candidates are other kept, proposable steps with the same action and tool. A
@@ -193,17 +259,16 @@ when both observe and propose, carry the same `reads` code, and no kept
 changing step lies between them in draft order; a read after a kept press (a
 filter, a sort, the next page) is no copy.
 
-On a call with `add` (`runtime/llm/decision-handlers/second-copy.ts`), the step
-stays `taken`: no act claim, no openers, no reversal. The model is told, under
-`core.amendment_check` after the call's answer, "Step M was not added to the
-Flow: step N already does this (the same press on the same page | a read of
-the same list with nothing changed in between); the Flow does each step once."
-An `add` or `keep` amendment that would bring a non-kept step into the Flow
-while it copies a kept step is refused whole, before anything changes, as
+Of two reads of one list with nothing changed between them the later stays,
+because it is the model's latest word on that list (run `run-mwveg5ls-0266dfe0`
+kept a read with the wrong fields and dropped the corrected read after it while
+the first copy won); of two presses the first stays. A left-out copy has no act
+claim, no openers and no reversal. A `keep` amendment that would bring a
+left-out step into the Flow while it copies a kept step is refused whole, before anything changes, as
 `second_copy` with `copyOf` the kept step's shown number. Re-adding the attempt
 a rerun replaced is refused on its own (`replacedBy`).
 
-Reordering invalidates `replayed` marks from the first changed position
+A change to the Flow's order, such as a rerun taking its place, invalidates `replayed` marks from the first changed position
 onward. A successful checked rerun replaces its argument/resolved form and
 uses the validated host draft declaration to update its action/tool identity,
 effect and proposal metadata. It never derives an action from an arbitrary
@@ -312,7 +377,7 @@ sits and is never carried as a literal. Search depth is 16, as in the
 executor's resolver.
 
 **An earlier step's output (P5, t270; wired end to end in t273 S3).** `n` is a
-draft position, and a position is renumbered by every reorder and withdrawal,
+draft position, and a position is renumbered by every withdrawal and put-back,
 so the form is read against the draft as it stands when it is written
 (`AutomationStudioFlowDraftBindingContext`: the steps, the position of the step
 being written -- absent for one about to be appended -- the node lookup, and
@@ -321,10 +386,10 @@ the step's own id. Every path that writes a step passes the draft: a written
 `core.run_node` call's parameters (`runtime/llm/evidence-loop-decision.ts`, with
 the loop's draft and node lookup), a rerun's (`runtime/llm/evidence-loop/rerun/request.ts`, at the rerun
 step's position) and `amend_draft bind` (`runtime/flow-authoring/draft/amendment/bind.ts`, against the draft
-as shown before the decision moved anything, so a `$step` beside a reorder
+as shown before the decision moved anything, so a `$step` beside a drop
 names the step shown at `n`). A bind's `step_*` refusal is `bind_malformed`
 with its parameter; a call's is `run_node.binding_refused.step_*`. A step that
-was run and not added (`taken`) is not refused when written: assembly refuses a
+was run and left out (`taken`) is not refused when written: assembly refuses a
 source that is not a node of the Flow. Re-seeding a saved Flow translates its
 `$node.<key>` references back to `$step.<seed id>`
 (`runtime/llm/node-tools/draft-from-flow.ts`), so a repair's draft carries them;
@@ -369,7 +434,7 @@ graph:
 - Earlier outputs (`assemble-draft.ts`), each naming the reading step:
   `flow_draft.step_binding_source_missing` (its step became no node of the
   plan: withdrawn, or not in the Flow), `flow_draft.step_binding_not_earlier`
-  (its node is the reader or after it: a reorder moved it),
+  (its node is the reader or after it),
   `flow_draft.step_binding_unknown_output` (the registry's definition declares
   no such output), `flow_draft.step_binding_conditional_source` (the Flow does
   not always run it: optional, only-if, a fallback, an answered interruption),
@@ -550,35 +615,28 @@ An explicit act claim on a control whose wording does not name that act now incl
 
 ### How one decision's step numbers are read
 
-Every step number in one `amend_draft` -- `step`, `to`, `check`, `through`,
-`over` -- names the step as the draft entry the model was shown numbered it,
-and the draft the model reads next is numbered 1..n in the order the steps then
-stand (`runtime/flow-authoring/draft/amendment/shown-numbering.ts`). `to` is the place
-the step shown at that number holds: before it moving up, after it moving down
-(`move.ts`). So a listing after its act is moved with `18 reorder to 9` beside
-`9 repeat over 18`, in either order. Until t195 w45 a reorder renumbered at
-once and the next amendment read the new numbers: live run
-`run-musr9pv3-f4bf6256` sent `15 reorder to 14, 15 repeat over 14` and put the
-repeat on its listing. The amendment schema, both draft-entry tellings and the
-refusal feedback say how numbers are read.
+Every step number in one `amend_draft` -- `step`, `through`, `over`, `while`
+-- names the step as the draft entry the model was shown numbered it, and the
+draft the model reads next is numbered 1..n in the order the steps then stand
+(`runtime/flow-authoring/draft/amendment/shown-numbering.ts`). No edit moves a
+step, so the order is the order the calls ran in; a listing that must come
+before its act is read first, and a read the draft needs after an act is a new
+read run there. Live run `run-musr9pv3-f4bf6256` once sent `15 reorder to 14,
+15 repeat over 14` and put the repeat on its listing, which is why numbers are
+read against the draft as shown. The amendment schema, the draft-entry telling and
+the refusal feedback say how numbers are read.
 
-**A move revalidates every repeat** (`runtime/flow-authoring/draft/amendment/repeat-revalidation.ts`,
-`automationStudioFlowDraftRepeatOrderProblem` in `runtime/flow-authoring/draft/routing.ts`).
-A repeat the decision wrote is checked once all its moves are done; one that
+**A repeat is checked once the decision's edits are done**
+(`runtime/flow-authoring/draft/amendment/repeat-revalidation.ts`,
+`automationStudioFlowDraftRepeatOrderProblem` in
+`runtime/flow-authoring/draft/routing.ts`). A repeat the decision wrote that
 cannot run -- its `over` not before it, or its `through` before it -- is taken
-back and refused `over_not_before` or `no_such_position` as before. After a
-decision that moved a step (`reorder`, or `add` with `to`), every other
-repeat that can no longer run is taken off, its step and every step after it
-lose their test marks, and the answer carries one `repeat_taken_off` entry per
-repeat: `step`, `over`, `takenOff` (`over_after` or `span_broken`), `through`
-for a broken span, all in the numbers shown, and `now`, `overNow`,
-`throughNow` where the decision changed them. It is not an amendment refused:
-it is never marked `repeated`, and an answer holding only such entries does not
-say the amendments changed nothing. `unrepeat` below is how a repeat is taken
-off by hand.
+back and refused `over_not_before` or `no_such_position`. The old
+`repeat_taken_off` entry, which reported repeats a move broke, is gone with the
+move. `unrepeat` below is how a repeat is taken off by hand.
 
 **An amendment preserves repeat dependencies and bodies (t981, F26).** After
-the decision's moves and refused withdrawals settle, a `drop` or `exploratory`
+the decision's refused withdrawals settle, a `drop`
 of a kept repeat's source or endpoint is restored and refused as
 `holds_a_repeat`. The refusal names the head and whether the withdrawn step
 was `over`, `through`, or the while-loop's last step. Remove the repeat with
@@ -589,9 +647,9 @@ the head, endpoint and conflicting member. When both statements were written,
 the outer repeat is refused. Assembly's adjacent and overlapping repeats over
 one source still merge into one span; a new shared-source repeat that extends
 that span over routed steps is refused too. Implicit optional interruption
-steps count as routing. Moves and inclusions of previously routed steps are
+steps count as routing. Putting back a previously routed step is
 checked on a prospective copy first; an amendment that introduces a routed
-body is refused before changing order, settings, claims or disposition.
+body is refused before changing settings, claims or disposition.
 Save-time validation remains unchanged.
 
 A successful rerun transfers routing, rebinds every reference and takes its
@@ -604,7 +662,7 @@ a step that another kept step's routing still names.
 
 The unrepeat draft amendment accepts only step and change. It removes a repeat on that step without changing the input, act claims or disposition, and invalidates replay marks from that step onward. Existing keep and keep with act preserve intentional repeats. Quantity-is-a-repeat feedback names unrepeat on the beginning of the repeated span, followed by the item quantity control; missing cart actions still prevent completion.
 
-**A repeat over a step written after it is told the fix this draft needs (t195-w47).** When the Flow is written, a span whose `over` comes after it is refused `flow_draft.repeat_not_after_its_source` (`runtime/flow-authoring/bootstrap/authoring/draft-routing.ts`), and the sentence now depends on which step is out of place. A step another span repeats over, or a step with a list output, is a listing, which runs once and never repeats: it is told to take its repeat off with `unrepeat`, a listing nothing repeats over also to repeat the act over it instead. An act whose listing merely comes after it is told to `reorder` the listing to the act's number. A step repeating over a later check, which may be either, is told both. A span over a listing whose own repeat was refused is told the same `unrepeat` of that listing, rather than that a branch or loop runs it. Each amendment is written out with the step numbers it takes. Live run `run-musr9pv3-f4bf6256` (decision 0072) had a listing at step 15 repeating over the Confirm at 16, which repeated over 15; the one sentence it had told step 15 to move step 16 ahead of it, and the model looped fifteen turns. The completion's feedback (`runtime/llm/harness-options/bootstrap-completion.ts`) carries the sentence of each of draft-routing's six refusal codes, which quote only step numbers and the amendment; before, the issue feedback dropped them and the model saw a code and a path.
+**A repeat over a step written after it is told the fix this draft needs (t195-w47).** When the Flow is written, a span whose `over` comes after it is refused `flow_draft.repeat_not_after_its_source` (`runtime/flow-authoring/bootstrap/authoring/draft-routing.ts`), and the sentence now depends on which step is out of place. A step another span repeats over, or a step with a list output, is a listing, which runs once and never repeats: it is told to take its repeat off with `unrepeat`, a listing nothing repeats over also to repeat the act over it instead. An act whose listing merely comes after it is told to read the listing first and repeat over that read. A step repeating over a later check, which may be either, is told both. A span over a listing whose own repeat was refused is told the same `unrepeat` of that listing, rather than that a branch or loop runs it. Each amendment is written out with the step numbers it takes. Live run `run-musr9pv3-f4bf6256` (decision 0072) had a listing at step 15 repeating over the Confirm at 16, which repeated over 15; the one sentence it had told step 15 to move step 16 ahead of it, and the model looped fifteen turns. The completion's feedback (`runtime/llm/harness-options/bootstrap-completion.ts`) carries the sentence of each of draft-routing's six refusal codes, which quote only step numbers and the amendment; before, the issue feedback dropped them and the model saw a code and a path.
 
 **A read before the last act asks for a new read, never a move (t195-w47, R18).** When every read giving the instruction's named columns runs before the draft's last act step, the note beside the draft (`runtime/flow-authoring/bootstrap/authoring/instruction-record-columns.ts`, through `runtime/llm/harness-options/draft-acts.ts`) says to run a new read after that step and add it, and to leave the reads before it where they are; of an act in a repeated span, that the listing it repeats over stays before it. "The draft needs a read after step N" had been read as "move the read": in the same run the model moved the loop's own listing after the act that walks it.
 
@@ -683,7 +741,7 @@ When one original instruction clause names multiple counted objects, each parsed
 
 An accepted verify-only rerun stores its replacement as checkedCandidate with performed=false and intended act claims. Its old performed record stays under priorExecution tied to the original arguments; old state, output and resolved configuration cannot prove the replacement ran. The candidate remains authorable without acquiring the stronger written contract. Following test marks are invalidated, zero-row candidates remain not reached, and binding a candidate does not invent an executed instance. A separate historical lasting-effect guard keeps subsequent reruns read-only even after current effectApplied becomes false. Ordinary explicit actions and their existing permission gates remain unchanged.
 
-A refused nonexistent-step amendment explains that add includes an existing draft step; a new action is authored through an offered tool_call with add:true and an intended act where appropriate. Its returned draft position is used for later edits. The feedback changes no action permissions or execution behavior.
+A refused nonexistent-step amendment names the steps the draft holds; a new action is made by running it, which puts it in the Flow when it works, with an intended act where appropriate. Its returned draft position is used for later edits. The feedback changes no action permissions or execution behavior.
 
 
 ### Declared arrival evidence
@@ -696,7 +754,7 @@ A step may say which places on the route the person named it is on (`place`,
 stored as `places`; `runtime/flow-authoring/draft/route-places/`), once the draft shows
 that route (`route` in the draft entry). Many steps may be on one place, one
 step may be on two, and a claim replaces only that step's own; `none` clears
-it. An amend_draft `place` that changes nothing is refused `already_so`; no
+it. An amend_draft `keep` with a `place` that changes nothing is refused `already_so`; no
 refusal reason of its own exists. A rerun carries the step's places to its
 replacement, and a stopped build's stored draft keeps them. Completion holds a
 named route to these claims (`runtime/flow-authoring/draft/route-places/coverage.ts`,

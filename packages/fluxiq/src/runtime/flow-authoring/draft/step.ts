@@ -42,21 +42,17 @@ import type { AutomationStudioFlowDraftStepRouting } from "./routing.ts";
 export type AutomationStudioFlowDraftStepEffect = "observe" | "mutate";
 
 /**
- * What the model has since said about a step it took.
+ * Whether a step is in the Flow, and on whose word.
  *
- * `taken` is where every step the model runs starts when the model authors the
- * draft (user, 2026-09-30: "IT SHOULD NOT JUST BLINDLY ADD EACH STEP THAT IT
- * TOOK ONE BY ONE IN ORDER"): the step ran and is evidence, and it is not in
- * the Flow until the model adds it -- `add` on the call itself, or an `add`
- * amendment naming it (`./amendment/`). `kept` is a step the model put in the
- * Flow; it is also where every step started under the older transcript rule,
- * which a loop can still be run under to replay a build recorded before
- * (`../llm/loop-configuration.ts`, `draftAuthoring`). The other two are the
- * model's own withdrawals: `dropped` is "this should not be in the result at
- * all", and `exploratory` is "I did this to look around". They are held apart
- * because they are different statements about one step, and a reader of the
- * draft can tell a step that was a mistake from one that was a detour, and
- * both from one the model has simply not added.
+ * `taken` is where every step the loop appends starts: the step ran and is
+ * evidence, and the framework then drafts the Flow over every step
+ * (`./compose/`), leaving it `kept` when it is in and `taken` when it is out,
+ * with why under `drafted`. The model edits that draft (`./amendment/edits/`):
+ * `keep` makes a step `kept`, and `drop` makes it `dropped`, "this should not
+ * be in the result at all". `exploratory`, "I did this to look around", is no
+ * edit any more; it is still read on steps carried from a draft saved before
+ * the framework drafted, and on a restored withdrawal
+ * (`../../llm/evidence-loop-decision.ts`, `withdrawnAs`).
  */
 export type AutomationStudioFlowDraftStepDisposition = "kept" | "taken" | "dropped" | "exploratory";
 
@@ -115,6 +111,20 @@ export type AutomationStudioFlowDraftStepChosen = { key: string; words: string; 
  * it (`../llm/condition-narrowed-nothing.ts`, t693).
  */
 export type AutomationStudioFlowDraftStepCondition = { kept: number; rejected: number; keptValues: string[] };
+
+/**
+ * Why the framework's draft leaves a step out of the Flow (`./compose/`, D16; user, 2026-11-25:
+ * "Drafting the flow automatically will help in many situations, as long as the model is able and
+ * encouraged to edit it for more efficient flows"): `look`, it only looked; `did_not_work`, it failed
+ * or changed nothing; `replaced`, a rerun took its place; `repeat`, it copies a step already in the
+ * Flow; `undone`, a later press of the same control undid it, or it undid an earlier one;
+ * `dead_end`, the run came back to the state it left from with nothing lasting done on the way;
+ * `not_the_result`, a read that is not the result's.
+ */
+export type AutomationStudioFlowDraftLeftOutReason = "look" | "did_not_work" | "replaced" | "repeat" | "undone" | "dead_end" | "not_the_result";
+
+/** The framework's word on a step where it drafts the Flow: `in`, or why it is left out (`AutomationStudioFlowDraftLeftOutReason`). */
+export type AutomationStudioFlowDraftStepDrafted = "in" | AutomationStudioFlowDraftLeftOutReason;
 
 export type AutomationStudioFlowDraftStep = {
   /** Where it is in the draft, counting from 1: what an amendment names. */
@@ -298,6 +308,20 @@ export type AutomationStudioFlowDraftStep = {
   stateAfter?: string;
   disposition: AutomationStudioFlowDraftStepDisposition;
   /**
+   * The framework's word on this step, where the framework drafts the Flow (`./compose/`, D16): `in`,
+   * put in the Flow (`disposition: "kept"`), or why it is left out (`disposition: "taken"`). Written
+   * only by the drafting function, which reads it back to know which steps are still its own to
+   * decide: a step with it, or `taken` without it, is the framework's; any other is the model's. An
+   * edit by the model that says whether the step is in the Flow (keep, drop, result, a repeat over
+   * it) deletes it, and the model's word stands from then on.
+   */
+  drafted?: AutomationStudioFlowDraftStepDrafted;
+  /**
+   * The model named this read the Flow's result (the `result` edit, D16): the drafting function
+   * keeps it as the result in place of its own choice. Only a step that reads carries it.
+   */
+  result?: true;
+  /**
    * Whether a successful call of this kind is a step the result should
    * contain, as the caller reported it.
    *
@@ -333,8 +357,8 @@ export type AutomationStudioFlowDraftStep = {
    * the steps afterwards.
    *
    * It is about the step as the test ran it: after the steps before it then,
-   * with the argument it had then. So a move clears it on every step from
-   * where the move begins (`./amendment/move.ts`), and a checked rerun that gives
+   * with the argument it had then. So a repeat taken off clears it on every
+   * step from that step on (`./amendment/apply.ts`), and a checked rerun that gives
    * the step a new argument clears it (`../llm/node-tools/rerun-check.ts`):
    * absent, the step has not been tested as it now stands (live run
    * `run-musq0b1m-0472cfa0`, Cause 6).

@@ -1,4 +1,5 @@
-// The completion refusal for an empty result: why it is empty, every look that kept rows, and `take`.
+// The completion refusal for an empty result: why it is empty, every read outside the result that kept rows, and the
+// `result` edit on that read's step, or running the read (t1037: `take` is no edit).
 import { describe, expect, it } from "vitest";
 import { automationStudioAnswerFirstResultPort } from "../index.ts";
 import { look, page, seats, SEAT_REQUEST, step } from "./support.ts";
@@ -7,7 +8,7 @@ describe("the empty-result refusal", () => {
   it("names the looks that kept rows and the one-call fix, and never makes a look the result", () => {
     const port = automationStudioAnswerFirstResultPort(SEAT_REQUEST);
     port.record([look("c3", seats("A", 12)), look("c4", []), look("c5", seats("B", 5))]);
-    expect(port.emptyRefusal()).toBe('The result holds no rows: the draft has no read step. Reads outside the draft kept rows, and they are not the result: call c3 (12 rows), call c5 (5 rows). A read is the result only as a draft step: amend_draft with change "take" and the read\'s call id makes it one, with no new act.');
+    expect(port.emptyRefusal()).toBe(`The result holds no rows: the draft has no read step. Reads that are not the result kept rows: call c3 (12 rows), call c5 (5 rows). Every read that worked is a step of the draft: amend_draft with change "result" on that read's step makes it the result, with no new act; or run the read of the list asked for, and it joins the draft.`);
     expect(port.answer().rows).toEqual([]);
   });
 

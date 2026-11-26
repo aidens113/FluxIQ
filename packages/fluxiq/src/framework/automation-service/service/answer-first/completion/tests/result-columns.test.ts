@@ -44,17 +44,17 @@ async function refusedWords(check: ReturnType<typeof made>, summary = "Shown."):
 }
 
 describe("a refused completion over rows that lack columns the request names", () => {
-  it("says which named columns the rows lack, that they are not the table, and both ways the asked table becomes the result, with no judge", async () => {
+  it("says which named columns the rows lack, that they are not the table, and how the asked table becomes the result, with no judge", async () => {
     const said = await refusedWords(made(CATALOGUE, catalogueRows));
     expect(judgeCalls).toHaveLength(0);
     expect(said).not.toContain("The loans have not been shown as a table.");
     expect(said).toContain("This completion was refused before any check was paid for: the request names the columns of the table it asks for (title, copies, due date), and the rows the result holds have no title or copies column");
     expect(said).toContain("The rows the check read hold columns name, due date, shelf, and no title or copies, which the request names, so they are not the table it asks for.");
     expect(said).toContain("The result is the draft's last read step not marked intermediate, as resultHolds.result names it.");
-    expect(said).toContain("in a call with add: true, which makes that read the result's step");
-    expect(said).toContain('amend_draft with change "take" and that read\'s call id');
-    expect(said).toContain("a list is detected where it stands, on the page that shows it, and read through the handle that detection issues");
-    expect(said).toContain("go to the page that shows it, detect its list there, and read it through the handle that detection issues");
+    expect(said).toContain("running that read puts it in the draft");
+    expect(said).toContain('amend_draft with change "result" on that read\'s step makes it the result\'s step');
+    expect(said).toContain("a read names its list by one of that list's own lines, on the page that shows it, and finds the list itself");
+    expect(said).toContain("go to the page that shows it and read it there, named by one of its own lines");
     expect(said).toContain("Only new evidence changes");
   });
 
@@ -121,7 +121,7 @@ describe("the 0094 shape through the real judge (t1032)", () => {
     expect(calls).toHaveLength(0);
     const said = String(answer.feedback.instruction);
     expect(said).toContain("have no title or copies column, so no check can take them as that table");
-    expect(said).toContain("in a call with add: true, which makes that read the result's step");
+    expect(said).toContain('amend_draft with change "result" on that read\'s step makes it the result\'s step');
   });
 
   it("passes the asked table's own rows", async () => {

@@ -1,5 +1,5 @@
 // One decision's amendments, applied to the draft in place (`./index.ts` says
-// what each change means and why the draft is edited this way).
+// what each edit means and why the draft is edited this way).
 import { automationStudioFlowDraftClaimAct } from "../act-claim.ts";
 import { automationStudioFlowDraftSettleLoopCovered } from "../loop-covered/index.ts";
 import { automationStudioFlowDraftKeepOpeners } from "../opener.ts";
@@ -10,16 +10,11 @@ import { automationStudioFlowDraftSecondCopy } from "../second-copy.ts";
 import { automationStudioFlowDraftStepIsAction, automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../step.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID } from "./act-id.ts";
 import { automationStudioFlowDraftAmendmentBind } from "./bind.ts";
-import type { AutomationStudioFlowDraftAmendmentChange } from "./changes.ts";
-import { automationStudioFlowDraftAmendmentMove } from "./move.ts";
+import { automationStudioFlowDraftEditPutInNamed, automationStudioFlowDraftEditResult, automationStudioFlowDraftStepLeftOut } from "./edits/index.ts";
 import { automationStudioFlowDraftAmendmentRoute } from "./route.ts";
 import { automationStudioFlowDraftHoldRepeatSteps, automationStudioFlowDraftSettleSpanRouting, automationStudioFlowDraftSpanChangeRefusal, type AutomationStudioFlowDraftWrittenRouting } from "./repeat-hold.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_REPLACED_ATTEMPT_REASON, automationStudioFlowDraftReplacingStep } from "./replaced-attempt.ts";
-import {
-  automationStudioFlowDraftSettleWrittenRepeats,
-  automationStudioFlowDraftTakeOffBrokenRepeats,
-  type AutomationStudioFlowDraftWrittenRepeat
-} from "./repeat-revalidation.ts";
+import { automationStudioFlowDraftSettleWrittenRepeats, type AutomationStudioFlowDraftWrittenRepeat } from "./repeat-revalidation.ts";
 import { automationStudioFlowDraftSettingsRewriteRun } from "./settings-rewrite-run.ts";
 import { automationStudioFlowDraftSaidInNumbers } from "./said-numbers.ts";
 import { automationStudioFlowDraftShownNumbering } from "./shown-numbering.ts";
@@ -33,9 +28,6 @@ import type {
   AutomationStudioFlowDraftUnreachedStep
 } from "./types.ts";
 
-/** The four changes that say when a step runs rather than whether it is kept. */
-const ROUTING_CHANGES = new Set<AutomationStudioFlowDraftAmendmentChange>(["optional", "only_if", "on_failed", "repeat"]);
-
 /**
  * An act an amendment moved off a step that is still in the Flow and now does
  * no act, in the numbers the whole decision left: the step it left (`from`)
@@ -46,7 +38,7 @@ const ROUTING_CHANGES = new Set<AutomationStudioFlowDraftAmendmentChange>(["opti
 type ActMove = { act: string; from: number; to: number };
 
 /**
- * The reason an `add`, a `keep` or an act on a look is refused under.
+ * The reason a `keep` or an act on a look is refused under.
  *
  * Borrowed from the routing refusals -- "it named a step the Flow does not
  * contain" -- because a reason of its own has to be explained in
@@ -68,11 +60,15 @@ const NOT_A_FLOW_STEP: AutomationStudioFlowDraftAmendmentRefusal["reason"] = "no
  * guard is what stops a model editing the same step forever, and it can only
  * do that if an edit that changed nothing is reported as one.
  *
+ * The framework drafts the Flow and the model edits it (`./edits/`): every
+ * ruling the model makes deletes `drafted` from the steps it rules on, so its
+ * word stands from then on, and a `keep` of a step the framework left out puts
+ * it in, with the checks that putting a step in has always had.
+ *
  * Every number an amendment carries names the step the draft as passed in
  * numbered so (`./shown-numbering.ts`). A repeat this decision wrote is checked
- * once its moves are done, and taken back, refused, when it cannot run; after
- * a decision that moved a step, every other repeat that can no longer run is
- * taken off and reported `repeat_taken_off` (`./repeat-revalidation.ts`).
+ * once its last amendment is read, and taken back, refused, when it cannot run
+ * (`./repeat-revalidation.ts`).
  *
  * `moved`, when there is any, names each step an act was moved off that the
  * decision left in the Flow with no act (`ActMove`). `unreached`, when there is
@@ -92,6 +88,12 @@ const NOT_A_FLOW_STEP: AutomationStudioFlowDraftAmendmentRefusal["reason"] = "no
  * gave -- is taken back and reported `repeat_never_ends`, with assembly's own
  * sentence, so the model fixes the loop in the decision after rather than
  * meeting the refusal only when the Flow is assembled.
+ *
+ * `options.withdrawsReplacedAttempt` is Core's own withdrawal of the attempt a
+ * rerun replaced (`../../../llm/evidence-loop/rerun/replacement.ts`), the one
+ * internal caller: a `drop` that is not the model's ruling, so the step stays
+ * the framework's to draft (`drafted` is kept), and the attempt's leaving
+ * strands no step, since the rerun stands in its place.
  */
 export function applyAutomationStudioFlowDraftAmendments(
   steps: AutomationStudioFlowDraftStep[],
@@ -99,7 +101,6 @@ export function applyAutomationStudioFlowDraftAmendments(
   options: {
     claimRefused?: AutomationStudioFlowDraftClaimRefused | undefined;
     loopNeverEnds?: AutomationStudioFlowDraftLoopNeverEnds | undefined;
-    /** The loop's own withdrawal of the attempt a rerun replaced and now stands in place of (`../../../llm/evidence-loop/rerun/replacement.ts`). */
     withdrawsReplacedAttempt?: boolean | undefined;
   } = {}
 ): { applied: number; refused: AutomationStudioFlowDraftAmendmentRefusal[]; moved?: ActMove[]; unreached?: AutomationStudioFlowDraftUnreachedStep[] } {
@@ -107,32 +108,29 @@ export function applyAutomationStudioFlowDraftAmendments(
   const refused: AutomationStudioFlowDraftAmendmentRefusal[] = [];
   const claims: { act: string; from: AutomationStudioFlowDraftStep; to: AutomationStudioFlowDraftStep }[] = [];
   const shown = automationStudioFlowDraftShownNumbering(steps);
-  // The number the model wrote for the step now at `position`, which a move earlier in this decision may have changed (`./said-numbers.ts`, t285 gap 2).
+  // The number the model wrote for the step now at `position` (`./said-numbers.ts`, t285 gap 2).
   const shownAt = (position: number): number => {
     const there = steps.find((each) => each.position === position);
     return there ? shown.number(there) : position;
   };
   const written: AutomationStudioFlowDraftWrittenRepeat[] = [];
-  // Every routing the decision wrote, checked against the spans once its moves are done (`./repeat-hold.ts`, t981).
+  // Every routing the decision wrote, checked against the spans once its last amendment is read (`./repeat-hold.ts`, t981).
   const routedNow: AutomationStudioFlowDraftWrittenRouting[] = [];
-  let movedStep = false;
   // Each step's way to its page as the decision found it, and the steps it took out (`./strand-check.ts`).
   const reachBefore = automationStudioFlowDraftReach(steps);
   const withdrawn: AutomationStudioFlowDraftWithdrawal[] = [];
   // A step kept after a withdrawal of this decision, whose reversal waits for the strand check.
   let reversalAfterCheck = false;
-  for (const said of amendments) {
-    // `take` names the call, not the step: the step that call ran, put in the Flow as `add` puts one (`./types.ts`, `call`).
-    const amendment = said.change === "take" ? takenAs(steps, said, shown.number) : said;
-    if (!amendment) {
-      refused.push({ step: said.step, reason: "no_such_step" });
-      continue;
-    }
+  // Whether this is the model's ruling, which makes the steps it names the model's (`./edits/`), or Core's own withdrawal.
+  const modelsWord = options.withdrawsReplacedAttempt !== true;
+  for (const amendment of amendments) {
     const step = shown.step(amendment.step);
     if (!step) {
       refused.push({ step: amendment.step, reason: "no_such_step" });
       continue;
     }
+    // A `keep` of a step the framework left out puts it in the Flow (`./edits/`).
+    const putsIn = amendment.change === "keep" && automationStudioFlowDraftStepLeftOut(step);
     // The attempt a rerun replaced: told which step to change instead (`./replaced-attempt.ts`).
     const replacing = automationStudioFlowDraftReplacingStep(steps, step);
     if (replacing) {
@@ -172,44 +170,51 @@ export function applyAutomationStudioFlowDraftAmendments(
       continue;
     }
     // A step that is not of the kind a Flow is made of -- a look -- can never
-    // be in it, so putting it in or saying it does an act changes nothing true.
-    // Live run `run-mup2i28c-6c7fc209` sent `5 add a2` about the `snap.store`
-    // look and had it applied: the look was recorded as adding two packs of
-    // towels. The draft entry lists it as `disposition: look` (`../entry.ts`).
-    if (!automationStudioFlowDraftStepIsAction(step) && (amendment.change === "add" || amendment.change === "keep" || amendment.act !== undefined)) {
+    // be in it, so keeping it or saying it does an act changes nothing true.
+    // Live run `run-mup2i28c-6c7fc209` named an act on the `snap.store` look and
+    // had it applied: the look was recorded as adding two packs of towels. The
+    // draft entry lists it as `disposition: look` (`../entry.ts`).
+    if (!automationStudioFlowDraftStepIsAction(step) && (amendment.change === "keep" || amendment.act !== undefined)) {
       refused.push({ step: amendment.step, reason: NOT_A_FLOW_STEP });
+      continue;
+    }
+    // `result`: this read holds the answer (`./edits/result.ts`).
+    if (amendment.change === "result") {
+      const ruled = automationStudioFlowDraftEditResult(step);
+      if (ruled.ok) applied += 1;
+      else refused.push({ step: amendment.step, reason: ruled.reason });
       continue;
     }
     // Settings that give a parameter the step ran with another value make it a
     // step nobody ran: refused whole, before anything about it changes, so no
-    // disposition, act, move, routing or bind of the amendment is applied
-    // either. Live run `run-mux74k5q-1c3c2127` (C1, 0025) added a press of Spain
-    // with `settings.target` the quantity field (`./settings-rewrite-run.ts`).
+    // disposition, act, routing or bind of the amendment is applied either.
+    // Live run `run-mux74k5q-1c3c2127` (C1, 0025) put a press of Spain in the
+    // Flow with `settings.target` the quantity field (`./settings-rewrite-run.ts`).
     // So does an `input` on a change that takes none (all but bind here; a
-    // rerun was answered above): run `run-muxkzdjw-31a13429` (0029) added the
-    // coupon press with the input of typing 3 into the quantity field, which
+    // rerun was answered above): run `run-muxkzdjw-31a13429` (0029) put the
+    // coupon press in with the input of typing 3 into the quantity field, which
     // was dropped unsaid.
     const inputNotTaken = amendment.change === "bind" ? undefined : amendment.input;
     if (automationStudioFlowDraftSettingsRewriteRun(step, amendment.settings, inputNotTaken)) {
       refused.push({ step: amendment.step, reason: "settings_rewrite_run" });
       continue;
     }
-    // A step brought into the Flow that copies a step already in it -- the same
+    // A step put back into the Flow that copies a step already in it -- the same
     // press on the same page, or a read of the same list with nothing changed in
     // between -- is refused whole, before anything about it changes: the Flow
-    // does each step once. Live run `run-murwdp4f-35f976d2` (C9, 0046) added a
-    // second press of step 18's 3-Pack link from the same page (`../second-copy.ts`).
-    const copyOf = (amendment.change === "add" || amendment.change === "keep") && step.disposition !== "kept" ? automationStudioFlowDraftSecondCopy(steps, step) : undefined;
+    // does each step once. Live run `run-murwdp4f-35f976d2` (C9, 0046) put a
+    // second press of step 18's 3-Pack link from the same page in (`../second-copy.ts`).
+    const copyOf = amendment.change === "keep" && step.disposition !== "kept" ? automationStudioFlowDraftSecondCopy(steps, step) : undefined;
     if (copyOf) {
       refused.push({ step: amendment.step, reason: "second_copy", copyOf: shown.number(copyOf) });
       continue;
     }
     // An act is something done: a step that only reads -- a listing a Flow may
     // hold, as much as the look above -- does none, whatever the model calls it.
-    // Live run 36 (`run-muq3uozx-3153564b`, E11) sent `10 add act a1` about a
-    // withdrawn rerun of the request listing and had it applied; every later
-    // rerun of that listing carried the act on, and the completion check judged
-    // the listing as the act's step 24 times running.
+    // Live run 36 (`run-muq3uozx-3153564b`, E11) named act a1 on a withdrawn
+    // rerun of the request listing and had it applied; every later rerun of
+    // that listing carried the act on, and the completion check judged the
+    // listing as the act's step 24 times running.
     // Information, not a refusal (user, 2026-10-01: no restriction on what the
     // model does beyond permission asks): the rest of the amendment is applied,
     // the act is not recorded on the read -- it cannot be done there -- and the
@@ -222,22 +227,13 @@ export function applyAutomationStudioFlowDraftAmendments(
       else refused.push({ step: amendment.step, reason: bound.reason, ...(bound.parameter === undefined ? {} : { parameter: bound.parameter }), ...(bound.control ? { control: true as const } : {}), ...(bound.bindable ? { bindable: bound.bindable } : {}) });
       continue;
     }
-    if (amendment.change === "reorder") {
-      const to = shown.step(amendment.to);
-      const spanRefusal = to === undefined ? undefined : automationStudioFlowDraftSpanChangeRefusal(steps, step, amendment, shown, { to });
-      if (spanRefusal) {
-        refused.push(spanRefusal);
-        continue;
-      }
-      if (automationStudioFlowDraftAmendmentMove(steps, step, to, amendment.settings)) {
-        applied += 1;
-        if (to !== step) movedStep = true;
-      } else refused.push({ step: amendment.step, reason: to ? "already_so" : "no_such_position" });
-      continue;
-    }
-    if (ROUTING_CHANGES.has(amendment.change)) {
+    if (amendment.change === "repeat") {
       const previous = step.routing;
       const settings = step.settings;
+      // A repeat naming steps the framework left out -- its listing, its while, its span's last step -- puts them in; put
+      // back if the repeat is refused (`./edits/put-in-named.ts`, the paging pattern's Next page).
+      const named = [amendment.over, amendment.while, amendment.through].map((number) => (number === undefined ? undefined : shown.step(number)));
+      const putBack = automationStudioFlowDraftEditPutInNamed(named);
       const routed = automationStudioFlowDraftAmendmentRoute(steps, step, amendment, shown);
       // A loop that could end only by failing is put back as it was and refused
       // with assembly's sentence, which names the nodes that do end one
@@ -248,30 +244,38 @@ export function applyAutomationStudioFlowDraftAmendments(
         else step.routing = previous;
         if (settings === undefined) delete step.settings;
         else step.settings = settings;
+        putBack?.();
         refused.push({ step: amendment.step, reason: "repeat_never_ends", said: automationStudioFlowDraftSaidInNumbers(neverEnds, shownAt) });
         continue;
       }
       if (routed.ok) {
         applied += 1;
-        // Checked once the decision's moves are done (`./repeat-revalidation.ts`).
+        delete step.drafted;
+        // A repeat that stands makes the steps it names and its whole span the model's: a recompose never takes them out.
+        for (const ruled of [...named, ...spanOf(steps, step, named[2])]) if (ruled?.disposition === "kept") delete ruled.drafted;
+        // Checked once the decision's last amendment is read (`./repeat-revalidation.ts`).
         if (step.routing?.kind === "repeat") written.push({ step, routing: step.routing, amendment, previous, settings });
         if (step.routing) routedNow.push({ step, routing: step.routing, amendment, previous, settings });
-      } else refused.push({ step: amendment.step, reason: routed.reason, ...(routed.over === undefined ? {} : { over: routed.over }), ...(routed.through === undefined ? {} : { through: routed.through }) });
+      } else {
+        putBack?.();
+        refused.push({ step: amendment.step, reason: routed.reason, ...(routed.over === undefined ? {} : { over: routed.over }), ...(routed.through === undefined ? {} : { through: routed.through }) });
+      }
       continue;
     }
-    const disposition = amendment.change === "keep" || amendment.change === "add" ? "kept" : amendment.change === "drop" ? "dropped" : "exploratory";
+    const disposition = amendment.change === "keep" ? "kept" : "dropped";
     const changesDisposition = step.disposition !== disposition;
     const changesSettings = amendment.settings !== undefined;
-    // `keep` is how a step is put back the way it was found, and a condition
-    // is part of the way it was changed: a model that says "keep" about a step
-    // it made conditional means the step, unconditionally. `add` leaves routing
-    // alone: it says the step is in the Flow, nothing more. Two things `keep`
-    // never clears. A `repeat` is the act done to every row, not a condition on
-    // the step. And a `keep` carrying `act` is a statement about the act: live
-    // run 36 (E21, E26) sent `keep act a1` about the repeated Confirm and lost
-    // its repeat each time. A `keep` carrying `place` is likewise a statement
-    // about the route (D phase 2).
-    const clearsRouting = amendment.change === "keep" && amendment.act === undefined && amendment.place === undefined && step.routing !== undefined && step.routing.kind !== "repeat";
+    // `keep` of a step in the Flow is how a step is put back the way it was
+    // found, and a condition a carried Flow gave it is part of the way it was
+    // changed: a model that says "keep" about a step that is conditional means
+    // the step, unconditionally. A `keep` that puts a left-out step in says the
+    // step is in the Flow, nothing more. Two things `keep` never clears. A
+    // `repeat` is the act done to every row, not a condition on the step. And a
+    // `keep` carrying `act` is a statement about the act: live run 36 (E21,
+    // E26) sent `keep act a1` about the repeated Confirm and lost its repeat
+    // each time. A `keep` carrying `place` is likewise a statement about the
+    // route (D phase 2).
+    const clearsRouting = amendment.change === "keep" && !putsIn && amendment.act === undefined && amendment.place === undefined && step.routing !== undefined && step.routing.kind !== "repeat";
     const alreadyNamed = amendment.act !== undefined && step.acts?.includes(amendment.act) === true;
     const claimed = disposition === "kept" && !actOnRead && amendment.act !== undefined && AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID.test(amendment.act) && !alreadyNamed ? amendment.act : undefined;
     // A claim the act judge would reject -- the step chose one of the act's
@@ -281,8 +285,7 @@ export function applyAutomationStudioFlowDraftAmendments(
     // `run-mux74k5q-1c3c2127`: a1 on the press of "Spain"). Asked before the
     // step changes, so a claim that was the amendment's only news changes nothing.
     // Judged, and worded, on the draft as it stands; told in the numbers the
-    // model wrote, which a move earlier in this decision may have changed
-    // (`./said-numbers.ts`, t285 gap 2).
+    // model wrote (`./said-numbers.ts`, t285 gap 2).
     const claimRefusal = claimed === undefined ? undefined : options.claimRefused?.(steps, step, claimed);
     if (claimRefusal) {
       refused.push({
@@ -297,10 +300,12 @@ export function applyAutomationStudioFlowDraftAmendments(
     // changes anything is asked of a copy, so a refused amendment changes nothing.
     const routePlace = disposition === "kept" && amendment.place !== undefined && AUTOMATION_STUDIO_FLOW_DRAFT_ROUTE_PLACE_VALUE.test(amendment.place) ? amendment.place : undefined;
     const changesPlaces = routePlace !== undefined && automationStudioFlowDraftSetRoutePlaces({ ...step }, routePlace);
-    // `add` at a position is one thought: put this step in the Flow, there.
-    const place = amendment.change === "add" ? shown.step(amendment.to) : undefined;
-    const moves = place !== undefined && place !== step;
-    if (!changesDisposition && !changesSettings && !clearsRouting && act === undefined && !changesPlaces && !moves) {
+    // A `keep` of a step the framework put in, or a `drop` of one it left out, says what the draft already
+    // shows, and still makes the step the model's: the framework never decides it again, so a later read or
+    // a later rule cannot move it (`../step.ts`, `drafted`). Applied, not refused as already so -- unless its
+    // news was an act that could not be recorded there, which is told as that and changes nothing (t1037).
+    const pins = modelsWord && step.drafted !== undefined && (disposition === "kept") === (step.drafted === "in") && !actOnRead && !claimRefusal;
+    if (!changesDisposition && !changesSettings && !clearsRouting && act === undefined && !changesPlaces && !pins) {
       // Said as which side of the Flow the step is already on, because that is
       // what the model was trying to settle: a `keep` about a step in the Flow
       // is a confirmation, and the generic "already so" got it sent again.
@@ -314,8 +319,8 @@ export function applyAutomationStudioFlowDraftAmendments(
       if (!actOnRead && !claimRefusal) refused.push({ step: amendment.step, reason, ...(reason === "act_already_named" ? { act: amendment.act! } : {}) });
       continue;
     }
-    const spanRefusal = disposition === "kept" && (changesDisposition || moves)
-      ? automationStudioFlowDraftSpanChangeRefusal(steps, step, amendment, shown, { keep: true, to: place, clearsRouting, act })
+    const spanRefusal = disposition === "kept" && changesDisposition
+      ? automationStudioFlowDraftSpanChangeRefusal(steps, step, amendment, shown, { clearsRouting, act })
       : undefined;
     if (spanRefusal) {
       refused.push(spanRefusal);
@@ -331,26 +336,24 @@ export function applyAutomationStudioFlowDraftAmendments(
     if (act !== undefined) for (const from of automationStudioFlowDraftClaimAct(steps, step, act)) claims.push({ act, from, to: step });
     // Many steps may be on one place: the claim replaces this step's own and no other's.
     if (changesPlaces) automationStudioFlowDraftSetRoutePlaces(step, routePlace!);
-    if (moves && automationStudioFlowDraftAmendmentMove(steps, step, place, undefined)) movedStep = true;
     // A press a later press of the same control undid leaves the Flow with it, once the
-    // step, its openers, its act and its place are settled (`../reversal.ts`). A drop or
-    // exploratory of a kept step runs it after the strand check, below -- and so does a
-    // step kept after one this decision withdrew: run now, it would read that drop as
-    // standing and take its partner out before the check could put the drop back
-    // (t281's open edge).
+    // step, its openers, its act and its place are settled (`../reversal.ts`). A drop
+    // of a kept step runs it after the strand check, below -- and so does a step kept
+    // after one this decision withdrew: run now, it would read that drop as standing
+    // and take its partner out before the check could put the drop back (t281's open edge).
     if (disposition === "kept") {
       if (withdrawn.length) reversalAfterCheck = true;
       else automationStudioFlowDraftDropReversals(steps);
     }
     if (amendment.settings) step.settings = { ...(step.settings ?? {}), ...amendment.settings };
+    // The model has ruled on whether the step is in the Flow: its word stands from now on (`../step.ts`, `drafted`).
+    if (modelsWord) delete step.drafted;
     applied += 1;
   }
-  // A repeat this decision wrote that its moves left unable to run is taken
-  // back and refused, as it would have been had the move come first.
+  // A repeat this decision wrote that cannot run where its steps stand is taken back and refused.
   const settled = automationStudioFlowDraftSettleWrittenRepeats(steps, written, shown);
   applied -= settled.takenBack;
   refused.push(...settled.refused);
-  if (movedStep) refused.push(...automationStudioFlowDraftTakeOffBrokenRepeats(steps, shown));
   // A drop that left a kept step no way to its page is put back and refused; a
   // step newly left after one that does not bring it there is said (D2-1).
   // The attempt a rerun replaced strands nothing: the rerun is the same step corrected, standing where it stood.
@@ -371,14 +374,14 @@ export function applyAutomationStudioFlowDraftAmendments(
   const spans = automationStudioFlowDraftSettleSpanRouting(steps, routedNow, shown);
   applied -= spans.takenBack;
   refused.push(...spans.refused);
-  // A kept half whose partner really left the Flow -- dropped or marked exploratory,
-  // and not put back by the strand check -- would flip the control the wrong way
-  // (live run `run-mux6n7m4-8273e7a0`, rule b). Run only once the check is done, so
-  // a drop put back never takes its partner out with it (`../reversal.ts`).
+  // A kept half whose partner really left the Flow -- dropped, and not put back
+  // by the strand check -- would flip the control the wrong way (live run
+  // `run-mux6n7m4-8273e7a0`, rule b). Run only once the check is done, so a drop
+  // put back never takes its partner out with it (`../reversal.ts`).
   if (reversalAfterCheck || withdrawn.some((entry) => entry.step.disposition !== "kept")) automationStudioFlowDraftDropReversals(steps);
   // A step kept right after a loop that already does its act leaves the Flow, and one
-  // taken out for that comes back once no loop covers it, once every repeat and move of
-  // the decision stands (`../loop-covered/`, t975: the press of Next page kept after the
+  // taken out for that comes back once no loop covers it, once every repeat of the
+  // decision stands (`../loop-covered/`, t975: the press of Next page kept after the
   // loop that presses it until the list ends, which stopped every replay).
   automationStudioFlowDraftSettleLoopCovered(steps);
   const moved = movedActs(claims);
@@ -388,10 +391,10 @@ export function applyAutomationStudioFlowDraftAmendments(
 /**
  * The moves a decision's claims leave standing, read once every amendment of it
  * is applied: a later one may have dropped the step left, put another act on
- * it, moved the act on again, or renumbered the draft. Only a step still in the
- * Flow with no act is named, since that is the step run in every run for
- * nothing the person asked -- live run `run-musp4h2f-72e8ed99` pressed such an
- * Add to cart again in its next test.
+ * it, or moved the act on again. Only a step still in the Flow with no act is
+ * named, since that is the step run in every run for nothing the person asked
+ * -- live run `run-musp4h2f-72e8ed99` pressed such an Add to cart again in its
+ * next test.
  */
 function movedActs(claims: readonly { act: string; from: AutomationStudioFlowDraftStep; to: AutomationStudioFlowDraftStep }[]): ActMove[] {
   const moved: ActMove[] = [];
@@ -403,10 +406,9 @@ function movedActs(claims: readonly { act: string; from: AutomationStudioFlowDra
   return moved;
 }
 
-/** A `take` as the `add` of the step its call ran, numbered as the draft was shown; `undefined` where no step ran that call. */
-function takenAs(steps: readonly AutomationStudioFlowDraftStep[], amendment: AutomationStudioFlowDraftAmendment, numberOf: (step: AutomationStudioFlowDraftStep) => number): AutomationStudioFlowDraftAmendment | undefined {
-  const ran = amendment.call === undefined ? undefined : steps.find((step) => step.callId === amendment.call && step.replacedBy === undefined);
-  if (!ran) return undefined;
-  const { call: _named, ...rest } = amendment;
-  return { ...rest, step: numberOf(ran), change: "add" };
+/** The steps from `step` to `through` (or `step` alone), in the draft's order. */
+function spanOf(steps: readonly AutomationStudioFlowDraftStep[], step: AutomationStudioFlowDraftStep, through: AutomationStudioFlowDraftStep | undefined): AutomationStudioFlowDraftStep[] {
+  const last = through ?? step;
+  const [from, to] = [step.position, last.position].sort((one, other) => one - other) as [number, number];
+  return steps.filter((each) => each.position >= from && each.position <= to);
 }

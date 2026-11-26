@@ -78,7 +78,7 @@ describe("completion against the route the person named", () => {
   it("refuses a Flow whose only step on the middle place was dropped, naming that place", async () => {
     const steps = [navigate(START), press(2, ["r1"]), press(3, ["r2"], { disposition: "dropped" }), press(4, ["r3"])];
     const refused = await instructionOf(route(accessor(named)), steps);
-    expect(refused?.text).toBe("The person named the route \"Open the menu, then Friends, then Requests\". No step in the Flow is on r2 (Friends): keep or add the steps that go through it, in order, and say which with place (place \"r2\").");
+    expect(refused?.text).toBe("The person named the route \"Open the menu, then Friends, then Requests\". No step in the Flow is on r2 (Friends): run, or keep, the steps that go through it, in order, and say which with place (place \"r2\").");
     expect(refused?.codes).toEqual(["bootstrap.route_place_missing"]);
   });
 
@@ -89,7 +89,7 @@ describe("completion against the route the person named", () => {
   // (b)
   it("refuses places claimed out of order", async () => {
     const refused = await instructionOf(route(accessor(named)), [navigate(START), press(2, ["r1"]), press(3, ["r3"]), press(4, ["r2"])]);
-    expect(refused?.text).toBe("The person named the route \"Open the menu, then Friends, then Requests\". r3 (Requests) is reached before a place that comes earlier on it: the Flow goes through the places in order, so reorder the steps or correct their place.");
+    expect(refused?.text).toBe("The person named the route \"Open the menu, then Friends, then Requests\". r3 (Requests) is reached before a place that comes earlier on it: the Flow goes through the places in order and runs its steps in the order they ran, so go through them in order or correct their place.");
     expect(refused?.codes).toEqual(["bootstrap.route_out_of_order"]);
   });
 

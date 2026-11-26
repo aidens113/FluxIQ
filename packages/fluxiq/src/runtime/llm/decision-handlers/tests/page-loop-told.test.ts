@@ -34,8 +34,8 @@ describe("a refusal about a listing read page by page", () => {
   it("tells a press after a read with no page loop both forms Core accepts", () => {
     const plain = nextOf({ step: 13, reason: "changes_nothing" }, [...before, read(13, "kept"), act(14)]);
     expect(plain).toContain(`the repeat goes on it: send {"step": 14, "change": "repeat", "over": 13}`);
-    expect(plain).toContain(`If it moves the list on to its next page instead, it is no row's act: the page loop goes on the read, send {"step": 13, "change": "repeat", "while": 14}`);
+    expect(plain).toContain(`If it moves the list on to its next page instead, it is no row's act: the page loop goes on the read: send {"step": 13, "change": "repeat", "while": 14}`);
     const taken = nextOf({ step: 13, reason: "changes_nothing" }, [...before, read(13, "kept"), act(14, "taken")]);
-    expect(taken).toContain(`add step 14, then send {"step": 13, "change": "repeat", "while": 14}`);
+    expect(taken).toContain(`the page loop goes on the read: send {"step": 13, "change": "repeat", "while": 14}`);
   });
 });

@@ -102,7 +102,7 @@ const INSTRUCTION = "This build continues one that ran out of decisions before i
 const REPAIR_INSTRUCTION = "This is the repair of a Flow that was not finished when the build stopped (stopped says why). "
   + "What it had was tested from where it starts and judged: judgement says what the test found and how much of the acts checklist is done. "
   + "Your draft is that Flow. The page is wherever the test left it, so read the page below first. "
-  + "Work live on what is failing or missing, one act or choice at a time, and add each step the Flow needs, naming the act or choice it does (act a2, or a2.quantity). "
+  + "Work live on what is failing or missing, one act or choice at a time, and run each step the Flow needs, naming the act or choice it does (act a2, or a2.quantity). "
   + "Correct or drop a step the test found not working. Do not repeat work the draft already holds. "
   + "The whole Flow is tested again from where it starts when you complete: complete when the Flow does what the instruction asks.";
 
@@ -113,7 +113,7 @@ const REPAIR_INSTRUCTION = "This is the repair of a Flow that was not finished w
 const UNTESTED_REPAIR_INSTRUCTION = "This is the repair of a Flow that was not finished when the build stopped (stopped says why). "
   + "What it had was not run from where it starts (judgement.test is not_tested), so nothing here says whether its steps work: judgement says how much of the acts checklist is done. "
   + "Your draft is that Flow. The page is wherever the last round left it, so read the page below first. "
-  + "Work live on what is failing or missing, one act or choice at a time, and add each step the Flow needs, naming the act or choice it does (act a2, or a2.quantity). "
+  + "Work live on what is failing or missing, one act or choice at a time, and run each step the Flow needs, naming the act or choice it does (act a2, or a2.quantity). "
   + "Do not repeat work the draft already holds. "
   + "The whole Flow is tested from where it starts when you complete: complete when the Flow does what the instruction asks.";
 
@@ -145,7 +145,7 @@ function notRunRepairInstruction(positions: readonly number[]): string {
 
 const JUDGED_INSTRUCTION = "The Flow you said was ready was tested from its start and judged against the instruction: judgement.judge says what it did not do (observed), what was asked (expected) and what to change (advice), and findings says why. "
   + "Your draft is that Flow. The page is where the test left it: read the page below first. "
-  + "Work live on exactly that: correct or replace the step that does the wrong thing, and add each step the Flow still needs, naming the act or choice it does (act a2, or a2.quantity). "
+  + "Work live on exactly that: correct or replace the step that does the wrong thing, and run each step the Flow still needs, naming the act or choice it does (act a2, or a2.quantity). "
   + "Do not repeat work the draft already holds. "
   + "The acts checklist is the build's own reading and is information, not the bar: the Flow is judged on what its test does. "
   + "The whole Flow is tested again from where it starts and judged again when you complete: complete when the Flow does what the instruction asks.";
@@ -220,14 +220,14 @@ function judgedInstruction(judge: JsonObject, notRun: readonly number[]): string
   return `${lead} Steps ${carried.join(", ")} were carried from the earlier Flow and not run in this build: rerun them live (amend_draft rerun), so the test runs them.`;
 }
 
-const EXPLORE_AGAIN_INSTRUCTION = "Nothing is in the Flow yet: the build stopped (stopped says why) before any step you ran was added to it. "
+const EXPLORE_AGAIN_INSTRUCTION = "Nothing is in the Flow yet: the build stopped (stopped says why) before any step you ran was in it. "
   + "That does not end the build. The acts checklist beside the draft lists everything the person asked, all still to do, and judgement.lastRefusedFor says what refused your last attempts to finish. "
   + "Keep exploring live from the page as it stands -- read the page below first -- and do not repeat what was refused or answered already: try another way to what the checklist asks. "
-  + "Add each step the Flow needs as you run it (add true), naming the act or choice it does (act a2, or a2.quantity). "
+  + "Each step that works joins the Flow as you run it; name the act or choice it does with act (a2, or a2.quantity). "
   + "Complete when the Flow does what the instruction asks: it is then tested from its start and judged on what it does; the checklist is the build's own reading, information, not the bar.";
 
 /** Said after the explore-again instruction when the Flow the model said was ready was judged and sent back. */
-const EXPLORE_AGAIN_JUDGED = "The Flow you said was ready was tested from its start and judged: judgement.judge says what it did not do (observed), what was asked (expected) and what to change (advice). Go by that, and add each step you run that the Flow needs.";
+const EXPLORE_AGAIN_JUDGED = "The Flow you said was ready was tested from its start and judged: judgement.judge says what it did not do (observed), what was asked (expected) and what to change (advice). Go by that, and run the steps the Flow needs: each that works joins it.";
 
 /** Whether this entry opens a round after one that left nothing in the Flow. */
 function nothingInFlow(resume: AutomationStudioLlmEvidenceLoopResume): boolean {

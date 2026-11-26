@@ -26,18 +26,18 @@ const run34 = (): AutomationStudioFlowDraftStep[] => [
 describe("the step numbers the model is shown", () => {
   it("are every number an amendment resolves against, looks included and marked as looks", () => {
     const steps = run34();
-    const shown = automationStudioFlowDraftEntry({ steps, authored: true, acts: [] })!.value as { steps: { step: number; disposition: string; inResult: boolean }[]; instruction: string };
+    const shown = automationStudioFlowDraftEntry({ steps, acts: [] })!.value as { steps: { step: number; disposition: string; inResult: boolean }[]; instruction: string };
     expect(shown.steps.map((line) => line.step)).toEqual(steps.map((step) => step.position));
     expect(shown.steps.filter((line) => line.disposition === "look").map((line) => line.step)).toEqual([1, 5]);
     expect(shown.steps.find((line) => line.step === 5)?.inResult).toBe(false);
-    expect(shown.instruction).toContain("disposition is look");
+    expect(shown.instruction).toContain("leaving out looks");
   });
 
   it("change when a look is appended, so the draft a decision reads is never one from before the last call", () => {
     const steps = run34().slice(0, 4);
-    const before = JSON.stringify(automationStudioFlowDraftEntry({ steps, authored: true, acts: [] })!.value);
+    const before = JSON.stringify(automationStudioFlowDraftEntry({ steps, acts: [] })!.value);
     steps.push(look(5));
-    const after = JSON.stringify(automationStudioFlowDraftEntry({ steps, authored: true, acts: [] })!.value);
+    const after = JSON.stringify(automationStudioFlowDraftEntry({ steps, acts: [] })!.value);
     expect(after).not.toBe(before);
   });
 });
@@ -45,7 +45,7 @@ describe("the step numbers the model is shown", () => {
 describe("an act claimed on a step the Flow can never contain", () => {
   it("is refused, and the look is left as it was", () => {
     const steps = run34();
-    const result = applyAutomationStudioFlowDraftAmendments(steps, [{ step: 5, change: "add", act: "a2" }]);
+    const result = applyAutomationStudioFlowDraftAmendments(steps, [{ step: 5, change: "keep", act: "a2" }]);
     expect(result.applied).toBe(0);
     expect(result.refused).toEqual([{ step: 5, reason: "not_a_kept_step" }]);
     expect(steps[4]).toMatchObject({ disposition: "taken" });
@@ -54,15 +54,15 @@ describe("an act claimed on a step the Flow can never contain", () => {
 
   it("is refused did_not_work on a failed press the caller marked as no step, as the draft shows it", () => {
     const steps = [action(1), action(2, { effectApplied: false, proposes: false, disposition: "taken" })];
-    const shown = automationStudioFlowDraftEntry({ steps, authored: true })!.value as { steps: { step: number; disposition: string }[] };
+    const shown = automationStudioFlowDraftEntry({ steps })!.value as { steps: { step: number; disposition: string }[] };
     expect(shown.steps[1]).toMatchObject({ step: 2, disposition: "did_not_work" });
-    expect(applyAutomationStudioFlowDraftAmendments(steps, [{ step: 2, change: "add", act: "a1" }]).refused).toEqual([{ step: 2, reason: "did_not_work" }]);
+    expect(applyAutomationStudioFlowDraftAmendments(steps, [{ step: 2, change: "keep", act: "a1" }]).refused).toEqual([{ step: 2, reason: "did_not_work" }]);
   });
 
-  it("is refused for keep as well, while an act on a step that worked still lands", () => {
+  it("is refused for a look, while an act on a step that worked still lands", () => {
     const steps = run34();
     steps[2]!.disposition = "taken";
-    const result = applyAutomationStudioFlowDraftAmendments(steps, [{ step: 1, change: "keep", act: "a1" }, { step: 3, change: "add", act: "a1" }]);
+    const result = applyAutomationStudioFlowDraftAmendments(steps, [{ step: 1, change: "keep", act: "a1" }, { step: 3, change: "keep", act: "a1" }]);
     expect(result.refused).toEqual([{ step: 1, reason: "not_a_kept_step" }]);
     expect(result.applied).toBe(1);
     expect(steps[2]).toMatchObject({ disposition: "kept", acts: ["a1"] });

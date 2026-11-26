@@ -1,21 +1,13 @@
-// Whether each repeat can still run once a decision's moves are done.
+// Whether each repeat a decision wrote can run where its steps stand.
 //
-// A repeat names its steps by id (`../routing.ts`), so a reorder never changes
-// which steps it names -- but it can leave the listing after the step that
-// repeats over it, or the span's end before its start. Live run
-// `run-musr9pv3-f4bf6256` sent `15 reorder to 14, 15 repeat over 14` (0056)
-// when a reorder still renumbered the draft at once: the repeat landed on its
-// listing, over the Confirm, and a later reorder left it standing where it
-// could never run, to the end of the round, with no word to the model. Two
-// rules close it, both read after the decision's last amendment:
-//
-// - a repeat the decision wrote that cannot run where its steps now stand is
-//   taken back and refused, as it would have been had the move come first --
-//   so a reorder and a repeat may come in either order in one decision;
-// - after a decision that moved a step, every other repeat that can no longer
-//   run is taken off and reported `repeat_taken_off`: which step's repeat, over
-//   which step, why, in the numbers the model was shown and, where they
-//   changed, the ones it reads next.
+// A repeat names its steps by id (`../routing.ts`), and the listing it walks
+// has to run before the step that repeats over it, and its span's end after its
+// start. Live run `run-musr9pv3-f4bf6256` (0056) left a repeat standing where
+// it could never run, to the end of the round, with no word to the model. So a
+// repeat the decision wrote that cannot run where its steps stand is taken back
+// and refused, once the decision's last amendment is read. The draft's steps
+// stand in the order they ran (the framework drafts it, and no edit moves a
+// step), so a repeat over a listing read after the act is refused here.
 import type { JsonObject } from "../../../../core/index.ts";
 import {
   automationStudioFlowDraftRepeatIsWhile,
@@ -69,7 +61,7 @@ export function automationStudioFlowDraftRepeatRefusal(
 }
 
 /**
- * Take back each repeat the decision wrote that its moves left unable to run,
+ * Take back each repeat the decision wrote that cannot run where its steps stand,
  * putting the step's routing and settings back as they were, and refuse it.
  * A repeat a later amendment of the decision changed again is that amendment's.
  * Answers the refusals and how many applied amendments they take back.
@@ -91,38 +83,4 @@ export function automationStudioFlowDraftSettleWrittenRepeats(
     refused.push(refusal);
   }
   return { refused, takenBack: refused.length };
-}
-
-/**
- * Take off every repeat a decision's moves left unable to run, and say each:
- * which step's repeat over which step, why, in the numbers the draft was shown
- * with and, where they changed, the ones it has now. The step and every step
- * after it now run in another context, so their test marks go, as an
- * `unrepeat`'s do (`./apply.ts`).
- */
-export function automationStudioFlowDraftTakeOffBrokenRepeats(
-  steps: readonly AutomationStudioFlowDraftStep[],
-  shown: AutomationStudioFlowDraftShownNumbering
-): AutomationStudioFlowDraftAmendmentRefusal[] {
-  const taken: AutomationStudioFlowDraftAmendmentRefusal[] = [];
-  for (const step of steps) {
-    const routing = step.routing;
-    if (routing?.kind !== "repeat") continue;
-    const problem = automationStudioFlowDraftRepeatOrderProblem(steps, step, routing);
-    if (!problem) continue;
-    delete step.routing;
-    for (const changed of steps.slice(steps.indexOf(step))) delete changed.replayed;
-    // A repeat while its last step succeeds is over no step, so only its through is said.
-    const over = automationStudioFlowDraftRepeatIsWhile(routing) ? undefined : automationStudioFlowDraftStepById(steps, routing.over)!;
-    const through = automationStudioFlowDraftStepById(steps, routing.through)!;
-    const span = problem === "span_broken";
-    taken.push({
-      step: shown.number(step), reason: "repeat_taken_off", ...(over === undefined ? {} : { over: shown.number(over) }), takenOff: problem,
-      ...(span ? { through: shown.number(through) } : {}),
-      ...(step.position !== shown.number(step) ? { now: step.position } : {}),
-      ...(over !== undefined && over.position !== shown.number(over) ? { overNow: over.position } : {}),
-      ...(span && through.position !== shown.number(through) ? { throughNow: through.position } : {})
-    });
-  }
-  return taken;
 }

@@ -28,7 +28,7 @@ const SHOWS = "A list that only suggests or relates other items to the one acted
  */
 const SETTLE_MODEL = "An act counts as settled when fresh complete reads, taken after it and after the latest lasting action or trial, show everything it could change as the build found it: a list it sat in or was named for, row for row and value for value, and its own control's state where it flipped one. "
   + "Settled after a change was seen or an undo landed, it is restored; settled with no change ever seen, it is left as it is, and every later trial's judge is told what is on the site. "
-  + "Core reads the lists and pages it can reach again itself before asking. Each open act says under settle what is still needed: read a named list completely again, undo what still differs there, press its own control back, or, where nothing read shows where its effect would be, read that list completely and name its ref as resetDestination on a look that names the act under undoes, a ref only a resetDestinations receipt prints. Where nothing was read complete before the build's first lasting act, such an act cannot be settled in this build. "
+  + "Core reads the lists and pages it can reach again itself before asking. Each open act says under settle what is still needed: read a named list completely again, undo what still differs there, press its own control back, or, where nothing read shows where its effect would be, read that list completely and name its ref as resetDestination on a read that names the act under undoes, a ref only a resetDestinations receipt prints. Where nothing was read complete before the build's first lasting act, such an act cannot be settled in this build. "
   + "cannotUndo never settles a reversible act.";
 
 /** How an act settled with no change seen is said (L1). */
@@ -132,7 +132,7 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
       + "Heed what condition says about whether another call can meet it; where it says no call can, do not send this call or a variation of it again. "
       + (other ? `Another recorded act on this item has its own observed effect. Inspect its receipt and explicitly name its id in "${UNDOES}" if that is the effect you are reversing. This information does not reassign or execute the refused claim. ` : "")
       + "Where condition says another call can meet it, make that call with core.run_node where instruction and condition point. "
-      + "Looking or navigating is safe; an undeclared control press or a matching name alone proves no restoration. An effect counts as put back only once fresh complete reads show it as this build found it.";
+      + "Reading or navigating is safe; an undeclared control press or a matching name alone proves no restoration. An effect counts as put back only once fresh complete reads show it as this build found it.";
   },
   /**
    * An undo of an act that is already back (t743 photo `run-mvgw7320-de416190` 0151; t751 R2, office
@@ -150,7 +150,7 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
         + `Do not name it under "${UNDOES}" again; undo the other acts still listed under actsToUndo, if any.`;
     }
     return "That call was not run: the act's own control already shows the state this build found it in, so there is nothing to press, and pressing it would make the act's change again. "
-      + `Do not press it under "${UNDOES}". Read this page again with core.run_node -- a look that names this act under "${UNDOES}" and presses nothing -- so a fresh read shows the control as found; the act then settles and leaves actsToUndo. `
+      + `Do not press it under "${UNDOES}". Read this page again with core.run_node -- a read that names this act under "${UNDOES}" and presses nothing -- so a fresh read shows the control as found; the act then settles and leaves actsToUndo. `
       + "settle, where present, says what else this act still needs.";
   },
   /** A call whose `undoes` names no act of this build that may be undone now. */
@@ -213,7 +213,7 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
   destinationWithoutUndoes(example: boolean): string {
     return `This call named resetDestination but no act under "${UNDOES}", so it settled nothing: a ref names the list for an act only on a call that also names that act under "${UNDOES}". `
       + "Each act under actsStillOpen says under settle what is still needed."
-      + (example ? " To name a list for one, make the look again with both keys, as in example." : "");
+      + (example ? " To name a list for one, make the read again with both keys, as in example." : "");
   },
   /**
    * The build's standing guidance on declaring lasting acts and observing their destinations, aligned with
@@ -235,7 +235,7 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
   /** A `resetDestination` naming no ref this build was shown (rerun round 2): refused before the call runs. */
   destinationUnissued(): string {
     return "This call was not run: its resetDestination names no ref this build was shown. Refs come only from a resetDestinations receipt printed after a complete read of a list, or of a whole page that has no list; never invent one. "
-      + "Retry the call with core.run_node without resetDestination, or with a ref such a receipt printed. Looking and navigating remain available; no new permission is needed.";
+      + "Retry the call with core.run_node without resetDestination, or with a ref such a receipt printed. Reading and navigating remain available; no new permission is needed.";
   }
 });
 

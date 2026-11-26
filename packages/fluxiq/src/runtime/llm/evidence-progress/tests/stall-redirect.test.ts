@@ -21,7 +21,7 @@ describe("the stall note about an act still owed", () => {
   it("says run it only when no step names the act", () => {
     for (const acts of [undefined, [{ id: "a1", verb: "confirm", quote: "confirm", todo: "no_step_added" }]]) {
       const said = String(redirect(acts).instruction);
-      expect(said).toContain("run it and add it with act a1");
+      expect(said).toContain("run it with act a1");
     }
   });
 
@@ -42,7 +42,7 @@ describe("the stall note about an act still owed", () => {
     }).instruction);
     expect(choice).toContain("Step 3 already names a2.quantity");
     const garbled = String(redirect([{ id: "a1", todo: "a sentence, not a code", step: 11 }]).instruction);
-    expect(garbled).toContain("run it and add it with act a1");
+    expect(garbled).toContain("run it with act a1");
   });
 
   // Live run `run-muwaq9w3-baaa4e19` (lane B): a2.size was done, a2 and its
@@ -62,7 +62,7 @@ describe("the stall note about an act still owed", () => {
         { id: "a3", verb: "add", quote: "add one pack", todo: "no_step_added", choices: [{ id: "a3.size", choice: "variant", value: "250 Count", quote: "250 Count", todo: "no_step_added" }] }
       ]
     }).instruction);
-    expect(said).toContain("Your next step is the one that does a2.quantity: run it and add it with act a2.quantity.");
+    expect(said).toContain("Your next step is the one that does a2.quantity: run it with act a2.quantity.");
     expect(said).not.toContain("the one that does a2:");
   });
 
@@ -82,7 +82,7 @@ describe("the stall note about an act still owed", () => {
       ]
     }).instruction);
     expect(said).toContain("Step 10 only opened the page where a2's choices are made and does not do a2");
-    expect(said).toContain("run the step that does a2 and add it with act a2");
+    expect(said).toContain("run the step that does a2 with act a2");
     expect(said).not.toContain("Do not run another step for a2");
   });
 
@@ -105,7 +105,7 @@ describe("the stall note about an act still owed", () => {
       stepsWithoutProgress: 3, maxStepsWithoutProgress: 8, repeatingToolIds: [], proposableSteps: 8, completionAttempts: 0, lastIssueCodes: [], canComplete: true,
       actsMissing: ["a2", "a3", "a3.size"]
     }).instruction);
-    expect(said).toContain("Your next step is the one that does a2: run it and add it with act a2.");
+    expect(said).toContain("Your next step is the one that does a2: run it with act a2.");
   });
 });
 

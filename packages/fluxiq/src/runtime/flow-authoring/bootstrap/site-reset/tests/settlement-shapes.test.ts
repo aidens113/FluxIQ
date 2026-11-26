@@ -173,7 +173,7 @@ describe("shape E: the trial's own act, and the retest after a settling look (of
     ledger.observed(elsewhere());
     const refused = await ledger.beforeTrial(compare);
     expect(refused).toMatchObject({ kind: "admit", startedWith: { acts: [{ act: "act-2" }] } });
-    expect(settleOfOpen(ledger, "act-2")).toContain("name that list's ref as resetDestination on a look that names this act under undoes (lists read complete before this act: destination-1 (2 items at loc:box), destination-2 (1 item at loc:box))");
+    expect(settleOfOpen(ledger, "act-2")).toContain("name that list's ref as resetDestination on a read that names this act under undoes (lists read complete before this act: destination-1 (2 items at loc:box), destination-2 (1 item at loc:box))");
     expect(settleOfOpen(ledger, "act-2")).not.toContain("undo this act there");
     const kept = await ledger.beforeTrial(compare, ["act-2"]);
     expect(kept).toMatchObject({ kind: "admit", startedWith: { acts: [{ act: "act-2" }] } });

@@ -123,7 +123,7 @@ describe("what is not one offered decision is still refused, with misses of its 
 // The JSON-text transport (`decisionTools: false`): a decision sent as tools has no envelope to nest (D12, t1038).
 describe("run-mwuxd2v9 step 74: the envelope inside the envelope", () => {
   it("is opened once more, and the decision in it is read", async () => {
-    const decision = { kind: "amend_draft", amendments: [{ step: 3, change: "exploratory" }] };
+    const decision = { kind: "amend_draft", amendments: [{ step: 3, change: "drop" }] };
     const twice = JSON.stringify({ result_json: JSON.stringify({ result_json: JSON.stringify(reply(decision)) }) });
     const provider = createAutomationStudioAnthropicProvider({ secretReference: { kind: "secret_reference", id: "secret:claude" }, resolveSecret: async () => "dummy-provider-key", decisionTools: false, fetchImpl: vi.fn(async () => streamReply(twice, "end_turn")) });
     const result = await provider.runTask(offering(ALL)) as { response: { decision: unknown } };

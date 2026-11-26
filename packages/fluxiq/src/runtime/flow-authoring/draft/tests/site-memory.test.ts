@@ -53,7 +53,7 @@ describe("a step the site remembers", () => {
     ]);
     const instruction = String(feedback.instruction);
     expect(instruction).toContain("remembered: ");
-    expect(instruction).toContain("Do not drop, rerun or reorder a remembered step.");
+    expect(instruction).toContain("Do not drop or rerun a remembered step.");
     // Every sentence that offers dropping a step names the answers that block, never remembered.
     const offers = instruction.split(/(?<=\.) /u).filter((sentence) => /\bdrop/iu.test(sentence) && !/Do not drop/u.test(sentence));
     expect(offers.length).toBeGreaterThan(0);

@@ -68,7 +68,7 @@ export function automationStudioAnswerFirstStandIn(run: AutomationStudioAnswerFi
   ordered.splice(ordered.indexOf(broken), 0, ...way);
   ordered.push(standIn);
   ordered.forEach((step, index) => { step.position = index + 1; });
-  automationStudioLlmEvidenceRerunReplaced(ordered, broken, { takesItsPlace: true });
+  automationStudioLlmEvidenceRerunReplaced(ordered, broken);
   if (broken.disposition === "kept" || standIn.disposition !== "kept") return false;
   run.steps = ordered;
   return true;

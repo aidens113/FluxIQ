@@ -39,7 +39,6 @@ import type { AutomationStudioFlowDraftStep } from "../../../flow-authoring/draf
 import { automationStudioLlmEvidenceAmendmentMemory } from "../amendment-memory.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID } from "../../draft-amendment-feedback/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID, AutomationStudioLlmUnusableDecisionError } from "../../unusable-decision.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID } from "../index.ts";
 
 const library = [{ toolId: "run_node", description: "Run one node.", inputSchema: { type: "object" }, effect: "mutate" as const, perCallEffect: true as const }];
 
@@ -74,8 +73,6 @@ async function replay(decisions: readonly JsonObject[]) {
     maxIterations: 20,
     maxToolCalls: 20,
     dryRun: false,
-    // The recorded build's draft was a transcript: every step that ran was kept unless withdrawn.
-    draftAuthoring: "transcript",
     unusableDecisions: { stalled: () => new Error("stalled") }
   });
   return { result, shown };
@@ -107,13 +104,14 @@ describe("replaying the recorded amendment stall", () => {
     expect(refused.disposition).toBe("did_not_work");
     const instruction = (shown[3]!.find((entry) => entry.toolId === "core.flow_draft")!.value as JsonObject).instruction as string;
     expect(instruction).not.toMatch(/every step here is something you actually ran and that worked/);
-    expect(instruction).toMatch(/did_not_work/);
+    expect(instruction).toMatch(/leaving out looks, failures/);
   });
 
   it("refuses an edit about a step that did not work and names rerun as the way to change it", async () => {
-    // bigbox round 2 #7: the refused presses dropped, the one that worked kept.
-    const { result, shown } = await replay([...opening, amend({ step: 2, change: "drop" }, { step: 1, change: "keep" }, { step: 3, change: "keep" })]);
-    const check = amendmentCheck(shown, 5)!;
+    // bigbox round 2 #7: the refused presses dropped, the one that worked kept. The framework put steps 1 and 3 in, and the
+    // first keep of each makes it the model's (t1037), so the recorded decision is the one after that.
+    const { result, shown } = await replay([...opening, amend({ step: 1, change: "keep" }, { step: 3, change: "keep" }), amend({ step: 2, change: "drop" }, { step: 1, change: "keep" }, { step: 3, change: "keep" })]);
+    const check = amendmentCheck(shown, 6)!;
     // Each refusal names its way out, in the draft's numbers (W2, t287).
     expect(check.refused).toEqual([
       { step: 2, reason: "did_not_work", next: expect.stringContaining(`{"step": 2, "change": "rerun", "input": {`) },
@@ -124,7 +122,7 @@ describe("replaying the recorded amendment stall", () => {
     expect(reasons.did_not_work).toMatch(/rerun/);
     expect(reasons.already_in_flow).toMatch(/inResult/);
     // Nothing about the Flow changed, so nothing about the draft did.
-    expect(result.trace.find((row) => row.decision === "amend_draft")).toMatchObject({ resultCode: "llm_evidence_loop.draft_unchanged", amended: 0 });
+    expect(result.trace.filter((row) => row.decision === "amend_draft")[1]).toMatchObject({ resultCode: "llm_evidence_loop.draft_unchanged", amended: 0 });
   });
 
   it("says so when an amendment is refused for the same reason it was refused for before", async () => {
@@ -132,7 +130,7 @@ describe("replaying the recorded amendment stall", () => {
     const same = amend({ step: 2, change: "keep" }, { step: 3, change: "keep" });
     const { shown } = await replay([...opening, same, same, same]);
     const first = amendmentCheck(shown, 5)!;
-    const again = amendmentCheck(shown, 6)!;
+    const again = amendmentCheck(shown, 7)!;
     expect((first.refused as JsonObject[]).some((refusal) => refusal.repeated)).toBe(false);
     expect(again.refused).toEqual([
       { step: 2, reason: "did_not_work", repeated: true, next: expect.stringContaining("Step 2 did not work") },
@@ -141,7 +139,7 @@ describe("replaying the recorded amendment stall", () => {
     expect(again.instruction).toMatch(/refused for the same reason before/);
   });
 
-  it("counts a toggle that puts the draft back as it stood as no progress, and redirects on it", async () => {
+  it("counts a toggle that puts the draft back as it stood as no progress, and steers off it", async () => {
     // crossborder round 1 #12-#15: one step dropped, kept, dropped, kept.
     const { result, shown } = await replay([
       ...opening,
@@ -152,17 +150,16 @@ describe("replaying the recorded amendment stall", () => {
     ]);
     const undone = amendmentCheck(shown, 6)!;
     expect(undone).toMatchObject({ code: "llm_evidence_loop.draft_amendment_undone", sameDraftAsIteration: 4 });
-    // The third toggle is the third step without progress, which is where the
-    // loop starts telling the model plainly it is going nowhere.
-    const redirected = shown[7]!.filter((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID);
-    expect(redirected).toHaveLength(1);
-    expect(result.trace.filter((row) => row.decision === "amend_draft").map((row) => row.resultCode)).toEqual([
-      "llm_evidence_loop.draft_amended",
-      "llm_evidence_loop.draft_amendment_undone",
-      // Step 3 was added, dropped and kept again: the draft has come back twice, which is the same fix again, so it was told so and
-      // the next drop was refused before it ran (`../../repeat-guard/loop-detection/`). The keep then finds step 3 already in the Flow.
-      "llm_evidence_loop.repeat_refused",
-      "llm_evidence_loop.draft_unchanged"
+    // Where the framework drafts (t1037), the third toggle puts the draft back again and the loop detector steers the
+    // model off the cycle there (`../../repeat-guard/loop-detection/`); the fourth, the same fix again, is refused before
+    // it runs.
+    expect(result.trace.map((row) => [row.iteration, row.decision, row.resultCode]).slice(3)).toEqual([
+      [4, "amend_draft", "llm_evidence_loop.draft_amended"],
+      [5, "amend_draft", "llm_evidence_loop.draft_amendment_undone"],
+      [6, "amend_draft", "llm_evidence_loop.draft_amendment_undone"],
+      [6, "tool_call", "llm_evidence_loop.loop_steered"],
+      [7, "amend_draft", "llm_evidence_loop.repeat_refused"],
+      [8, "complete", undefined]
     ]);
   });
 
@@ -179,7 +176,7 @@ describe("replaying the recorded amendment stall", () => {
       if (at === 4) throw new AutomationStudioLlmUnusableDecisionError(["llm_output.invalid_evidence_decision"]);
       return script[at - 1] ?? { kind: "complete", result: { summary: "done" } };
     });
-    await runAutomationStudioLlmEvidenceLoop({ tools: library, decide, executeTool: page, maxIterations: 20, maxToolCalls: 20, dryRun: false, draftAuthoring: "transcript", unusableDecisions: { stalled: () => new Error("stalled") } });
+    await runAutomationStudioLlmEvidenceLoop({ tools: library, decide, executeTool: page, maxIterations: 20, maxToolCalls: 20, dryRun: false, unusableDecisions: { stalled: () => new Error("stalled") } });
     const check = shown[4]!.find((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID)!.value as { accepted: { reply: { decision: { oneOf: JsonObject[] } } } };
     expect(check.accepted.reply.decision.oneOf.map((shape) => shape.kind)).toEqual(["tool_call", "complete", "amend_draft"]);
   });

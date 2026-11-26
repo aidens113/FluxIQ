@@ -92,7 +92,7 @@ describe("an amendment the draft refused", () => {
       .mockResolvedValueOnce(pressed(1))
       // One amendment lands and one is refused, which the single result code
       // cannot say and the row now does.
-      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "exploratory" }, { step: 4, change: "drop" }] })
+      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "drop" }, { step: 4, change: "drop" }] })
       .mockResolvedValueOnce(complete);
     const result = await runAutomationStudioLlmEvidenceLoop({
       tools, decide, maxIterations: 8, maxToolCalls: 8, unusableDecisions: { stalled }, executeTool: pressing()
@@ -110,8 +110,8 @@ describe("an amendment the draft refused", () => {
   it("names the reason the draft computed, not a guess at the step meant", async () => {
     const decide = vi.fn()
       .mockResolvedValueOnce(pressed(1))
-      // The step is already in the Flow: it was added as it ran.
-      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "keep" }] })
+      // The step has no repeat to take off.
+      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "unrepeat" }] })
       .mockResolvedValueOnce(complete);
     const result = await runAutomationStudioLlmEvidenceLoop({
       tools, decide, maxIterations: 8, maxToolCalls: 8, unusableDecisions: { stalled }, executeTool: pressing()
@@ -120,10 +120,10 @@ describe("an amendment the draft refused", () => {
     expect(amendRow(result.trace)).toMatchObject({
       resultCode: "llm_evidence_loop.draft_unchanged",
       amended: 0,
-      amendmentsRefused: [{ step: 1, reason: "already_in_flow" }]
+      amendmentsRefused: [{ step: 1, reason: "already_so" }]
     });
     const feedback = feedbackShown(decide, 2);
-    expect(feedback).toMatchObject({ refused: [{ step: 1, reason: "already_in_flow" }] });
+    expect(feedback).toMatchObject({ refused: [{ step: 1, reason: "already_so" }] });
     // Nothing was named that does not exist, so no positions are listed.
     expect(feedback?.positions).toBeUndefined();
   });
@@ -131,7 +131,7 @@ describe("an amendment the draft refused", () => {
   it("leaves an edit that landed cleanly with nothing to explain", async () => {
     const decide = vi.fn()
       .mockResolvedValueOnce(pressed(1))
-      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "exploratory" }] })
+      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "drop" }] })
       .mockResolvedValueOnce(complete);
     const result = await runAutomationStudioLlmEvidenceLoop({
       tools, decide, maxIterations: 8, maxToolCalls: 8, unusableDecisions: { stalled }, executeTool: pressing()
@@ -228,8 +228,8 @@ describe("the feedback an amendment refusal is shown as", () => {
     no_such_step: true, already_so: true, no_such_position: true, run_by_the_loop: true, no_step_before_it: true, over_not_before: true, not_a_kept_step: true,
     did_not_work: true, already_in_flow: true, already_out: true, changes_nothing: true, act_on_a_read: true, act_already_named: true,
     bind_not_a_binding: true, bind_new_key: true, bind_row_outside_loop: true, bind_malformed: true,
-    rerun_holds_binding: true, repeat_taken_off: true, strands_a_step: true, settings_rewrite_run: true, second_copy: true,
-    act_not_done_there: true, repeat_never_ends: true, holds_a_repeat: true, span_holds_routing: true
+    rerun_holds_binding: true, strands_a_step: true, settings_rewrite_run: true, second_copy: true,
+    act_not_done_there: true, repeat_never_ends: true, holds_a_repeat: true, span_holds_routing: true, not_a_read: true
   };
 
   it("can say every reason the draft computes, with what the word means", () => {
@@ -363,7 +363,7 @@ describe("a refusal about a listing says what comes next", () => {
     const inFlow = told([{ step: 13, reason: "over_not_before", over: 13 }], [...run37, act(14)]);
     expect(nextOf(inFlow)).toContain(`the repeat goes on it: send {"step": 14, "change": "repeat", "over": 13}`);
     const taken = told([{ step: 13, reason: "over_not_before", over: 13 }], [...run37, act(14, "taken")]);
-    expect(nextOf(taken)).toContain(`add step 14 with its act, then send {"step": 14, "change": "repeat", "over": 13}`);
+    expect(nextOf(taken)).toContain(`put step 14 back with its act, {"step": 14, "change": "keep", "act": <the act>}, then send {"step": 14, "change": "repeat", "over": 13}`);
     // A press that did not work is no act to repeat.
     const failed = told([{ step: 13, reason: "over_not_before", over: 13 }], [...run37, act(14, "taken", false)]);
     expect(nextOf(failed)).toContain("No step after step 13 does anything to a row yet");
@@ -383,7 +383,7 @@ describe("a refusal about a listing says what comes next", () => {
       const only = nextOf(told([refusal], [...run37, cleared]));
       expect(only).toContain("No step after step 13 does anything to a row yet");
       expect(only).not.toContain(`"step": 14`);
-      expect(nextOf(told([refusal], [...run37, cleared, act(15, "taken")]))).toContain(`add step 15 with its act, then send {"step": 15, "change": "repeat", "over": 13}`);
+      expect(nextOf(told([refusal], [...run37, cleared, act(15, "taken")]))).toContain(`put step 15 back with its act, {"step": 15, "change": "keep", "act": <the act>}, then send {"step": 15, "change": "repeat", "over": 13}`);
     }
   });
 
@@ -409,7 +409,7 @@ describe("a refusal about a listing says what comes next", () => {
     expect(next).toContain("rerunning step 6 only replaces it and never adds a step after step 7");
     expect(next).toContain("A read of the rows after the act is a new step");
     expect(next).toContain(`"core.run_node"`);
-    expect(next).toContain("add true");
+    expect(next).toContain("which puts it in the draft after step 7");
     expect(next).toContain("after step 7");
     expect(next).toContain("where");
     expect(next).not.toContain(`"change": "repeat"`);
@@ -480,6 +480,7 @@ describe("a refusal about a listing says what comes next", () => {
 // said only what to do about an act not done, and the round stalled -- recorded
 // as a refused call, which the person's ending read as "every attempt to finish
 // was refused".
+// The first keep makes the framework's step the model's and is applied (t1037, `pins`); the keeps after it are refused.
 describe("an act named again that the checklist already shows done, through the loop", () => {
   const stalledError = new Error("stalled");
   const keep = { kind: "amend_draft", amendments: [{ step: 1, change: "keep", act: "a2.quantity" }] };
@@ -497,7 +498,7 @@ describe("an act named again that the checklist already shows done, through the 
   it("is told nothing is left to do for it, and which acts still are", async () => {
     const { decide, done } = run(() => ["a3", "a3.size"]);
     await expect(done).rejects.toBe(stalledError);
-    const feedback = feedbackShown(decide, 2);
+    const feedback = feedbackShown(decide, 3);
     expect(feedback).toMatchObject({ refused: [{ step: 1, reason: "act_already_named", next: "Step 1 already names a2.quantity, and the acts checklist shows a2.quantity done, so nothing is left to do for it: do not name it again. Still not done on the checklist: a3, a3.size. Go on with those." }] });
     expect(String(feedback?.instruction)).toContain("next, beside a refusal, is what to do instead");
   });
@@ -506,7 +507,7 @@ describe("an act named again that the checklist already shows done, through the 
   it("is told to correct the step its todo names while the checklist still shows the act not done, never sent back to the checklist", async () => {
     const { decide, done } = run(() => ["a2.quantity", "a3"]);
     await expect(done).rejects.toBe(stalledError);
-    const refused = feedbackShown(decide, 2)?.refused as { step: number; reason: string; next?: string }[];
+    const refused = feedbackShown(decide, 3)?.refused as { step: number; reason: string; next?: string }[];
     expect(refused).toMatchObject([{ step: 1, reason: "act_already_named" }]);
     expect(refused[0]?.next).toContain("Step 1 already names a2.quantity, and the checklist still shows it not done");
     expect(refused[0]?.next).not.toContain("Still not done on the checklist");
@@ -525,11 +526,10 @@ describe("an act named again that the checklist already shows done, through the 
 // filtered request listing step 18. `9 repeat over 18` was sent five decisions
 // running and once more in round 1, each told "over ... must come before the
 // act: send {step: <act>, change: repeat, over: <listing>}" -- exactly what it
-// had sent -- and `next` said no step after 18 did anything. The listing has to
-// move before the act; the refusal now says so, every number in it as the
-// draft shown numbered it (run `run-musr9pv3-f4bf6256`: the draft is
-// renumbered once, after the whole decision).
-describe("a repeat on an act that sits before its listing says to move the listing first", () => {
+// had sent -- and `next` said no step after 18 did anything. No edit moves a
+// step (t1037): the Flow runs its steps in the order they ran, so the refusal
+// says to do the act again after the listing and put the repeat on that step.
+describe("a repeat on an act that sits before its listing says to do the act again after the listing", () => {
   const act = (position: number, disposition = "kept", effectApplied = true) => ({ position, effect: "mutate", effectApplied, disposition });
   const read = (position: number, disposition = "taken") => ({ position, effect: "observe", effectApplied: true, disposition });
   const told = (refusals: readonly AutomationStudioFlowDraftAmendmentRefusal[], steps: Parameters<typeof automationStudioLlmEvidenceDraftAmendmentFeedback>[0]["steps"]) =>
@@ -538,24 +538,25 @@ describe("a repeat on an act that sits before its listing says to move the listi
   // The run's draft as it stood at 0043: the act at 9, looks and trial reads between, the listing at 18.
   const run = [act(1), act(2), act(3), act(4), act(5), act(6, "taken"), act(7, "taken"), read(8), act(9), read(10), read(11), read(12), read(13), read(14), read(15), read(16), read(17), read(18, "kept")];
 
-  it("names the reorder and the repeat, both in the numbers the draft shows", () => {
+  it("says the act is done again after the listing, the repeat put on that new step, and the act before it dropped", () => {
     const feedback = told([{ step: 9, reason: "over_not_before", over: 18 }], run);
     const next = nextOf(feedback);
-    expect(next).toContain("Step 18 is the listing, and it comes after step 9, the act the repeat was put on");
-    expect(next).toContain(`{"step": 18, "change": "reorder", "to": 9}`);
-    expect(next).toContain(`{"step": 9, "change": "repeat", "over": 18}`);
-    expect(next).toContain("renumbered once, after the whole decision");
+    expect(next).toContain("Step 18 is the listing, and it ran after step 9, the act the repeat was put on");
+    expect(next).toContain("the Flow runs its steps in the order they ran");
+    expect(next).toContain(`{"step": <that new step>, "change": "repeat", "over": 18}`);
+    expect(next).toContain("drop step 9");
+    expect(next).not.toContain("reorder");
     expect(next).not.toContain("No step after step 18 does anything");
-    expect((feedback.reasons as Record<string, string>).over_not_before).toContain("reorder");
+    expect((feedback.reasons as Record<string, string>).over_not_before).not.toContain("reorder");
   });
 
-  it("keeps through as shown when the repeat named one, and adds the act first when it is not in the Flow", () => {
+  it("says the same whether or not the repeat named a through, and whether or not the act is in the Flow", () => {
     const steps = [act(1), act(2), act(3), read(4), read(5, "kept")];
     const through = nextOf(told([{ step: 2, reason: "over_not_before", over: 5, through: 3 }], steps));
-    expect(through).toContain(`{"step": 5, "change": "reorder", "to": 2}`);
-    expect(through).toContain(`{"step": 2, "change": "repeat", "over": 5, "through": 3}`);
+    expect(through).toContain(`{"step": <that new step>, "change": "repeat", "over": 5}`);
+    expect(through).toContain("drop step 2");
     const taken = nextOf(told([{ step: 2, reason: "over_not_before", over: 5 }], [act(1), act(2, "taken"), act(3), read(4), read(5, "kept")]));
-    expect(taken).toContain(`add step 2 with its act, then send {"step": 5, "change": "reorder", "to": 2}`);
+    expect(taken).toContain(`{"step": <that new step>, "change": "repeat", "over": 5}`);
   });
 
   it("does not say it about an act that did not work", () => {
@@ -662,56 +663,11 @@ describe("a refusal about the attempt a rerun replaced", () => {
   });
 });
 
-// Live run `run-musr9pv3-f4bf6256` carried a repeat on its listing, over the
-// Confirm after it, from decision 0056 to the end of the round, and was never
-// told it was there. A repeat a decision's moves leave unable to run is now
-// taken off after the decision, and the answer says which step's repeat over
-// which step went, and why.
-describe("a repeat taken off after a decision's moves", () => {
+// Every refusal is said beside how the numbers of one decision are read (t195 w45).
+describe("the numbering said beside a refusal", () => {
   const steps = Array.from({ length: 16 }, (_, index) => ({ position: index + 1 }));
   const feedbackOf = (refusals: readonly AutomationStudioFlowDraftAmendmentRefusal[], applied = 1) =>
     automationStudioLlmEvidenceDraftAmendmentFeedback({ refusals, applied, steps, stepsWithoutProgress: 0, maxStepsWithoutProgress: 8 });
-  const nextOf = (feedback: Record<string, unknown>): string | undefined => (feedback.refused as { next?: string }[])[0]?.next;
-
-  it("names the step, the step it repeated over, and that the over now runs after it", () => {
-    const feedback = feedbackOf([{ step: 15, reason: "repeat_taken_off", over: 16, takenOff: "over_after" }]);
-    const next = nextOf(feedback);
-    expect(next).toContain("Step 15's repeat over step 16 was taken off");
-    expect(next).toContain("step 16 runs after step 15");
-    expect((feedback.reasons as Record<string, string>).repeat_taken_off).toContain("not an amendment of yours");
-    // Not an amendment that changed nothing, so the answer does not say it was one.
-    expect(String(feedback.instruction)).not.toContain("The listed amendments changed nothing");
-    expect(String(feedback.instruction)).toContain("repeat_taken_off");
-  });
-
-  it("gives the numbers the draft shows now when the moves changed them", () => {
-    const next = nextOf(feedbackOf([{ step: 16, reason: "repeat_taken_off", over: 15, takenOff: "over_after", now: 15, overNow: 16 }]));
-    expect(next).toContain("Step 16's repeat over step 15 was taken off");
-    expect(next).toContain("now step 15");
-    expect(next).toContain("now step 16");
-  });
-
-  it("says a span that no longer holds together, naming its through", () => {
-    const next = nextOf(feedbackOf([{ step: 16, reason: "repeat_taken_off", over: 15, through: 17, takenOff: "span_broken", now: 17, throughNow: 16 }]));
-    expect(next).toContain("Step 16's repeat over step 15, through step 17, was taken off");
-    expect(next).toContain("step 17 runs before step 16");
-  });
-
-  // Read-list design (S2): a repeat-while repeats over no step, and is told by the step it ran while.
-  it("says which step's repeat-while was taken off and why, with no over to name", () => {
-    const next = nextOf(feedbackOf([{ step: 16, reason: "repeat_taken_off", through: 17, takenOff: "span_broken", now: 17, throughNow: 16 }]));
-    for (const words of ["Step 16's repeat while step 17 succeeds was taken off", "step 17 runs before step 16", "step 16 is now step 17", "step 17 is now step 16"]) expect(next).toContain(words);
-    expect(next).not.toContain("over step");
-  });
-
-  it("is never marked repeated, since the model did not send it", () => {
-    const feedback = automationStudioLlmEvidenceDraftAmendmentFeedback({
-      refusals: [{ step: 15, reason: "repeat_taken_off", over: 16, takenOff: "over_after", repeated: true }],
-      applied: 1, steps, stepsWithoutProgress: 0, maxStepsWithoutProgress: 8
-    });
-    expect((feedback.refused as { repeated?: boolean }[])[0]?.repeated).toBeUndefined();
-    expect(String(feedback.instruction)).not.toContain("stop sending it");
-  });
 
   it("says, beside any refusal, that every number in one decision is the number the draft showed", () => {
     const feedback = feedbackOf([{ step: 3, reason: "already_so" }], 0);
@@ -792,6 +748,6 @@ describe("a step of the Flow left without its way to its page", () => {
     expect(feedback.code).toBe("llm_evidence_loop.draft_amendments_refused");
     expect(refusedOf(feedback).map((entry) => entry.reason)).toEqual(["no_such_step"]);
     const [entry] = feedback.unreached as { note: string }[];
-    expect(entry?.note).toContain("No step in the draft moved the page to where step 3 acted: run the step that gets there with add true, before step 3.");
+    expect(entry?.note).toContain("No step in the draft moved the page to where step 3 acted: the Flow runs its steps in the order they ran, so run the step that gets there, then step 3's call again there, and drop step 3.");
   });
 });

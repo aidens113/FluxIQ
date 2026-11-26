@@ -66,7 +66,7 @@ const RESET_INCOMPLETE_WORDS = [
  * written out as the words above write it: a value import of the key would reach the `llm` barrel
  * (the module cycle noted at the evidence-loop import).
  */
-const ISSUED_WORDS = "issuedRefs lists the refs of lists already read complete in this build. Where an act's settle asks for a named list, name one of them on a look that names that act, as in {\"undoes\": \"<act>\", \"resetDestination\": \"<ref>\"}; a look naming a ref with no undoes settles nothing.";
+const ISSUED_WORDS = "issuedRefs lists the refs of lists already read complete in this build. Where an act's settle asks for a named list, name one of them on a read that names that act, as in {\"undoes\": \"<act>\", \"resetDestination\": \"<ref>\"}; a read naming a ref with no undoes settles nothing.";
 
 export async function runAutomationStudioProjectResetLoop(input: {
   brief: AutomationStudioProjectSubflowBrief;

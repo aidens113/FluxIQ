@@ -10,7 +10,7 @@ import { automationStudioLlmTaskMessages } from "../request-messages.ts";
 
 type Value = { steps: unknown[]; instruction?: string };
 const step = (position: number, extra: Partial<AutomationStudioFlowDraftStep> = {}): AutomationStudioFlowDraftStep => ({ position, iteration: position, callId: `call.${position}`, actionId: "press", input: { target: `t${position}` }, effect: "mutate", effectApplied: true, disposition: "kept", ...extra } as AutomationStudioFlowDraftStep);
-const draft = (steps: AutomationStudioFlowDraftStep[], authored = true) => automationStudioFlowDraftEntry({ steps, authored })!;
+const draft = (steps: AutomationStudioFlowDraftStep[]) => automationStudioFlowDraftEntry({ steps })!;
 type Entries = NonNullable<AutomationStudioLlmTaskRequest["context"]["evidenceLoop"]>["evidence"];
 const request = (entries: Entries) => {
   const task = decisionRequest();
@@ -37,7 +37,7 @@ describe("the draft's guidance", () => {
       return text.slice(0, text.indexOf('"evidence":['));
     };
     expect(head([draft([step(1), step(2), step(3)])])).toBe(head([draft([step(1)])]));
-    expect(head([draft([step(1)], false)])).toContain("The Flow you are building");
+    expect(head([draft([step(1)])])).toContain("Core drafts the Flow from the calls that worked");
   });
 
   it("keeps on the entry what is said only sometimes, and all of it is still sent", () => {

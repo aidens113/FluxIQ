@@ -42,7 +42,7 @@ export const AUTOMATION_STUDIO_INSTRUCTED_ACT_OPTIONAL_ISSUE_CODE = "bootstrap.i
 /** What the model is told about such an act, after the opening sentence of a refusal. */
 export const AUTOMATION_STUDIO_INSTRUCTED_ACT_OPTIONAL_ONLY_INSTRUCTION = " missingActs.acts with reason step_is_optional are things the person asked for -- quote is their words -- "
   + "that only one step of your Flow (step) does, and that step is marked optional: the Flow carries on when it fails, so the act may never be done, and one passing test does not show it always is. "
-  + "For each one: make that step always run with amend_draft keep on it, with no act; or, if it is needed only in some situations, make it only_if on the step that shows it is needed instead of optional. "
+  + "For each one: make that step always run with amend_draft keep on it, with no act. "
   + "If it is a choice the item's page already shows made without that step, check that on the page first, then drop the step and name the choice's id on the step after which the page showed it made. Then complete again.";
 
 /** Every act the draft does with an optional step alone, or what the model is told instead. */

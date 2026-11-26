@@ -104,12 +104,13 @@ function counted(run: AutomationStudioAnswerFirstAttemptRun, decision: Automatio
   run.usage.totalTokens += decision.usage?.totalTokens ?? 0;
 }
 
-/** What a decision says its call is, for the result (header): a call added as it runs, a rerun of a step in the Flow, or a look. */
+/**
+ * What a decision says its call is, for the result (header): a call that joins the draft as it runs, or a rerun of a
+ * step in the Flow. The framework drafts the Flow from the calls that worked (t1037), so every call joins it, with or
+ * without `add`: there is no read outside the draft, and so no look among the reads.
+ */
 function intentOf(run: AutomationStudioAnswerFirstAttemptRun, decision: AutomationStudioLlmEvidenceLoopDecision): AutomationStudioAnswerFirstResultIntent | undefined {
-  if (decision.kind === "tool_call") {
-    const added = decision.add === true || decision.act !== undefined || decision.place !== undefined;
-    return added ? { kind: "add", position: run.steps.length + 1, intermediate: automationStudioAnswerFirstResultIntermediate(decision.input) } : undefined;
-  }
+  if (decision.kind === "tool_call") return { kind: "add", position: run.steps.length + 1, intermediate: automationStudioAnswerFirstResultIntermediate(decision.input) };
   if (decision.kind !== "amend_draft") return undefined;
   const rerun = decision.amendments.find((amendment) => amendment.change === "rerun");
   const step = rerun ? run.steps.find((each) => each.position === rerun.step) : undefined;

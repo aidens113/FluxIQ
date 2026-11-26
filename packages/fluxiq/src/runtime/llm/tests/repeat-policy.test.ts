@@ -47,8 +47,8 @@ describe("looking again after being refused", () => {
     expect(result).toMatchObject({ ok: true, accounting: { iterations: 6, toolCalls: 5 } });
     // Every look after a refusal ran, and the observation was offered each time.
     expect(result.trace.filter((entry) => entry.toolId === "inspect").every((entry) => entry.callId !== undefined)).toBe(true);
-    expect(decide.mock.calls[2]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["inspect", "press"]);
-    expect(decide.mock.calls[4]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["inspect", "press"]);
+    expect(decide.mock.calls[2]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["inspect", "press", "core.run_flow"]); // `core.run_flow` is offered from the first decision (page-diff D11), refused by name until a step can run again.
+    expect(decide.mock.calls[4]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["inspect", "press", "core.run_flow"]);
   });
 
   it("does not let the same refused action be asked for again", async () => {
@@ -96,7 +96,7 @@ describe("looking again after being refused", () => {
     // Both doors: neither the request's signature nor the tool's latest
     // observation may answer the retry from a refusal carrying nothing.
     expect(result.trace.some((entry) => entry.resultCode?.startsWith("llm_evidence_loop.already_"))).toBe(false);
-    expect(decide.mock.calls[1]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["inspect", "press"]);
+    expect(decide.mock.calls[1]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["inspect", "press", "core.run_flow"]); // `core.run_flow` is offered from the first decision (page-diff D11), refused by name until a step can run again.
   });
 
   it("counts a refused look against the no-progress guard, so asking for it forever still stops", async () => {

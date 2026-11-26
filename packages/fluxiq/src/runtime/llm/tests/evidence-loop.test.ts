@@ -44,7 +44,7 @@ describe("Automation Studio LLM evidence loop", () => {
     // evicted. No mutating tool is offered here, so nothing is shown a draft.
     // `id` is the step's own name, which a position stops being the moment the
     // draft is reordered; what a step says about when it runs is kept under it.
-    expect(result.ok && result.steps).toEqual([{ position: 1, id: "d1", iteration: 1, callId: "call.1", actionId: "inspect", input: { scope: "current" }, effect: "observe", effectApplied: true, disposition: "taken" }]);
+    expect(result.ok && result.steps).toEqual([{ position: 1, id: "d1", iteration: 1, callId: "call.1", actionId: "inspect", input: { scope: "current" }, effect: "observe", effectApplied: true, disposition: "taken", drafted: "look" }]); // The framework drafts the Flow (t1037): a look is out, and says why.
     // Taken, not kept: a step that ran is evidence until the model adds it to the Flow (`../../flow-draft/step.ts`).
     expect(JSON.stringify({ ...result, steps: undefined })).not.toContain("scope");
   });
@@ -104,7 +104,7 @@ describe("Automation Studio LLM evidence loop", () => {
     const blocked = await runAutomationStudioLlmEvidenceLoop({ tools: progressTools, decide: blockedDecide, executeTool: blockedExecute, maxStepsWithoutProgress: 3 });
     expect(blocked).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_without_progress", accounting: { iterations: 4, toolCalls: 1 } });
     expect(blockedExecute).toHaveBeenCalledTimes(1);
-    expect(blockedDecide.mock.calls[1]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["act"]);
+    expect(blockedDecide.mock.calls[1]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["act", "core.run_flow"]); // `core.run_flow` is offered from the first decision (page-diff D11), refused by name until a step can run again.
     expect(JSON.stringify(blockedDecide.mock.calls[1]?.[0].decisionSchema)).not.toContain('"inspect"');
     expect(blockedDecide.mock.calls[2]?.[0].evidence).toEqual([
       { callId: "call.observe.1", toolId: "inspect", value: { observed: true } },
@@ -131,8 +131,8 @@ describe("Automation Studio LLM evidence loop", () => {
       ? { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true, targetsUnchanged: true }
       : { observed: true } }))
       .resolves.toMatchObject({ ok: true, result: { ready: true }, accounting: { iterations: 4, toolCalls: 3 } });
-    expect(progressiveDecide.mock.calls[1]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["act"]);
-    expect(progressiveDecide.mock.calls[2]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["inspect", "act"]);
+    expect(progressiveDecide.mock.calls[1]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["act", "core.run_flow"]);
+    expect(progressiveDecide.mock.calls[2]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["inspect", "act", "core.run_flow"]);
 
     const recoverableDecide = vi.fn()
       .mockResolvedValueOnce({ kind: "tool_call", callId: "call.observe.1", toolId: "inspect", input: {} })
@@ -154,7 +154,7 @@ describe("Automation Studio LLM evidence loop", () => {
     expect(recoverable).toMatchObject({ ok: true, accounting: { iterations: 4, toolCalls: 3 } });
     expect(recoverable.trace[2]).toMatchObject({ iteration: 3, toolId: "inspect", callId: "call.observe.2" });
     expect(recoverable.trace[2]?.resultCode).toBeUndefined();
-    expect(recoverableDecide.mock.calls[2]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["inspect", "act"]);
+    expect(recoverableDecide.mock.calls[2]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["inspect", "act", "core.run_flow"]);
     expect(recoverableDecide.mock.calls[2]?.[0].evidence).toEqual(expect.arrayContaining([
       expect.objectContaining({ toolId: "act", value: { ok: false, code: "action.recoverable" } })
     ]));
@@ -184,7 +184,7 @@ describe("Automation Studio LLM evidence loop", () => {
     expect(executeTool).toHaveBeenCalledWith({ callId: "initial.inspect", toolId: "inspect", value: {} });
     expect(decide).toHaveBeenCalledTimes(1);
     expect(decide.mock.calls[0]?.[0]).toMatchObject({ iteration: 1, canComplete: true, evidence: [{ callId: "initial.inspect", toolId: "inspect", value: { facts: ["ready"] } }] });
-    expect(decide.mock.calls[0]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["act"]);
+    expect(decide.mock.calls[0]?.[0].tools.map((tool: { toolId: string }) => tool.toolId)).toEqual(["act", "core.run_flow"]); // `core.run_flow` is offered from the first decision (page-diff D11), refused by name until a step can run again.
     expect(JSON.stringify(decide.mock.calls[0]?.[0].decisionSchema)).not.toContain('"inspect"');
     expect(result.trace).toMatchObject([{ iteration: 0, decision: "tool_call", toolId: "inspect" }, { iteration: 1, decision: "complete" }]);
   });
@@ -532,32 +532,32 @@ describe("a tool request the loop has already answered", () => {
   });
 });
 
-describe("taking an earlier read by call", () => {
-  it("reads only an explicit call adoption, with no argument or routing change", () => {
-    const amend = (...amendments: unknown[]) => ({ kind: "amend_draft", amendments });
-    expect(automationStudioLlmEvidenceParseDecision(amend({ change: "take", call: "  call.2  " }))).toEqual({ kind: "amend_draft", amendments: [{ step: 0, change: "take", call: "call.2" }] });
-    expect(automationStudioLlmEvidenceParseDecision(amend({ step: 2, change: "take", call: "call.2" }))).toEqual({ kind: "amend_draft", amendments: [{ step: 2, change: "take", call: "call.2" }] });
-    for (const invalid of [
-      { change: "take" }, { change: "take", call: " " }, { change: "take", call: 2 },
-      { step: 0, change: "take", call: "call.2" }, { step: 1.5, change: "take", call: "call.2" },
-      { change: "take", call: "call.2", input: {} }, { change: "take", call: "call.2", to: 1 },
-      { step: 2, change: "add", call: "call.2" }
-    ]) expect(automationStudioLlmEvidenceParseDecision(amend(invalid))).toBeUndefined();
+// The seven edits are the only grammar (t1037): a change outside them, or a key only an old change took, is no
+// amendment the loop reads, and a decision of nothing else is not read at all.
+describe("the changes an amendment may name", () => {
+  it("reads only the seven edits, and leaves out every other change and the keys only they took", () => {
+    for (const change of ["add", "take", "exploratory", "reorder", "optional", "only_if", "on_failed"]) {
+      expect(automationStudioLlmEvidenceParseDecision({ kind: "amend_draft", amendments: [{ step: 2, change }] }), change).toBeUndefined();
+      expect(automationStudioLlmEvidenceParseDecision({ kind: "amend_draft", amendments: [{ step: 2, change }, { step: 3, change: "drop" }] }), change)
+        .toEqual({ kind: "amend_draft", amendments: [{ step: 3, change: "drop" }] });
+    }
+    for (const extra of [{ to: 1 }, { check: 1 }, { call: "c1" }]) {
+      expect(automationStudioLlmEvidenceParseDecision({ kind: "amend_draft", amendments: [{ step: 2, change: "keep", ...extra }] })).toBeUndefined();
+    }
   });
 });
 
 // A statement about when a step runs travels the same road an ordinary
 // amendment does: it is read strictly, a field the model mistyped leaves the
 // amendment out rather than becoming something else, and the grammar itself is
-// in the schema every decision that may amend already carries.
+// in the schema every decision that may amend already carries. `repeat` and
+// `unrepeat` are the only routing edits (t1037).
 describe("the routing words of an amendment", () => {
   it("reads each one, with the fields it carries", () => {
     const read = automationStudioLlmEvidenceParseDecision({
       kind: "amend_draft",
       amendments: [
-        { step: 2, change: "optional" },
-        { step: 3, change: "only_if", check: 2 },
-        { step: 4, change: "on_failed", to: 5 },
+        { step: 2, change: "unrepeat" },
         { step: 6, change: "repeat", through: 7, over: 5 }
       ]
     });
@@ -565,19 +565,15 @@ describe("the routing words of an amendment", () => {
     expect(read).toEqual({
       kind: "amend_draft",
       amendments: [
-        { step: 2, change: "optional" },
-        { step: 3, change: "only_if", check: 2 },
-        { step: 4, change: "on_failed", to: 5 },
+        { step: 2, change: "unrepeat" },
         { step: 6, change: "repeat", through: 7, over: 5 }
       ]
     });
   });
 
-  // A recovery naming no step would say a failure recovers into nowhere, which
-  // is what the word is for; and a position that is not one is not read as zero.
-  it("leaves out a recovery that names no step, and a position that is not one", () => {
-    expect(automationStudioLlmEvidenceParseDecision({ kind: "amend_draft", amendments: [{ step: 2, change: "on_failed" }] })).toBeUndefined();
-    expect(automationStudioLlmEvidenceParseDecision({ kind: "amend_draft", amendments: [{ step: 2, change: "only_if", check: 0 }] })).toBeUndefined();
+  // A position that is not one is not read as zero.
+  it("leaves out a position that is not one", () => {
+    expect(automationStudioLlmEvidenceParseDecision({ kind: "amend_draft", amendments: [{ step: 2, change: "repeat", over: 0 }] })).toBeUndefined();
     expect(automationStudioLlmEvidenceParseDecision({ kind: "amend_draft", amendments: [{ step: 2, change: "repeat", through: "two" }] })).toBeUndefined();
   });
 
@@ -603,7 +599,7 @@ describe("the routing words of an amendment", () => {
     expect(read({ step: 2, change: "repeat", most: 3 })).toEqual({ kind: "amend_draft", amendments: [{ step: 2, change: "repeat", most: 3 }] });
     expect(read({ step: 2, change: "repeat", over: 1, most: 10_000 })).toEqual({ kind: "amend_draft", amendments: [{ step: 2, change: "repeat", over: 1, most: 10_000 }] });
     for (const most of [0, 10_001, 2.5, "5", -1]) expect(read({ step: 2, change: "repeat", over: 1, most })).toBeUndefined();
-    expect(read({ step: 2, change: "optional", most: 3 })).toBeUndefined();
+    expect(read({ step: 2, change: "drop", most: 3 })).toBeUndefined();
   });
 
   it("offers every one of them in the schema the model answers in", () => {
@@ -613,7 +609,7 @@ describe("the routing words of an amendment", () => {
     const amend = schema.oneOf.find((variant) => variant.properties.kind.const === "amend_draft");
 
     expect(amend?.properties.amendments?.items.properties.change.enum).toEqual(
-      expect.arrayContaining(["optional", "only_if", "on_failed", "repeat"])
+      ["keep", "drop", "result", "repeat", "unrepeat", "bind", "rerun"]
     );
   });
 });
@@ -749,7 +745,7 @@ describe("the route the person named, in the loop", () => {
     expect(result.trace.find((row) => row.decision === "unusable")).toMatchObject({ iteration: 2, resultCode: "bootstrap.route_place_missing" });
     const third = decide.mock.calls[2]![0] as { evidence: { toolId: string; value: { instruction?: string } }[] };
     const feedback = third.evidence.find((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID);
-    expect(feedback?.value.instruction).toBe("The person named the route \"Open Friends, then Requests\". No step in the Flow is on r2 (Requests): keep or add the steps that go through it, in order, and say which with place (place \"r2\").");
+    expect(feedback?.value.instruction).toBe("The person named the route \"Open Friends, then Requests\". No step in the Flow is on r2 (Requests): run, or keep, the steps that go through it, in order, and say which with place (place \"r2\").");
   });
 
   it("asks the build's check only after the route accepts, and passes a test's refusal on to it", async () => {

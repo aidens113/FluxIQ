@@ -42,7 +42,8 @@ describe("what the record says about the draft the model was shown", () => {
     const third = result.trace[3]?.draft;
     expect(third).toMatchObject({ steps: 3, budget: third!.bytes });
     for (const legacy of ["unlisted", "withoutInput", "inputTooLarge", "overBudget", "budgetBelowFloor"]) expect(third).not.toHaveProperty(legacy);
-    expect(third?.instructionBytes).toBeGreaterThan(1_000);
+    // The framework's telling (t1037), several hundred bytes: what the edits are and that a step joins by working.
+    expect(third?.instructionBytes).toBeGreaterThan(500);
     // The size is the entry's own, not an estimate: it grows with the record.
     expect(third!.bytes).toBeGreaterThan(result.trace[1]!.draft!.bytes);
   });

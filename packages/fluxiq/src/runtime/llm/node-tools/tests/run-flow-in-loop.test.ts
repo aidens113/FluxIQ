@@ -5,8 +5,9 @@
 //
 // The user's rule (2026-10-02): the build and repair loops can run the Flow
 // from a chosen step to test part of it, and it never replaces the whole-Flow
-// test. So the loop offers the tool only once the draft holds a step that can
-// run again, answers it by sending the Flow's own steps through the same
+// test. So the loop offers the tool from the first decision (page-diff D11: one
+// tool list for the whole run), refuses a call by name until the draft holds a
+// step that can run again, answers it by sending the Flow's own steps through the same
 // executor with nothing reset, counts it as the one tool call the model made,
 // writes no step of the draft for it, and still runs the whole Flow again
 // before it accepts a result.
@@ -37,7 +38,7 @@ const offeredAt = (decide: { mock: { calls: unknown[][] } }, index: number): str
   (decide.mock.calls[index]![0] as { tools: { toolId: string }[] }).tools.map((tool) => tool.toolId);
 
 describe("core.run_flow in an evidence loop", () => {
-  it("is offered once a step can run again, runs it with nothing reset, records no step, and is one tool call", async () => {
+  it("is offered from the first decision, runs once a step can run again with nothing reset, records no step, and is one tool call", async () => {
     const decide = vi.fn()
       .mockResolvedValueOnce({ kind: "tool_call", callId: "add.1", toolId: "press", input: { target: "Add" }, add: true })
       .mockResolvedValueOnce({ kind: "tool_call", callId: "part.1", toolId: "core.run_flow", input: { from: 1 } })
@@ -47,7 +48,7 @@ describe("core.run_flow in an evidence loop", () => {
     const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, maxIterations: 6, maxToolCalls: 6, propagateDecisionErrors: true });
 
     expect(result).toMatchObject({ ok: true });
-    expect(offeredAt(decide, 0)).toEqual(["press"]);
+    expect(offeredAt(decide, 0)).toEqual(["press", "core.run_flow"]);
     expect(offeredAt(decide, 1)).toEqual(["press", "core.run_flow"]);
     // The part ran with no reset; the whole Flow still ran again, from its start, before the result was accepted.
     expect(executeTool.mock.calls.map(([call]) => [call.callId, call.value.replay ?? null])).toEqual([
@@ -62,6 +63,22 @@ describe("core.run_flow in an evidence loop", () => {
     expect(result.trace.find((row) => row.callId === "part.1")).toMatchObject({ decision: "tool_call", toolId: "core.run_flow", resultCode: "core.run_flow.ran" });
     const shown = (decide.mock.calls[2]![0] as { evidence: { callId: string; value: JsonObject }[] }).evidence.find((entry) => entry.callId === "part.1");
     expect(shown?.value).toMatchObject({ ok: true, passed: true, steps: [{ step: 1, ran: "replayed" }] });
+  });
+
+  it("is refused by name, never withdrawn, when called before any step can run again, and nothing is sent", async () => {
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "part.0", toolId: "core.run_flow", input: { from: 1 } })
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "add.1", toolId: "press", input: { target: "Add" } })
+      .mockResolvedValueOnce({ kind: "complete", result: { done: true } });
+    const executeTool = store();
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, maxIterations: 6, maxToolCalls: 6, propagateDecisionErrors: true });
+    expect(result).toMatchObject({ ok: true });
+    expect(offeredAt(decide, 1)).toEqual(["press", "core.run_flow"]);
+    expect(executeTool.mock.calls[0]![0]).toMatchObject({ callId: "add.1" });
+    expect(result.trace.find((row) => row.callId === "part.0")).toMatchObject({ toolId: "core.run_flow", resultCode: "run_flow.nothing_to_run" });
+    const shown = (decide.mock.calls[1]![0] as { evidence: { callId: string; value: JsonObject }[] }).evidence.find((entry) => entry.callId === "part.0");
+    expect(shown?.value).toMatchObject({ ok: false, code: "run_flow.nothing_to_run" });
+    expect(result.steps.map((step) => step.callId)).toEqual(["add.1"]);
   });
 
   it("is not offered where the dry run is off, or where the loop keeps no draft", async () => {

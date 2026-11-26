@@ -36,7 +36,7 @@ function made(columns: { id: string; label: string }[], rows: JsonObject[], judg
 }
 
 describe("the recorded shape: a search read held as the result of a request for a basket table", () => {
-  it("is refused with no judge, saying the table is a list of its own, detected where it stands", async () => {
+  it("is refused with no judge, saying the table is a list of its own, read on the page that shows it", async () => {
     const judged: number[] = [];
     const said: string[] = [];
     const check = made(SEARCH, searchRow, judged, said);
@@ -48,8 +48,8 @@ describe("the recorded shape: a search read held as the result of a request for 
     expect(said).toEqual(["Not there yet"]);
     const words = String(answer.feedback.instruction);
     expect(words).toContain("the request names the columns of the table it asks for (item, quantity, price), and the rows the result holds have no item or quantity column");
-    expect(words).toContain("The table asked for is a list of its own: a list is detected where it stands, on the page that shows it, and read through the handle that detection issues, so a read through a handle from another page or another list returns that other list, or nothing, and never the table asked for");
-    expect(words).toContain("go to the page that shows it, detect its list there, and read it through the handle that detection issues");
+    expect(words).toContain("The table asked for is a list of its own: a read names its list by one of that list's own lines, on the page that shows it, and finds the list itself, so a read named by a line from another page or another list returns that other list, or nothing, and never the table asked for");
+    expect(words).toContain("go to the page that shows it and read it there, named by one of its own lines");
     // Model-facing words name no site, shop, item or value.
     for (const word of ["Elm Row", "Fernway", "tray", "basket", "trowel", "$"]) expect(words.includes(word)).toBe(false);
   });

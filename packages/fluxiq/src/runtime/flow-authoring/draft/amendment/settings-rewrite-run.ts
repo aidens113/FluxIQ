@@ -19,7 +19,7 @@
 // not run with -- an expected state, a timeout, a wait condition -- apply as
 // before. Checked once, in `./apply.ts`, before an amendment changes anything,
 // so it covers every place this directory merges settings: `./apply.ts`,
-// `./move.ts`, `./bind.ts` and `./route.ts`.
+// `./bind.ts` and `./route.ts`.
 //
 // **An `input` is held to the same rule where the change takes none.** Only
 // `rerun` (a patch over what the step ran with) and `bind` (the parameters to

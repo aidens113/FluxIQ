@@ -57,7 +57,7 @@ function clause(reason: AutomationStudioSiteResetOpenReason, before: readonly Au
   if (reason.reason === "toggle") return `its control${at} still shows the state this act set: press that same control back once, naming this act under ${UNDOES}`;
   // The value its press replaced still shows (`./value-tracker.ts`, t772): set back where it shows, by its own control.
   if (reason.reason === "value") {
-    return `the value this act set still shows${at}: set it back where it shows -- choose the value it replaced with a press that declares no lasting class, then press the control this act pressed, declaring modify_existing, each naming this act under ${UNDOES} -- then look at the page`;
+    return `the value this act set still shows${at}: set it back where it shows -- choose the value it replaced with a press that declares no lasting class, then press the control this act pressed, declaring modify_existing, each naming this act under ${UNDOES} -- then read the page again`;
   }
   // A value whose place was never read before the build replaced it (`./value-tracker.ts`, t772): no call can meet it.
   if (reason.reason === "baseline" && reason.witness === "value") return `the value it changed${at} was never read before the build changed it, so nothing read can show it put back: no call can settle it in this build`;
@@ -73,7 +73,7 @@ function clause(reason: AutomationStudioSiteResetOpenReason, before: readonly Au
     return "nothing read shows where its effect would be, and no list was read complete before this act, so none can be named for it: no call can settle it in this build, and trials stay refused while it is in place";
   }
   const known = before.map((entry) => `${entry.ref} (${entry.count} ${entry.count === 1 ? "item" : "items"}${where(entry.location)})`);
-  return "nothing read shows where its effect would be: read the list where it would show completely and name that list's ref as resetDestination on a look that names this act under "
+  return "nothing read shows where its effect would be: read the list where it would show completely and name that list's ref as resetDestination on a read that names this act under "
     + `${UNDOES}${known.length ? ` (lists read complete before this act: ${known.join(", ")})` : " (no ref has been shown yet)"}`;
 }
 

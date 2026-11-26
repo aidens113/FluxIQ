@@ -237,7 +237,7 @@ describe("a refused handle is named", () => {
     const listed = { subflows: [{ nodes: [{ parameters: { extractList: { handle: "extraction.1" } } }] }] };
     const [extraction] = automationStudioFlowBootstrapIssueFeedback({ plan: listed, issues: [{ code: "web.handle.unknown:extractList", path: "plan.subflows.0.nodes.0.parameters", severity: "error", message: "" }] });
     expect(extraction).toMatchObject({ handles: [{ handle: "extraction.1" }] });
-    expect(String(extraction!.from)).toContain("exists only once you have detected the structure from one of its items");
+    expect(String(extraction!.from)).toContain("exists only once a list read has found the structure");
     const [element] = automationStudioFlowBootstrapIssueFeedback({ plan, issues: [{ code: "web.handle.unknown:target", path: "plan.subflows.0.nodes.1.parameters", severity: "error", message: "" }] });
     expect(element!.from).toBeUndefined();
     // Another refusal of the same handle is not about where it comes from.

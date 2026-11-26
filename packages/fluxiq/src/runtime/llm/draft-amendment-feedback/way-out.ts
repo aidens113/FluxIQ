@@ -18,50 +18,6 @@ export function reach(refusal: AutomationStudioFlowDraftAmendmentRefusal): strin
 }
 
 /**
- * What a repeat taken off after a decision's moves was, and why, or nothing
- * when the entry is not one (header, `run-musr9pv3-f4bf6256`): the step, the
- * step it repeated over -- and the one its span ran through when that broke
- * -- in the numbers the model wrote, with the numbers the draft now shows
- * where the moves changed them. A repeat that ran again while its last step
- * succeeded was over no step, and is told by that step (`takenOffWhile`).
- */
-export function takenOff(refusal: AutomationStudioFlowDraftAmendmentRefusal): string | undefined {
-  if (refusal.reason === "repeat_taken_off" && refusal.over === undefined) return takenOffWhile(refusal);
-  if (refusal.reason !== "repeat_taken_off" || refusal.over === undefined || refusal.takenOff === undefined) return undefined;
-  const step = refusal.step;
-  const over = refusal.over;
-  const span = refusal.takenOff === "span_broken" && refusal.through !== undefined ? refusal.through : undefined;
-  const why = span === undefined
-    ? `after this decision's moves step ${over} runs after step ${step}, and a repeat's over has to run before the step it repeats`
-    : `after this decision's moves step ${span} runs before step ${step}, so the span from step ${step} through step ${span} no longer holds together`;
-  const now = [
-    refusal.now === undefined ? undefined : `step ${step} is now step ${refusal.now}`,
-    refusal.overNow === undefined ? undefined : `step ${over} is now step ${refusal.overNow}`,
-    span === undefined || refusal.throughNow === undefined ? undefined : `step ${span} is now step ${refusal.throughNow}`
-  ].filter((part): part is string => part !== undefined);
-  const renumbered = now.length ? ` In the draft you read next, ${now.join(", and ")}.` : "";
-  return `Step ${step}'s repeat over step ${over}${span === undefined ? "" : `, through step ${span},`} was taken off: ${why}. It now runs once, in order.${renumbered} If it should still repeat, send the repeat again with the listing before the act, in the numbers the draft now shows.`;
-}
-
-/**
- * What a repeat that ran its span again while its last step succeeded was,
- * once a decision's moves broke its span (read-list design, S2): the step and
- * the last step it ran while, which now runs before it, with the numbers the
- * draft now shows where the moves changed them.
- */
-export function takenOffWhile(refusal: AutomationStudioFlowDraftAmendmentRefusal): string | undefined {
-  if (refusal.takenOff !== "span_broken" || refusal.through === undefined) return undefined;
-  const step = refusal.step;
-  const last = refusal.through;
-  const now = [
-    refusal.now === undefined ? undefined : `step ${step} is now step ${refusal.now}`,
-    refusal.throughNow === undefined ? undefined : `step ${last} is now step ${refusal.throughNow}`
-  ].filter((part): part is string => part !== undefined);
-  const renumbered = now.length ? ` In the draft you read next, ${now.join(", and ")}.` : "";
-  return `Step ${step}'s repeat while step ${last} succeeds was taken off: after this decision's moves step ${last} runs before step ${step}, so the span from step ${step} through step ${last} no longer holds together. It now runs once, in order.${renumbered} If it should still repeat, send the repeat again on the span's first step with while naming its last step, in the numbers the draft now shows.`;
-}
-
-/**
  * What to do instead of amending or rerunning the attempt a rerun replaced, or
  * nothing when the refusal is not about one (header, `run-musp474o-e0ed7432`).
  * Like every refusal's, it ends with what the checklist still shows not done
@@ -74,7 +30,7 @@ export function replacedAttempt(refusal: AutomationStudioFlowDraftAmendmentRefus
 }
 
 /**
- * What a step not added because a step of the Flow already does it is told, or
+ * What a step not put back because a step of the Flow already does it is told, or
  * nothing when the refusal is not one (`../flow-draft/second-copy.ts`, live run
  * `run-murwdp4f-35f976d2`, C9): the step that does it, and which kind of copy
  * it was, read off that step's effect where the draft says it.
@@ -85,7 +41,7 @@ export function secondCopy(refusal: AutomationStudioFlowDraftAmendmentRefusal, s
   const what = effect === "mutate" ? "the same press on the same page"
     : effect === undefined ? "the same press on the same page, or a read of the same list with nothing changed in between"
       : "a read of the same list with nothing changed in between";
-  return `Step ${refusal.step} was not added to the Flow: step ${refusal.copyOf} already does this (${what}); the Flow does each step once.`;
+  return `Step ${refusal.step} was not put back in the Flow: step ${refusal.copyOf} already does this (${what}); the Flow does each step once.`;
 }
 
 /**
@@ -119,7 +75,7 @@ export function actDone(refusal: AutomationStudioFlowDraftAmendmentRefusal, acts
 /**
  * What to do instead of amending a step that has not run yet: a refusal of the
  * number right after the draft's last step, which is the number the step would
- * take, says to run it first with add true. Nothing for any other number,
+ * take, says to run it first. Nothing for any other number,
  * which `fallback` answers.
  *
  * Run `run-musp8nz1-dbd3905a` (t174-w108, Cause 6) had steps 1-13 and sent
@@ -131,7 +87,7 @@ export function notRunYet(refusal: AutomationStudioFlowDraftAmendmentRefusal, st
   if (refusal.reason !== "no_such_step") return undefined;
   const free = lastPosition(steps) + 1;
   if (refusal.step !== free) return undefined;
-  return `There is no step ${free} yet: a step enters the draft only by running. Run that action first as a call with add true (and its act, if it does one), and it becomes step ${free}; do not amend it before it has run.`;
+  return `There is no step ${free} yet: a step enters the draft only by running. Run that action first as a call (with its act, if it does one): running it puts it in the draft as step ${free}; do not amend it before it has run.`;
 }
 
 /**
@@ -147,7 +103,7 @@ export function notRunYet(refusal: AutomationStudioFlowDraftAmendmentRefusal, st
  * of the four acts still to do, and bound a press's `target` four times.
  */
 export function wayOut(refusal: AutomationStudioFlowDraftAmendmentRefusal, steps: readonly AutomationStudioDraftAmendmentFeedbackStep[], actsNotDone: readonly string[] | undefined): string {
-  const lead = reach(refusal) ?? takenOff(refusal) ?? replacedAttempt(refusal) ?? secondCopy(refusal, steps) ?? notDoneThere(refusal) ?? nextStep(refusal, steps) ?? actDone(refusal, actsNotDone)
+  const lead = reach(refusal) ?? replacedAttempt(refusal) ?? secondCopy(refusal, steps) ?? notDoneThere(refusal) ?? nextStep(refusal, steps) ?? actDone(refusal, actsNotDone)
     ?? notRunYet(refusal, steps) ?? pressBound(refusal, actsNotDone !== undefined) ?? fallback(refusal, steps, actsNotDone);
   if (actsNotDone === undefined) return lead;
   if (refusal.reason === "act_already_named" && refusal.act !== undefined && actsNotDone.includes(refusal.act)) return lead;

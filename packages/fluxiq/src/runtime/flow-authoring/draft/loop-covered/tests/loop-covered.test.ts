@@ -51,21 +51,21 @@ describe("the recorded apprentices draft", () => {
   it("the draft entry says why each one is out, in the numbers the model reads", () => {
     const steps = recordedApprenticesDraft();
     applyAutomationStudioFlowDraftAmendments(steps, [{ step: 6, change: "repeat", while: 9 }]);
-    const lines = (automationStudioFlowDraftEntry({ steps, authored: true })!.value as { steps: Array<{ step: number; inResult: boolean; out?: string }> }).steps;
+    const lines = (automationStudioFlowDraftEntry({ steps })!.value as { steps: Array<{ step: number; inResult: boolean; out?: string }> }).steps;
     const ten = lines.find((line) => line.step === 10)!;
     expect(ten.inResult).toBe(false);
     expect(ten.out).toContain("the loop ending at step 9 already does this step's act");
     expect(lines.find((line) => line.step === 9)!.out).toBeUndefined();
   });
 
-  it("adding a covered press back is refused as a second copy of the loop's last step, and changes nothing", () => {
+  it("putting a covered press back is refused as a second copy of the loop's last step, and changes nothing", () => {
     const steps = recordedApprenticesDraft();
     applyAutomationStudioFlowDraftAmendments(steps, [{ step: 6, change: "repeat", while: 9 }]);
     const before = structuredClone(steps);
-    const again = applyAutomationStudioFlowDraftAmendments(steps, [{ step: 10, change: "add" }, { step: 12, change: "add" }]);
+    const again = applyAutomationStudioFlowDraftAmendments(steps, [{ step: 10, change: "keep" }, { step: 12, change: "keep" }]);
     expect(again).toEqual({ applied: 0, refused: [{ step: 10, reason: "second_copy", copyOf: 9 }, { step: 12, reason: "second_copy", copyOf: 9 }] });
     expect(steps).toEqual(before);
-    // The same refusal a call with `add` meets (`../../../../llm/decision-handlers/second-copy.ts`).
+    // The same copy the framework leaves out when it drafts (`../../compose/compose.ts`, `repeat`).
     expect(automationStudioFlowDraftSecondCopy(steps, at(steps, 12))).toBe(at(steps, 9));
   });
 

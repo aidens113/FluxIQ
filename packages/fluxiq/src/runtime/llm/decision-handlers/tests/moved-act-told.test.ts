@@ -45,13 +45,13 @@ describe("an act moved off a step left in the Flow", () => {
   });
 
   it("is told after an amendment that only moved it, though nothing was refused", async () => {
-    const { result, decide } = await run([call(1, { add: true, act: "a3" }), call(2), { kind: "amend_draft", amendments: [{ step: 2, change: "add", act: "a3" }] }], 2);
+    const { result, decide } = await run([call(1, { add: true, act: "a3" }), call(2), { kind: "amend_draft", amendments: [{ step: 2, change: "keep", act: "a3" }] }], 2);
     expect(result.steps.find((step) => step.position === 1)).toMatchObject({ disposition: "kept" });
     expect(feedbackAt(decide, 3)).toMatchObject({ ok: true, code: "llm_evidence_loop.draft_act_moved", applied: 1, moved: [{ step: 1, act: "a3", to: 2 }] });
   });
 
   it("is told beside a refusal of the same decision", async () => {
-    const { decide } = await run([call(1, { add: true, act: "a3" }), call(2), { kind: "amend_draft", amendments: [{ step: 2, change: "add", act: "a3" }, { step: 9, change: "drop" }] }], 2);
+    const { decide } = await run([call(1, { add: true, act: "a3" }), call(2), { kind: "amend_draft", amendments: [{ step: 2, change: "keep", act: "a3" }, { step: 9, change: "drop" }] }], 2);
     expect(feedbackAt(decide, 3)).toMatchObject({ code: "llm_evidence_loop.draft_amendments_refused", refused: [{ step: 9, reason: "no_such_step" }], moved: [{ step: 1, act: "a3", to: 2 }] });
   });
 });

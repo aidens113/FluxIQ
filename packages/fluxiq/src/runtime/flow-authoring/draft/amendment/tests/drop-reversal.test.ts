@@ -56,7 +56,7 @@ describe("a drop of one toggle half", () => {
     steps[1]!.toggle = { key: "t940", to: "off" };
     steps[3]!.toggle = { key: "t940", to: "on" };
     steps[3]!.acts = ["a1"];
-    for (const amendments of [[{ step: 2, change: "drop" as const }, { step: 5, change: "add" as const }], [{ step: 5, change: "add" as const }, { step: 2, change: "drop" as const }]]) {
+    for (const amendments of [[{ step: 2, change: "drop" as const }, { step: 5, change: "keep" as const }], [{ step: 5, change: "keep" as const }, { step: 2, change: "drop" as const }]]) {
       const each = structuredClone(steps);
       expect(applyAutomationStudioFlowDraftAmendments(each, amendments)).toEqual({ applied: 1, refused: [{ step: 2, reason: "strands_a_step", strands: 3 }] });
       expect(each.map((step) => step.disposition)).toEqual(["kept", "kept", "kept", "kept", "kept"]);
@@ -70,7 +70,7 @@ describe("a drop of one toggle half", () => {
     const steps = [...draft(), later(4, "kept"), later(5, "taken")];
     steps[1]!.toggle = { key: "t940", to: "off" };
     steps[3]!.toggle = { key: "t940", to: "on" };
-    expect(applyAutomationStudioFlowDraftAmendments(steps, [{ step: 2, change: "drop" }, { step: 5, change: "add" }])).toEqual({ applied: 2, refused: [] });
+    expect(applyAutomationStudioFlowDraftAmendments(steps, [{ step: 2, change: "drop" }, { step: 5, change: "keep" }])).toEqual({ applied: 2, refused: [] });
     expect(steps.map((step) => step.disposition)).toEqual(["kept", "dropped", "kept", "dropped", "kept"]);
     expect(steps[3]!.cancels).toBe("d2");
   });

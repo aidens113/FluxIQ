@@ -89,8 +89,9 @@ describe("creating a Flow through an exploration, with no grant", () => {
       expect(request.notes).toEqual([expect.objectContaining({ code: "bootstrap.cannot_answer_instruction", columns: ["name", "price"] })]);
     }
 
-    // What each judge read is the test of the whole Flow: the six steps added, run again from its start.
-    expect(run.judgeRequests.map((request) => request.stepCount)).toEqual([6, 6, 6, 6]);
+    // What each judge read is the test of the whole Flow, run again from its start: the six steps added, and then those
+    // six with the thirteen looks the repair ran, each a step of this harness that the framework drafts in (t1037).
+    expect(run.judgeRequests.map((request) => request.stepCount)).toEqual([6, 6, 19, 19]);
 
     // The second round is a repair of the judged Flow, told the judge's account: what it observed, what was asked, and
     // its advice.
@@ -142,7 +143,7 @@ describe("creating a Flow through an exploration, with no grant", () => {
       // Twenty-six decisions at 1,200 in and 150 out, and four judge calls at 400 and 40.
       accounting: { provider: "deepseek", model: "deepseek-flash", inputTokens: 32_800, outputTokens: 4_060, totalTokens: 36_860 },
       evidenceLoop: { iterationCount: 26, decisionCount: 26, toolCallCount: 21, evidenceBytes: expect.any(Number) },
-      ending: { kind: "budget_exhausted", tried: { rounds: 2, decisions: 26, stepsInFlow: 6, tested: "replayed_clean" } }
+      ending: { kind: "budget_exhausted", tried: { rounds: 2, decisions: 26, stepsInFlow: 19, tested: "replayed_clean" } }
     });
     // No round ran out of decisions -- each ended on a completion the judge sent back -- so there is no exhaustion to
     // report, and no completion was refused, so there is no issue code either.
@@ -156,7 +157,7 @@ describe("creating a Flow through an exploration, with no grant", () => {
     expect(steps.filter((step) => step.iteration === 25)).toHaveLength(2);
     expect(steps.some((step) => step.resultCode === "bootstrap.cannot_answer_instruction")).toBe(false);
     expect(steps).toEqual(expect.arrayContaining([
-      expect.objectContaining({ iteration: 8, resultCode: "llm_evidence_loop.draft_amended", amended: 1 }),
+      expect.objectContaining({ iteration: 8, resultCode: "llm_evidence_loop.draft_unchanged", amended: 0, amendmentsRefused: [{ step: 2, reason: "already_so", nodeId: "demo.look" }] }),
       expect.objectContaining({ iteration: 9, resultCode: "llm_evidence_loop.draft_unchanged", amended: 0, amendmentsRefused: [{ step: 2, reason: "already_so", nodeId: "demo.look" }], amendmentRefusals: ["2:already_so:demo.look"] }),
       // Both completions are accepted: the check still observes that no step produces a record, and says so in the
       // record, but it no longer carries an issue code that refuses.
@@ -196,8 +197,9 @@ describe("creating a Flow through an exploration, with no grant", () => {
     // The corrected Flow produces the records, so the check has nothing to note.
     expect(run.judgeRequests[2]?.notes).toEqual([]);
     expect(run.judgeRequests[3]?.notes).toEqual([]);
-    // Each judge read a test of the whole Flow, its six added steps run again from the start.
-    expect(run.judgeRequests.map((request) => request.stepCount)).toEqual([6, 6, 6, 6]);
+    // Each judge read a test of the whole Flow run again from the start: the six added steps, and then with the look the
+    // repair took first, which the framework drafts in (t1037).
+    expect(run.judgeRequests.map((request) => request.stepCount)).toEqual([6, 6, 7, 7]);
     expect(run.observations.every((observation) => observation.completionFeedback.length === 0)).toBe(true);
     expect(run.observations[11]).toMatchObject({
       iteration: 2,

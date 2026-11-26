@@ -7,6 +7,10 @@
 // summaries said it was "adding the paper towel quantity" steps. Each answer
 // listed the refusals and what was still owed, and none said that `keep`
 // cannot add a step or do an act.
+//
+// Where the framework drafts the Flow (t1037) a keep of a step the framework put in makes it the model's and is
+// applied (`../../../flow-authoring/draft/amendment/apply.ts`, `pins`), yet the Flow stands exactly as it was: the
+// decision is still one that adds nothing, and is told so in the framework's words.
 import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
 import { runAutomationStudioLlmEvidenceLoop } from "../../index.ts";
@@ -50,13 +54,12 @@ describe("keep on steps already in the Flow", () => {
     await loop(decide);
 
     const told = check(decide, 3);
-    expect(told).toMatchObject({ ok: false, keepAddsNothing: true, applied: 0, refused: [{ step: 2, reason: "already_in_flow" }, { step: 1, reason: "already_in_flow" }], stepsWithoutProgress: 1 });
+    expect(told).toMatchObject({ keepAddsNothing: true, stepsWithoutProgress: 1 });
     const instruction = String(told?.instruction);
-    expect(instruction.startsWith("keep adds nothing")).toBe(true);
-    expect(instruction).toContain("A step joins the Flow only by running it");
-    expect(instruction).toContain("with add and act naming it");
-    // What the draft's own answer says follows it unchanged.
-    expect(instruction).toContain("The listed amendments changed nothing");
+    expect(instruction.startsWith("keep adds nothing here")).toBe(true);
+    expect(instruction).toContain("keep puts back only a step the framework left out");
+    expect(instruction).toContain("A step joins the Flow by running it");
+    expect(instruction).toContain("with act naming it");
   });
 
   // Live run `run-mux6pndp-16feb842` (lane B, round 3) cause 6: no-op keeps
@@ -72,7 +75,7 @@ describe("keep on steps already in the Flow", () => {
     await loop(decide);
 
     const told = check(decide, 4);
-    expect(told).toMatchObject({ ok: false, keepAddsNothing: true, applied: 0, refused: [{ step: 1, reason: "already_in_flow" }, { step: 2, reason: "already_out" }] });
+    expect(told).toMatchObject({ keepAddsNothing: true, refused: [{ step: 2, reason: "already_out" }] });
     expect(String(told?.instruction).startsWith("keep adds nothing")).toBe(true);
   });
 

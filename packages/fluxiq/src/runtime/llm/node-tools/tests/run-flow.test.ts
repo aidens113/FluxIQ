@@ -73,19 +73,29 @@ describe("automationStudioLlmRunFlowBinding", () => {
     expect(automationStudioLlmRunFlowBinding({ tools: [own], executeTool, steps: [], enabled: true }).tools).toEqual([own]);
   });
 
-  it("offers it only while the draft holds a proposed step that can run again", () => {
+  // Page-diff D11: one tool list for the whole run. Offered from the first decision; until the draft holds a proposed
+  // step that can run again, a call is refused by name and nothing is sent.
+  it("offers it always, and refuses a call by name while the draft holds no proposed step that can run again", async () => {
+    executeTool.mockClear();
     const steps: AutomationStudioFlowDraftStep[] = [];
     const binding = automationStudioLlmRunFlowBinding({ tools: [press], executeTool, steps, enabled: true });
     const runFlow = binding.tools[1]!;
     expect(binding.offered(press)).toBe(true);
-    expect(binding.offered(runFlow)).toBe(false);
+    expect(binding.offered(runFlow)).toBe(true);
+    const refused = { kind: "llm_evidence_tool_execution", effectApplied: false, resultCode: "run_flow.nothing_to_run", evidence: { ok: false, code: "run_flow.nothing_to_run" } };
+    expect(await binding.executeTool({ callId: "c0", toolId: "core.run_flow", value: { from: 1 } })).toMatchObject(refused);
     steps.push(step(1, { disposition: "taken" }));
-    expect(binding.offered(runFlow)).toBe(false);
+    expect(await binding.executeTool({ callId: "c1", toolId: "core.run_flow", value: { from: 1 } })).toMatchObject(refused);
     const { replay: _replay, ...noReplay } = step(2);
     steps.push(noReplay);
-    expect(binding.offered(runFlow)).toBe(false);
+    expect(await binding.executeTool({ callId: "c2", toolId: "core.run_flow", value: { from: 2 } })).toMatchObject(refused);
+    expect(executeTool).not.toHaveBeenCalled();
     steps.push(step(3));
     expect(binding.offered(runFlow)).toBe(true);
+    expect(await binding.executeTool({ callId: "c3", toolId: "core.run_flow", value: { from: 3 } })).toMatchObject({ resultCode: "core.run_flow.ran" });
+    // Said by name, short, and generic.
+    const said = String((((await automationStudioLlmRunFlowBinding({ tools: [press], executeTool, steps: [], enabled: true }).executeTool({ callId: "c4", toolId: "core.run_flow", value: { from: 1 } })) as { evidence: { reason?: string } }).evidence.reason) ?? "");
+    expect(said).toMatch(/^Nothing was run: no step of the Flow can be run again yet\./u);
   });
 
   it("answers a core.run_flow call by running the draft's steps through the loop's executor, and passes every other call on", async () => {
