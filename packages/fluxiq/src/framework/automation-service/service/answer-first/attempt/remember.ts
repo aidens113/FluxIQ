@@ -10,6 +10,7 @@ import { automationStudioAttemptActMarkDoneInAchieved } from "../../../../../run
 import { automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import { automationStudioAnswerFirstBetterFlow, automationStudioAnswerFirstStepsDigest, type AutomationStudioAnswerFirstSavedFlow, type AutomationStudioAnswerFirstStatedToggle, type AutomationStudioAnswerFirstStepOrigin, type AutomationStudioAnswerFirstTaskNote } from "../task-memory/index.ts";
 import { automationStudioAnswerFirstKeptCallerOptions } from "../caller/index.ts";
+import { automationStudioRouteSignedSteps } from "../../../route-state/index.ts";
 import { automationStudioAnswerFirstReadShapeOf } from "../completion/index.ts";
 import { automationStudioAnswerFirstBestEffort } from "./best-effort.ts";
 import { automationStudioAnswerFirstStepsWithResultProcessing } from "../result-processing/index.ts";
@@ -31,7 +32,8 @@ export async function automationStudioAnswerFirstRemember(run: AutomationStudioA
   const save = async () => {
     // The Flow is the steps it proposes: a round's opening look, which is no part of it, does not make it another Flow, and an attempt that only looked left none.
     const proposed = run.steps.filter(automationStudioFlowDraftStepIsProposed);
-    const steps = proposed.length ? run.steps : [];
+    // Each kept with what this attempt's routing signed for it: the next attempt's routing knows none of its pages (t1062).
+    const steps = proposed.length ? automationStudioRouteSignedSteps(run.steps, run.input.routing) : [];
     const stepsDigest = automationStudioAnswerFirstStepsDigest(proposed);
     const next: AutomationStudioAnswerFirstSavedFlow = {
       attemptId: run.attemptId, flowId, ...(ended.candidateId === undefined ? {} : { candidateId: ended.candidateId }),

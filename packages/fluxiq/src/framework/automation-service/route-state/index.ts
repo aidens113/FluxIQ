@@ -5,6 +5,8 @@
 export { observeAutomationStudioRouteState, readAutomationStudioRouteState, type AutomationStudioRouteStateObservation } from "./observe.ts";
 export { automationStudioRouterStatePaths, resolveAutomationStudioRouterState, routeAutomationStudioRun, type AutomationStudioRouterState } from "./router-state.ts";
 export { AUTOMATION_STUDIO_ROUTE_STATE_TOOL_ID, startAutomationStudioBuildRouting, type AutomationStudioBuildRouting } from "./build-routing.ts";
+// Draft steps kept with what the attempt's routing signed for them, so the next attempt's Flow has them (t1062).
+export { automationStudioRouteSignedSteps } from "./signed-steps.ts";
 export {
   AUTOMATION_STUDIO_ROUTE_SIGNATURE_MAX_CHARACTERS,
   AUTOMATION_STUDIO_ROUTE_SIGNATURES_METADATA_KEY,

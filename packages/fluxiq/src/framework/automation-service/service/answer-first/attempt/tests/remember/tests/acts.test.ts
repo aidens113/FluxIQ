@@ -2,10 +2,10 @@
 // stood (`runtime/answer-first/act-record/done-in-achieved.ts`), any other leaves them as they were.
 
 import { describe, expect, it } from "vitest";
-import { AutomationStudioAttemptActRecord } from "../../../../../../runtime/answer-first/act-record/index.ts";
-import { automationStudioAnswerFirstRemember } from "../remember.ts";
-import type { AutomationStudioAnswerFirstRoundsEnding } from "../rounds.ts";
-import type { AutomationStudioAnswerFirstAttemptRun } from "../state.ts";
+import { AutomationStudioAttemptActRecord } from "../../../../../../../../runtime/answer-first/act-record/index.ts";
+import { automationStudioAnswerFirstRemember } from "../../../remember.ts";
+import type { AutomationStudioAnswerFirstRoundsEnding } from "../../../rounds.ts";
+import type { AutomationStudioAnswerFirstAttemptRun } from "../../../state.ts";
 
 // The ending writes the result's held processing into the steps first (t970, t984): this ending holds none, so the steps stand as they are.
 const NO_PROCESSING = { processingDeclaration: () => undefined };
