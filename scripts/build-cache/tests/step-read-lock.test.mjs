@@ -185,7 +185,12 @@ test("a build of a step waits for its read lock, then decides again", async () =
     const stepLock = path.join(repo, "packages", "contracts", "node_modules", ".cache", "fluxiq-core-build", "contracts-build.json.lock");
     const reader = await acquireStepReadLock(stepLock, FAST);
     const build = track(runScratch(repo, "contracts:build", "off"));
-    await delay(400);
+    // The build has queued for the step (it creates the writer lock file first) and is
+    // waiting on the reader. Wait for that, not for a fixed time a loaded machine can miss.
+    while (!existsSync(stepLock)) {
+      assert.equal(build.settled, false, "the build must not finish before it queues for the step");
+      await delay(10);
+    }
     assert.equal(build.settled, false);
     assert.deepEqual(await runsIn(repo), [], "nothing was built under the reader");
     await reader.release();
