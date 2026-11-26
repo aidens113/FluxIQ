@@ -1125,7 +1125,10 @@ Attempt, build-test and saved-run judges share the `resultEvidence` shape. Each 
 page carries its source, step/version, conditions, fields, declared list/place, kept rows
 and left-out account. Coverage states the places read and the pager verdict actually
 observed; it supplies no invented completeness verdict. Carried pages, working reads,
-unadopted looks and a sure named-column contract stay distinct. Saved runs persist this
+unadopted looks and a sure named-column contract stay distinct. A working read (a draft
+read step that is not the answer) goes page by page with its kept rows, as a look does,
+so the judge weighs the answer against every row it read (t1048); one that has read no
+page yet, and a bundle stored before t1048, says only its count. Saved runs persist this
 source evidence atomically with each batch before processing; legacy missing evidence
 is explicit and differs from a recorded empty page. Privacy screening preserves safe
 siblings and marks withheld cells. Values are otherwise whole; context fitting names

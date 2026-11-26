@@ -58,7 +58,8 @@ describe("all declared result evidence follows the same ledger", () => {
     await p.read({ source: "s2", position: 2, rows: [{ title: "Answer", price: 2 }], listKey: "list.answer" });
     await p.read({ source: "look", kind: "look", rows: [{ title: "Evidence", price: 3 }] });
     expect(p.feed.rows().rows).toEqual([{ title: "Answer", price: 2 }]);
-    expect(p.feed.evidence().working).toEqual([{ step: "s1", position: 1, listKey: "list.working", kept: 1 }]);
+    // A working read goes with its rows, as a look does (t1048, `./working-rows.test.ts`).
+    expect(p.feed.evidence().working).toEqual([expect.objectContaining({ step: "s1", position: 1, listKey: "list.working", kept: 1, rows: [{ title: "Working", price: 1 }] })]);
     expect(p.feed.evidence().looks[0]?.rows).toEqual([{ title: "Evidence", price: 3 }]);
   });
   it("retains every left-out row without confusing it with kept rows", () => {
