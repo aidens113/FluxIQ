@@ -52,37 +52,67 @@ describe("what bounds a recovery", () => {
 
   // The model keeps asking new questions and keeps getting the answer it
   // already has. It once stopped after four looks on the no-progress guard;
-  // no count of steps without progress stops it now (t1049). It is steered,
-  // and goes on until a bound that is not that count -- here the exploration's
-  // own allowance of twenty-four actions. The patch stage still runs.
-  it("lets an exploration going in circles run past the old guard, steered, then still patches", async () => {
+  // no count of steps without progress stops it now (t1049), nor the
+  // exploration's own allowance of twenty-four actions (t1057). It is steered,
+  // and goes on to its answer. The patch stage still runs.
+  it("lets an exploration going in circles run past the old guards, steered, to its answer, then still patches", async () => {
     const run = await annotate({ looks: 40, sameAnswer: true });
 
-    expect(run.executed).toHaveLength(24);
+    expect(run.executed).toHaveLength(40);
     expect(run.taskKinds.at(-1)).toBe("runtime_patch");
-    expect(explorationStage(run.detail)).toMatchObject({ status: "failed", detail: { requested: true, outcome: "budget_exhausted", actions: 24 } });
+    expect(explorationStage(run.detail)).toMatchObject({ status: "completed", detail: { requested: true, outcome: "evidence_gathered", actions: 40 } });
     expect(explorationStage(run.detail)?.detail).not.toHaveProperty("noProgressReason");
     expect(patchIntervention(run.detail)).toMatchObject({ kind: "runtime_patch", validation: { ok: true } });
   });
 
+  // t1057: the exploration's own allowances of twenty-four actions and provider calls are gone (user, 2026-11-24:
+  // "THERE SHOULDNT BE ANY ARBITRARY FUCKING CALL LIMIT THAT RANDOMLY JUST RESETS EVERYTHING"). A model going in
+  // circles is steered and runs on until the purse is gone; the patch's share was held, so the patch still runs.
+  it("lets an exploration going in circles run far past twenty-four calls, steered, until the purse ends it", async () => {
+    const run = await annotate({ looks: 400, sameAnswer: true, costUsd: 0.001 });
+
+    const decisions = run.taskKinds.filter((kind) => kind === "evidence_tool_decision").length;
+    expect(decisions).toBeGreaterThan(48);
+    expect(run.executed.length).toBeGreaterThan(24);
+    expect(explorationStage(run.detail)).toMatchObject({ status: "failed", detail: { requested: true, outcome: "budget_exhausted", endedBy: "llm_budget.run_cost_limit" } });
+    expect(explorationStage(run.detail)?.detail).not.toHaveProperty("stopReason");
+    expect(run.taskKinds.at(-1)).toBe("runtime_patch");
+    expect(patchIntervention(run.detail)).toMatchObject({ kind: "runtime_patch", validation: { ok: true } });
+  });
+
+  // A domain that refuses every look ended the exploration at its second refusal. Each refusal is now shown to the
+  // model, loop detection and its loop decision follow, and the purse is what ends it.
+  it("runs on through refusal after refusal until the purse ends it, then still patches", async () => {
+    const run = await annotate({ looks: 400, refuse: true, costUsd: 0.001 });
+
+    const decisions = run.taskKinds.filter((kind) => kind === "evidence_tool_decision").length;
+    expect(decisions).toBeGreaterThan(48);
+    const stage = explorationStage(run.detail);
+    expect(stage).toMatchObject({ status: "failed", detail: { requested: true, outcome: "budget_exhausted", endedBy: "llm_budget.run_cost_limit" } });
+    expect(Number((stage?.detail as JsonObject).refusedActions)).toBeGreaterThan(2);
+    expect(run.taskKinds.at(-1)).toBe("runtime_patch");
+  });
+
   // Every decision call fails as the provider's own invalid output -- a spent
   // call, not a fault -- so the exploration asks again. Three such answers once
-  // stopped it on the no-progress guard; none does now (t1049): it asks again
-  // until a bound that is not that count, the exploration's own allowance of
-  // twenty-four provider calls. The patch still runs.
-  it("asks again past the old guard when every decision comes back unusable, then still patches", async () => {
-    const run = await annotate({ looks: 40, unusableDecisions: "all" });
+  // stopped it on the no-progress guard (t1049), and twenty-four the
+  // exploration's own call allowance (t1057); neither does now. It asks again
+  // until the purse is gone -- here a declared forty calls, of which the
+  // diagnosis took one and the patch's one is held. The patch still runs.
+  it("asks again past the old guards when every decision comes back unusable, until the purse, then still patches", async () => {
+    const run = await annotate({ looks: 40, unusableDecisions: "all", maxCallsPerRun: 40 });
 
-    expect(run.taskKinds).toEqual(["runtime_diagnosis", ...Array.from({ length: 24 }, () => "evidence_tool_decision"), "runtime_patch"]);
+    expect(run.taskKinds).toEqual(["runtime_diagnosis", ...Array.from({ length: 38 }, () => "evidence_tool_decision"), "runtime_patch"]);
     expect(run.executed).toEqual([]);
     expect(explorationStage(run.detail)).toMatchObject({
       status: "failed",
-      detail: { requested: true, outcome: "budget_exhausted", stopReason: "provider_call_limit", unusableDecisions: 24, actions: 0 }
+      detail: { requested: true, outcome: "budget_exhausted", endedBy: "llm_budget.run_call_limit", unusableDecisions: 38, actions: 0 }
     });
+    expect(explorationStage(run.detail)?.detail).not.toHaveProperty("stopReason");
     // Each unusable answer is on the receipt, charged, with its code.
-    expect(costAccounting(run.detail)).toMatchObject({ calls: 26, explorationCalls: 24, pendingCalls: 0 });
+    expect(costAccounting(run.detail)).toMatchObject({ calls: 40, explorationCalls: 38, pendingCalls: 0 });
     expect(receipt(run.detail).filter((call) => call.taskKind === "evidence_tool_decision").map((call) => call.validation)).toEqual(
-      Array.from({ length: 24 }, () => ({ ok: false, issueCodes: ["llm.provider_output_invalid"] }))
+      Array.from({ length: 38 }, () => ({ ok: false, issueCodes: ["llm.provider_output_invalid"] }))
     );
     expect(patchIntervention(run.detail)).toMatchObject({ kind: "runtime_patch", validation: { ok: true } });
     expect(budgetCodes(run.detail)).toEqual([]);
@@ -141,9 +171,11 @@ describe("what bounds a recovery", () => {
     // Each call is reserved at its own measured input and the reply it may
     // write. A resolver that names no limits reserves the default 8,000-token
     // reply (2026-09-30; it was 2,000), so the same 30,000 tokens admit six
-    // decisions where they admitted fifteen.
-    expect(costAccounting(run.detail)).toMatchObject({ calls: 8, explorationCalls: 6 });
-    expect(run.executed).toHaveLength(6);
+    // decisions where they admitted fifteen -- and five since every decision
+    // also offers `core.loop_decision` (t1057), whose description makes each
+    // request a little larger.
+    expect(costAccounting(run.detail)).toMatchObject({ calls: 7, explorationCalls: 5 });
+    expect(run.executed).toHaveLength(5);
     expect(run.taskKinds.at(-1)).toBe("runtime_patch");
     expect(budgetCodes(run.detail)).toEqual([]);
   });
@@ -151,15 +183,18 @@ describe("what bounds a recovery", () => {
   // The patch's call is held back from a declared call count. Six calls, and a
   // model that would keep looking for forty: without the hold the exploration
   // takes calls two to six and the patch is refused, so a recovery that found
-  // what was wrong proposes nothing. With it, the exploration stops on its own
-  // named call limit after four decisions and the sixth call is the patch.
+  // what was wrong proposes nothing. With it, the purse refuses the
+  // exploration's fifth decision on its declared call count -- the held call is
+  // one pending call on the run's ledger (t1057; until then the exploration's
+  // own call ceiling was lowered and named `provider_call_limit`) -- and the
+  // sixth call is the patch.
   it("leaves the patch its call when an exploration would otherwise use every declared call", async () => {
     const run = await annotate({ looks: 40, maxCallsPerRun: 6 });
 
     expect(run.taskKinds).toEqual(["runtime_diagnosis", "evidence_tool_decision", "evidence_tool_decision", "evidence_tool_decision", "evidence_tool_decision", "runtime_patch"]);
     expect(explorationStage(run.detail)).toMatchObject({
       status: "failed",
-      detail: { requested: true, outcome: "budget_exhausted", endedBy: "provider_call_limit" }
+      detail: { requested: true, outcome: "budget_exhausted", endedBy: "llm_budget.run_call_limit" }
     });
     // The trace's `providerCalls` counts loop iterations, including the fifth
     // that the exploration refused before any provider was asked; the receipt
@@ -226,6 +261,10 @@ type Options = {
   sameAnswer?: boolean;
   /** Each call reports spending 98% of the cost it reserved. */
   spendMostOfReservation?: boolean;
+  /** What each call reports it cost, when not 98% of its reservation. Absent, $0.002. */
+  costUsd?: number;
+  /** The domain refuses every look as out of its scope, and says so through its refusal classifier. */
+  refuse?: boolean;
   maxTokensPerRun?: number;
   /** A call count the resolver declares. */
   maxCallsPerRun?: number;
@@ -329,7 +368,7 @@ function provider(options: Options, taskKinds: string[]): AutomationStudioLlmPro
         inputTokens: 1_200,
         outputTokens: 200,
         totalTokens: 1_400,
-        estimatedCostUsd: options.spendMostOfReservation ? request.maxEstimatedCostUsd * 0.98 : 0.002
+        estimatedCostUsd: options.spendMostOfReservation ? request.maxEstimatedCostUsd * 0.98 : options.costUsd ?? 0.002
       };
       if (request.expectedOutput === "diagnosis") {
         return {
@@ -366,6 +405,7 @@ function binding(options: Options, executed: string[]): AutomationStudioLlmEvide
     deniedEvidenceKeys: [],
     tools: [],
     harnessOptions: harnessOptions(options, executed),
+    ...(options.refuse ? { classifyRefusal: (code: string) => (code === "test.refused.scope" ? "out_of_scope_refused" as const : undefined) } : {}),
     executeTool: async () => { throw new Error("The bare tool slot is not used by this binding."); }
   };
 }
@@ -386,6 +426,7 @@ function harnessOptions(options: Options, executed: string[]): AutomationStudioH
     implementations: {
       "test.inspect": async (input) => {
         executed.push(String(input.value.area));
+        if (options.refuse) return { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "test.refused.scope" }, effectApplied: false, resultCode: "test.refused.scope" };
         const evidence = options.sameAnswer ? { control: "absent" } : { area: input.value.area ?? null, control: "moved" };
         return { kind: "llm_evidence_tool_execution", evidence, effectApplied: false };
       }

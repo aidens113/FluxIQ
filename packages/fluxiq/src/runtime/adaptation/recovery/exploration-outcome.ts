@@ -11,13 +11,23 @@
 // find".
 //
 // Three separate defects this month were a failure recorded as an absence, so
-// the four endings that get confused are four different members here:
+// the endings that get confused are different members here:
 //
 // - `evidence_gathered` -- it ran and produced something observed.
 // - `no_evidence_found` -- it ran to a clean end and produced nothing.
-// - `budget_exhausted` -- a limit stopped it before it could answer.
-// - `no_progress` -- it kept attempting what it had already attempted.
-// - `unsafe_action_blocked` -- a refusal stopped it.
+// - `budget_exhausted` -- the purse or the clock stopped it before it could answer.
+// - `no_progress` -- the loop ended on its own repeat handling.
+//
+// **No count ends an exploration (t1057).** There were four more stops: an
+// allowance of actions, one of provider calls, the third attempt of one action
+// and the second refusal (`action_limit`, `provider_call_limit`, `repeat_window`,
+// `refusal_limit`, and the refusal kinds as stop reasons, which made
+// `unsafe_action_blocked`). The user's rule (2026-11-24: "THERE SHOULDNT BE ANY
+// ARBITRARY FUCKING CALL LIMIT THAT RANDOMLY JUST RESETS EVERYTHING") removed
+// them: a repeat or a refusal is told to the model, loop detection and the
+// model's own loop decision follow, and only the answer, the purse, the clock or
+// a person ends it. What a refusal was is still classified
+// (`AUTOMATION_STUDIO_EXPLORATION_REFUSALS`), as evidence, never as an ending.
 //
 // **Success is constructible only from observed evidence.** That is Phase D's
 // rule applied here: `automationStudioExplorationCompletionOutcome` returns
@@ -45,12 +55,10 @@ export const AUTOMATION_STUDIO_EXPLORATION_OUTCOMES = Object.freeze([
   "evidence_gathered",
   /** It ran to a clean end and produced nothing usable. Not a failure, not a success. */
   "no_evidence_found",
-  /** A limit -- time, actions, provider calls, evidence -- stopped it. */
+  /** The purse or the clock stopped it: the run's money, tokens or declared calls, or the time left. Never a count of the exploration's own (t1057). */
   "budget_exhausted",
-  /** It kept repeating an action or a request, and a repeat guard stopped it (never a count of steps without progress, t1049). */
+  /** The evidence loop ended on its own repeat handling: the model's own loop decision, or a loop with nothing left to offer. Never a count (t1049, t1057). */
   "no_progress",
-  /** Something it tried to do was refused as unsafe or out of scope. */
-  "unsafe_action_blocked",
   /** It cannot proceed without a person. */
   "user_intervention_required",
   /** Something outside the exploration stopped it. Neither a limit nor a fault. */
@@ -62,23 +70,19 @@ export const AUTOMATION_STUDIO_EXPLORATION_OUTCOMES = Object.freeze([
 export type AutomationStudioExplorationOutcome = (typeof AUTOMATION_STUDIO_EXPLORATION_OUTCOMES)[number];
 
 /**
- * Why the budget closed an exploration, in Core's own words.
+ * Why the exploration's own ledger closed it, in Core's own words: its clock, or
+ * a request only a person can answer. Never a count (t1057).
  *
  * A stop reason is finer than an outcome on purpose. Both `wall_clock_expired`
  * and `recovery_deadline_expired` are `budget_exhausted`, but only one of them
  * means the whole recovery ran out of time rather than this one exploration,
  * and a report that could not say which would send somebody to raise the wrong
- * limit.
+ * limit. The purse's own endings arrive in the run budget's codes
+ * (`AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_RUN_BUDGET`).
  */
 export const AUTOMATION_STUDIO_EXPLORATION_STOP_REASONS = Object.freeze([
   "wall_clock_expired",
   "recovery_deadline_expired",
-  "action_limit",
-  "provider_call_limit",
-  "repeat_window",
-  "destructive_action_refused",
-  "out_of_scope_refused",
-  "refusal_limit",
   "operator_approval_required"
 ] as const);
 
@@ -88,29 +92,38 @@ export type AutomationStudioExplorationStopReason = (typeof AUTOMATION_STUDIO_EX
 export const AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_STOP_REASON: Readonly<Record<AutomationStudioExplorationStopReason, AutomationStudioExplorationOutcome>> = Object.freeze({
   wall_clock_expired: "budget_exhausted",
   recovery_deadline_expired: "budget_exhausted",
-  action_limit: "budget_exhausted",
-  provider_call_limit: "budget_exhausted",
-  // Going in circles is its own ending, and the reason it is not
-  // `budget_exhausted` is what an operator does next: a run that stopped on
-  // money or on the clock is a number to raise, and a run that kept asking the
-  // same question is not. The action-level window says so. (A streak of steps
-  // that learned nothing once stopped an exploration here too; none does now,
-  // t1049.)
-  repeat_window: "no_progress",
-  destructive_action_refused: "unsafe_action_blocked",
-  out_of_scope_refused: "unsafe_action_blocked",
-  refusal_limit: "unsafe_action_blocked",
   operator_approval_required: "user_intervention_required"
 });
+
+/**
+ * What kind of refusal an action met, in Core's own words: the domain's reading
+ * of its own refusal code (`AutomationStudioExplorationRefusalClassifier`), or a
+ * person's no from the permission gate.
+ *
+ * Evidence, never an ending (t1057). The model is shown the refusal itself, as
+ * the action's result, and decides what to try instead; the ledger counts what
+ * was refused and how, and a classified refusal is a step that did not happen
+ * for a reduction. Before t1057 the second refusal ended the exploration
+ * `unsafe_action_blocked`.
+ */
+export const AUTOMATION_STUDIO_EXPLORATION_REFUSALS = Object.freeze([
+  "destructive_action_refused",
+  "out_of_scope_refused"
+] as const);
+
+export type AutomationStudioExplorationRefusal = (typeof AUTOMATION_STUDIO_EXPLORATION_REFUSALS)[number];
 
 /**
  * Each evidence-loop failure code's outcome.
  *
  * The split that matters is three ways now, not two: the loop's own size limits
- * are `budget_exhausted`, its repeat detection is `no_progress` -- a loop that
- * asked twice for one thing did not run out of anything -- and everything
- * meaning the loop could not be driven correctly is `failed`. `cancelled` is here for completeness only -- the
- * runner aborts the loop itself whenever a limit fires, so it knows the real
+ * are `budget_exhausted`, its repeat handling is `no_progress` -- a loop that
+ * ended on the model's own loop decision did not run out of anything -- and everything
+ * meaning the loop could not be driven correctly is `failed`. The runner hands
+ * the loop loop detection's signal (`runtime-exploration.ts`), so the loop's own
+ * counts of turns, calls and repeats end nothing; the rows are kept because the
+ * table is over the loop's whole vocabulary. `cancelled` is here for completeness only -- the
+ * runner aborts the loop itself whenever its clock or a request ends it, so it knows the real
  * reason and never falls through to this row.
  */
 export const AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_LOOP_FAILURE: Readonly<Record<AutomationStudioLlmEvidenceLoopFailureCode, AutomationStudioExplorationOutcome>> = Object.freeze({

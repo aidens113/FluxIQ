@@ -1,17 +1,19 @@
-// What one exploration is allowed to spend, and the ledger that spends it.
+// What one exploration is allowed to spend, and the ledger that keeps its record.
 //
 // The bounds already in Core are real but they are the wrong shape for this:
 // the evidence loop counts tool calls and iterations, the run budget counts
 // provider calls and tokens, and a provider call is capped at 45 seconds. None
-// of them is a clock over the exploration as a whole, none of them can say "you
-// have tried that already", and none of them can refuse an action for being out
-// of scope, because scope is a thing only a domain understands.
+// of them is a clock over the exploration as a whole, and none of them can
+// refuse an action for being out of scope, because scope is a thing only a
+// domain understands.
 //
-// So this **composes** those bounds rather than restating them. The loop keeps
-// its own duplicate checks and its steering of steps without progress; the
-// ledger adds the four things it cannot see. There is no evidence-bytes stop here: what an exploration looks at
-// is shown to the model whole (2026-09-30), and the run's cost is what bounds
-// how much looking it can afford.
+// So this **composes** those bounds rather than restating them. The run's purse
+// -- its money, its tokens and any call count a person or a resolver declared --
+// pays for every decision (`annotation/exploration.ts`), and when it cannot pay
+// for the next one the exploration ends `budget_exhausted` on the purse's own
+// code. The ledger adds the clock and the record. There is no evidence-bytes
+// stop here: what an exploration looks at is shown to the model whole
+// (2026-09-30), and the run's cost is what bounds how much looking it can afford.
 //
 // **A wall clock.** One `AbortController`, armed at the smaller of this
 // exploration's own limit and whatever is left of the whole recovery, and the
@@ -19,29 +21,23 @@
 // expiry unwinds it at the next iteration instead of after the current provider
 // call finally answers.
 //
-// **An action count the ledger owns.** The loop's `maxToolCalls` is left at
-// Core's ceiling and the ledger is the binding limit, so the cap is enforced
-// where it can be reported precisely. A refused action still counts: an
-// exploration that spends its whole allowance being told no has spent it, and
-// counting only the successes is how a budget stops bounding anything. The
-// count is a runaway backstop, not the working limit -- an exploration that is
-// still learning something is meant to reach the end of the recovery's clock or
-// the run's tokens, not to be cut off at a small number of turns.
+// **No count ends an exploration (t1049, t1057).** There were five: three steps
+// in a row that learned nothing (t1049 removed it), and until t1057 an allowance
+// of twenty-four actions, one of twenty-four provider calls, the third attempt
+// of one identical action and the second refused action. Each ended the
+// exploration however much it was still learning, against the user's rule
+// (2026-11-24: "THERE SHOULDNT BE ANY ARBITRARY FUCKING CALL LIMIT THAT RANDOMLY
+// JUST RESETS EVERYTHING"). Now a repeat is loop detection's to catch -- a cycle
+// of reveal, navigate, reveal, navigate is a `cycle` there, and the same lasting
+// act on one target is refused there from its third landing -- and the model's
+// own loop decision follows; a refusal is shown to the model as the action's
+// result, with its code and reason. Only the answer, the purse, the clock or a
+// person ends an exploration.
 //
-// **No progress guard (t1049).** There was one: three steps in a row that
-// learned nothing new stopped the exploration `no_progress`. No count of steps
-// without progress ends anything now (user, 2026-11-24: "THERE SHOULDNT BE ANY
-// ARBITRARY FUCKING CALL LIMIT THAT RANDOMLY JUST RESETS EVERYTHING"): the
-// evidence loop the exploration runs tells the model plainly what it keeps
-// repeating, and the exploration goes on until its answer, its clock or the
-// run's purse.
-//
-// **A repeat limit across mutations.** The loop refuses the identical request
-// twice within one mutation epoch, and refuses re-observing without a mutation
-// between. What it cannot see is a cycle: reveal, navigate, reveal, navigate,
-// each one legal because something changed in between. The ledger counts an
-// action's identity for the whole exploration, so a cycle ends at the third
-// turn of the wheel rather than at the sixteenth tool call.
+// **The record stays.** Every action admitted, how often each identical one
+// was attempted, every refusal and its kind, every provider decision: the
+// exploration's receipt and the trace say them, as evidence of what was tried.
+// None of them is a stop.
 //
 // **Destructive off, as a type rather than a flag.** `allowDestructive` is
 // typed `false`. There is no value a caller can pass to turn it on, no
@@ -56,7 +52,7 @@
 // move only to a named place; it does not know that the web's version of that
 // is an origin, and must not.
 
-import type { AutomationStudioExplorationStopReason } from "./exploration-outcome.ts";
+import type { AutomationStudioExplorationRefusal, AutomationStudioExplorationStopReason } from "./exploration-outcome.ts";
 import {
   AUTOMATION_STUDIO_RECOVERY_MAX_DURATION_MS,
   automationStudioRecoveryDeadlineRemainingMs,
@@ -80,14 +76,6 @@ export type AutomationStudioExplorationBudget = {
   schemaVersion: "automation-studio.exploration-budget.v1";
   /** The wall clock for this one exploration. The whole recovery has its own. */
   maxDurationMs: number;
-  /** Every action attempted, refused ones included. */
-  maxActions: number;
-  /** Provider decisions. The loop's iteration ceiling is the backstop above it. */
-  maxProviderCalls: number;
-  /** How many refusals before the exploration is treated as blocked rather than adjusting. */
-  maxRefusedActions: number;
-  /** How many times one identical action may be attempted, mutations notwithstanding. */
-  maxRepeatsPerAction: number;
   /** Not a switch. There is no value that turns destructive actions on. */
   allowDestructive: false;
   scopePolicy: AutomationStudioExplorationScopePolicy;
@@ -95,37 +83,17 @@ export type AutomationStudioExplorationBudget = {
 
 export const AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS: AutomationStudioExplorationBudget = Object.freeze({
   schemaVersion: "automation-studio.exploration-budget.v1",
-  // Time, actions and provider calls are runaway backstops. They are set where
-  // a loop that is still getting somewhere will not meet them: the recovery's
-  // own clock and the run's token pot are what a healthy exploration actually
-  // ends on, besides its answer. The clock is the recovery deadline's own
-  // default, read rather than copied, so raising the recovery's limit raises
-  // this with it rather than leaving a shorter cap underneath it.
+  // The clock is the recovery deadline's own default, read rather than copied,
+  // so raising the recovery's limit raises this with it rather than leaving a
+  // shorter cap underneath it.
   maxDurationMs: AUTOMATION_STUDIO_RECOVERY_MAX_DURATION_MS,
-  maxActions: 24,
-  maxProviderCalls: 24,
-  maxRefusedActions: 2,
-  maxRepeatsPerAction: 2,
   allowDestructive: false,
   scopePolicy: Object.freeze({ kind: "same_scope" })
 });
 
-/**
- * The most a host may ask for. The three that bound the loop are Core's own
- * loop ceilings, not a preference of this file's.
- *
- * They are written out rather than read from `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS`
- * because `llm/harness/intervention.ts` imports a *value* from this directory,
- * so reading one back at module-evaluation time closes a cycle and leaves this
- * constant holding `undefined` -- observed, not theorised. A test pins the three
- * equal to the loop's own limits, so they cannot drift apart silently.
- */
+/** The most a host may ask for. */
 export const AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS = Object.freeze({
-  maxDurationMs: 600_000,
-  maxActions: 64,
-  maxProviderCalls: 64,
-  maxRefusedActions: 8,
-  maxRepeatsPerAction: 4
+  maxDurationMs: 600_000
 });
 
 /**
@@ -138,14 +106,9 @@ export const AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS = Object.freeze({
  */
 export function resolveAutomationStudioExplorationBudget(input?: Partial<Omit<AutomationStudioExplorationBudget, "schemaVersion" | "allowDestructive">>): AutomationStudioExplorationBudget {
   const defaults = AUTOMATION_STUDIO_EXPLORATION_BUDGET_DEFAULTS;
-  const ceilings = AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS;
   return {
     schemaVersion: "automation-studio.exploration-budget.v1",
-    maxDurationMs: clamp(input?.maxDurationMs, defaults.maxDurationMs, 1, ceilings.maxDurationMs),
-    maxActions: clamp(input?.maxActions, defaults.maxActions, 1, ceilings.maxActions),
-    maxProviderCalls: clamp(input?.maxProviderCalls, defaults.maxProviderCalls, 1, ceilings.maxProviderCalls),
-    maxRefusedActions: clamp(input?.maxRefusedActions, defaults.maxRefusedActions, 1, ceilings.maxRefusedActions),
-    maxRepeatsPerAction: clamp(input?.maxRepeatsPerAction, defaults.maxRepeatsPerAction, 1, ceilings.maxRepeatsPerAction),
+    maxDurationMs: clamp(input?.maxDurationMs, defaults.maxDurationMs, 1, AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxDurationMs),
     allowDestructive: false,
     scopePolicy: scopePolicy(input?.scopePolicy) ?? defaults.scopePolicy
   };
@@ -170,21 +133,20 @@ export function automationStudioExplorationScopeAllows(
 }
 
 /**
- * One exploration's spending, and the signal that ends it.
+ * One exploration's record, and the clock that ends it.
  *
- * The ledger is the only thing that knows *why* the loop was stopped. The loop
- * reports `cancelled` for every abort there is, so if the reason were not
- * recorded here at the moment of the refusal, a wall clock, an action cap and a
- * refused action would all arrive downstream as the same word -- which is
- * precisely the collapse this phase exists to prevent.
+ * The ledger is the only thing that knows *why* its clock stopped the loop. The
+ * loop reports `cancelled` for every abort there is, so if the reason were not
+ * recorded here at the moment it fired, this exploration's clock and the
+ * recovery's would arrive downstream as the same word.
  */
 export class AutomationStudioExplorationBudgetLedger {
   private readonly controller = new AbortController();
-  private readonly budget: AutomationStudioExplorationBudget;
   private readonly now: () => number;
   private readonly expiresAtMs: number;
   private readonly expiryReason: AutomationStudioExplorationStopReason;
   private readonly attempts = new Map<string, number>();
+  private readonly refusalKinds = new Map<AutomationStudioExplorationRefusal, number>();
   private timer: ReturnType<typeof setTimeout> | undefined;
   private stopped: AutomationStudioExplorationStopReason | undefined;
   private actionCount = 0;
@@ -199,7 +161,6 @@ export class AutomationStudioExplorationBudgetLedger {
     recoveryDeadline?: AutomationStudioRecoveryDeadline;
     externalSignal?: AbortSignal;
   }) {
-    this.budget = input.budget;
     this.now = input.now ?? (() => Date.now());
     const ownExpiry = input.startedAtMs + input.budget.maxDurationMs;
     const recoveryExpiry = input.recoveryDeadline
@@ -220,7 +181,7 @@ export class AutomationStudioExplorationBudgetLedger {
     return this.controller.signal;
   }
 
-  /** Why the budget ended it, or absent when the budget did not. */
+  /** Which clock ended it, or absent when no clock did. */
   get stopReason(): AutomationStudioExplorationStopReason | undefined {
     return this.stopped;
   }
@@ -239,6 +200,18 @@ export class AutomationStudioExplorationBudgetLedger {
     return this.refusedCount;
   }
 
+  /** Refused actions by the kind of refusal they met. Evidence, never a stop. */
+  get refusals(): Readonly<Partial<Record<AutomationStudioExplorationRefusal, number>>> {
+    return Object.fromEntries(this.refusalKinds);
+  }
+
+  /** Admitted actions that were another attempt of an identical earlier one, mutations notwithstanding. Evidence, never a stop. */
+  get repeatedActions(): number {
+    let repeated = 0;
+    for (const attempts of this.attempts.values()) repeated += attempts - 1;
+    return repeated;
+  }
+
   get providerCalls(): number {
     return this.providerCallCount;
   }
@@ -247,23 +220,23 @@ export class AutomationStudioExplorationBudgetLedger {
     return Number.isFinite(this.expiresAtMs) ? Math.max(0, this.expiresAtMs - this.now()) : Number.POSITIVE_INFINITY;
   }
 
-  /** Charge one provider decision, before it is made. */
+  /** Record one provider decision, before it is made. Refused only when a clock has run out. */
   admitProviderCall(): { admitted: true } | { admitted: false; stopReason: AutomationStudioExplorationStopReason } {
     const expired = this.checkClock();
     if (expired) return expired;
-    if (this.providerCallCount >= this.budget.maxProviderCalls) return this.stop("provider_call_limit");
     this.providerCallCount += 1;
     return { admitted: true };
   }
 
-  /** Charge one action, before it runs. `signature` identifies what it is doing. */
+  /**
+   * Record one action, before it runs. `signature` identifies what it is doing,
+   * so how often one identical action was attempted is kept. Refused only when a
+   * clock has run out: an action attempted again is loop detection's to steer.
+   */
   admitAction(signature: string): { admitted: true } | { admitted: false; stopReason: AutomationStudioExplorationStopReason } {
     const expired = this.checkClock();
     if (expired) return expired;
-    if (this.actionCount >= this.budget.maxActions) return this.stop("action_limit");
-    const attempts = (this.attempts.get(signature) ?? 0) + 1;
-    if (attempts > this.budget.maxRepeatsPerAction) return this.stop("repeat_window");
-    this.attempts.set(signature, attempts);
+    this.attempts.set(signature, (this.attempts.get(signature) ?? 0) + 1);
     this.actionCount += 1;
     return { admitted: true };
   }
@@ -271,16 +244,16 @@ export class AutomationStudioExplorationBudgetLedger {
   /**
    * Record what an admitted action produced.
    *
-   * `refused` is the domain's own refusal translated into Core's vocabulary.
-   * A refusal is feedback the first time -- the model is meant to try something
-   * else -- and a wall once the allowance is spent, so this is what turns "it
-   * kept being told no" into `unsafe_action_blocked` rather than into an
-   * exploration that quietly found nothing.
+   * `refused` is the domain's own refusal translated into Core's vocabulary, or
+   * a person's no. A refusal is feedback, every time: the model is shown it as
+   * the action's result and tries something else, and the loop's own refusal
+   * handling steers a run of them (t1057; the second refusal ended the
+   * exploration `unsafe_action_blocked` until then).
    */
-  recordAction(input: { refused?: AutomationStudioExplorationStopReason }): void {
+  recordAction(input: { refused?: AutomationStudioExplorationRefusal }): void {
     if (input.refused) {
       this.refusedCount += 1;
-      if (this.refusedCount >= this.budget.maxRefusedActions) this.stop(input.refused);
+      this.refusalKinds.set(input.refused, (this.refusalKinds.get(input.refused) ?? 0) + 1);
     } else {
       this.observedCount += 1;
     }
