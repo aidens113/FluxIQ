@@ -38,11 +38,15 @@ const TRANSIENT_CODES = new Set(["EPERM", "EACCES", "EBUSY"]);
 const TRANSIENT_RETRIES = 50;
 const TRANSIENT_DELAY_MS = 20;
 
-/** The file's owner and age, or `null` when it vanished before it could be read (the caller decides again). */
-export async function readLockHolder(filePath) {
+/**
+ * The file's owner and age, or `null` when it vanished before it could be read (the caller
+ * decides again). `observedAt` is the time `now()` gave just before the file was read: a
+ * holder judged by it is never older than it truly was, however long the read took.
+ */
+export async function readLockHolder(filePath, now = Date.now) {
   for (let attempt = 0; ; attempt += 1) {
     try {
-      return await readHolderOnce(filePath);
+      return await readHolderOnce(filePath, now);
     } catch (error) {
       if (!TRANSIENT_CODES.has(error?.code) || attempt >= TRANSIENT_RETRIES) throw error;
       await delay(TRANSIENT_DELAY_MS);
@@ -50,16 +54,17 @@ export async function readLockHolder(filePath) {
   }
 }
 
-async function readHolderOnce(filePath) {
+async function readHolderOnce(filePath, now) {
+  const observedAt = now();
   try {
     const [text, stats] = await Promise.all([readFile(filePath, "utf8"), stat(filePath)]);
     const owner = JSON.parse(text);
-    return { pid: Number(owner.pid), token: String(owner.token), mtimeMs: stats.mtimeMs };
+    return { pid: Number(owner.pid), token: String(owner.token), mtimeMs: stats.mtimeMs, observedAt };
   } catch (error) {
     if (error?.code === "ENOENT") return null;
     // Written whole before it was linked, so unparsable content is a foreign
     // or damaged file: treat it as an owner that is not running.
-    if (error instanceof SyntaxError) return { pid: 0, token: "", mtimeMs: 0 };
+    if (error instanceof SyntaxError) return { pid: 0, token: "", mtimeMs: 0, observedAt };
     throw error;
   }
 }
@@ -68,21 +73,29 @@ async function readHolderOnce(filePath) {
  * Whether a holder read by `readLockHolder` may be broken: its pid is not
  * running (another pid in this process's place is never judged dead), or its
  * file has not been touched for `staleMs`.
- * @param {{ pid: number, mtimeMs: number }} holder
+ * @param {{ pid: number, mtimeMs: number, observedAt?: number }} holder
  * @param {{ staleMs: number, now: () => number, isAlive: (pid: number) => boolean }} options
  */
 export function isStaleHolder(holder, { staleMs, now, isAlive }) {
   if (holder.pid !== process.pid && !isAlive(holder.pid)) return true;
-  return now() - holder.mtimeMs > staleMs;
+  return (holder.observedAt ?? now()) - holder.mtimeMs > staleMs;
 }
 
-/** Breaks the writer file `holder` was read from, unless it was replaced meanwhile. */
+/**
+ * Breaks the writer file `holder` was read from, unless it was replaced meanwhile.
+ * Resolves `false` when the file could not be moved because it is in use: Windows
+ * refuses to rename a file its holder has open (EPERM, EACCES, EBUSY), which means
+ * the holder is alive and at work on it, so it is not broken and the caller waits
+ * before it decides again.
+ * @returns {Promise<boolean>} whether the caller may decide again at once
+ */
 export async function breakLockFile(filePath, holder) {
   const aside = `${filePath}.stale-${randomUUID()}`;
   try {
     await rename(filePath, aside);
   } catch (error) {
-    if (error?.code === "ENOENT") return;
+    if (error?.code === "ENOENT") return true;
+    if (TRANSIENT_CODES.has(error?.code)) return false;
     throw error;
   }
   const moved = await readLockHolder(aside);
@@ -97,6 +110,7 @@ export async function breakLockFile(filePath, holder) {
     }
   }
   await rm(aside, { force: true });
+  return true;
 }
 
 /** Removes `filePath` if it still bears `token`. */
@@ -122,9 +136,9 @@ export function releaseLockFileSync(filePath, token) {
  * Refreshes `filePath`'s age while it bears `token`; throws when it was
  * removed or replaced, which means the holder lost it.
  */
-export function touchLockFileSync(filePath, token) {
+export function touchLockFileSync(filePath, token, now = Date.now) {
   const owner = JSON.parse(readFileSync(filePath, "utf8"));
   if (owner.token !== token) throw new Error(`lock replaced: ${filePath}`);
-  const now = new Date();
-  utimesSync(filePath, now, now);
+  const at = new Date(now());
+  utimesSync(filePath, at, at);
 }
