@@ -382,11 +382,20 @@ describe("route-state captures per recorded build", () => {
       // No count of steps without progress ends a loop (t1049), and its redirect no longer falls silent at the eighth
       // such step: the note keeps arriving on each one after, so more decisions follow a shown count that grew without a
       // call before them (bigbox 4 to 7, crossborder 1 to 3 with one more capture before, run 4 2 to 10).
-      "bigbox-run6": { decisions: 37, before: 17, afterReported: 0, afterUnreported: 15, callsBeforeUnseen: 7 },
+      // A decision refused the same way three times in a row is steered by loop detection (t1056,
+      // `../../../../runtime/llm/evidence-loop/refused-again.ts`), so the model is shown one more entry, the steer, and
+      // no less: bigbox's amend_drafts 27 to 29 bring it to decisions 30 and 31 (18 entries where 17 were). The high-water
+      // mark then sits one higher, so decision 35, shown the same 18 entries as before, no longer raises it: one capture
+      // fewer before and one more call unseen, open-store-picker-5 at 34 (17 to 16, 7 to 8).
+      "bigbox-run6": { decisions: 37, before: 16, afterReported: 0, afterUnreported: 15, callsBeforeUnseen: 8 },
       crossborder: { decisions: 22, before: 13, afterReported: 0, afterUnreported: 10, callsBeforeUnseen: 3 },
       // Run 4's rerun at 38 named the attempt the rerun at 32 replaced, which is refused since the framework drafts the Flow
       // (t1037, `recorded-runs.ts`), so decision 39 follows no call: one capture fewer after, 27.
-      "everything-store-run4": { decisions: 48, before: 30, afterReported: 0, afterUnreported: 27, callsBeforeUnseen: 10 }
+      // Run 4's amend_drafts 20 to 23 are refused the same way in a row and steered before decision 24 (t1056): a steer
+      // entry more at 24 and again at 38 to 41, never one fewer. Decisions 27 and 44, shown exactly what
+      // they were shown before, no longer raise the higher mark: two captures fewer before (30 to 28), and one more call
+      // unseen (10 to 11): 44 follows a call, cartextract4 at 43, while 27 follows decision 26, which ran none.
+      "everything-store-run4": { decisions: 48, before: 28, afterReported: 0, afterUnreported: 27, callsBeforeUnseen: 11 }
     });
   });
 

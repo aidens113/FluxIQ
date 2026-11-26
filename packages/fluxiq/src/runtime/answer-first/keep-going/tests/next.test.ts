@@ -16,7 +16,8 @@ const refusal = { code: "llm_budget.run_cost_limit", estimatedInputTokens: 1, ma
 
 describe("every loop failure code", () => {
   const codes = Object.keys(AUTOMATION_STUDIO_ANSWER_FIRST_LOOP_FAILURE_REASONS) as AutomationStudioLlmEvidenceLoopFailureCode[];
-  it("names all twelve", () => expect(codes).toHaveLength(12));
+  // Eleven since t1056 removed `llm_evidence_loop.unreadable_replies`: a billed unreadable reply is asked again.
+  it("names all eleven", () => expect(codes).toHaveLength(11));
   for (const code of codes.filter((c) => c !== "llm_evidence_loop.provider_unavailable")) {
     it(`${code} starts a fresh round that carries the page, draft and acts over`, () => {
       const next = automationStudioAnswerFirstNext({ ...base, end: failed(code) });

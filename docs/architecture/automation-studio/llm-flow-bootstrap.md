@@ -3027,10 +3027,11 @@ round 1003 and t195-w48), and read as a chat answer, never a debug log:
 For an extend build's first
 round, `runtime/service.ts` passes the replay signature of the Flow that
 round starts from as `seedSignature`: the extended Flow's seed, or the kept
-draft a continuation carries on. Six live rounds stay the backstop, since the published
-record's reader is bounded by it. Every round draws on the Flow creation's one purse and
-shares the build's time/token budget and declared call count; no round has a
-cost share of its own, and the per-round decision backstop starts afresh.
+draft a continuation carries on. No count of rounds ends a build (t1056): rounds go on
+until the result, the purse, the clock or Stop, and the published record keeps the most
+recent round stops that fit its byte bound (`loop-limits/flow-bootstrap-stops-bytes.ts`).
+Every round draws on the Flow creation's one purse and shares the build's time/token
+budget; no round has a cost share of its own, and no count of calls bounds a round.
 A permission or person-needed question takes precedence over another round.
 A build that ends without a Flow records why each round stopped and, for "not
 doable" and "not finished", which case left no route, as closed words on its
