@@ -26,7 +26,9 @@ export function automationStudioResultEvidenceFromBatches(input: {
     }
     const bundle = entry.evidence;
     if (!Array.isArray(bundle.pages) || !Array.isArray(bundle.coverage) || !Array.isArray(bundle.working) || !Array.isArray(bundle.looks)) throw new Error("Stored result evidence is invalid.");
-    for (const raw of [...bundle.pages, ...bundle.looks]) {
+    // A working read's page carries its rows (t1048) and is held to a page's shape; a count-only working entry is not a page.
+    const workingPages = bundle.working.filter((raw) => isObject(raw) && Object.hasOwn(raw, "rows"));
+    for (const raw of [...bundle.pages, ...bundle.looks, ...workingPages]) {
       if (isObject(raw) && Object.hasOwn(raw, "datasetId") && (typeof raw.datasetId !== "string" || !raw.datasetId.trim())) throw new Error("Stored result page dataset provenance is invalid.");
       if (isObject(raw) && Object.hasOwn(raw, "invalidCount") && (!Number.isSafeInteger(raw.invalidCount) || (raw.invalidCount as number) < 0)) throw new Error("Stored result page validation provenance is invalid.");
       if (!isObject(raw) || typeof raw.source !== "string" || typeof raw.step !== "string" || !Number.isSafeInteger(raw.version) || (raw.version as number) < 1 || !isObject(raw.fields) || !Array.isArray(raw.conditions) || !Array.isArray(raw.rows) || !raw.rows.every(isObject) || raw.kept !== raw.rows.length) throw new Error("Stored result page evidence is invalid.");
