@@ -53,12 +53,20 @@ export type AutomationStudioResultEvidenceProcessing = {
   filters: readonly { condition: string; leftOut: number; leftOutOnlyByThis: readonly string[] }[];
 };
 
+/** A working read step said by its count alone: one that has read no page yet, or one a bundle stored before t1048 holds. */
+export type AutomationStudioResultEvidenceWorkingCount = { step: string; position?: number; listKey?: string; kept: number };
+
 /** Facts for the judge to weigh. No completeness verdict and no guessed page association. */
 export type AutomationStudioResultEvidenceBundle = {
   pages: readonly AutomationStudioResultEvidencePage[];
   coverage: readonly AutomationStudioResultEvidenceCoverage[];
   answerContract?: { columns: readonly string[] };
-  working: readonly { step: string; position?: number; listKey?: string; kept: number }[];
+  /**
+   * The reads of draft steps that are not the answer (working reads), each page whole with its rows, as a page of the
+   * result is (t1048): the judge weighs the answer against every row a working read kept. A working step that has read
+   * no page yet, and a bundle stored before t1048, says only its count.
+   */
+  working: readonly (AutomationStudioResultEvidencePage | AutomationStudioResultEvidenceWorkingCount)[];
   looks: readonly AutomationStudioResultEvidencePage[];
   /** What the result's processing did to the pages' rows (t970); absent where none was declared. */
   processing?: AutomationStudioResultEvidenceProcessing;
