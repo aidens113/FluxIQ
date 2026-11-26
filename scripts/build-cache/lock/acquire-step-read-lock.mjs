@@ -59,10 +59,12 @@ export async function acquireStepReadLock(lockPath, options = {}) {
   await mkdir(path.dirname(lockPath), { recursive: true });
 
   for (;;) {
-    const writer = await readLockHolder(lockPath);
+    const writer = await readLockHolder(lockPath, now);
     if (writer !== null) {
       if (isStaleHolder(writer, judge)) {
-        await breakLockFile(lockPath, writer);
+        if (await breakLockFile(lockPath, writer)) continue;
+        // In use by its live holder: it is not stale after all.
+        await delay(pollMs);
         continue;
       }
       heldBy = writer.pid;
@@ -83,7 +85,7 @@ export async function acquireStepReadLock(lockPath, options = {}) {
   let released = false;
   const timer = setInterval(() => {
     try {
-      touchLockFileSync(entry, token);
+      touchLockFileSync(entry, token, now);
     } catch (error) {
       if (TRANSIENT_CODES.has(error?.code)) return;
       lost = new Error(`Step read lock lost: ${entry}`, { cause: error });
