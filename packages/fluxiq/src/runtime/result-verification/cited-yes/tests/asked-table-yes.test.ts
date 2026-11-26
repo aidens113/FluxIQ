@@ -30,9 +30,16 @@ describe("a yes over the table the request names", () => {
     expect(automationStudioResultRecordsYesRefuted(LOANS, { checked: [{ row: "Tide Tables", column: "copies", value: "1" }], answerRecords: { asked: true, siteShows: 2 } }, undefined, ASKED)).toEqual([]);
   });
 
-  it("leaves a column that shares a word with a held one to the judge, so a name read with a word too many is never a refusal", () => {
+  it("refutes a yes whose rows lack an asked column that only shares a word with a held one (t1051)", () => {
     const titles = held(["title", "due"], [{ title: "Tide Tables", due: "Friday" }]);
-    expect(automationStudioResultRecordsYesRefuted(titles, { checked: [{ row: "Tide Tables", column: "due", value: "Friday" }], answerRecords: { asked: true, siteShows: 1 } }, undefined, ["title only", "due date"])).toEqual([]);
+    const said = automationStudioResultRecordsYesRefuted(titles, { checked: [{ row: "Tide Tables", column: "due", value: "Friday" }], answerRecords: { asked: true, siteShows: 1 } }, undefined, ["title", "due date"]);
+    expect(said).toEqual([expect.stringContaining("have no due date column")]);
+  });
+
+  it("stands on a held column written in the singular or plural of the asked name (t1051)", () => {
+    const plural = held(["titles", "copy"], [{ titles: "Tide Tables", copy: "1" }]);
+    expect(automationStudioResultRecordsYesRefuted(plural, { checked: [{ row: "Tide Tables", column: "copy", value: "1" }], answerRecords: { asked: true, siteShows: 1 } }, undefined, ["title", "copies"])).toEqual([]);
+    expect(automationStudioResultRecordsYesRefuted(plural, { checked: [{ row: "Tide Tables", column: "copy", value: "1" }], answerRecords: { asked: true, siteShows: 1 } }, undefined, ["title", "copy"])).toEqual([]);
   });
 
   it("asks nothing of the columns where no table is named, as before", () => {

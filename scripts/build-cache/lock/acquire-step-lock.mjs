@@ -65,10 +65,12 @@ export async function acquireStepLock(lockPath, options = {}) {
       if (readers.lost) continue;
       return { waitedMs: waited ? now() - started : 0, heldBy, heldAs, release: () => releaseLockFile(lockPath, token) };
     }
-    const holder = await readLockHolder(lockPath);
+    const holder = await readLockHolder(lockPath, now);
     if (holder === null) continue;
     if (isStaleHolder(holder, judge)) {
-      await breakLockFile(lockPath, holder);
+      if (await breakLockFile(lockPath, holder)) continue;
+      // In use by its live holder: it is not stale after all.
+      await delay(pollMs);
       continue;
     }
     heldBy = holder.pid;
@@ -84,7 +86,7 @@ async function waitForReaders(lockPath, token, judge, pollMs) {
   for (;;) {
     let live = null;
     for (const entry of await listReaderEntries(lockPath)) {
-      const reader = await readLockHolder(entry);
+      const reader = await readLockHolder(entry, judge.now);
       if (reader === null) continue;
       // A reader entry is unique to its token, so nobody can have replaced it:
       // a stale one is simply removed, and one that cannot be removed yet (a
@@ -97,7 +99,7 @@ async function waitForReaders(lockPath, token, judge, pollMs) {
     const mine = await readLockHolder(lockPath);
     if (mine === null || mine.token !== token) return { lost: true, waitedOn };
     try {
-      touchLockFileSync(lockPath, token);
+      touchLockFileSync(lockPath, token, judge.now);
     } catch {
       /* best-effort: a lock in transition on Windows, or replaced since the read; the next poll decides */
     }
