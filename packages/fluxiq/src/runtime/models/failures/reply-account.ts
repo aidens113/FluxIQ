@@ -46,6 +46,8 @@ import type { AutomationStudioLlmUsageSummary } from "../contracts/index.ts";
  * - `tool_call_several`: it called more than one.
  * - `tool_call_unknown`: it called a tool by a name the request did not offer.
  * - `tool_call_unexpected`: it called a tool where the answer asked for was text.
+ * - `tool_call_not_answer`: a check whose answer is its own answer tool's call called another offered tool (t1065).
+ * - `tool_call_check_only`: a decision called the check's answer tool, which only a check calls (t1065).
  */
 const REPLY_CASES = [
   "media_type",
@@ -65,7 +67,9 @@ const REPLY_CASES = [
   "tool_call_missing",
   "tool_call_several",
   "tool_call_unknown",
-  "tool_call_unexpected"
+  "tool_call_unexpected",
+  "tool_call_not_answer",
+  "tool_call_check_only"
 ] as const;
 
 export type AutomationStudioLlmProviderReplyCase = (typeof REPLY_CASES)[number];

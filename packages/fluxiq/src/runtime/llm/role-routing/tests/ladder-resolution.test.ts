@@ -25,7 +25,8 @@ describe("fixed serving despite historical ladder configuration", () => {
         await provider!.provider.runTask(request("evidence_tool_decision"));
         await runWithAutomationStudioLlmModelRole("repair", () => provider!.provider.runTask(request("runtime_patch")));
         await provider!.provider.runTask(request("loop_verification", { continuesDecider: true }));
-        await provider!.provider.runTask(request("loop_verification", { judgeStandaloneAfterUnreadable: true, judgeRungsUp: 100 }));
+        // The re-ask after an unreadable reply (t1065), with obsolete climb metadata that climbs nothing.
+        await provider!.provider.runTask(request("loop_verification", { continuesDecider: true, judgeAnswersInConversation: true, judgeRungsUp: 100 }));
       });
       expect(attempt.level).toBe(0);
     }

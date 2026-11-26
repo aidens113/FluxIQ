@@ -6,20 +6,26 @@
 // (0091, 0092), while the decider had just sent nearly all of it, cached. A cached read is a tenth of the price on
 // Haiku 5.5 and a twentieth on Sonnet and Opus 5.5.
 //
-// **What is sent.** The decider's latest request, byte for byte, up to its last cache breakpoint: the same model,
-// top-level fields, system blocks and output format, and the same user blocks up to that mark. Then, in the same user
-// turn, the judge's own message with every trail entry whose call the decider's evidence above already holds left out
-// and said so; then a mid-conversation system message with the judge's instructions, which keeps the cached prefix
-// (`{role: "system"}`, accepted on Haiku, Sonnet and Opus 5.5). A cache belongs to its model, so the judge runs on the
-// model that served that decision (`../../../llm/role-routing/provider.ts`).
+// **What is sent.** The decider's latest request, byte for byte: the same model, top-level fields, system blocks and
+// output format, and its whole user turn, every block of it, the cache marks where the decider put them. Then, in the
+// same user turn, the judge's own message with every trail entry whose call the decider's evidence above already holds
+// left out and said so; then a mid-conversation system message with the judge's instructions, which keeps the cached
+// prefix (`{role: "system"}`, accepted on Haiku, Sonnet and Opus 5.5). A cache belongs to its model, so the judge runs on
+// the model that served that decision (`../../../llm/role-routing/provider.ts`).
+//
+// **Everything the decider last saw, not only what is cached (t1065).** Up to t1065 the judge got the decider's blocks
+// only up to the last cache mark, and the `core.current_view` tail after it -- every page and every recalled read the
+// decider was looking at -- never reached it. Live run `run-mwy3btww-31d32e0d`: the c50 rows the decider recalled at 0128
+// were only in 0129's block 18, after the mark at 17, and judge 0130, continuing 0129, said "its ratings are not shown
+// here" and answered unknown. The blocks after the mark cost their uncached price once; the cache is read at the same
+// marks as before, so nothing that was cached is lost.
 //
 // **Held means held whole (t1044).** The decider's evidence shows a call's page and read members as
-// `{"core.view_reference": {callId, group}}`, whose whole value is only in the `core.current_view` tail, and that tail
-// comes after the last cache mark, so it is never in the prefix (`../../../llm/decision-context/current-view.ts`). Live
-// run `run-mwvgjb8c-5a1f2ae3` (0042): the judge was told all 15 of the attempt's calls were "in its evidence above",
-// while every one of their 29 view references resolved to nothing it was sent, so it saw none of the pages and only 3
-// of a read's 15 rows. A call is held above only where every reference in its entry resolves within the prefix;
-// otherwise its trail entry stays in the judge's message.
+// `{"core.view_reference": {callId, group}}`, whose whole value is only in the `core.current_view` tail
+// (`../../../llm/decision-context/current-view.ts`). Live run `run-mwvgjb8c-5a1f2ae3` (0042): the judge was told all 15
+// of the attempt's calls were "in its evidence above", while every one of their 29 view references resolved to nothing
+// it was sent, so it saw none of the pages and only 3 of a read's 15 rows. A call is held above only where every
+// reference in its entry resolves within what the judge is sent; otherwise its trail entry stays in the judge's message.
 //
 // **The decider's output format, not the judge's.** A paid probe (t965, two calls on `claude-haiku-5-5`): the same
 // system and user blocks with the judge's own `output_config.format` read 0 cached tokens and wrote all 9,707 again,
@@ -33,38 +39,54 @@
 // changed tool list misses everything, and a changed `tool_choice` or an added `output_config.format` misses the cached
 // messages, which are nearly all of what the judge reads (the prompt-caching page, "What invalidates the cache"; the
 // structured-outputs page: changing the format invalidates the conversation's cache). So the judge's answer cannot be a
-// native grammar of its own here: it answers with the JSON object as plain text, calling no tool (the tool choice is
-// `auto`), and Core reads it against the judge's own outputSchema and checks it as every answer is. A judge of its own
-// (`standalone_after_unreadable`, or no decider held) still gets its native format.
+// native grammar of its own here. It answers by calling the check's own answer tool, which every decider request sent
+// as tools already offers (`./judge-answer-tool.ts`, t1065): its input is the verdict, read from that call alone and
+// checked against the judge's own outputSchema as every answer is. Up to t1065 it was asked for plain text, and every
+// continuing judge of `run-mwy3btww-31d32e0d` failed to be read (4 prose before the object, 3 calls of a decision tool).
+// A reply that still is not that call is answered in this same conversation and the verdict asked for again there
+// (`./judge-call-answered.ts`), never handed to a judge that sees less. A judge of its own (no decider held, or a decider
+// in the JSON-text transport whose reply could not be read) still gets its native format.
+
+import { AUTOMATION_STUDIO_ANTHROPIC_JUDGE_ANSWER_TOOL } from "./judge-answer-tool.ts";
 
 type TextBlock = { type: "text"; text: string; cache_control?: { type: "ephemeral" } };
 type Message = { role: "user" | "system"; content: string | TextBlock[] };
 
-/** What the adapter keeps of a decider's latest request: everything but its messages, and its user blocks up to the last mark. */
+/** What the adapter keeps of a decider's latest request: everything but its messages, and its user turn's blocks, all of them. */
 export type AutomationStudioAnthropicDeciderPrefix = {
   /** The request's top-level members in their order, `messages` kept in its place with no value. */
   wire: Record<string, unknown>;
-  /** The user turn's blocks up to and including its last marked block. */
+  /** The user turn's blocks, every one, the cache marks where the decider put them (header, t1065). */
   blocks: TextBlock[];
   /** The ids of the calls whose evidence entries those blocks hold whole: every view reference in the entry resolves within the blocks. */
   callIds: string[];
-  /** Set where the decider was sent as tools: the judge then answers in plain text. Otherwise it answers in the decider's `result_json`. */
+  /** Set where the decider was sent as tools. Otherwise the judge answers in the decider's `result_json`. */
   afterTools?: true;
+  /** Set where those tools hold the check's answer tool (`./judge-answer-tool.ts`): the judge then answers by calling it. */
+  answerTool?: true;
 };
 
 /** Said to the judge before its instructions: what the conversation above is, and what it does now. Generic: no site or task. */
 const JUDGE_TURN = "The conversation above is the attempt's own record of deciding, up to its latest decision: the request, every call it made and what each call answered. Its decisions are over. You are now the check of what it got: answer the question the judge's message below asks, by the judge's instructions here, and put the JSON object the judge's outputSchema asks for into result_json.";
-/** The same after a decider that answered with tool calls: the judge's answer is the object itself, and no tool is its answer. */
-const JUDGE_TURN_AFTER_TOOLS = "The conversation above is the attempt's own record of deciding, up to its latest decision: the request, every call it made and what each call answered. Its decisions are over, and its tools are not for this answer: call none. You are now the check of what it got: answer the question the judge's message below asks, by the judge's instructions here, with only the JSON object the judge's outputSchema asks for, as your reply's text.";
+/**
+ * The same after a decider sent as tools: the judge answers by calling the check's answer tool (t1065).
+ *
+ * The cached system prompt above it says to decide by calling one of the decision tools, and the judge's own
+ * instructions below say to return only the JSON object. So this says which holds now: the decisions are over, no
+ * decision tool runs, and the object is the answer tool's input. Reasoning in text before the call is allowed: the model
+ * writes it in this conversation anyway (all 7 continuing judges of `run-mwy3btww-31d32e0d` did), and only the call is
+ * read.
+ */
+const JUDGE_TURN_AFTER_TOOLS = `The conversation above is the attempt's own record of deciding, up to its latest decision: the request, every call it made and what each call answered. Its decisions are over. The instruction at its start to decide by calling one of the decision tools held for those decisions and holds no longer: no decision tool runs now, the one that completes the attempt included. You are now the check of what it got: answer the question the judge's message below asks, by the judge's instructions here, by calling ${AUTOMATION_STUDIO_ANTHROPIC_JUDGE_ANSWER_TOOL.name} once, with the JSON object the judge's outputSchema asks for as its whole input. You may set out your reasoning first, in plain text; the answer is that call alone, and nothing else is read as it. Where the instructions below say to return only that object, beginning with {, that object is the call's input.`;
 
 /** The prefix of a decider's request (`wire`, as it was sent), or none where it has no marked user blocks to share. */
 export function automationStudioAnthropicDeciderPrefix(wire: Record<string, unknown>): AutomationStudioAnthropicDeciderPrefix | undefined {
   const messages = wire.messages as Message[] | undefined;
   const content = messages?.length === 1 && messages[0]!.role === "user" ? messages[0]!.content : undefined;
   if (!Array.isArray(content)) return undefined;
-  const last = content.map((block) => block.cache_control !== undefined).lastIndexOf(true);
-  if (last < 0) return undefined;
-  const blocks = content.slice(0, last + 1);
+  if (!content.some((block) => block.cache_control !== undefined)) return undefined;
+  // The whole user turn, not only up to the last mark: what follows it is what the decider last saw (header, t1065).
+  const blocks = [...content];
   const entries = blocks.slice(1).flatMap((block) => {
     try {
       const entry = JSON.parse(block.text.replace(/^,/u, "")) as { callId?: unknown; toolId?: unknown; value?: unknown };
@@ -79,7 +101,9 @@ export function automationStudioAnthropicDeciderPrefix(wire: Record<string, unkn
     ? entry.value.groups.flatMap((group) => isObject(group) && typeof group.callId === "string" && typeof group.group === "string" ? [referenceKey(group.callId, group.group)] : [])
     : []));
   const callIds = entries.filter((entry) => viewReferences(entry.value).every((key) => resolved.has(key))).map((entry) => entry.callId);
-  return { wire: { ...wire, messages: undefined }, blocks, callIds, ...(Array.isArray(wire.tools) ? { afterTools: true as const } : {}) };
+  const tools = Array.isArray(wire.tools) ? wire.tools as unknown[] : undefined;
+  const answerTool = tools?.some((tool) => isObject(tool) && tool.name === AUTOMATION_STUDIO_ANTHROPIC_JUDGE_ANSWER_TOOL.name) === true;
+  return { wire: { ...wire, messages: undefined }, blocks, callIds, ...(tools ? { afterTools: true as const } : {}), ...(answerTool ? { answerTool: true as const } : {}) };
 }
 
 /** The decider's tail entry holding each view group's latest whole value (`../../../llm/decision-context/current-view.ts`). */
