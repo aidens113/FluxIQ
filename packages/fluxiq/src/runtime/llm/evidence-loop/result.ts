@@ -24,7 +24,7 @@ export type AutomationStudioLlmEvidenceLoopFailureCode =
   // key by this union still name them, and a stored result may carry them.
   | "llm_evidence_loop.duplicate_call"
   | "llm_evidence_loop.duplicate_tool_request"
-  /** The no-progress guard tripped: the loop kept repeating itself. */
+  /** A repeat guard stopped a loop with no `loopSignal` (refused repeats or looks in a row), or nothing was left to offer: the loop kept repeating itself. Never a count of steps without progress (t1049). */
   | "llm_evidence_loop.repeat_without_progress"
   | "llm_evidence_loop.tool_failed"
   /**

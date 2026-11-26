@@ -60,14 +60,13 @@ export type AutomationStudioLlmEvidenceAnsweredRequestRepeat = {
 };
 
 /** The note that follows the moved result: which request, which entry answers
- * it, how often it has been asked, and how close the no-progress guard is to
- * stopping the loop. */
+ * it, how often it has been asked, and how many steps in a row have brought
+ * nothing new (a count that ends nothing, t1049). */
 export function automationStudioLlmEvidenceAnsweredRequestNote(input: {
   code: AutomationStudioLlmEvidenceAnsweredRequestCode;
   toolId: string;
   answeredByCallId: string;
   stepsWithoutProgress: number;
-  maxStepsWithoutProgress: number;
   discoveryOnly?: boolean;
   /** The latest accepted receipt, with what stops it being tested as it stands (`../candidate-receipt/receipt.ts`, t741). */
   candidate?: AutomationStudioLlmEvidenceCandidateReceipt | undefined;
@@ -86,7 +85,6 @@ export function automationStudioLlmEvidenceAnsweredRequestNote(input: {
     ...(lastActionBefore ? { lastActionBefore: { ...lastActionBefore } } : {}),
     ...(pageUnchanged ? { pageUnchanged } : {}),
     stepsWithoutProgress: input.stepsWithoutProgress,
-    ...(Number.isFinite(input.maxStepsWithoutProgress) ? { maxStepsWithoutProgress: input.maxStepsWithoutProgress } : {}), // None where no count ends the loop (t1008).
     ...(input.discoveryOnly && input.candidate ? { candidate: { ...input.candidate } } : {}),
     instruction: instruction(input)
   };

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS, AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST, AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS, automationStudioLlmResolutionWithinFlowSettings } from "../../llm/index.ts";
-import { AUTOMATION_STUDIO_EXPLORATION_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS } from "../../adaptation/recovery/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_CONSECUTIVE_UNUSABLE_DECISIONS } from "../evidence-loop.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../evidence-loop.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_DURATION_MS, automationStudioFlowBootstrapEvidenceLoopLimits } from "../flow-bootstrap-evidence-loop.ts";
 
 const CEILING = AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD;
@@ -73,19 +72,9 @@ describe("the Flow Bootstrap budget", () => {
   });
 });
 
-// Creation gives up on bad replies after exactly as many in a row as a runtime
-// recovery's exploration does. The number is held here because runtime/llm/
-// may not read it from runtime/recovery/; this is what keeps the two equal.
-describe("the unusable-decision streak", () => {
-  it("is the runtime exploration's no-progress streak", () => {
-    expect(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_CONSECUTIVE_UNUSABLE_DECISIONS).toBe(AUTOMATION_STUDIO_EXPLORATION_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS);
-    // No longer the runtime exploration's streak of three. Three ended builds
-    // that were working: a setback, a look, and another way is two steps that
-    // gathered nothing new and exactly the right thing to do. What bounds a
-    // build is its cost, its tokens and its deadline; this is the far backstop.
-    expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 26 }).maxConsecutiveUnusableDecisions).toBe(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS);
-  });
-
+// `maxConsecutiveUnusableDecisions` is read by no loop since t1049 (it reached the loop as the length of the guard
+// on steps without progress, which is gone); it stays only for its callers, and stays within what a loop accepts.
+describe("the unusable-decision figure no loop reads", () => {
   it("never exceeds what the loop may spend, so the loop accepts it", () => {
     expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 2 }).maxConsecutiveUnusableDecisions).toBe(2);
     expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 1 }).maxConsecutiveUnusableDecisions).toBe(1);

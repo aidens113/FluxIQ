@@ -77,7 +77,7 @@ describe("a decision whose kind names no known kind", () => {
     const error = automationStudioLlmUnusableDecisionError(result)!;
     expect(error.fieldIssues).toEqual([kindIssue]);
     const feedback = automationStudioLlmUnusableDecisionFeedback({
-      issueCodes: error.issueCodes, ...(error.fieldIssues ? { fieldIssues: error.fieldIssues } : {}), stepsWithoutProgress: 1, maxStepsWithoutProgress: 3
+      issueCodes: error.issueCodes, ...(error.fieldIssues ? { fieldIssues: error.fieldIssues } : {}), stepsWithoutProgress: 1
     });
     expect(feedback.fieldIssues).toEqual([kindIssue]);
     expect(feedback.instruction).toContain("response.decision.kind");
@@ -92,12 +92,12 @@ describe("a decision whose kind names no known kind", () => {
     // As a hostile caller would hand it over: parsed, so no type vouches for it.
     const forged = JSON.parse(JSON.stringify({ ...kindIssue, allowed: ["PRIVATE_KIND"], note: "PRIVATE_NOTE" }));
     const feedback = automationStudioLlmUnusableDecisionFeedback({
-      issueCodes: ["llm_output.invalid_evidence_decision"], fieldIssues: [forged], stepsWithoutProgress: 1, maxStepsWithoutProgress: 3
+      issueCodes: ["llm_output.invalid_evidence_decision"], fieldIssues: [forged], stepsWithoutProgress: 1
     });
     expect(feedback.fieldIssues).toEqual([kindIssue]);
     expect(JSON.stringify(feedback)).not.toMatch(/PRIVATE_KIND|PRIVATE_NOTE/);
     expect(automationStudioLlmUnusableDecisionFeedback({
-      issueCodes: ["llm_output.invalid_summary"], fieldIssues: [kindIssue], stepsWithoutProgress: 1, maxStepsWithoutProgress: 3
+      issueCodes: ["llm_output.invalid_summary"], fieldIssues: [kindIssue], stepsWithoutProgress: 1
     }).fieldIssues).toBeUndefined();
   });
 });

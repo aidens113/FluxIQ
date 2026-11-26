@@ -30,7 +30,6 @@ export const dispatch = (briefs: JsonObject[], reason = "Build the subflows the 
 export async function supervise(steps: Step[], built = project(), options: {
   tools?: AutomationStudioLlmEvidenceTool[];
   executeTool?: AutomationStudioLlmEvidenceLoopInput["executeTool"];
-  maxStepsWithoutProgress?: number;
   /** A stall is thrown out of the loop, as a project build's is (`service.ts`). */
   propagateDecisionErrors?: boolean;
   /** The run's time limit, when a test sets one short (`../supervisor-loop.ts`, t592). */
@@ -47,7 +46,6 @@ export async function supervise(steps: Step[], built = project(), options: {
   /** Every entry any decision was shown, once each, in the order first shown. */
   const shown = new Map<string, Entry>();
   const offered: string[][] = [];
-  const guard = options.maxStepsWithoutProgress ?? steps.length;
   const outcome = await runAutomationStudioProjectSupervisorLoop({
     ports: built.ports,
     ...(options.timeLimit ? { timeLimit: options.timeLimit } : {}),
@@ -57,7 +55,7 @@ export async function supervise(steps: Step[], built = project(), options: {
       tools: options.tools ?? HOST_TOOLS,
       maxIterations: steps.length + (options.spareTurns ?? 0),
       maxToolCalls: steps.length + 2,
-      unusableDecisions: { maxConsecutive: guard, maxInARow: steps.length, stalled: () => new Error("stalled") },
+      unusableDecisions: { maxInARow: steps.length, stalled: () => new Error("stalled") },
       ...(options.propagateDecisionErrors ? { propagateDecisionErrors: true } : {}),
       executeTool: options.executeTool ?? (async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: false, targetsUnchanged: true })),
       decide: async ({ evidence, tools }) => {

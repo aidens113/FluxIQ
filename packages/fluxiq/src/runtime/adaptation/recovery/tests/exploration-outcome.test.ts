@@ -111,9 +111,11 @@ describe("exploration outcomes", () => {
   // time" are three different things to do next, so a trace must never report
   // one where it meant another.
   it("keeps going in circles apart from running out of money, tokens or time", () => {
-    expect(AUTOMATION_STUDIO_EXPLORATION_STOP_REASONS).toContain("no_progress");
-    expect(AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_STOP_REASON.no_progress).toBe("no_progress");
-    const circling = AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_STOP_REASON.no_progress;
+    // No count of steps without progress stops an exploration (t1049), so `no_progress` is no stop reason; going in
+    // circles is the repeat window's, and its outcome is still apart from the budget's.
+    expect(AUTOMATION_STUDIO_EXPLORATION_STOP_REASONS).not.toContain("no_progress");
+    const circling = AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_STOP_REASON.repeat_window;
+    expect(circling).toBe("no_progress");
     const money = AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_RUN_BUDGET["llm_budget.run_cost_limit"];
     const tokens = AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_RUN_BUDGET["llm_budget.run_total_limit"];
     const time = AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_STOP_REASON.recovery_deadline_expired;

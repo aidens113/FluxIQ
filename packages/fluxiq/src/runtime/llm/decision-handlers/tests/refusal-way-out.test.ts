@@ -20,7 +20,7 @@ import { automationStudioLlmUnusableDecisionFeedback } from "../../unusable-deci
 describe("a refusal naming the next free number says to run the step first", () => {
   const steps = [{ position: 1 }, { position: 2 }, { position: 3 }];
   const told = (step: number, on = steps) => automationStudioLlmEvidenceDraftAmendmentFeedback({
-    refusals: [{ step, reason: "no_such_step" }], applied: 0, steps: on, stepsWithoutProgress: 1, maxStepsWithoutProgress: 8
+    refusals: [{ step, reason: "no_such_step" }], applied: 0, steps: on, stepsWithoutProgress: 1
   });
 
   it("says step 4 of three is not there until it runs, and to run it", () => {
@@ -44,7 +44,7 @@ describe("a refusal naming the next free number says to run the step first", () 
   // do: the run-first `next` comes first, then the checklist, when there is one.
   it("ends with the acts the checklist still shows not done, and names only those for any other number", () => {
     const withChecklist = (step: number) => (automationStudioLlmEvidenceDraftAmendmentFeedback({
-      refusals: [{ step, reason: "no_such_step" }], applied: 0, steps, stepsWithoutProgress: 1, maxStepsWithoutProgress: 8, actsNotDone: ["a1"]
+      refusals: [{ step, reason: "no_such_step" }], applied: 0, steps, stepsWithoutProgress: 1, actsNotDone: ["a1"]
     }).refused as { next?: string }[])[0]?.next;
     expect(withChecklist(4)).toBe("There is no step 4 yet: a step enters the draft only by running. Run that action first as a call (with its act, if it does one): running it puts it in the draft as step 4; do not amend it before it has run. Still not done on the checklist: a1. Go on with those.");
     expect(withChecklist(9)).toBe("There is no step 9 in the draft: name a step listed under positions, as the draft shows it, or run the call you meant; running it puts it in the draft. Still not done on the checklist: a1. Go on with those.");
@@ -65,7 +65,7 @@ describe("run mustvzvg C4: an unchanged rerun of a step that did not work", () =
   const read = { position: 7, effect: "observe", proposes: true, effectApplied: true, disposition: "kept" };
   const refusedRead = { position: 8, effect: "observe", proposes: true, effectApplied: false, disposition: "taken", resultCode: "target_unobserved", resultReason: "malformed_handle", callId: "d16" };
   const told = (steps: FeedbackInput["steps"], actsNotDone?: string[]) => automationStudioLlmEvidenceDraftAmendmentFeedback({
-    refusals: [{ step: 8, reason: "changes_nothing", repeated: true }], applied: 0, steps, stepsWithoutProgress: 5, maxStepsWithoutProgress: 8, ...(actsNotDone ? { actsNotDone } : {})
+    refusals: [{ step: 8, reason: "changes_nothing", repeated: true }], applied: 0, steps, stepsWithoutProgress: 5, ...(actsNotDone ? { actsNotDone } : {})
   });
 
   it("says the exact call was refused before and would be refused again, names its code, and says what to change", () => {
@@ -124,7 +124,7 @@ describe("W2: every amendment refusal names its way out, in the draft's numbers"
     { position: 5, effect: "mutate", effectApplied: true, disposition: "dropped" }
   ];
   const told = (refusal: AutomationStudioFlowDraftAmendmentRefusal, actsNotDone?: string[], on: FeedbackInput["steps"] = steps) => firstNext(automationStudioLlmEvidenceDraftAmendmentFeedback({
-    refusals: [refusal], applied: 0, steps: on, stepsWithoutProgress: 1, maxStepsWithoutProgress: 8, ...(actsNotDone ? { actsNotDone } : {})
+    refusals: [refusal], applied: 0, steps: on, stepsWithoutProgress: 1, ...(actsNotDone ? { actsNotDone } : {})
   }));
   // Exhaustive by type, as above: a new reason fails to compile until it is given its way out here.
   const extra: Record<Reason, Partial<AutomationStudioFlowDraftAmendmentRefusal>> = {
@@ -194,7 +194,7 @@ describe("W2: every amendment refusal names its way out, in the draft's numbers"
 // variants it does offer", without saying why editing was not offered or which decision to send instead.
 describe("an amend_draft that was not offered", () => {
   it("says why editing was not offered and which decision to send instead", () => {
-    const feedback = JSON.stringify(automationStudioLlmUnusableDecisionFeedback({ issueCodes: ["llm_evidence_loop.amend_not_offered"], stepsWithoutProgress: 1, maxStepsWithoutProgress: 8 }));
+    const feedback = JSON.stringify(automationStudioLlmUnusableDecisionFeedback({ issueCodes: ["llm_evidence_loop.amend_not_offered"], stepsWithoutProgress: 1 }));
     expect(feedback).toContain("there is no step in the draft to edit yet");
     expect(feedback).toContain("Run a tool call instead -- a step that works joins the Flow");
   });

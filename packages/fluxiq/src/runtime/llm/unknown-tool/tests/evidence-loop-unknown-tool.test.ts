@@ -22,7 +22,7 @@ describe("a tool call naming a tool that was not offered", () => {
       .mockResolvedValueOnce({ kind: "complete", result: { done: true } });
     const executeTool = vi.fn(async () => ({ ok: true }));
 
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools, minToolCalls: 1, decide, executeTool, maxStepsWithoutProgress: 3, unusableDecisions: { stalled } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, minToolCalls: 1, decide, executeTool, unusableDecisions: { stalled } });
 
     expect(result).toMatchObject({ ok: true, result: { done: true } });
     const feedback = feedbackOf(decide, 1);
@@ -34,14 +34,15 @@ describe("a tool call naming a tool that was not offered", () => {
     expect(result.trace.some((row) => row.decision === "unusable" && row.resultCode === "llm_evidence_loop.unknown_tool_refused")).toBe(true);
   });
 
-  it("ends through the no-progress guard when the model keeps naming ids that do not exist, not on the first", async () => {
+  // Asked again each time, never ended on the first, and never on a count of steps without progress (t1049): the
+  // unusable streak's backstop (held to the loop's eight iterations here) is what ends a model that never corrects it.
+  it("asks again when the model keeps naming ids that do not exist, and ends only on the unusable streak's backstop", async () => {
     const decide = vi.fn().mockResolvedValue({ kind: "tool_call", callId: "call.x", toolId: "nonexistent", input: {} });
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool: async () => ({}), maxStepsWithoutProgress: 3, unusableDecisions: { stalled }, propagateDecisionErrors: false });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool: async () => ({}), unusableDecisions: { stalled }, propagateDecisionErrors: false });
 
     expect(result).toMatchObject({ ok: false });
     expect(result.ok === false && result.code).not.toBe("llm_evidence_loop.unknown_tool");
-    expect(decide.mock.calls.length).toBeGreaterThan(1);
-    expect(decide.mock.calls.length).toBeLessThanOrEqual(4);
+    expect(decide.mock.calls.length).toBe(8);
   });
 
   it("leaves a legitimate known id alone", async () => {

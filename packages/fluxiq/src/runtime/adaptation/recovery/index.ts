@@ -10,7 +10,6 @@ export * from "./llm-invocation.ts";
 export * from "./context.ts";
 export * from "./context-summary.ts";
 export * from "./plan.ts";
-export * from "./progress-guard.ts";
 // The repair context's own screens, which is how a Flow's authored parameters
 // are said without saying what a page or a person supplied. They were reachable
 // only from inside this directory, so the Testing Lab -- which needs exactly

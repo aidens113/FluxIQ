@@ -198,11 +198,13 @@ describe("a reply that was read and is no decision this iteration offered", () =
     })).resolves.toMatchObject({ ok: false, code: "llm_evidence_loop.invalid_decision" });
   });
 
-  it("ends on the caller's stall when the same wrong shape keeps coming", async () => {
+  // The same wrong shape again is a step without progress, which ends nothing (t1049); the unusable streak's
+  // backstop is what stalls it.
+  it("ends on the caller's stall when the same wrong shape keeps coming, at the unusable streak's backstop", async () => {
     const decide = vi.fn().mockResolvedValue({ kind: "finish" });
     await expect(runAutomationStudioLlmEvidenceLoop({
       tools, decide, executeTool: async () => ({}), propagateDecisionErrors: true, maxIterations: 10,
-      unusableDecisions: { maxConsecutive: 3, stalled: () => stalledError }
+      unusableDecisions: { maxInARow: 3, stalled: () => stalledError }
     })).rejects.toBe(stalledError);
     expect(decide).toHaveBeenCalledTimes(3);
   });

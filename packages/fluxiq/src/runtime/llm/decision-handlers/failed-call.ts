@@ -25,7 +25,7 @@ export function automationStudioLlmEvidenceHandleFailedCall(
   /** The request as the repeat policy keys it, for a call the model decided; absent for the loop's own first look. */
   requestSignature?: string
 ): Exclude<AutomationStudioLlmEvidenceDecisionNext, { kind: "rerun" }> {
-  const { input, limits, trace, accounting, draftSteps, noProgress, counters } = context;
+  const { input, trace, accounting, draftSteps, noProgress, counters } = context;
   const end = (endCode: Parameters<typeof failure>[1]): { kind: "end"; result: ReturnType<typeof failure> } => ({ kind: "end", result: failure(draftSteps, endCode, trace, accounting) });
   // A failed action is part of the record: a live campaign's largest single
   // defect was a failed call that ended a build and left no trace of itself.
@@ -45,12 +45,8 @@ export function automationStudioLlmEvidenceHandleFailedCall(
   noProgress.stepped(tool.toolId);
   if (tool.effect === "mutate") { counters.mutationEpoch += 1; counters.attemptEpoch += 1; context.lastAction = { callId, iteration }; }
   const step: AutomationStudioLlmEvidenceLoopTrace = { iteration, decision: "tool_call", callId, toolId: tool.toolId, resultCode: code, ...(usage ? { usage } : {}) };
-  if (noProgress.reached()) {
-    context.recordRow(step, { draftChanged });
-    return end("llm_evidence_loop.tool_failed");
-  }
   const failedStep = draftChanged ? context.draftSteps.find((candidate) => candidate.callId === callId)?.position : undefined;
-  const failureRecord = automationStudioLlmEvidenceToolFailure({ code, toolId: tool.toolId, step: failedStep, stepsWithoutProgress: noProgress.steps, maxStepsWithoutProgress: limits.maxStepsWithoutProgress });
+  const failureRecord = automationStudioLlmEvidenceToolFailure({ code, toolId: tool.toolId, step: failedStep, stepsWithoutProgress: noProgress.steps });
   const recordBytes = context.accountEvidence(failureRecord);
   context.recordRow({ ...step, evidenceBytes: recordBytes }, { draftChanged });
   context.evidence.push({ callId, toolId: tool.toolId, value: failureRecord });

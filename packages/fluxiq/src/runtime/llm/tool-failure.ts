@@ -61,7 +61,7 @@ export type AutomationStudioLlmEvidenceToolFailureCode =
 
 const TOOL_FAILURE_INSTRUCTION = "This call failed and returned no evidence, so nothing it would have shown is known. "
   + "If it was an action, the page may have changed: the next result that runs on it carries it as it then stands, and core.full_page, where it is offered, captures it whole now; do not rely on earlier evidence before then. "
-  + "Choose a different tool or input, or complete from the evidence you have. Failures count toward stopping this exploration.";
+  + "Choose a different tool or input, or complete from the evidence you have: calling it again as it was gets no further.";
 
 /**
  * What the model reads in place of a failed call's result, under that call's
@@ -77,7 +77,6 @@ export function automationStudioLlmEvidenceToolFailure(input: {
    */
   step?: number | undefined;
   stepsWithoutProgress: number;
-  maxStepsWithoutProgress: number;
 }): JsonObject {
   return {
     ok: false,
@@ -85,7 +84,6 @@ export function automationStudioLlmEvidenceToolFailure(input: {
     toolId: input.toolId,
     ...(input.step === undefined ? {} : { step: input.step }),
     stepsWithoutProgress: input.stepsWithoutProgress,
-    ...(Number.isFinite(input.maxStepsWithoutProgress) ? { maxStepsWithoutProgress: input.maxStepsWithoutProgress } : {}), // None where no count ends the loop (t1008).
     instruction: input.step === undefined ? TOOL_FAILURE_INSTRUCTION : `${TOOL_FAILURE_INSTRUCTION} ${failedStep(input.step)}`
   };
 }

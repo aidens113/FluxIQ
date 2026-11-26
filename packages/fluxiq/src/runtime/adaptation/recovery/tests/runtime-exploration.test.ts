@@ -119,49 +119,39 @@ describe("runAutomationStudioRuntimeExploration", () => {
     expect(run.result).toEqual({ finding: "the control moved" });
   });
 
-  // And the other half of it: a loop that has stopped getting anywhere is
-  // stopped by the guard, well before any count -- here after four of its
-  // twenty-four allowed actions -- and says it was going in circles rather
-  // than that it ran out.
-  it("stops a loop whose new requests keep returning what it already has on no_progress, not on a count", async () => {
-    let decisions = 0;
-    const steps = Array.from({ length: 20 }, (_, index) => call("test.inspect", { area: `area.${index}` }));
+  // t1049 (user, 2026-11-24: "THERE SHOULDNT BE ANY ARBITRARY FUCKING CALL LIMIT THAT RANDOMLY JUST RESETS
+  // EVERYTHING"). A recovery exploration whose steps bring back nothing new was stopped `no_progress` after three of
+  // them (the ledger's guard), and its loop after eight (the evidence loop's). Neither count exists now: twelve steps
+  // in a row that each return what the loop already holds run on, the model is told plainly what it keeps repeating,
+  // and the exploration ends on its answer.
+  it("keeps a loop whose steps bring back nothing new running, steered, until its answer", async () => {
+    const shown: string[][] = [];
+    const steps = Array.from({ length: 12 }, (_, index) => call("test.inspect", { area: `area.${index}` }));
     const run = await explore({
-      decisions: steps,
-      onDecide: () => { decisions += 1; },
+      decisions: [...steps, complete({ finding: "the control is absent" })],
+      onDecide: (decision) => { shown.push(((decision as { evidence?: readonly { toolId: string }[] }).evidence ?? []).map((entry) => entry.toolId)); },
       execute: async () => ({ kind: "llm_evidence_tool_execution", evidence: { control: "absent" }, effectApplied: false, resultCode: "test.ok" })
     });
 
-    expect(run.outcome).toBe("no_progress");
-    expect(run.stopReason).toBe("no_progress");
-    expect(run.endedBy).toBe("no_progress");
-    expect(run.noProgressReason).toBe("repeated_evidence");
-    expect(run.reason).toContain("evidence it already had");
-    expect(run.actions).toBe(4);
-    expect(decisions).toBe(4);
-    expect(run.result).toBeUndefined();
+    expect(run.outcome).toBe("evidence_gathered");
+    expect(run.stopReason).toBeUndefined();
+    expect(run.endedBy).toBe("exploration.completed");
+    expect(run.result).toEqual({ finding: "the control is absent" });
+    expect(run.actions).toBe(12);
+    expect(shown).toHaveLength(13);
+    // Steered: from the third step without progress the newest decisions were shown the loop's no-progress note.
+    expect(shown.at(-1)).toContain("core.no_progress");
   });
 
-  it("stops a loop that keeps asking for the same thing across mutations on no_progress", async () => {
+  it("keeps a loop whose steps keep coming back empty running until its answer", async () => {
     const run = await explore({
-      decisions: [call("test.inspect", {}), call("test.reveal", {}), call("test.inspect", {}), call("test.reveal", {}), call("test.inspect", {}), call("test.reveal", {})],
-      budget: { maxRepeatsPerAction: 4 }
-    });
-
-    expect(run.outcome).toBe("no_progress");
-    expect(run.noProgressReason).toBe("repeated_request");
-    expect(run.reason).toContain("already asked for");
-  });
-
-  it("stops a loop whose steps keep coming back empty on no_progress", async () => {
-    const run = await explore({
-      decisions: Array.from({ length: 10 }, (_, index) => call("test.inspect", { area: `area.${index}` })),
+      decisions: [...Array.from({ length: 10 }, (_, index) => call("test.inspect", { area: `area.${index}` })), complete({ finding: "nothing there" })],
       execute: async () => ({ kind: "llm_evidence_tool_execution", evidence: "", effectApplied: false })
     });
 
-    expect(run.outcome).toBe("no_progress");
-    expect(run.noProgressReason).toBe("no_new_evidence");
-    expect(run.actions).toBe(3);
+    expect(run.stopReason).toBeUndefined();
+    expect(run.endedBy).toBe("exploration.completed");
+    expect(run.actions).toBe(10);
   });
 
   // The recovery's clock still binds a loop that is making progress. Guard (c)
@@ -175,7 +165,6 @@ describe("runAutomationStudioRuntimeExploration", () => {
 
     expect(run.outcome).toBe("budget_exhausted");
     expect(run.stopReason).toBe("recovery_deadline_expired");
-    expect(run.noProgressReason).toBeUndefined();
     expect(run.observedActions).toBe(5);
   });
 
@@ -199,25 +188,21 @@ describe("runAutomationStudioRuntimeExploration", () => {
     expect(automationStudioExplorationTraceEvent({ requested: true, exploration: run }).detail).toMatchObject({ unusableDecisions: 2 });
   });
 
-  // And a loop whose answers never become usable is stopped by the progress
-  // guard, after three of its twenty-four allowed calls, saying why -- not by
-  // the provider-call backstop.
-  it("stops a loop whose decisions keep coming back unusable on no_progress, not on the call backstop", async () => {
+  // And a run of unusable answers well past the three that once stopped it `no_progress` (t1049): each is asked
+  // again, and the exploration carries on to its answer.
+  it("asks again through many unusable decisions in a row, and carries on to an answer", async () => {
     let decisions = 0;
     const run = await explore({
-      decisions: [],
+      decisions: [call("test.inspect", { area: "one" }), complete({ finding: "the control moved" })],
       onDecide: () => { decisions += 1; },
-      unusableAt: Array.from({ length: 50 }, (_, index) => index + 1)
+      unusableAt: Array.from({ length: 10 }, (_, index) => index + 1)
     });
 
-    expect(run.outcome).toBe("no_progress");
-    expect(run.stopReason).toBe("no_progress");
-    expect(run.noProgressReason).toBe("unusable_decision");
-    expect(run.reason).toContain("could not use");
-    expect(run.unusableDecisions).toBe(3);
-    expect(decisions).toBe(3);
-    expect(resolveAutomationStudioExplorationBudget().maxProviderCalls).toBeGreaterThan(decisions);
-    expect(run.result).toBeUndefined();
+    expect(run.outcome).toBe("evidence_gathered");
+    expect(run.stopReason).toBeUndefined();
+    expect(run.unusableDecisions).toBe(10);
+    expect(decisions).toBe(12);
+    expect(run.result).toEqual({ finding: "the control moved" });
   });
 
   // Only the typed error is asked again. Anything else `decide` throws still
@@ -349,15 +334,16 @@ describe("automationStudioExplorationTraceEvent", () => {
     expect(JSON.stringify(event)).not.toContain("the control moved");
   });
 
-  it("records a circling exploration as failed, with what it kept doing", async () => {
+  it("records a circling exploration as failed, with the repeat guard that stopped it", async () => {
     const run = await explore({
-      decisions: Array.from({ length: 10 }, (_, index) => call("test.inspect", { area: `area.${index}` })),
-      execute: async () => ({ kind: "llm_evidence_tool_execution", evidence: { control: "absent" }, effectApplied: false })
+      decisions: [call("test.inspect", {}), call("test.reveal", {}), call("test.inspect", {}), call("test.reveal", {}), call("test.inspect", {})],
+      budget: { maxActions: 8, maxRepeatsPerAction: 2 }
     });
     const event = automationStudioExplorationTraceEvent({ requested: true, exploration: run });
 
     expect(event).toMatchObject({ stage: "exploration", status: "failed" });
-    expect(event.detail).toMatchObject({ outcome: "no_progress", endedBy: "no_progress", stopReason: "no_progress", noProgressReason: "repeated_evidence" });
+    expect(event.detail).toMatchObject({ outcome: "no_progress", endedBy: "repeat_window", stopReason: "repeat_window" });
+    expect(event.detail).not.toHaveProperty("noProgressReason");
   });
 
   it.each([
@@ -384,7 +370,7 @@ type Scenario = {
   recoveryDeadline?: ReturnType<typeof startAutomationStudioRecoveryDeadline>;
   startedAtMs?: number;
   signal?: AbortSignal;
-  onDecide?: () => void;
+  onDecide?: (decision: unknown) => void;
   advanceClockAfterAction?: number;
   /** Which provider calls, counting from one, come back unusable. They consume no scripted decision. */
   unusableAt?: number[];
@@ -443,10 +429,10 @@ function SCENARIOS(): Array<[string, string, string, Scenario]> {
       signal: AbortSignal.abort()
     }],
     ["decision the loop cannot read", "failed", "llm_evidence_loop.invalid_decision", { decisions: [{ kind: "something_else" }] }],
-    // One failed tool is shown to the model, not the end (see the test below).
-    // A run of them reaching the progress guard is.
-    ["tool that kept throwing", "failed", "llm_evidence_loop.tool_failed", {
-      decisions: [call("test.inspect", { area: "one" }), call("test.inspect", { area: "two" }), call("test.inspect", { area: "three" })],
+    // A failed tool is shown to the model, not the end (see the test below), and no run of them ends it either
+    // (t1049): the loop goes on to the model's own completion, which found nothing.
+    ["tool that kept throwing", "no_evidence_found", "exploration.completed", {
+      decisions: [call("test.inspect", { area: "one" }), call("test.inspect", { area: "two" }), call("test.inspect", { area: "three" }), call("test.inspect", { area: "four" }), complete({ finding: "guessed" })],
       execute: async () => { throw new Error("the host went away"); }
     }]
   ];
@@ -489,7 +475,7 @@ async function explore(scenario: Scenario): Promise<AutomationStudioRuntimeExplo
   return runAutomationStudioRuntimeExploration({
     loop: registry.evidenceLoopBinding({ projectId: "project.one", flowId: "flow.one" }, { scope: { kind: "global" }, allowSideEffectsWithoutPolicy: true }),
     decide: async (decision) => {
-      scenario.onDecide?.();
+      scenario.onDecide?.(decision);
       providerCalls += 1;
       if (scenario.decide) return scenario.decide(decision);
       if (scenario.unusableAt?.includes(providerCalls)) throw new AutomationStudioExplorationUnusableDecisionError(["llm.provider_malformed_response"]);

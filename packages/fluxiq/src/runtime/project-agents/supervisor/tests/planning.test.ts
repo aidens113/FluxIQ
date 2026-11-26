@@ -42,7 +42,7 @@ describe("the supervisor plans from a short look", () => {
     const run = await supervise([
       describeIt("t1"), describeIt("t2"), describeIt("t3"), describeIt("t4"), describeIt("t5"),
       call(IDS.writePlan, PLAN), dispatch([BRIEF]), call(IDS.assemble), test, complete
-    ], project(), { tools: LOOK_TOOLS, executeTool: page.executeTool, maxStepsWithoutProgress: 8 });
+    ], project(), { tools: LOOK_TOOLS, executeTool: page.executeTool });
 
     expect(run.outcome.status, JSON.stringify(run.outcome.loop)).toBe("candidate");
     // Every look ran: none was withdrawn, and none was refused.
@@ -58,7 +58,7 @@ describe("the supervisor plans from a short look", () => {
   it("ends a supervisor that never writes the plan on the no-progress guard, with its looks never withdrawn", async () => {
     const page = startPage();
     const looks = Array.from({ length: 12 }, (_value, index) => describeIt(`t${index}`));
-    const run = await supervise(looks, project(), { tools: LOOK_TOOLS, executeTool: page.executeTool, maxStepsWithoutProgress: 6 });
+    const run = await supervise(looks, project(), { tools: LOOK_TOOLS, executeTool: page.executeTool });
     expect(run.outcome.status).toBe("ended");
     expect(run.outcome.loop?.ok).toBe(false);
     expect(run.outcome.ending?.outcome).toBe("blocked");

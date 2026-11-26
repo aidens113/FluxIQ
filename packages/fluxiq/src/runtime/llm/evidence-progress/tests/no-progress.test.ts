@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest";
 import { automationStudioLlmEvidenceNoProgress } from "../no-progress.ts";
 
 const guard = () => automationStudioLlmEvidenceNoProgress({
-  max: 5,
   redirectAt: 3,
   facts: () => ({ proposableSteps: 0, completionAttempts: 0, canComplete: true }),
   show: () => {}

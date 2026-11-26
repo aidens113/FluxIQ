@@ -166,7 +166,7 @@ export function automationStudioLlmEvidenceHandleAmendment(
   // week report W2): a decision that changed nothing counts under its refusals'
   // reasons, whichever steps they named, so `keep` on another step each time is
   // caught as well as the identical one the repeat guard catches below.
-  // An edit that landed and put the draft back is a toggle, not a refusal: the no-progress guard below has it.
+  // An edit that landed and put the draft back is a toggle, not a refusal: it is a step without progress below, which steers.
   const reasons = [...new Set(refusals.map((refusal) => refusal.reason))].sort();
   if (!rerun.request && !amended.applied && (keepOnly || reasons.length)) {
     const ended = automationStudioLlmEvidenceRefusedOfAKind(context, iteration, keepOnly ? "keep_adds_nothing" : `amendment:${reasons.join("+")}`, AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENTS_REFUSED_CODE);
@@ -187,7 +187,6 @@ export function automationStudioLlmEvidenceHandleAmendment(
     if (stop) return stop;
   } else if (!rerun.request && (!amended.applied || sameDraftAs !== undefined)) {
     noProgress.stepped();
-    if (noProgress.reached()) return end("llm_evidence_loop.repeat_without_progress");
     noProgress.redirect(iteration);
   } else if (!rerun.request && context.authored?.advanced()) {
     // Where the model authors its draft, an edit that put a step in the Flow
@@ -445,7 +444,7 @@ function tell(
   unreached: NonNullable<AutomationStudioLlmEvidenceRerunHeld["unreached"]> = []
 ): void {
   const feedback = automationStudioLlmEvidenceDraftAmendmentFeedback({
-    refusals, applied, steps: context.draftSteps, stepsWithoutProgress: context.noProgress.steps, maxStepsWithoutProgress: context.limits.maxStepsWithoutProgress,
+    refusals, applied, steps: context.draftSteps, stepsWithoutProgress: context.noProgress.steps,
     ...(sameDraftAs === undefined ? {} : { sameDraftAsIteration: sameDraftAs }),
     ...(moved.length ? { moved } : {}),
     ...(unreached.length ? { unreached } : {}),

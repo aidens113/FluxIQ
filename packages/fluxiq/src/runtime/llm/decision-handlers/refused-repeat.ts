@@ -2,7 +2,7 @@
 // changed nothing on this same page (`../repeat-guard/outcomes.ts`).
 //
 // The decision is recorded as refused, the model is told what happened then
-// and what to do instead, and the no-progress guard counts it. Refused repeats
+// and what to do instead, and it is a step without progress. Refused repeats
 // in a row end the round as a stall (`AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW`):
 // a build then tests and judges the Flow so far, and repairs it or says why it
 // cannot be done (`../../flow-bootstrap/unfinished-build/phases.ts`). In
@@ -131,7 +131,7 @@ export function automationStudioLlmEvidenceRepeatStop(
 ): Extract<AutomationStudioLlmEvidenceRefusedRepeatNext, { kind: "stalled" | "end" | "recover" }> | undefined {
   const { noProgress } = context;
   noProgress.stepped();
-  if (inARow < AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW && !noProgress.reached()) return undefined;
+  if (inARow < AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW) return undefined;
   // A caller on the single-loop path takes the stall as its cue to change approach or ask (`./loop-check.ts`); one that does not ends as it always has.
   if (context.input.loopSignal && automationStudioLlmEvidenceLoopRaise(context, recoverAt ?? context.accounting.iterations, context.loops.stalling()) === "continue") {
     context.repeats.stallRecovered();

@@ -11,7 +11,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { AutomationStudioService } from "../../../service.ts";
 import type { AutomationStudioFlowBootstrapCreationSpendStore } from "../../index.ts";
-import { automationStudioFlowBootstrapEvidenceLoopLimits } from "../../../../../runtime/loop-limits/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW } from "../../../../../runtime/llm/index.ts";
 import { automationStudioConversationCallCause } from "../../../../../runtime/conversations/commands/index.ts";
 import { automationStudioAnsweringInstructionReading } from "../../../tests/service-bootstrap/tests/instruction-reading.ts";
 import { blankFixture, caller, judgeReply, mockProvider, plan } from "../../../tests/service-bootstrap/tests/fixtures.ts";
@@ -19,7 +19,8 @@ import { blankFixture, caller, judgeReply, mockProvider, plan } from "../../../t
 const DECISION_USD = 0.001;
 /** What the build's reading of its instruction at the start costs (t976). */
 const READING_USD = DECISION_USD;
-const MAX_CALLS = 12;
+/** Room for the unusable streak's backstop to be reached before the decision allowance is (t1049). */
+const MAX_CALLS = 20;
 
 type Reply = (call: number, latest: { revision?: number; digest?: string } | undefined) => Record<string, unknown>;
 
@@ -67,12 +68,13 @@ describe("a candidate build survives an unusable reply and accounts for its spen
     } finally { await build.close(); }
   }, 60_000);
 
-  it("unusable replies in a row stop at the bound legacy's loop is given, staged and worded as an unusable answer, with the build's spend", async () => {
+  // The bound is the unusable streak's backstop, not the count of steps without progress, which ends nothing (t1049).
+  it("unusable replies in a row stop at the unusable streak's backstop, staged and worded as an unusable answer, with the build's spend", async () => {
     const build = await candidateBuild((call) => call === 1 ? { kind: "tool_call", callId: "look", toolId: "inspect", input: { area: "item" } } : malformedSubmission);
     try {
       if (build.settled.ok) throw new Error(`expected the build to end, got ${build.settled.result.status}`);
-      // The shared bound: the same figure the legacy round's `unusableDecisions` is built from.
-      const bound = automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: MAX_CALLS }).maxConsecutiveUnusableDecisions;
+      // The loop's own backstop on unusable decisions in a row, the same in every mode.
+      const bound = AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW;
       expect(build.calls()).toBe(1 + bound);
       // The decisions and the start's reading (t976).
       const spent = (1 + bound) * DECISION_USD + READING_USD;

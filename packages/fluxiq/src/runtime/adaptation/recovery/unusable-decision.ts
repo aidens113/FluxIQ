@@ -4,8 +4,9 @@
 // "the provider was asked and its answer cannot be acted on, for a reason
 // another attempt could fix": a malformed reply, a reply that failed Core's
 // checks, a timeout, a moment of provider unavailability. The runner counts it
-// as a step that did not advance and asks again, so one bad reply no longer
-// ends an exploration, and the progress guard ends one whose replies stay bad.
+// as a step that did not advance and asks again, so a bad reply never ends an
+// exploration by its count (t1049); the run's purse and clock bound one whose
+// replies stay bad.
 //
 // Anything else `decide` throws still ends the exploration as it always did. A
 // refusal before the call was sent, a budget that would not pay for it, an

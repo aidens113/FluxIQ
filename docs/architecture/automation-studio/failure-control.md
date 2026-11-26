@@ -185,9 +185,10 @@ ARBITRARY FUCKING CALL LIMIT THAT RANDOMLY JUST RESETS EVERYTHING"; t1008). The 
 rounds are such loops, and a round that ended on a count started the next with an empty
 evidence window: run-mwufisf0-5535f5f5 ended four rounds in a row on its eighth look, and each
 fresh round looked at the same things again. So `resolveLimits` (`../../../packages/fluxiq/src/runtime/llm/loop-configuration.ts`,
-`uncounted`) lifts the turns, calls, edits, steps without progress and unusable replies in a
-row for such a loop, after checking them as given, and the no-progress redirect stops counting
-down. Eight looks in a row are no stall there: the run of looks is caught as a `no_progress`
+`uncounted`) lifts the turns, calls, edits and unusable replies in a row for such a loop, after
+checking them as given. Steps without progress end no loop at all, with or without a signal
+(t1049): `maxStepsWithoutProgress` is gone, and the no-progress redirect only steers, never
+counting down to a stop. Eight looks in a row are no stall there: the run of looks is caught as a `no_progress`
 finding (`decision-handlers/searching.ts`), steered with the model's loop decision, and each
 further look that brings nothing climbs the ladder. Where the model chose `change_approach` on
 a stretch of looks alone, each further look that brings nothing, run or answered from memory,

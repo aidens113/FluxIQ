@@ -66,9 +66,11 @@ export type AutomationStudioFlowBootstrapEvidenceLoopLimits = {
     budget: AutomationStudioLlmEvidenceLoopBudget;
   };
   /**
-   * Unusable decisions in a row after which the exploration stops. Each one
-   * still spends one of the loop's iterations, so the budget keeps binding
-   * underneath; this is the guard that stops a loop whose replies stay bad.
+   * @deprecated Read by no loop since t1049: it reaches the loop as
+   * `unusableDecisions.maxConsecutive`, which was the length of the guard on
+   * steps without progress, and no such count ends a loop now. A loop's
+   * unusable replies in a row are bounded by its own `maxInARow` default.
+   * Remove it with its callers.
    */
   maxConsecutiveUnusableDecisions: number;
   /**
@@ -111,14 +113,9 @@ export function automationStudioFlowBootstrapEvidenceLoopLimits(resolution: {
   };
   return {
     loop: { minToolCalls: 1, maxIterations, maxToolCalls, budget },
-    // Three was this number until 2026-09-22, and three ended builds that were
-    // working: it is the loop's no-progress guard as well as its unusable-reply
-    // guard, and a build that meets a setback, looks again and tries another way
-    // has taken two steps that gathered nothing new while doing exactly the right
-    // thing. What bounds a build is what it spends -- its cost, its tokens and
-    // the run's deadline, all of which this function hands the loop as
-    // its budget. This is only the stop for a build that has started repeating
-    // itself and will not stop on its own.
+    // Read by no loop since t1049 (see the field). What bounds a build is what it
+    // spends -- its cost, its tokens and the run's deadline, all of which this
+    // function hands the loop as its budget.
     maxConsecutiveUnusableDecisions: Math.min(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS, maxIterations),
     ...(declared === undefined ? {} : { declaredCalls: declared })
   };

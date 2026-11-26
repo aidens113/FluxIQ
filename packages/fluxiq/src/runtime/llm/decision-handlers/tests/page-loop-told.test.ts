@@ -16,7 +16,7 @@ const read = (position: number, disposition = "taken") => ({ position, effect: "
 /** A look, the way to the list, and trial reads, with the kept read at 13. */
 const before = [look(1), act(2), act(3), look(4), read(5), read(6), look(7), act(8, "taken"), look(9), read(10), read(11), read(12)];
 const nextOf = (refusal: AutomationStudioFlowDraftAmendmentRefusal, steps: Steps): string | undefined => {
-  const feedback = automationStudioLlmEvidenceDraftAmendmentFeedback({ refusals: [refusal], applied: 0, steps, stepsWithoutProgress: 1, maxStepsWithoutProgress: 8 });
+  const feedback = automationStudioLlmEvidenceDraftAmendmentFeedback({ refusals: [refusal], applied: 0, steps, stepsWithoutProgress: 1 });
   return (feedback.refused as { next?: string }[])[0]?.next;
 };
 

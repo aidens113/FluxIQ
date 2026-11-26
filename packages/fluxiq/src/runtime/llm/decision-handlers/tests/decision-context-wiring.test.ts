@@ -77,7 +77,7 @@ describe("a request answered from memory", () => {
       ? { kind: "llm_evidence_tool_execution" as const, evidence: { ok: true }, effectApplied: true }
       : { page: 1 });
 
-    await runAutomationStudioLlmEvidenceLoop({ tools: [inspect, act], decide, executeTool, maxStepsWithoutProgress: 6 });
+    await runAutomationStudioLlmEvidenceLoop({ tools: [inspect, act], decide, executeTool });
 
     expect(executeTool).toHaveBeenCalledTimes(2);
     const note = ofTool(shownAt(decide, 3), "core.request_check")[0]!.value;
@@ -99,7 +99,7 @@ describe("a request answered from memory", () => {
       .mockResolvedValueOnce(look("call.3"))
       .mockResolvedValueOnce({ kind: "complete", result: {} });
 
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [inspect], decide, executeTool: async () => ({ page: 1 }), maxIterations: 12, maxToolCalls: 12, maxStepsWithoutProgress: 10 });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [inspect], decide, executeTool: async () => ({ page: 1 }), maxIterations: 12, maxToolCalls: 12 });
     expect(result).toMatchObject({ ok: true });
 
     // The first answer: no redirect yet.
@@ -143,7 +143,7 @@ describe("a look asked again, when the caller digests its state", () => {
     let digests = 0;
     const captureStateDigest = vi.fn(async () => `state.${digests += 1}`);
 
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [inspect], decide, executeTool, captureStateDigest, maxStepsWithoutProgress: 6 });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [inspect], decide, executeTool, captureStateDigest });
 
     // call.1 ran; call.2 was run once more and the page had moved; call.3 was answered, with no digest taken for it.
     expect(executeTool.mock.calls.map(([input]) => input.callId)).toEqual(["call.1", "call.2"]);
@@ -209,7 +209,7 @@ describe("candidate submissions answered from memory", () => {
       discoveryOnly: true, draft: false, tools: [
         { toolId: "core.submit_candidate", description: "Submit a candidate.", inputSchema: { type: "object" }, effect: "observe" },
         { toolId: "core.test_candidate", description: "Test the exact receipt.", inputSchema: { type: "object" }, effect: "observe" }
-      ], decide, executeTool, maxStepsWithoutProgress: 4,
+      ], decide, executeTool,
       checkCompletion: async () => tested ? { ok: true } : { ok: false, issueCodes: ["candidate.trial_required"], feedback: {} }
     });
     expect("code" in outcome ? outcome.code : "ok").toBe("ok");
@@ -220,7 +220,8 @@ describe("candidate submissions answered from memory", () => {
     expect(cached.instruction).toContain("core.test_candidate");
     expect(cached.instruction).not.toContain("choose a different tool or input, or complete");
     const stalled = ofTool(shownAt(decide, 3), "core.no_progress")[0]!.value;
-    expect(stalled).toMatchObject({ candidate: { revision: receipt.revision, digest: receipt.digest }, stepsLeftBeforeStopping: 2 });
+    expect(stalled).toMatchObject({ candidate: { revision: receipt.revision, digest: receipt.digest } });
+    expect(stalled).not.toHaveProperty("stepsLeftBeforeStopping");
     expect(stalled.instruction).toContain("core.test_candidate");
     expect(stalled.instruction).not.toMatch(/Your draft|amend_draft|run a step|or complete/u);
   });
@@ -233,7 +234,7 @@ it.each([
   ["llm_evidence_loop.already_observed", "This request was already answered and was not run again"]
 ] as const)("candidate note preserves what happened for %s", (code, prefix) => {
   const note = automationStudioLlmEvidenceAnsweredRequestNote({
-    code, toolId: "inspect", answeredByCallId: "answer", stepsWithoutProgress: 1, maxStepsWithoutProgress: 8,
+    code, toolId: "inspect", answeredByCallId: "answer", stepsWithoutProgress: 1,
     discoveryOnly: true, candidate: { revision: 2, digest: "e".repeat(64) }
   });
   expect(String(note.instruction).startsWith(prefix)).toBe(true);

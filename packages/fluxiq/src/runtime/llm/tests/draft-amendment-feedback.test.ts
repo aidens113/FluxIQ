@@ -46,7 +46,7 @@ describe("an amendment the draft refused", () => {
     const feedback = automationStudioLlmEvidenceDraftAmendmentFeedback({
       refusals: [{ step: 8, reason: "act_already_named", act: "a2.quantity" }], applied: 0,
       steps: [{ position: 8, effect: "mutate", disposition: "kept" }],
-      stepsWithoutProgress: 1, maxStepsWithoutProgress: 4, actsNotDone: ["a2.quantity", "a2", "a3"]
+      stepsWithoutProgress: 1, actsNotDone: ["a2.quantity", "a2", "a3"]
     });
     const reason = (feedback.reasons as Record<string, string>).act_already_named!;
     expect(reason).not.toContain("repeat the press over its listing");
@@ -57,7 +57,7 @@ describe("an amendment the draft refused", () => {
     const feedback = automationStudioLlmEvidenceDraftAmendmentFeedback({
       refusals: [{ step: 8, reason: "act_already_named", act: "a2.quantity" }], applied: 0,
       steps: [{ position: 8, effect: "mutate", disposition: "kept", routing: { kind: "repeat" } }],
-      stepsWithoutProgress: 2, maxStepsWithoutProgress: 4, actsNotDone: ["a2.quantity", "a2", "a3"]
+      stepsWithoutProgress: 2, actsNotDone: ["a2.quantity", "a2", "a3"]
     });
     expect((feedback.refused as { next: string }[])[0]!.next).toContain('{"step": 8, "change": "unrepeat"}');
     expect((feedback.refused as { next: string }[])[0]!.next).toContain("quantity_is_a_repeat");
@@ -219,7 +219,7 @@ describe("a rerun the loop cannot carry out", () => {
 describe("the feedback an amendment refusal is shown as", () => {
   const steps = [{ position: 1 }, { position: 2 }, { position: 3 }];
   const built = (refusals: readonly AutomationStudioFlowDraftAmendmentRefusal[], applied = 0) =>
-    automationStudioLlmEvidenceDraftAmendmentFeedback({ refusals, applied, steps, stepsWithoutProgress: 1, maxStepsWithoutProgress: 8 });
+    automationStudioLlmEvidenceDraftAmendmentFeedback({ refusals, applied, steps, stepsWithoutProgress: 1 });
 
   // Exhaustive by type: a reason added to the draft's closed set fails to
   // compile here until this test names it, and in the module until it is
@@ -281,7 +281,7 @@ describe("the feedback an amendment refusal is shown as", () => {
   // checklist showing a2.quantity done and a3 still to do.
   it("tells an act named again that the checklist shows done that nothing is left for it, and what still is", () => {
     const told = (actsNotDone: readonly string[] | undefined) => automationStudioLlmEvidenceDraftAmendmentFeedback({
-      refusals: [{ step: 2, reason: "act_already_named", act: "a2.quantity" }], applied: 0, steps, stepsWithoutProgress: 1, maxStepsWithoutProgress: 8, actsNotDone
+      refusals: [{ step: 2, reason: "act_already_named", act: "a2.quantity" }], applied: 0, steps, stepsWithoutProgress: 1, actsNotDone
     });
     expect(told(["a3", "a3.size"]).refused).toEqual([{ step: 2, reason: "act_already_named", next: "Step 2 already names a2.quantity, and the acts checklist shows a2.quantity done, so nothing is left to do for it: do not name it again. Still not done on the checklist: a3, a3.size. Go on with those." }]);
     expect(told([]).refused).toEqual([{ step: 2, reason: "act_already_named", next: "Step 2 already names a2.quantity, and the acts checklist shows a2.quantity done, so nothing is left to do for it: do not name it again. Nothing on the checklist is still to do: complete when the Flow does what the person asked." }]);
@@ -310,7 +310,7 @@ describe("the feedback an amendment refusal is shown as", () => {
   it("reads every position off the draft, however long", () => {
     const long = Array.from({ length: 40 }, (_unused, index) => ({ position: index + 1 }));
     const feedback = automationStudioLlmEvidenceDraftAmendmentFeedback({
-      refusals: [{ step: 99, reason: "no_such_step" }], applied: 0, steps: long, stepsWithoutProgress: 2, maxStepsWithoutProgress: 8
+      refusals: [{ step: 99, reason: "no_such_step" }], applied: 0, steps: long, stepsWithoutProgress: 2
     });
     expect(feedback.steps).toBe(40);
     expect(feedback.positions).toEqual(long.map((step) => step.position));
@@ -345,7 +345,7 @@ describe("a refusal about a listing says what comes next", () => {
   const read = (position: number, disposition = "taken") => ({ position, effect: "observe", effectApplied: true, disposition });
   const run37 = [look(1), act(2), act(3), act(4, "kept", false), act(5), act(6), look(7), act(8, "taken"), look(9), read(10), read(11), read(12), read(13, "kept")];
   const told = (refusals: readonly (AutomationStudioFlowDraftAmendmentRefusal & { repeated?: boolean })[], steps: Parameters<typeof automationStudioLlmEvidenceDraftAmendmentFeedback>[0]["steps"] = run37) =>
-    automationStudioLlmEvidenceDraftAmendmentFeedback({ refusals, applied: 0, steps, stepsWithoutProgress: 1, maxStepsWithoutProgress: 8 });
+    automationStudioLlmEvidenceDraftAmendmentFeedback({ refusals, applied: 0, steps, stepsWithoutProgress: 1 });
   const nextOf = (feedback: Record<string, unknown>): string | undefined => (feedback.refused as { next?: string }[])[0]?.next;
 
   it("a repeat put on the listing over itself, with no press after it: do the act on one kept row first, then the repeat to send", () => {
@@ -533,7 +533,7 @@ describe("a repeat on an act that sits before its listing says to do the act aga
   const act = (position: number, disposition = "kept", effectApplied = true) => ({ position, effect: "mutate", effectApplied, disposition });
   const read = (position: number, disposition = "taken") => ({ position, effect: "observe", effectApplied: true, disposition });
   const told = (refusals: readonly AutomationStudioFlowDraftAmendmentRefusal[], steps: Parameters<typeof automationStudioLlmEvidenceDraftAmendmentFeedback>[0]["steps"]) =>
-    automationStudioLlmEvidenceDraftAmendmentFeedback({ refusals, applied: 0, steps, stepsWithoutProgress: 1, maxStepsWithoutProgress: 8 });
+    automationStudioLlmEvidenceDraftAmendmentFeedback({ refusals, applied: 0, steps, stepsWithoutProgress: 1 });
   const nextOf = (feedback: Record<string, unknown>): string | undefined => (feedback.refused as { next?: string }[])[0]?.next;
   // The run's draft as it stood at 0043: the act at 9, looks and trial reads between, the listing at 18.
   const run = [act(1), act(2), act(3), act(4), act(5), act(6, "taken"), act(7, "taken"), read(8), act(9), read(10), read(11), read(12), read(13), read(14), read(15), read(16), read(17), read(18, "kept")];
@@ -576,7 +576,7 @@ describe("run musp4h2f: a refused amendment says what is still to do, and a move
   const steps = [{ position: 8, effect: "mutate", effectApplied: true, disposition: "kept" }, { position: 9, effect: "mutate", effectApplied: true, disposition: "kept" }, { position: 10, effect: "mutate", effectApplied: true, disposition: "dropped" }];
   const todo = ["a2", "a2.quantity", "a3", "a3.size"];
   const told = (input: Partial<Parameters<typeof automationStudioLlmEvidenceDraftAmendmentFeedback>[0]>) =>
-    automationStudioLlmEvidenceDraftAmendmentFeedback({ refusals: [], applied: 0, steps, stepsWithoutProgress: 1, maxStepsWithoutProgress: 8, ...input });
+    automationStudioLlmEvidenceDraftAmendmentFeedback({ refusals: [], applied: 0, steps, stepsWithoutProgress: 1, ...input });
   const nexts = (feedback: Record<string, unknown>): (string | undefined)[] => (feedback.refused as { next?: string }[]).map((refusal) => refusal.next);
 
   it("answers a bind of a press's target as a press: no value to vary, found by its words, leave it and go on with the acts still to do", () => {
@@ -644,7 +644,6 @@ describe("a refusal about the attempt a rerun replaced", () => {
     applied: 0,
     steps: [1, 2, 3, 4, 5, 6, 7, 8].map((position) => ({ position })),
     stepsWithoutProgress: 1,
-    maxStepsWithoutProgress: 8,
     ...(actsNotDone ? { actsNotDone } : {})
   });
 
@@ -667,7 +666,7 @@ describe("a refusal about the attempt a rerun replaced", () => {
 describe("the numbering said beside a refusal", () => {
   const steps = Array.from({ length: 16 }, (_, index) => ({ position: index + 1 }));
   const feedbackOf = (refusals: readonly AutomationStudioFlowDraftAmendmentRefusal[], applied = 1) =>
-    automationStudioLlmEvidenceDraftAmendmentFeedback({ refusals, applied, steps, stepsWithoutProgress: 0, maxStepsWithoutProgress: 8 });
+    automationStudioLlmEvidenceDraftAmendmentFeedback({ refusals, applied, steps, stepsWithoutProgress: 0 });
 
   it("says, beside any refusal, that every number in one decision is the number the draft showed", () => {
     const feedback = feedbackOf([{ step: 3, reason: "already_so" }], 0);
@@ -683,7 +682,7 @@ describe("the numbering said beside a refusal", () => {
 describe("a refused bind says what the step offers instead, run B7", () => {
   type Input = Parameters<typeof automationStudioLlmEvidenceDraftAmendmentFeedback>[0];
   const told = (refusals: Input["refusals"]) =>
-    automationStudioLlmEvidenceDraftAmendmentFeedback({ refusals, applied: 0, steps: [{ position: 9, effect: "mutate", effectApplied: true, disposition: "kept" }], stepsWithoutProgress: 1, maxStepsWithoutProgress: 8 });
+    automationStudioLlmEvidenceDraftAmendmentFeedback({ refusals, applied: 0, steps: [{ position: 9, effect: "mutate", effectApplied: true, disposition: "kept" }], stepsWithoutProgress: 1 });
 
   it("passes on the paths the step offers beside the refusal, and tells the model to bind only those", () => {
     const feedback = told([{ step: 9, reason: "bind_new_key", parameter: "target", control: true, bindable: ["text"] }]);
@@ -713,7 +712,7 @@ describe("a refused bind says what the step offers instead, run B7", () => {
 describe("a step of the Flow left without its way to its page", () => {
   const steps = Array.from({ length: 7 }, (_, index) => ({ position: index + 1 }));
   const feedbackOf = (refusals: readonly AutomationStudioFlowDraftAmendmentRefusal[], applied = 1) =>
-    automationStudioLlmEvidenceDraftAmendmentFeedback({ refusals, applied, steps, stepsWithoutProgress: 0, maxStepsWithoutProgress: 8, actsNotDone: ["a1"] });
+    automationStudioLlmEvidenceDraftAmendmentFeedback({ refusals, applied, steps, stepsWithoutProgress: 0, actsNotDone: ["a1"] });
   const refusedOf = (feedback: Record<string, unknown>) => feedback.refused as { step: number; reason: string; next?: string; repeated?: true }[];
 
   it("tells a refused drop as strands_a_step, naming the step it would have stranded", () => {
@@ -728,7 +727,7 @@ describe("a step of the Flow left without its way to its page", () => {
   it("tells a step newly left after one that does not bring it to its page as unreached, beside refused, never as a refusal", () => {
     const feedback = automationStudioLlmEvidenceDraftAmendmentFeedback({
       refusals: [], unreached: [{ step: 5, after: 1, reachedBy: [4] }],
-      applied: 1, steps, stepsWithoutProgress: 0, maxStepsWithoutProgress: 8
+      applied: 1, steps, stepsWithoutProgress: 0
     });
     expect(feedback).toMatchObject({ ok: true, code: "llm_evidence_loop.draft_step_unreached", refused: [], applied: 1 });
     const [entry] = feedback.unreached as { step: number; after: number; reachedBy: number[]; note: string }[];
@@ -743,7 +742,7 @@ describe("a step of the Flow left without its way to its page", () => {
   it("says to run the step that gets there when no step in the draft did, beside a refusal of the same decision", () => {
     const feedback = automationStudioLlmEvidenceDraftAmendmentFeedback({
       refusals: [{ step: 9, reason: "no_such_step" }], unreached: [{ step: 3, after: 2, reachedBy: [] }],
-      applied: 1, steps, stepsWithoutProgress: 0, maxStepsWithoutProgress: 8
+      applied: 1, steps, stepsWithoutProgress: 0
     });
     expect(feedback.code).toBe("llm_evidence_loop.draft_amendments_refused");
     expect(refusedOf(feedback).map((entry) => entry.reason)).toEqual(["no_such_step"]);

@@ -8,7 +8,7 @@ describe("repeat amendment refusal feedback", () => {
         { step: 2, reason: "holds_a_repeat", repeat: 3, holds: "over" },
         { step: 5, reason: "span_holds_routing", repeat: 3, through: 5, routed: 5 }
       ],
-      applied: 0, steps: [], stepsWithoutProgress: 1, maxStepsWithoutProgress: 4
+      applied: 0, steps: [], stepsWithoutProgress: 1
     });
     const next = (feedback.refused as { next: string }[]).map((entry) => entry.next);
     expect(next[0]).toContain("Step 2 stays in the Flow");

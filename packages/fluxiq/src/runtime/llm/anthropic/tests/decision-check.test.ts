@@ -94,7 +94,7 @@ describe("a decision naming a tool the schema does not offer is the loop's to re
       const parsed = automationStudioLlmEvidenceParseDecision((read(decision, [...offered]).response as { decision: unknown }).decision);
       const refusal = automationStudioLlmEvidenceDecisionRefusal(decision, parsed, { complete: true, amend: true, unknownTool: { known: new Set(offered.map((one) => one.toolId)), shown: offered } });
       expect(refusal).toMatchObject({ issueCodes: ["llm_evidence_loop.unknown_tool_refused"], unknownTool: { toolId: decision.toolId, nearest: "core.run_node", takenBy: { toolId: "core.run_node", key: "node" } } });
-      const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes: refusal!.issueCodes, stepsWithoutProgress: 1, maxStepsWithoutProgress: Number.POSITIVE_INFINITY, unknownTool: refusal!.unknownTool! });
+      const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes: refusal!.issueCodes, stepsWithoutProgress: 1, unknownTool: refusal!.unknownTool! });
       expect(feedback.instruction).toContain(`"${decision.toolId}" is not a tool but a value that "core.run_node" takes in input.node: call "core.run_node" with input.node "${decision.toolId}"`);
     }
   });
@@ -115,7 +115,7 @@ describe("what is not one offered decision is still refused, with misses of its 
   it("run-mwuxd2v9 step 78: a summary and no decision is told the decision is missing, not the word Core writes itself", async () => {
     const failure = thrownBy(() => automationStudioAnthropicTaskAnswer({ summary: "Choose the store, add the item, then read the cart." }, offering(ALL), USAGE, 80));
     expect(failure?.reply?.misses).toEqual([{ path: "response.decision", rule: "is missing, and it must be there" }]);
-    const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes: ["llm.provider_output_invalid"], stepsWithoutProgress: 0, maxStepsWithoutProgress: 8, unreadable: { reply: automationStudioLlmProviderReplyAccount(failure?.reply), inARow: 1, maxInARow: Number.POSITIVE_INFINITY } });
+    const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes: ["llm.provider_output_invalid"], stepsWithoutProgress: 0, unreadable: { reply: automationStudioLlmProviderReplyAccount(failure?.reply), inARow: 1, maxInARow: Number.POSITIVE_INFINITY } });
     expect(feedback.instruction).toContain("At fault: response.decision is missing, and it must be there.");
   });
 });

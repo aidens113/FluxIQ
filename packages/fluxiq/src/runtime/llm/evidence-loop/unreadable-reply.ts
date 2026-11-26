@@ -23,8 +23,8 @@ export function automationStudioLlmEvidenceUnreadableReplies<Ended, Overdue>(opt
   loopSignal: boolean;
   /** The count that ends a loop with no signal. */
   maxInARow: number;
-  /** Steps without progress, and how many end the loop, for the note's own figures. */
-  progress: () => { steps: number; max: number };
+  /** Steps without progress, for the note's own figures. None ends the loop (t1049). */
+  progress: () => { steps: number };
   /** Records the unreadable decision on the loop's history and trace. */
   record: (iteration: number, thrown: AutomationStudioLlmUnusableDecisionError) => void;
   /** Shows the model the note before it is asked again. */
@@ -53,7 +53,7 @@ export function automationStudioLlmEvidenceUnreadableReplies<Ended, Overdue>(opt
       options.record(iteration, thrown);
       if (ended) return { ended: options.ended(count.summary()) };
       const progress = options.progress();
-      options.tell(iteration, automationStudioLlmUnusableDecisionFeedback({ issueCodes, stepsWithoutProgress: progress.steps, maxStepsWithoutProgress: progress.max, offers, unreadable: { reply, inARow: count.inARow, maxInARow: max } }));
+      options.tell(iteration, automationStudioLlmUnusableDecisionFeedback({ issueCodes, stepsWithoutProgress: progress.steps, offers, unreadable: { reply, inARow: count.inARow, maxInARow: max } }));
       // The same unreadable reply again: loop detection's, and only its ladder's last rung ends the round.
       const repeat = options.loopSignal ? again.unread(automationStudioLlmUnreadableDecisionSaid(issueCodes, reply)) : undefined;
       if (!repeat) return "ask_again";

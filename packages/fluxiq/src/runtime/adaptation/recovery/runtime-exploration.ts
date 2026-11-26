@@ -43,8 +43,8 @@ import type { AutomationStudioLlmStepLogPageReader } from "../../llm/step-log/in
 // **A tool that fails is shown to the model, not the end of the exploration.**
 // The loop runs with `toolFailures: "observe"`, as a build does: a call that
 // throws is recorded under its own call id with a closed code, the model sees
-// that record on its next decision and tries something else, and only a run of
-// them reaching the progress guard ends it. Before, one thrown tool ended every
+// that record on its next decision and tries something else; no run of them
+// ends it (t1049), the model is steered instead. Before, one thrown tool ended every
 // runtime recovery's exploration outright. The two stops this module throws on
 // purpose -- a limit the ledger refused, and a request the gate raised -- are
 // not failures to observe: each aborts the loop's signal first (the ledger's
@@ -99,7 +99,6 @@ import {
   type AutomationStudioExplorationStateDigestSource,
   type AutomationStudioExplorationStepRecord
 } from "./exploration-state/index.ts";
-import { automationStudioExplorationEvidenceDigest, type AutomationStudioExplorationNoProgressReason } from "./progress-guard.ts";
 import type { AutomationStudioRecoveryDeadline } from "./recovery-deadline.ts";
 import { AUTOMATION_STUDIO_RECOVERY_LOOP_STAGES, type AutomationStudioRecoveryTraceEvent } from "./trace.ts";
 import { AutomationStudioExplorationUnusableDecisionError } from "./unusable-decision.ts";
@@ -189,8 +188,6 @@ export type AutomationStudioRuntimeExploration = {
   endedBy: string;
   /** Present when the budget ended it, and it says which limit. */
   stopReason?: AutomationStudioExplorationStopReason;
-  /** Present only on `no_progress`, and it says what the loop kept doing. */
-  noProgressReason?: AutomationStudioExplorationNoProgressReason;
   /** Present only on `evidence_gathered`. There is no other branch that writes it. */
   result?: JsonObject;
   /**
@@ -294,9 +291,9 @@ export async function runAutomationStudioRuntimeExploration(
         ...(input.stepLogPageText ? { stepLogPageText: input.stepLogPageText } : {}),
         tools: input.loop.tools, observedStateKeys: input.loop.observedStateKeys, pageChannel: input.loop.pageChannel, controlParameterKeys: input.controlParameterKeys,
         // An answer that could not be used is asked for again, each attempt
-        // admitted and charged like any other call. It is a step that did not
-        // advance, so the progress guard -- not the call backstop -- is what
-        // ends a loop whose answers stay unusable, and it says why.
+        // admitted and charged like any other call; what bounds a loop whose
+        // answers stay unusable is the run's purse and clock, never a count of
+        // steps without progress (t1049).
         decide: async (decision) => {
           for (;;) {
             const admitted = ledger.admitProviderCall();
@@ -306,7 +303,6 @@ export async function runAutomationStudioRuntimeExploration(
             } catch (error) {
               if (!(error instanceof AutomationStudioExplorationUnusableDecisionError)) throw error;
               unusableDecisions += 1;
-              ledger.recordUnusableDecision();
               // Stopped from outside while the answer was coming back: the
               // loop reads the signal and names the ending, so do not ask again.
               if (decision.signal?.aborted) throw error;
@@ -314,29 +310,19 @@ export async function runAutomationStudioRuntimeExploration(
           }
         },
         executeTool: async (call) => {
-          const signature = actionSignature(call.toolId, call.value);
-          const admitted = ledger.admitAction(signature);
+          const admitted = ledger.admitAction(actionSignature(call.toolId, call.value));
           if (!admitted.admitted) throw new Error(`exploration stopped: ${admitted.stopReason}`);
           // The state either side of the step, and the argument it was given,
-          // recorded around the call itself. Deliberately not the evidence
-          // digest below: that is what the step said, and a reduction needs
-          // what the world was. The permission check is handed to the action
-          // underneath, by the person-needed wrapper above.
+          // recorded around the call itself: a reduction needs what the world
+          // was. The permission check is handed to the action underneath, by
+          // the person-needed wrapper above.
           const execution = await recorder.around(call, () => personNeeded.executeTool(call));
           gate.observe(execution);
           const needsPermission = gate.raisedDuring(call.callId);
           const permissionRefusedHere = gate.declarations.some((entry) => entry.action.ref === call.callId && !entry.permitted);
-          // What the step asked for and what came back, recorded together. The
-          // ledger needs both to answer whether the exploration is still
-          // learning: a repeated request and a new request that returned an
-          // answer already held are different findings, and neither of them is
-          // visible from the action alone.
-          const evidence = evidenceValue(execution);
-          const evidenceText = canonicalJson(evidence);
+          // Whether the step was refused, and why: the refusal allowance is the
+          // ledger's, and a refusal is feedback until it is spent.
           ledger.recordAction({
-            signature,
-            evidenceDigest: automationStudioExplorationEvidenceDigest(evidenceText),
-            evidenceBytes: emptyEvidence(evidence) ? 0 : Buffer.byteLength(evidenceText, "utf8"),
             ...(needsPermission ? { refused: "operator_approval_required" as const } : permissionRefusedHere ? { refused: "destructive_action_refused" as const } : refusal(execution, input.classifyRefusal))
           });
           // Terminal, not parked: the step is recorded, and the exploration
@@ -351,12 +337,6 @@ export async function runAutomationStudioRuntimeExploration(
         // passed: the exploration's pages reach the model whole.
         maxIterations: Math.min(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxProviderCalls, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations),
         maxToolCalls: Math.min(AUTOMATION_STUDIO_EXPLORATION_BUDGET_CEILINGS.maxActions, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxToolCalls),
-        // Recovery's own no-progress streak, named rather than inherited. The
-        // loop's default became a far backstop when Flow creation stopped being
-        // ended by three non-productive steps; a recovery is a different job
-        // with a different budget, and its guard is the one its own ledger and
-        // `progress-guard.ts` agree on.
-        maxStepsWithoutProgress: input.budget.maxStepsWithoutProgress,
         ...(input.completionSchema ? { completionSchema: input.completionSchema } : {}),
         toolFailures: "observe",
         signal: stopSignal
@@ -440,7 +420,6 @@ export function automationStudioExplorationTraceEvent(input: {
       outcome: exploration.outcome,
       endedBy: exploration.endedBy,
       ...(exploration.stopReason ? { stopReason: exploration.stopReason } : {}),
-      ...(exploration.noProgressReason ? { noProgressReason: exploration.noProgressReason } : {}),
       // The one detail that is not a count: what a person is being asked to
       // allow. Bounded and built by Core, with a control name only when the
       // model had already been shown it.
@@ -536,14 +515,12 @@ function classify(input: {
   }
   const stopReason = input.ledger.stopReason;
   if (stopReason) {
-    const noProgressReason = input.ledger.noProgressReason;
     return {
       ...base,
       outcome: AUTOMATION_STUDIO_EXPLORATION_OUTCOME_FOR_STOP_REASON[stopReason],
-      reason: noProgressReason ? NO_PROGRESS_SENTENCE[noProgressReason] : STOP_REASON_SENTENCE[stopReason],
+      reason: STOP_REASON_SENTENCE[stopReason],
       endedBy: stopReason,
-      stopReason,
-      ...(noProgressReason ? { noProgressReason } : {})
+      stopReason
     };
   }
   if (input.externallyCancelled || !input.loopResult) {
@@ -574,20 +551,6 @@ function classify(input: {
   };
 }
 
-/**
- * What going in circles looked like, in Core's own words.
- *
- * Three sentences rather than one, because they are three different things to
- * do next: narrow what is being asked for, give the model something it has not
- * already been given, or find out why every step comes back empty.
- */
-const NO_PROGRESS_SENTENCE: Readonly<Record<AutomationStudioExplorationNoProgressReason, string>> = Object.freeze({
-  repeated_request: "The exploration kept asking for something it had already asked for, so it was stopped.",
-  repeated_evidence: "The exploration kept gathering evidence it already had, so it was stopped.",
-  no_new_evidence: "The exploration kept taking steps that returned nothing new, so it was stopped.",
-  unusable_decision: "The model kept answering with something the exploration could not use, so it was stopped."
-});
-
 /** How a check handed to the person ended the exploration, in Core's own words. */
 const PERSON_NEEDED_SENTENCE: Readonly<Record<AutomationStudioPersonNeededEnding, string>> = Object.freeze({
   stopped: "The exploration met a check only a person can complete, and the person pressed Stop.",
@@ -603,7 +566,6 @@ const STOP_REASON_SENTENCE: Readonly<Record<AutomationStudioExplorationStopReaso
   action_limit: "The exploration used every action it was allowed before it reached an answer.",
   provider_call_limit: "The exploration used every provider call it was allowed before it reached an answer.",
   repeat_window: "The exploration kept attempting the same action, so it was stopped.",
-  no_progress: "The exploration had stopped learning anything new, so it was stopped.",
   destructive_action_refused: "The exploration asked to do something destructive and was refused.",
   out_of_scope_refused: "The exploration asked to go outside the scope it was given and was refused.",
   refusal_limit: "Every action the exploration had left to try was refused.",
@@ -623,23 +585,6 @@ function refusal(
   // refusal with nobody to ask, and is reported as the refusal it is.
   if (refused === "operator_approval_required") return { refused: "destructive_action_refused" };
   return refused ? { refused } : {};
-}
-
-/** What an execution actually carried, whatever shape the domain returned it in.
- * A missing value is `null`, so the digest below always has text to work on. */
-function evidenceValue(execution: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult): JsonValue {
-  if (!execution || typeof execution !== "object" || Array.isArray(execution)) return (execution ?? null) as JsonValue;
-  const candidate = execution as { kind?: unknown; evidence?: unknown };
-  return candidate.kind === "llm_evidence_tool_execution" ? ((candidate.evidence ?? null) as JsonValue) : (execution as JsonValue);
-}
-
-/** Whether a step came back with nothing in it. Serialized, `""` and `{}` are
- * still a few bytes; as evidence they are nothing, and counting them as an
- * answer would let a loop of empty steps look like one that is learning. */
-function emptyEvidence(value: JsonValue): boolean {
-  if (value === null || value === "") return true;
-  if (Array.isArray(value)) return value.length === 0;
-  return typeof value === "object" && Object.keys(value).length === 0;
 }
 
 function executionResultCode(execution: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult): string | undefined {

@@ -1,9 +1,11 @@
 // Tracks observed states, repeated answers and repeated issue sets independently of any authoring workflow.
+//
+// It counts and it steers; it never ends anything. No count of steps without progress ends a loop (user, 2026-11-24:
+// "THERE SHOULDNT BE ANY ARBITRARY FUCKING CALL LIMIT THAT RANDOMLY JUST RESETS EVERYTHING"; t1049): from
+// `redirectAt` the model is told plainly what it keeps repeating, and a repeat is loop detection's to decide.
 export type AutomationStudioLlmEvidenceNoProgress = {
   /** Steps in a row that gave the loop nothing new. */
   readonly steps: number;
-  /** True once the guard is reached, which is when the caller ends the loop. */
-  reached(): boolean;
   /** The loop learned something, so every run it was counting starts again. */
   cleared(): void;
   /** One more step that gave nothing new, named by the tool that gave it where a tool did. */
@@ -52,13 +54,12 @@ export type AutomationStudioLlmEvidenceNoProgress = {
 /** Opaque progress facts; a program supplies any message and candidate interpretation. */
 export type AgentNoProgressSnapshot = {
   stepsWithoutProgress: number;
-  maxStepsWithoutProgress: number;
   repeatingToolIds: string[];
   lastIssueCodes: readonly string[];
 };
 
 export function automationStudioLlmEvidenceNoProgress(input: {
-  max: number;
+  /** Steps in a row without progress from which the model is told so, on every further one. */
   redirectAt: number;
   onRedirect(iteration: number, snapshot: AgentNoProgressSnapshot): void;
 }): AutomationStudioLlmEvidenceNoProgress {
@@ -81,7 +82,6 @@ export function automationStudioLlmEvidenceNoProgress(input: {
   const refusals = new Map<string, Set<string>>();
   return {
     get steps() { return steps; },
-    reached: () => steps >= input.max,
     cleared() {
       steps = 0;
       issueSets.clear();
@@ -132,10 +132,9 @@ export function automationStudioLlmEvidenceNoProgress(input: {
     },
     get outstanding() { return [...lastRefusal]; },
     redirect(iteration, now) {
-      if ((!now && steps < input.redirectAt) || steps >= input.max) return;
+      if (!now && steps < input.redirectAt) return;
       input.onRedirect(iteration, {
         stepsWithoutProgress: steps,
-        maxStepsWithoutProgress: input.max,
         repeatingToolIds: [...repeating],
         lastIssueCodes: lastRefusal
       });

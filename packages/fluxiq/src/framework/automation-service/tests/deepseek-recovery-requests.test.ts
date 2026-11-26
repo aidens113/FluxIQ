@@ -118,31 +118,30 @@ describe("the real DeepSeek adapter on a real runtime recovery", () => {
   // One bad answer used to end the whole recovery: the grant it ran under was
   // revoked on the first failed call, so every later call -- the patch
   // included -- was refused. A bad answer is a spent call. The run carries on,
-  // the exploration asks again, the progress guard stops a loop whose answers
-  // stay bad, and the patch is still sent.
+  // the exploration asks again -- no count of steps without progress stops it
+  // (t1049) -- until the exploration's own allowance of provider calls, and the
+  // patch is still sent.
   it.each([
     ["come back malformed", "malformed", "llm.provider_malformed_response", undefined],
     ["run past the call's deadline", "hang", "llm.provider_timeout", 1_000]
-  ] as const)("carries on through exploration decisions that %s, stops them on the progress guard, and still sends the patch", async (_label, decisionReply, code, timeoutMs) => {
+  ] as const)("carries on through exploration decisions that %s, asks again to the exploration's call allowance, and still sends the patch", async (_label, decisionReply, code, timeoutMs) => {
     const run = await recover({ tokenLimits: LIVE_TOKEN_LIMITS.default!, explore: true, patch: true, looks: 18, decisionReply, ...(timeoutMs ? { timeoutMs } : {}) });
 
-    expect(run.sent.map((call) => call.taskKind)).toEqual(["runtime_diagnosis", "evidence_tool_decision", "evidence_tool_decision", "evidence_tool_decision", "runtime_patch"]);
-    // The same iteration asked three times: each unusable answer was asked again.
-    expect(run.sent.filter((call) => call.taskKind === "evidence_tool_decision").map((call) => call.iteration)).toEqual([1, 1, 1]);
-    expect(run.revealed).toHaveLength(5);
+    expect(run.sent.map((call) => call.taskKind)).toEqual(["runtime_diagnosis", ...Array.from({ length: 24 }, () => "evidence_tool_decision"), "runtime_patch"]);
+    // The same iteration asked each time: each unusable answer was asked again.
+    expect(run.sent.filter((call) => call.taskKind === "evidence_tool_decision").map((call) => call.iteration)).toEqual(Array.from({ length: 24 }, () => 1));
+    expect(run.revealed).toHaveLength(26);
     expect(providerCalls(run.detail).map((call) => call.validation)).toEqual([
       { ok: true, issueCodes: [] },
-      { ok: false, issueCodes: [code] },
-      { ok: false, issueCodes: [code] },
-      { ok: false, issueCodes: [code] },
+      ...Array.from({ length: 24 }, () => ({ ok: false, issueCodes: [code] })),
       { ok: true, issueCodes: [] }
     ]);
     expect(explorationStage(run.detail)).toMatchObject({
       status: "failed",
-      detail: { outcome: "no_progress", stopReason: "no_progress", noProgressReason: "unusable_decision", unusableDecisions: 3 }
+      detail: { outcome: "budget_exhausted", stopReason: "provider_call_limit", unusableDecisions: 24 }
     });
     expect(run.detail.interventions.find((intervention) => intervention.kind === "runtime_patch")).toMatchObject({ validation: { ok: true } });
-  }, 30_000);
+  }, 60_000);
 });
 
 type RecoveryOptions = {

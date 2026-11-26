@@ -40,7 +40,7 @@ export const REPEATED_INSTRUCTION = " Every refusal marked repeated was refused 
 export const NEXT_INSTRUCTION = " next, beside a refusal, is what to do instead, in the draft's own step numbers: do that rather than sending the refused amendment again.";
 
 export const UNDONE_INSTRUCTION = " These amendments put the draft back exactly as it stood at iteration sameDraftAsIteration, so the Flow is no different from then."
-  + " Decide once whether the step belongs in the Flow and leave it: toggling a step counts toward stopping this exploration.";
+  + " Decide once whether the step belongs in the Flow and leave it: toggling a step gets the Flow no further.";
 
 /**
  * What the model reads after an amendment decision the draft refused, before it
@@ -61,7 +61,6 @@ export function automationStudioLlmEvidenceDraftAmendmentFeedback(input: {
   applied: number;
   steps: readonly AutomationStudioDraftAmendmentFeedbackStep[];
   stepsWithoutProgress: number;
-  maxStepsWithoutProgress: number;
   /** The iteration whose draft the applied amendments put back exactly, when they did. */
   sameDraftAsIteration?: number;
   /**
@@ -128,7 +127,6 @@ export function automationStudioLlmEvidenceDraftAmendmentFeedback(input: {
     ...(met.includes("no_such_step") ? { positions: existingPositions(input.steps) } : {}),
     reasons,
     stepsWithoutProgress: input.stepsWithoutProgress,
-    ...(Number.isFinite(input.maxStepsWithoutProgress) ? { maxStepsWithoutProgress: input.maxStepsWithoutProgress } : {}), // None where no count ends the loop (t1008).
     ...(undone ? { sameDraftAsIteration: input.sameDraftAsIteration! } : {}),
     instruction: ((refused.length || (!undone && !onlyMoved) ? AMENDMENT_FEEDBACK_INSTRUCTION : "")
       + (refused.length ? NUMBERING_INSTRUCTION : "")

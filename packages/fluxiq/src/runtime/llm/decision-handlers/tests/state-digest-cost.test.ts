@@ -241,7 +241,7 @@ const MUNNEAUY_BEFORE = { decisions: 18, providerCalls: 18, executeTool: 9, dige
 
 describe("run-munneauy-de8663ed, rebuilt", () => {
   for (const mode of ["states_on_calls", "digest_hook"] as const) {
-    it(`${mode}: no look is withdrawn, the looks asked for again are answered from memory, and the build ends as the repeat it was, at 15`, async () => {
+    it(`${mode}: no look is withdrawn, the looks asked for again are answered from memory, and no count of them ends the build`, async () => {
       const run = await replay(MUNNEAUY, mode, { outcomes: MUNNEAUY_OUTCOMES });
       const trace = traceOf(run);
       const after = {
@@ -250,24 +250,25 @@ describe("run-munneauy-de8663ed, rebuilt", () => {
         executeTool: total(run.executeByIteration),
         digestHook: total(run.hookByIteration),
         answeredFromMemory: trace.filter((row) => row.resultCode === "llm_evidence_loop.already_answered").length,
-        ended: "code" in run.result ? run.result.code : "threw"
+        ended: "code" in run.result ? run.result.code : "ok" in run.result && run.result.ok ? "completed" : "threw"
       };
       console.table({ before: MUNNEAUY_BEFORE, [`after (${mode})`]: after });
 
       // 0-7 as recorded; 8, the first re-ask, run once more and found the page as it was.
       expect([...run.executeByIteration.keys()]).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
       expect(trace.find((row) => row.iteration === 8)).toMatchObject({ decision: "tool_call", callId: "asked.8", progress: { pageState: "unchanged" } });
-      // 9-14 are all answered from memory, with nothing run and no digest: a redirect ignored withdraws nothing.
-      expect(trace.filter((row) => row.resultCode === "llm_evidence_loop.already_answered").map((row) => row.iteration)).toEqual([9, 10, 11, 12, 13, 14]);
+      // 9-17 are all answered from memory, with nothing run and no digest: a redirect ignored withdraws nothing.
+      expect(trace.filter((row) => row.resultCode === "llm_evidence_loop.already_answered").map((row) => row.iteration)).toEqual([9, 10, 11, 12, 13, 14, 15, 16, 17]);
       const history = run.shown.get(12)!.find((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID)!.value as JsonObject;
       expect(history.redirects as JsonObject).not.toHaveProperty("llm_evidence_loop.looks_withdrawn");
       // The node list is the same at every decision, and no look is refused as withdrawn.
       for (const at of [...run.offered.keys()]) expect(nodesOffered(run.offered.get(at)), `decision ${at}`).toEqual([NAVIGATE, CLICK].sort());
       expect(trace.some((row) => row.resultCode === "llm_evidence_loop.look_withdrawn")).toBe(false);
-      for (const at of [9, 10, 11, 12, 13, 14, 15]) expect(count(run.executeByIteration, at), `decision ${at}`).toBe(0);
-      // The build ends as the repeat it was, at 15: the no-progress stop the answered asks count toward, where the refused
-      // withdrawn looks used to count (the same 15). The recorded run ended at 18 under the loop of its day.
-      expect(after).toEqual({ decisions: 15, providerCalls: 15, executeTool: 9, digestHook: mode === "digest_hook" ? 18 : 0, answeredFromMemory: 6, ended: "llm_evidence_loop.repeat_without_progress" });
+      for (const at of [9, 10, 11, 12, 13, 14, 15, 16, 17]) expect(count(run.executeByIteration, at), `decision ${at}`).toBe(0);
+      // No count of the answered asks ends the build any more (t1049): it ran to 15 and stopped on the no-progress
+      // count; now every recorded decision runs, the recorded edit at 18 included, and the 19th, past the recording,
+      // completes, which the loop accepts. The recorded run ended at 18 under the loop of its day.
+      expect(after).toEqual({ decisions: 19, providerCalls: 19, executeTool: 9, digestHook: mode === "digest_hook" ? 18 : 0, answeredFromMemory: 9, ended: "completed" });
     });
   }
 });

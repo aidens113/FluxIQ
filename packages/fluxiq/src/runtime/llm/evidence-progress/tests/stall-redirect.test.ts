@@ -7,7 +7,6 @@ import { automationStudioLlmEvidenceStallRedirect } from "../stall-redirect.ts";
 
 const redirect = (acts?: unknown) => automationStudioLlmEvidenceStallRedirect({
   stepsWithoutProgress: 3,
-  maxStepsWithoutProgress: 8,
   repeatingToolIds: [],
   proposableSteps: 2,
   completionAttempts: 1,
@@ -36,7 +35,7 @@ describe("the stall note about an act still owed", () => {
 
   it("finds a choice under its act, and ignores a checklist entry that is not codes and positions", () => {
     const choice = String(automationStudioLlmEvidenceStallRedirect({
-      stepsWithoutProgress: 3, maxStepsWithoutProgress: 8, repeatingToolIds: [], proposableSteps: 1, completionAttempts: 0, lastIssueCodes: [], canComplete: true,
+      stepsWithoutProgress: 3, repeatingToolIds: [], proposableSteps: 1, completionAttempts: 0, lastIssueCodes: [], canComplete: true,
       actsMissing: ["a2.quantity"],
       acts: [{ id: "a2", verb: "add", quote: "add two", done: 3, choices: [{ id: "a2.quantity", choice: "quantity", value: "two", quote: "two", todo: "choice_is_the_act_step", step: 3 }] }]
     }).instruction);
@@ -52,7 +51,7 @@ describe("the stall note about an act still owed", () => {
   // owed choice is the next step, not the act.
   it("sends an act's owed choice before the act itself", () => {
     const said = String(automationStudioLlmEvidenceStallRedirect({
-      stepsWithoutProgress: 3, maxStepsWithoutProgress: 8, repeatingToolIds: [], proposableSteps: 8, completionAttempts: 0, lastIssueCodes: [], canComplete: true,
+      stepsWithoutProgress: 3, repeatingToolIds: [], proposableSteps: 8, completionAttempts: 0, lastIssueCodes: [], canComplete: true,
       actsMissing: ["a2", "a2.quantity", "a3", "a3.size"],
       acts: [
         { id: "a2", verb: "add", quote: "add two packs", todo: "no_step_added", choices: [
@@ -72,7 +71,7 @@ describe("the stall note about an act still owed", () => {
   // run another step for a2" would forbid the very press that does a2.
   it("sends the model to the press after the choices when the step named only opened their page", () => {
     const said = String(automationStudioLlmEvidenceStallRedirect({
-      stepsWithoutProgress: 3, maxStepsWithoutProgress: 8, repeatingToolIds: [], proposableSteps: 8, completionAttempts: 0, lastIssueCodes: [], canComplete: true,
+      stepsWithoutProgress: 3, repeatingToolIds: [], proposableSteps: 8, completionAttempts: 0, lastIssueCodes: [], canComplete: true,
       actsMissing: ["a2", "a3", "a3.size"],
       acts: [
         { id: "a2", verb: "add", quote: "add two packs", todo: "step_only_opens_its_choices", step: 10, choices: [
@@ -102,7 +101,7 @@ describe("the stall note about an act still owed", () => {
 
   it("sends the act once none of its choices is owed", () => {
     const said = String(automationStudioLlmEvidenceStallRedirect({
-      stepsWithoutProgress: 3, maxStepsWithoutProgress: 8, repeatingToolIds: [], proposableSteps: 8, completionAttempts: 0, lastIssueCodes: [], canComplete: true,
+      stepsWithoutProgress: 3, repeatingToolIds: [], proposableSteps: 8, completionAttempts: 0, lastIssueCodes: [], canComplete: true,
       actsMissing: ["a2", "a3", "a3.size"]
     }).instruction);
     expect(said).toContain("Your next step is the one that does a2: run it with act a2.");
@@ -114,11 +113,12 @@ describe("candidate stall guidance", () => {
   it("names the exact accepted receipt instead of legacy draft instructions", () => {
     const candidate = { revision: 7, digest: "b".repeat(64) };
     const note = automationStudioLlmEvidenceStallRedirect({
-      stepsWithoutProgress: 2, maxStepsWithoutProgress: 8, repeatingToolIds: ["core.submit_candidate"],
+      stepsWithoutProgress: 2, repeatingToolIds: ["core.submit_candidate"],
       proposableSteps: 0, completionAttempts: 0, lastIssueCodes: [], canComplete: true,
       ...{ discoveryOnly: true, candidate }
     });
-    expect(note).toMatchObject({ candidate, stepsLeftBeforeStopping: 6 });
+    expect(note).toMatchObject({ candidate });
+    expect(note).not.toHaveProperty("stepsLeftBeforeStopping");
     expect(note.instruction).toContain(`{"revision":7,"digest":"${candidate.digest}"}`);
     expect(note.instruction).toContain("core.test_candidate");
     expect(note.instruction).not.toMatch(/Your draft|amend_draft|run a step|or complete/u);
@@ -126,7 +126,7 @@ describe("candidate stall guidance", () => {
 
   it("does not invent a receipt or draft when no candidate has been accepted", () => {
     const note = automationStudioLlmEvidenceStallRedirect({
-      stepsWithoutProgress: 3, maxStepsWithoutProgress: 8, repeatingToolIds: ["inspect"],
+      stepsWithoutProgress: 3, repeatingToolIds: ["inspect"],
       proposableSteps: 0, completionAttempts: 0, lastIssueCodes: [], canComplete: true,
       ...{ discoveryOnly: true }
     });
@@ -141,7 +141,7 @@ describe("candidate stall guidance", () => {
   it("never recommends testing a receipt whose trial failed on record or that a refusal cleared", () => {
     const finishing = { submit: "core.submit_subflow", test: "core.test_subflow" };
     const stalled = (candidate: { revision: number; digest: string; lastTrial?: "no" | "execution_failed"; stale?: true }) => automationStudioLlmEvidenceStallRedirect({
-      stepsWithoutProgress: 6, maxStepsWithoutProgress: 8, repeatingToolIds: ["core.submit_subflow"],
+      stepsWithoutProgress: 6, repeatingToolIds: ["core.submit_subflow"],
       proposableSteps: 0, completionAttempts: 0, lastIssueCodes: [], canComplete: true,
       ...{ discoveryOnly: true, candidate, finishing }
     });
@@ -150,7 +150,7 @@ describe("candidate stall guidance", () => {
     expect(failed.instruction).not.toContain("Use core.test_subflow with that exact revision");
     expect(failed.instruction).toContain("Its trial already answered execution_failed.");
     expect(failed.instruction).toContain("a changed submission is needed");
-    expect(failed.instruction).toContain("2 more step(s) without progress stop this build.");
+    expect(failed.instruction).not.toContain("without progress stop");
     const judgedNo = stalled({ revision: 5, digest, lastTrial: "no" });
     expect(judgedNo.instruction).toContain("Its trial already answered no.");
     expect(judgedNo.instruction).not.toContain("stale");
@@ -168,7 +168,7 @@ describe("candidate stall guidance", () => {
 // acts checklist, the completion check) shows every act covered.
 describe("a no-candidate stall", () => {
   const stall = (extra: Record<string, unknown>) => String(automationStudioLlmEvidenceStallRedirect({
-    stepsWithoutProgress: 3, maxStepsWithoutProgress: 8, repeatingToolIds: ["web.search"],
+    stepsWithoutProgress: 3, repeatingToolIds: ["web.search"],
     proposableSteps: 0, completionAttempts: 0, lastIssueCodes: [], canComplete: true, discoveryOnly: true,
     ...extra
   }).instruction);
@@ -211,7 +211,7 @@ describe("a no-candidate stall", () => {
 // A discovery-only loop with its own finishing tools is told to test with its own (t537).
 describe("the stall note of a loop with its own finishing tools", () => {
   const note = (finishing?: { submit: string; test: string }) => String(automationStudioLlmEvidenceStallRedirect({
-    discoveryOnly: true, candidate: { revision: 2, digest: "d".repeat(64) }, stepsWithoutProgress: 3, maxStepsWithoutProgress: 8, repeatingToolIds: [],
+    discoveryOnly: true, candidate: { revision: 2, digest: "d".repeat(64) }, stepsWithoutProgress: 3, repeatingToolIds: [],
     proposableSteps: 0, completionAttempts: 0, lastIssueCodes: [], canComplete: true, ...(finishing ? { finishing } : {})
   }).instruction);
 
@@ -225,22 +225,23 @@ describe("the stall note of a loop with its own finishing tools", () => {
 // `run-mv7t07hx-fe96a174` writes no draft and runs no step, so the draft's
 // sentences sent it to do a builder's work. Its own way forward is said instead.
 describe("the stall note of a loop that plans", () => {
-  const base = { stepsWithoutProgress: 3, maxStepsWithoutProgress: 8, repeatingToolIds: ["web.describe_element"], proposableSteps: 0, completionAttempts: 0, lastIssueCodes: [], canComplete: true };
+  const base = { stepsWithoutProgress: 3, repeatingToolIds: ["web.describe_element"], proposableSteps: 0, completionAttempts: 0, lastIssueCodes: [], canComplete: true };
   const forward = { toolId: "plan.write", instruction: "Write the plan now with plan.write." };
 
   it("says its way forward, with its tool under next, in place of the draft's sentences", () => {
     const note = automationStudioLlmEvidenceStallRedirect({ ...base, forward });
-    expect(note).toMatchObject({ code: "llm_evidence_loop.no_progress", next: "plan.write", stepsLeftBeforeStopping: 5 });
+    expect(note).toMatchObject({ code: "llm_evidence_loop.no_progress", next: "plan.write" });
+    expect(note).not.toHaveProperty("stepsLeftBeforeStopping");
     expect(note).not.toHaveProperty("draftStepsSoFar");
     expect(note.instruction).toBe("The last 3 steps told you nothing you did not already have. "
       + "The tools named in repeatingToolIds are answering with what they already answered; asking them again will return the same thing again. "
-      + "Write the plan now with plan.write. 5 more step(s) without progress and this build stops.");
+      + "Write the plan now with plan.write.");
   });
 
-  it("leaves out next when the way forward names no tool, and says so on the last step", () => {
+  it("leaves out next when the way forward names no tool, and never says the build stops (t1049)", () => {
     const note = automationStudioLlmEvidenceStallRedirect({ ...base, stepsWithoutProgress: 8, forward: { instruction: "Complete now." } });
     expect(note).not.toHaveProperty("next");
-    expect(String(note.instruction)).toMatch(/Complete now\. This build stops on the next step without progress\.$/u);
+    expect(String(note.instruction)).toMatch(/Complete now\.$/u);
   });
 
   it("leaves every other loop's note as it was", () => {
@@ -251,19 +252,20 @@ describe("the stall note of a loop that plans", () => {
   });
 });
 
-describe("the stall note of a task that keeps going", () => {
-  const base = { stepsWithoutProgress: 3, maxStepsWithoutProgress: 8, repeatingToolIds: [], proposableSteps: 2, completionAttempts: 0, lastIssueCodes: [], canComplete: true } as const;
+// t1049: no count of steps without progress ends anything, so no stall note says one will -- not a round, not the
+// exploration, not the build -- however many steps it has been.
+describe("the stall note says no stop is coming", () => {
+  const base = { stepsWithoutProgress: 3, repeatingToolIds: [], proposableSteps: 2, completionAttempts: 0, lastIssueCodes: [], canComplete: true } as const;
 
-  it("says the round ends and a fresh one follows, and never that the exploration stops with no Flow", () => {
-    for (const stepsWithoutProgress of [3, 8]) {
-      const said = String(automationStudioLlmEvidenceStallRedirect({ ...base, stepsWithoutProgress, freshRoundFollows: true }).instruction);
-      expect(said).toMatch(/round ends/u);
-      expect(said).not.toMatch(/no Flow|exploration stops/u);
+  it("ends with the way out, never a countdown or a stop", () => {
+    for (const stepsWithoutProgress of [3, 8, 40]) {
+      const note = automationStudioLlmEvidenceStallRedirect({ ...base, stepsWithoutProgress });
+      const said = String(note.instruction);
+      expect(said).toContain(`The last ${stepsWithoutProgress} steps told you nothing you did not already have.`);
+      expect(said.endsWith("Do something you have not done, or complete.")).toBe(true);
+      expect(said).not.toMatch(/without progress (stop|and this)|round ends|exploration stops|no Flow/u);
+      expect(note).not.toHaveProperty("maxStepsWithoutProgress");
+      expect(note).not.toHaveProperty("stepsLeftBeforeStopping");
     }
-  });
-
-  it("leaves every other mode's words as they were", () => {
-    expect(String(automationStudioLlmEvidenceStallRedirect(base).instruction)).toContain("5 more step(s) without progress and this exploration stops with no Flow.");
-    expect(String(automationStudioLlmEvidenceStallRedirect({ ...base, stepsWithoutProgress: 8 }).instruction)).toContain("This exploration stops on the next step without progress.");
   });
 });

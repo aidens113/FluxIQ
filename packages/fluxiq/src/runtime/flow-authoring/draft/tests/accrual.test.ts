@@ -107,14 +107,15 @@ describe("the draft a build accrues", () => {
       .mockResolvedValueOnce(repeat)
       .mockResolvedValue({ kind: "complete", result: { flow: "..." } });
     const result = await runAutomationStudioLlmEvidenceLoop({
-      tools, decide, maxIterations: 12, maxToolCalls: 12, maxStepsWithoutProgress: 3, unusableDecisions: { stalled },
+      tools, decide, maxIterations: 12, maxToolCalls: 12, unusableDecisions: { stalled },
       executeTool: async ({ toolId }) => toolId === "press"
         ? { kind: "llm_evidence_tool_execution", evidence: { page: "after" }, effectApplied: true }
         : { page: "looked" }
     });
-    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_without_progress" });
-    // The three edits landed all the same: they are progress on the draft, and
-    // the loop neither counts them against the guard nor lets them clear it.
+    // No count of steps without progress ends it (t1049): the model goes on to finish.
+    expect(result).toMatchObject({ ok: true });
+    // The edits landed all the same: they are progress on the draft, and the
+    // loop neither counts them as steps without progress nor lets them clear the count.
     expect(result.steps[0]?.disposition).toBe("kept");
     expect(result.trace.filter((entry) => entry.decision === "amend_draft")).toHaveLength(2);
   });

@@ -34,8 +34,8 @@ describe("a refused configuration names its check", () => {
   });
 
   it("says the first limit refused, in the order the loop asks them", async () => {
-    const steps = await runAutomationStudioLlmEvidenceLoop(loop({ maxStepsWithoutProgress: 4, unusableDecisions: { maxConsecutive: 3, stalled: () => new Error("stalled") } }));
-    expect(!steps.ok && steps.configuration).toMatchObject({ check: "limits.max_steps_without_progress_agrees", values: { maxStepsWithoutProgress: 4, unusableMaxConsecutive: 3 } });
+    const unusable = await runAutomationStudioLlmEvidenceLoop(loop({ unusableDecisions: { maxInARow: 0, stalled: () => new Error("stalled") } }));
+    expect(!unusable.ok && unusable.configuration).toMatchObject({ check: "limits.max_unusable_decisions_in_a_row", values: { maxUnusableDecisionsInARow: 0 } });
     const iterations = await runAutomationStudioLlmEvidenceLoop(loop({ maxIterations: 65, maxToolCalls: 65 }));
     expect(!iterations.ok && iterations.configuration).toMatchObject({ check: "limits.max_iterations", values: { maxIterations: 65, ceiling: 64 } });
     const minimum = await runAutomationStudioLlmEvidenceLoop(loop({ minToolCalls: 2 }));

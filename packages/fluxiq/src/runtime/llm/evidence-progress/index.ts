@@ -1,5 +1,5 @@
 // Barrel for what an evidence loop counts as progress: the record each row
-// carries (`progress.ts`), the no-progress guard (`no-progress.ts`) and what it
+// carries (`progress.ts`), the count of steps without progress (`no-progress.ts`, which ends nothing) and what it
 // tells a model that has stopped getting further (`stall-redirect.ts`), whether
 // an authored draft advanced toward its acts (`authored-progress.ts`), and the
 // content-free build trace read off each row (`progress-trace.ts`) with the

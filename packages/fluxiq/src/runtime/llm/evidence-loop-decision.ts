@@ -638,7 +638,7 @@ function readAmendments(value: unknown): AutomationStudioFlowDraftAmendment[] | 
  * among them.
  */
 function readAmendment(item: unknown): AutomationStudioFlowDraftAmendment | "rerun_needs_input" | undefined {
-  if (!isRecord(item) || !exactKeys(item, ["step", "change", "settings", "input", "through", "over", "while", "most", "act", "place"])) return undefined;
+  if (!isRecord(item) || !exactKeys(item, ["step", "change", "input", "through", "over", "while", "most", "act", "place"])) return undefined;
   if (item.act !== undefined && (typeof item.act !== "string" || !AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID.test(item.act))) return undefined;
   if (!validPlace(item.place)) return undefined;
   if (!Number.isSafeInteger(item.step) || (item.step as number) < 1) return undefined;
@@ -646,7 +646,6 @@ function readAmendment(item: unknown): AutomationStudioFlowDraftAmendment | "rer
   // Explicit repeat removal changes only routing, not an act/argument or
   // another route: mixed requests must be separate amendments.
   if (item.change === "unrepeat" && !exactKeys(item, ["step", "change"])) return undefined;
-  if (item.settings !== undefined && !isJsonObject(item.settings)) return undefined;
   if (item.input !== undefined && !isJsonObject(item.input)) return undefined;
   // Every key that names another step is one position, read the same way, so
   // a mistyped one leaves the amendment out rather than becoming step zero.
@@ -665,7 +664,6 @@ function readAmendment(item: unknown): AutomationStudioFlowDraftAmendment | "rer
   return {
     step: item.step as number,
     change: item.change as AutomationStudioFlowDraftEditChange,
-    ...(item.settings ? { settings: item.settings } : {}),
     ...(item.input ? { input: item.input } : {}),
     ...(item.through === undefined ? {} : { through: item.through as number }),
     ...(item.over === undefined ? {} : { over: item.over as number }),

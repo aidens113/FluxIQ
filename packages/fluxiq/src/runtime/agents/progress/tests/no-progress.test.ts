@@ -1,7 +1,7 @@
 ﻿import { describe, expect, it } from "vitest";
 import { automationStudioLlmEvidenceNoProgress, type AgentNoProgressSnapshot } from "../index.ts";
 
-const guard = () => automationStudioLlmEvidenceNoProgress({ max: 5, redirectAt: 3, onRedirect: () => {} });
+const guard = () => automationStudioLlmEvidenceNoProgress({ redirectAt: 3, onRedirect: () => {} });
 
 describe("the generic repeated-state and issue guard", () => {
   it("remembers visited states across tools and clears without treating opaque applied calls as repeats", () => {
@@ -26,15 +26,19 @@ describe("the generic repeated-state and issue guard", () => {
     expect(progress.refusedAgain("candidate.1", "a|b")).toBe(false);
   });
 
-  it("emits unchanged progress facts through a policy callback only at the redirect boundary", () => {
+  // t1049: no count of steps without progress ends anything. From the redirect boundary the model is told on every
+  // further step, however many there are; there is no stop to reach and no countdown in what it is told.
+  it("steers from the redirect boundary on every further step, and has no stop to reach", () => {
     const redirects: Array<{ iteration: number; snapshot: AgentNoProgressSnapshot }> = [];
-    const progress = automationStudioLlmEvidenceNoProgress({ max: 5, redirectAt: 3, onRedirect: (iteration, snapshot) => { redirects.push({ iteration, snapshot }); } });
+    const progress = automationStudioLlmEvidenceNoProgress({ redirectAt: 3, onRedirect: (iteration, snapshot) => { redirects.push({ iteration, snapshot }); } });
     progress.completionRefused(["answer.incomplete"]);
-    for (let iteration = 1; iteration <= 5; iteration += 1) {
+    for (let iteration = 1; iteration <= 40; iteration += 1) {
       progress.stepped("records.read");
       progress.redirect(iteration);
     }
-    expect(redirects).toEqual([3, 4].map((iteration) => ({ iteration, snapshot: { stepsWithoutProgress: iteration, maxStepsWithoutProgress: 5, repeatingToolIds: ["records.read"], lastIssueCodes: ["answer.incomplete"] } })));
-    expect(progress.reached()).toBe(true);
+    expect(redirects.map((redirect) => redirect.iteration)).toEqual(Array.from({ length: 38 }, (_, index) => index + 3));
+    expect(redirects[0]).toEqual({ iteration: 3, snapshot: { stepsWithoutProgress: 3, repeatingToolIds: ["records.read"], lastIssueCodes: ["answer.incomplete"] } });
+    expect(progress.steps).toBe(40);
+    expect("reached" in progress).toBe(false);
   });
 });

@@ -55,12 +55,11 @@ describe("automationStudioExplorationStepsFromTrace", () => {
   });
 
   // The loop declining to repeat itself is a guard working, not an action
-  // failing, and the three codes it writes say so. A step recorded as `failed`
+  // failing, and the codes it writes say so. A step recorded as `failed`
   // here would put a defect where there was none.
   it.each([
     "llm_evidence_loop.already_answered",
-    "llm_evidence_loop.already_observed",
-    "llm_evidence_loop.rejected.repeat_without_progress"
+    "llm_evidence_loop.already_observed"
   ])("records a request the loop answered itself (%s) as never run", (resultCode) => {
     const { steps } = stepsFrom([{ iteration: 1, decision: "tool_call", toolId: "web.read", resultCode }]);
 

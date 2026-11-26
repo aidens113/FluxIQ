@@ -110,7 +110,7 @@ describe("no progress: a window of calls that each ran and brought nothing new",
       return "end";
     };
 
-    await expect(loop(decide, executeTool, { maxStepsWithoutProgress: 40, loopSignal })).rejects.toBe(stalledError);
+    await expect(loop(decide, executeTool, { loopSignal })).rejects.toBe(stalledError);
 
     expect(noteAt(decide, 12, "core.loop_check")).toMatchObject({ pattern: "no_progress", repeats: 12 });
     expect(noteAt(decide, 11, "core.loop_check")).toBeUndefined();
@@ -122,10 +122,10 @@ describe("no progress: a window of calls that each ran and brought nothing new",
   it("with no caller to hear it, no new way to end exists: the loop is steered and goes on to the ending it always had", async () => {
     const { decide, executeTool } = newControls();
 
-    const result = await loop(decide, executeTool, { maxStepsWithoutProgress: 40 });
+    const result = await loop(decide, executeTool);
 
-    // The existing no-progress guard's own bound, reached with no help: forty steps, as it was given.
-    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_without_progress" });
+    // No count of steps without progress ends it (t1049): steered, it runs on to the loop's own ceiling of sixty.
+    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.iteration_limit" });
     expect(executeTool.mock.calls.length).toBeGreaterThan(16);
     expect(noteAt(decide, 12, "core.loop_check")).toMatchObject({ pattern: "no_progress" });
     expect(result.trace.some((row) => row.resultCode === "llm_evidence_loop.loop_change_approach")).toBe(false);
@@ -135,7 +135,7 @@ describe("no progress: a window of calls that each ran and brought nothing new",
     const decide = scripted((index) => call(index, "press", { target: `control ${index <= 12 ? index : 3}`, reason: `because ${index}` }));
     const executeTool = vi.fn(async ({ value }: { value: JsonObject }) => answer("s1", "s1", { evidence: { ok: true, target: value.target as JsonValue }, effectApplied: true, resultCode: "web.action.succeeded", ...click }));
 
-    await expect(loop(decide, executeTool, { maxStepsWithoutProgress: 40 })).rejects.toBe(stalledError);
+    await expect(loop(decide, executeTool)).rejects.toBe(stalledError);
 
     expect(executeTool).toHaveBeenCalledTimes(12);
   });
@@ -386,7 +386,7 @@ describe("the same control under a renumbered handle", () => {
     const decide = scripted((index) => call(index, "press", { handle: `t${index}` }));
     const executeTool = resolved("button.close");
 
-    await expect(loop(decide, executeTool, { maxStepsWithoutProgress: 40 })).rejects.toBe(stalledError);
+    await expect(loop(decide, executeTool)).rejects.toBe(stalledError);
 
     expect(noteAt(decide, 2, "core.loop_check")).toMatchObject({ pattern: "near_repeat", repeats: 2 });
   });

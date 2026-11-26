@@ -66,7 +66,7 @@ describe("an unchanged rerun of a read whose condition left out no row", () => {
     { position: 2, effect: "observe", effectApplied: true, disposition: "kept", conditions: idle },
     { position: 3, effect: "mutate", effectApplied: true, disposition: "kept" }
   ];
-  const told = (stepsNow: typeof steps) => automationStudioLlmEvidenceDraftAmendmentFeedback({ refusals: [{ step: 2, reason: "changes_nothing", repeated: true }], applied: 0, steps: stepsNow, stepsWithoutProgress: 1, maxStepsWithoutProgress: 8 });
+  const told = (stepsNow: typeof steps) => automationStudioLlmEvidenceDraftAmendmentFeedback({ refusals: [{ step: 2, reason: "changes_nothing", repeated: true }], applied: 0, steps: stepsNow, stepsWithoutProgress: 1 });
 
   it("is told that condition and what it read, not the act after the read", () => {
     const next = nextOf(told(steps));

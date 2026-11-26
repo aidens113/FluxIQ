@@ -1311,8 +1311,9 @@ a grant.
   declared count it is about $0.0042 ($0.10 / 24), where it was $0.125.
 - **Time and progress.** The whole recovery runs under a fixed 600,000 ms
   deadline (`AUTOMATION_STUDIO_RECOVERY_MAX_DURATION_MS`), new in this release.
-  An exploration also stops as `no_progress` after 3 consecutive steps that
-  bring back nothing new.
+  An exploration once also stopped as `no_progress` after 3 consecutive steps
+  that brought back nothing new; that count was removed in t1049, and the
+  budget's `maxStepsWithoutProgress` with it.
 - **The ledger.** `AutomationStudioLlmRunBudgetLimits.maxCallsPerRun` is
   optional. `AutomationStudioLlmRunBudgetLease` gains a required `release()`,
   which returns a reservation unspent, so a host implementing the lease must

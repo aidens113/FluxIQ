@@ -80,7 +80,7 @@ export type AutomationStudioLlmEvidenceLoopResume = {
    * Which allowance the build it continues ran out of, `unusable_decisions`
    * when that build ended because its decisions kept coming back unusable --
    * most often completions the checks kept refusing -- rather than on a count,
-   * or `repeat_without_progress` when its no-progress guard stopped it, or
+   * or `repeat_without_progress` when a repeat guard stopped it, or
    * `judged_wrong` when it finished and the judge of its test sent it back.
    */
   stopped: AutomationStudioLlmEvidenceLoopExhaustedBound | "unusable_decisions" | "repeat_without_progress" | "judged_wrong";
