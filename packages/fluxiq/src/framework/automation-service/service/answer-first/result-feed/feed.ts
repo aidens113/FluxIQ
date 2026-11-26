@@ -266,7 +266,12 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
         return { step: output.id, version: output.version, places: coverage.places, first: coverage.first, ...(coverage.last ? { last: { place: coverage.last.place, ...(coverage.last.paging ? { paging: coverage.last.paging } : {}) } } : {}) };
       }),
       ...(ledger.contract.sure && ledger.contract.columns.length ? { answerContract: { columns: ledger.contract.columns } } : {}),
-      working: ledger.steps.filter((step) => !group.includes(step)).map((step) => ({ step: step.id, position: step.position, ...(step.reads.listKey === undefined ? {} : { listKey: step.reads.listKey }), kept: step.pages.reduce((sum, read) => sum + read.kept.length, 0) })),
+      // A working read goes with its rows, page by page, as a page of the answer and a look do (t1048): run-mwvgjb8c-5a1f2ae3's
+      // first read kept the right row and reached the judge as a count, so the judge passed a dearer row it could see. A
+      // working step that has read no page yet is said by its count.
+      working: ledger.steps.filter((step) => !group.includes(step)).flatMap((step): AutomationStudioResultEvidenceBundle["working"][number][] => step.pages.length
+        ? step.pages.map((read) => page({ ...read, version: step.reads }, step.id, step.version, step.position))
+        : [{ step: step.id, position: step.position, ...(step.reads.listKey === undefined ? {} : { listKey: step.reads.listKey }), kept: 0 }]),
       looks: ledger.looks.map((read) => page(read, "look", 1)),
       ...(processed ? processingEvidence() : {})
     };

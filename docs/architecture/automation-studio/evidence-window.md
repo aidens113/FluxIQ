@@ -12,7 +12,13 @@ earlier historical entry.
 
 The current-view tail contains `groups`, with each group's `group`, source
 `callId`, optional `holder`, and complete declared `value`. Top-level members
-form `top`; held members form `holder:<name>`. Groups advance independently:
+form `top`; held members form `holder:<name>`. A held view whose answer names
+the list it read (`listKey`, with the `place` its pager said and the address it
+read) is held per read: `holder:<name>:<digest of list, place, address>`. Every
+read stays in view until the same page of the same list is read again, which
+replaces only that read's rows, so reading a list's second page leaves the first
+page's rows in view (t1048, run-mwvgjb8c-5a1f2ae3). A held view whose answer names
+no list keeps one `holder:<name>` group. Groups advance independently:
 a later page-only result retains the previous held rows. Empty arrays and null
 are present replacement values; absent members are not fabricated. If a top
 member contains an independently declared holder, its nested members remain
