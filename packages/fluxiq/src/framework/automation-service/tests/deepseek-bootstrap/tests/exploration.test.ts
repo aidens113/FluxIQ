@@ -61,21 +61,25 @@ describe("creating a Flow through an exploration, with no grant", () => {
   // Six unreadable replies in a row once ended a build with calls left (`flow_bootstrap.model_replies_unreadable`). No
   // count of unreadable replies ends one now (t1056): each, paid for, is asked again with its note. The same unreadable
   // reply again is a repeat loop detection catches, and at the top of its ladder the build's round ends (`loopSignal`);
-  // the build opens a fresh round, as it does for any round that stalled, and its limit on live rounds ends a build
-  // whose replies never become readable.
-  it("asks again after every unreadable reply, each paid for, and opens fresh rounds until its limit on rounds ends it", async () => {
+  // the build opens a fresh round, as it does for any round that stalled. No count of rounds ends it either (t1056; it
+  // was six): its budget does. Here that is the harness's 360,000 tokens (30,000 a call for 12 calls,
+  // `./harness.ts`). Each malformed reply bills 1,200 input and 150 output tokens, so 228 of them over 39 rounds
+  // spend 307,800, and the 52,200 left cannot hold the next request's input and reply allowance.
+  it("asks again after every unreadable reply, each paid for, round after round, until its token budget ends it", async () => {
     const run = await create({ maxCalls: 12, reply: () => "malformed" });
 
     const n = run.sentIterations.length;
-    expect(n).toBeGreaterThan(6);
+    expect(n).toBe(228);
     expect(run.failure).toMatchObject({
       code: "flow_bootstrap.evidence_budget_exhausted",
       retryable: true,
       providerInvocation: "attempted",
-      evidenceLoop: { decisionCount: n, toolCallCount: 0 },
-      ending: { kind: "budget_exhausted", bound: "rounds", tried: { decisions: n, stepsInFlow: 0 } }
+      totalProviderCallCount: 228,
+      accounting: { inputTokens: 1_200 * 228, outputTokens: 150 * 228, totalTokens: 1_350 * 228 },
+      evidenceLoop: { decisionCount: n, toolCallCount: 0, exhausted: { bound: "budget", budgetBound: "tokens" } },
+      ending: { kind: "budget_exhausted", bound: "tokens", tried: { rounds: 39, decisions: n, stepsInFlow: 0 } }
     });
-    expect(run.failure?.ending?.tried.rounds).toBeGreaterThan(1);
+    expect(run.failure?.ending?.message).toMatch(/^The build stopped at its budget of 360000 tokens before the Flow was finished\./u);
     // Every malformed reply was paid for and counted (`runtime/llm/reply-account.ts`).
     expect(run.failure?.accounting?.inputTokens).toBeGreaterThanOrEqual(1_200 * n);
     expect(run.failure?.evidenceLoop?.steps?.filter((step) => step.toolId === "core.decision_unusable" && step.resultCode === "llm.provider_malformed_response").length).toBeGreaterThan(6);

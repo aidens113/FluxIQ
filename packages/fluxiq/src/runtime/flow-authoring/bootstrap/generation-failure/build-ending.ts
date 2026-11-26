@@ -26,8 +26,8 @@
 // the target. The record beside it keeps the same facts as ids and counts for
 // a reader that counts. Producer and reader share `parse…BuildEnding`, as every
 // other field of this diagnostic does (`./failure-state.ts` says why).
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS } from "../../../loop-limits/index.ts";
 import type { AutomationStudioFlowBootstrapFailureDiagnostic } from "./diagnostic.ts";
+import { automationStudioFlowBootstrapStopsWithin } from "./stops-within.ts";
 
 /** Which budget ran out. */
 export type AutomationStudioFlowBootstrapBudgetBound =
@@ -41,7 +41,10 @@ export type AutomationStudioFlowBootstrapBudgetBound =
   | "calls"
   /** The repairs a build may make, reached while each was still getting further. */
   | "repair_rounds"
-  /** The live rounds a build may run in all, the far backstop under the others. */
+  /**
+   * Six live rounds in all. No build ends on it since t1056 -- a build's rounds end on its result, its purse, its
+   * clock or Stop, never a count of them -- but published records may carry it.
+   */
   | "rounds";
 
 /** What a build that could not finish says about itself. */
@@ -68,7 +71,8 @@ export type AutomationStudioFlowBootstrapBuildEnding = {
    * What was tried: live rounds (exploration, then each repair), decisions in
    * all, the Flow's steps, and what the last test found. `stops` is why each
    * round stopped, in order (`../unfinished-build/phases.ts`): what a debug
-   * reads to tell which bound ended which round (live run muqk713g). `noRoute`
+   * reads to tell which bound ended which round (live run muqk713g), the most
+   * recent that fit the record by size (`./stops-within.ts`, t1056). `noRoute`
    * is which case ended the build: on `not_doable` the case that left no route
    * (`judged_unachievable`; `no_progress` and `repeated_unchanged` on records
    * written before t195-w37), on `not_finished` what stood still
@@ -110,7 +114,6 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_MAX_MESSAGE = 1_000;
 
 const MAX_NOT_DONE = 16;
 const MAX_QUOTE = 200;
-const MAX_COUNT = 10_000;
 const BOUNDS: readonly string[] = ["cost", "tokens", "duration", "calls", "repair_rounds", "rounds"];
 const TESTED: readonly string[] = ["replayed_clean", "replay_failed", "not_tested"];
 const STOPPED: readonly string[] = ["iterations", "tool_calls", "unusable_decisions", "repeat_without_progress", "judged_wrong", "budget"] satisfies readonly AutomationStudioFlowBootstrapRoundStopped[];
@@ -165,16 +168,16 @@ export function parseAutomationStudioFlowBootstrapBuildEnding(value: unknown, co
   };
 }
 
-/** Each round's stop, at most one per live round a build may run; `null` for a list that is not well formed, `undefined` for none. */
+/** Each round's stop, within the record's size for them (`./stops-within.ts`); `null` for a list that is not well formed, `undefined` for none. */
 function parseStops(value: unknown): NonNullable<AutomationStudioFlowBootstrapBuildEnding["tried"]["stops"]> | null | undefined {
   if (value === undefined) return undefined;
-  if (!Array.isArray(value) || value.length > AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS) return null;
+  if (!Array.isArray(value)) return null;
   const stops: NonNullable<AutomationStudioFlowBootstrapBuildEnding["tried"]["stops"]> = [];
   for (const item of value) {
     if (!isRecord(item) || !exact(item, ["round", "stopped"]) || !count(item.round) || typeof item.stopped !== "string" || !STOPPED.includes(item.stopped)) return null;
     stops.push({ round: item.round as number, stopped: item.stopped as AutomationStudioFlowBootstrapRoundStopped });
   }
-  return stops;
+  return automationStudioFlowBootstrapStopsWithin(stops).length === stops.length ? stops : null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -185,6 +188,10 @@ function exact(value: Record<string, unknown>, allowed: readonly string[]): bool
   return Object.keys(value).every((key) => allowed.includes(key));
 }
 
+/**
+ * A whole count, any size a number holds exactly. A count's record is the same size whatever its value; a cap on its
+ * value (it was 10,000) is a count a long build could pass, publishing a record that would not read back (t1056).
+ */
 function count(value: unknown): boolean {
-  return Number.isInteger(value) && (value as number) >= 0 && (value as number) <= MAX_COUNT;
+  return Number.isSafeInteger(value) && (value as number) >= 0;
 }

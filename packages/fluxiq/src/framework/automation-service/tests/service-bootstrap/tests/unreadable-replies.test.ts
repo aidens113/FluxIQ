@@ -93,21 +93,31 @@ describe("a Flow build whose model reply arrives unreadable", () => {
     expect(note).toMatchObject({ code: "llm_evidence_loop.reply_unreadable", unreadable: { case: "content_mismatched" }, unreadableInARow: 2 });
   });
 
-  // No count of unreadable replies ends a build (t1056; it once ended at six in a row): each is asked again with its
-  // note, each is paid for, and the purse ends a build whose replies never become readable.
-  it("asks again after every unreadable reply, each paid for, until the build's purse ends it", async () => {
+  // No count of unreadable replies ends a build (t1056; it once ended at six in a row), and no count of rounds does
+  // (t1056; it was six). Each unreadable reply is asked again with its note and paid for. The same one again is a
+  // repeat, so loop detection ends the round at its ladder's top, and the empty build explores again. Worked from the
+  // prices: each unreadable reply costs $0.002 and the start's reading of the instruction $0.001 (`USAGE`), so the
+  // $0.25 purse pays for 118 replies over 20 rounds and the reading, $0.237 in all. The $0.013 left cannot hold the
+  // next reply beside what the purse keeps back for judging, so the purse ends the build, on its cost.
+  it("asks again after every unreadable reply, each paid for, round after round, until the build's purse ends it", async () => {
     const { requests, generation } = await build(() => true);
 
     const diagnostic = await rejectedGenerationDiagnostic(generation);
 
-    const n = requests.length;
-    expect(n).toBeGreaterThan(6);
+    expect(requests).toHaveLength(118);
+    expect(requests.some(isJudgeRequest)).toBe(false);
     expect(diagnostic.code).toBe("flow_bootstrap.evidence_budget_exhausted");
-    expect(diagnostic.code).not.toBe("flow_bootstrap.evidence_invalid_decision");
     expect(diagnostic.retryable).toBe(true);
-    expect(diagnostic.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost", tried: { rounds: 1, decisions: n, stepsInFlow: 0 } });
-    // Every unreadable reply was paid for, and the build's accounting says so, beside the start's reading of the
-    // instruction (t976, b2ee9ed45), which was readable and paid for at `USAGE`.
-    expect(diagnostic.accounting?.estimatedCostUsd).toBeCloseTo(0.002 * n + USAGE.estimatedCostUsd, 6);
+    expect(diagnostic).toMatchObject({
+      totalProviderCallCount: 119,
+      evidenceLoop: { iterationCount: 118, decisionCount: 118, exhausted: { bound: "budget", budgetBound: "cost" } },
+      ending: { kind: "budget_exhausted", bound: "cost", tried: { rounds: 20, decisions: 118, stepsInFlow: 0, tested: "not_tested" } }
+    });
+    expect(diagnostic.ending?.tried.stops).toHaveLength(20);
+    // Every unreadable reply was paid for, and the build's accounting says so, beside the reading, which was readable.
+    expect(diagnostic.accounting?.estimatedCostUsd).toBeCloseTo(0.002 * 118 + USAGE.estimatedCostUsd, 9);
+    // The ending counts the build's unreadable replies, every round's, not the last round's alone.
+    expect(diagnostic.ending?.message).toContain("Building this Flow has used $0.24 of its spending limit of $0.25");
+    expect(diagnostic.ending?.message).toContain("In all, 118 of 118 replies could not be read; each was paid for and counted in the build's budget.");
   });
 });

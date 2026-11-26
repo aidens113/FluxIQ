@@ -5,6 +5,8 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowBootstrapJudgement } from "../contracts.ts";
 import { automationStudioFlowBootstrapBudgetExhausted } from "../budget-exhausted.ts";
+import { automationStudioFlowBootstrapUnreadableInBuild } from "../unreadable-in-build.ts";
+import { flowBootstrapBuildEndingFailure, parseAutomationStudioFlowBootstrapFailureDiagnostic } from "../../generation-failure/index.ts";
 
 const checklist = [
   { id: "a1", verb: "switch", quote: "switch my pickup store", done: 1 },
@@ -113,5 +115,41 @@ describe("a budget ending after a repair whose every try was turned down (R2-U-2
 
   it("closes with what was kept, whole", () => {
     expect(ending).toMatch(/The steps I found so far were kept as a draft, so building again carries on from them\.$/u);
+  });
+});
+
+// A build's rounds end on its money, its clock or Stop, never on a count of them (t1056; it was six), so its ending
+// keeps the most recent round stops that fit its record by size, and the record reads back however many rounds ran.
+describe("a budget ending of a build that ran many rounds", () => {
+  const stops = (count: number) => Array.from({ length: count }, (_, round) => ({ round, stopped: "repeat_without_progress" as const }));
+  const published = (ending: ReturnType<typeof automationStudioFlowBootstrapBudgetExhausted>) => flowBootstrapBuildEndingFailure(ending, {
+    trace: [], accounting: { iterations: ending.tried.decisions, toolCalls: 0, evidenceBytes: 400, inputTokens: 9_000, outputTokens: 900, totalTokens: 9_900, estimatedCostUsd: 0.1 }
+  }, { requestId: "evidence.ending", estimatedInputTokens: 9_000, inputTokens: 9_000, outputTokens: 900, totalTokens: 9_900, estimatedCostUsd: 0.1 }).diagnostic;
+
+  it("keeps every stop of a build past the six rounds a build once ran at most", () => {
+    const ending = automationStudioFlowBootstrapBudgetExhausted({ ...told, rounds: 40, decisions: 480, kept: false, stops: stops(40) });
+
+    expect(ending.tried.stops).toEqual(stops(40));
+    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic(published(ending))?.ending?.tried).toEqual(ending.tried);
+  });
+
+  it("records a build of a thousand rounds with its latest stops, and the record reads back", () => {
+    const ending = automationStudioFlowBootstrapBudgetExhausted({ ...told, rounds: 1_000, decisions: 12_000, kept: false, stops: stops(1_000) });
+
+    expect(ending.tried).toMatchObject({ rounds: 1_000, decisions: 12_000 });
+    expect(ending.tried.stops?.length).toBeLessThan(1_000);
+    expect(ending.tried.stops?.at(-1)).toEqual({ round: 999, stopped: "repeat_without_progress" });
+    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic(published(ending))?.ending?.tried).toEqual(ending.tried);
+  });
+
+  // The loop reports the unreadable replies of its own round; the build's record holds every round's (live-shaped:
+  // 118 unreadable replies over 20 rounds once ended "In all, 4 of 118 replies could not be read").
+  it("counts every round's unreadable replies, not the last round's alone", () => {
+    const unreadable = { inARow: 4, total: 4, cases: ["content_mismatched"], said: "its brackets did not match" };
+    const record = Array.from({ length: 118 }, (_, index) => ({ iteration: index + 1, decision: "unusable" as const, resultCode: "llm.provider_malformed_response" }));
+    const inBuild = automationStudioFlowBootstrapUnreadableInBuild(unreadable, [...record, { iteration: 119, decision: "unusable", resultCode: "llm_evidence_loop.complete_not_offered" }]);
+
+    expect(inBuild).toEqual({ ...unreadable, total: 118 });
+    expect(automationStudioFlowBootstrapBudgetExhausted({ ...told, decisions: 118, kept: false, unreadable: inBuild }).message).toContain("In all, 118 of 118 replies could not be read");
   });
 });

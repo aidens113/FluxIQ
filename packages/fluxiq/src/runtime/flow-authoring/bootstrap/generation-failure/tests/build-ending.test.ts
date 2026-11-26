@@ -9,6 +9,7 @@ import {
   parseAutomationStudioFlowBootstrapGenerationError,
   type AutomationStudioFlowBootstrapBuildEnding
 } from "../index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STOPS_BYTES_MAX } from "../../../../loop-limits/index.ts";
 
 const PROGRESS = { trace: [], accounting: { iterations: 12, toolCalls: 12, evidenceBytes: 400, inputTokens: 9_000, outputTokens: 900, totalTokens: 9_900, estimatedCostUsd: 0.02 } };
 const ACCOUNTING = { requestId: "evidence.ending", estimatedInputTokens: 9_000, inputTokens: 9_000, outputTokens: 900, totalTokens: 9_900, estimatedCostUsd: 0.1 };
@@ -64,7 +65,12 @@ describe("the ending of a build that could not finish", () => {
     expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...diagnostic, ending: { ...NOT_DOABLE, tried: { ...tried, stops: [{ round: 0, stopped: "gave up because the page said so" }] } } })).toBeNull();
     expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...diagnostic, ending: { ...NOT_DOABLE, tried: { ...tried, stops: [{ round: 0, stopped: "iterations", why: "x" }] } } })).toBeNull();
     expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...diagnostic, ending: { ...NOT_DOABLE, tried: { ...tried, noRoute: { kind: "no_progress", before: {} } } } })).toBeNull();
-    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...diagnostic, ending: { ...NOT_DOABLE, tried: { ...tried, stops: Array.from({ length: 7 }, (_, round) => ({ round, stopped: "iterations" })) } } })).toBeNull();
+    // Bounded by size, never by a count of rounds (t1056; it was six): forty rounds' stops read back, and a list past the
+    // record's bytes for them does not.
+    const forty = { ...tried, stops: Array.from({ length: 40 }, (_, round) => ({ round, stopped: "repeat_without_progress" as const })) };
+    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...diagnostic, ending: { ...NOT_DOABLE, tried: forty } })?.ending?.tried).toEqual(forty);
+    const tooLarge = Array.from({ length: Math.ceil(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STOPS_BYTES_MAX / 20) }, (_, round) => ({ round, stopped: "iterations" }));
+    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...diagnostic, ending: { ...NOT_DOABLE, tried: { ...tried, stops: tooLarge } } })).toBeNull();
     // A budget ending has no no-route case: only "not doable" is reached by one.
     const budget = flowBootstrapBuildEndingFailure({ ...BUDGET, tried: { ...BUDGET.tried, stops: [{ round: 0, stopped: "budget" }] } }, PROGRESS, ACCOUNTING).diagnostic;
     expect(parseAutomationStudioFlowBootstrapFailureDiagnostic(budget)).toEqual(budget);

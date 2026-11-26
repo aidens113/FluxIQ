@@ -182,18 +182,19 @@ describe("a repair round opens only after a round that measurably progressed", (
     expect(requests.slice(1).every((request) => request.purse === purse)).toBe(true);
   });
 
-  it("ends at the live-round backstop, as that, while every round still progresses", async () => {
+  // No count of rounds ends it (t1056; six did): eight rounds at $0.125 each spend the $1 purse, and the money ends it.
+  it("ends on its money, never on a count of rounds, while every round still progresses", async () => {
     let added = 0;
     const growing = (request: AutomationStudioFlowBootstrapRoundRequest) => {
       added += 1;
-      return outOfDecisions([...(request.repair?.seed ?? []), step(added, { id: `d${10 + added}`, acts: added === 1 ? ["a1"] : [] })], spent(10, 0.001));
+      return outOfDecisions([...(request.repair?.seed ?? []), step(added, { id: `d${10 + added}`, acts: added === 1 ? ["a1"] : [] })], spent(10, 0.125));
     };
-    const { input, requests } = harness([growing, growing, growing], { maxRounds: 3 });
+    const { input, requests } = harness(Array.from({ length: 8 }, () => growing), { budget: { maxCostUsd: 1, maxDurationMs: 540_000 } });
 
     const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
 
-    expect(requests).toHaveLength(3);
-    expect(outcome.kind === "unfinished" && outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "rounds" });
+    expect(requests).toHaveLength(8);
+    expect(outcome.kind === "unfinished" && outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost", tried: { rounds: 8, decisions: 80 } });
   });
 });
 
@@ -322,13 +323,14 @@ describe("each round's stop, recorded on the ending", () => {
     let added = 0;
     const growing = (request: AutomationStudioFlowBootstrapRoundRequest) => {
       added += 1;
-      return outOfDecisions([...(request.repair?.seed ?? []), step(added, { id: `d${10 + added}`, acts: added === 1 ? ["a1"] : [] })], spent(10, 0.001));
+      return outOfDecisions([...(request.repair?.seed ?? []), step(added, { id: `d${10 + added}`, acts: added === 1 ? ["a1"] : [] })], spent(10, 0.125));
     };
-    const { input } = harness([growing, growing], { maxRounds: 2 });
+    // Two rounds at $0.125 spend the $0.25 purse.
+    const { input } = harness([growing, growing], { budget: { maxCostUsd: 0.25, maxDurationMs: 540_000 } });
 
     const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
 
-    expect(outcome.kind === "unfinished" && outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "rounds", tried: { stops: [{ round: 0, stopped: "repeat_without_progress" }, { round: 1, stopped: "repeat_without_progress" }] } });
+    expect(outcome.kind === "unfinished" && outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost", tried: { stops: [{ round: 0, stopped: "repeat_without_progress" }, { round: 1, stopped: "repeat_without_progress" }] } });
     expect(outcome.kind === "unfinished" && outcome.ending.tried.noRoute).toBeUndefined();
   });
 });

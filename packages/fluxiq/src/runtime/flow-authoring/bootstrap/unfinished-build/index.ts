@@ -23,5 +23,6 @@ export * from "./round-ending.ts";
 export * from "./seed-signature.ts";
 export * from "./test-step-numbers.ts";
 export * from "./tried.ts";
+export * from "./unreadable-in-build.ts";
 export * from "./unchanged-complete.ts";
 export * from "./unfinished-stall.ts";

@@ -61,10 +61,10 @@ describe("a FluxNode idempotency key", () => {
   it("owns its resume execution while another facade retries the original key", async () => {
     const lane = await fluxNodeLane(cleanups);
     // The run declares itself action-only (t984) in a one-line call and presses; its purse pays for no completion, so the
-    // resume's one decision is the completion the check is asked about. Each call is held at $0.001 beside one judge call
-    // kept back ($0.001), and the declaration reports $0.0001: $0.0025 still offers the press outside the loop's wrap-up
-    // and pays for it, and not for the completion ($0.0011 spent, $0.001 held, $0.001 kept).
-    const body = request({ spec: { ...spec(), hasCheck: true }, inputs: { note: "first note" }, options: { budgetUsd: 0.0025 }, idempotencyKey: "resume-owner" });
+    // resume's one decision is the completion the check is asked about. Each call is held at $0.001, nothing is kept back
+    // for a judge (the caller's check stands in for it), and the declaration reports $0.0001: $0.0015 still offers the
+    // press outside the loop's wrap-up and pays for it, and not for the completion ($0.0011 spent, $0.001 held).
+    const body = request({ spec: { ...spec(), hasCheck: true }, inputs: { note: "first note" }, options: { budgetUsd: 0.0015 }, idempotencyKey: "resume-owner" });
     const first = await lane.run(body, { taskProcessing: null, declarationUsd: 0.0001, script: [press()] });
     expect(first.result.status).toBe("budget_out");
     await vi.waitFor(async () => expect((await readdir(lane.dataDir, { recursive: true })).filter((file) => file.endsWith(".owner"))).toHaveLength(0));
@@ -91,8 +91,8 @@ describe("a FluxNode idempotency key", () => {
 
   it("returns one held execution for concurrent resumes in the same facade", async () => {
     const lane = await fluxNodeLane(cleanups);
-    // Each call is held at $0.001 beside one judge call kept back: $0.002 pays for the press and not for a completion.
-    const first = await lane.run({ spec: spec(), inputs: { note: "first note" }, options: { budgetUsd: 0.002 }, idempotencyKey: "two-resumes" }, { script: [press()] });
+    // Each call is held at $0.001 and the judge is off, so nothing is kept back: $0.001 pays for the press and not for a completion.
+    const first = await lane.run({ spec: spec(), inputs: { note: "first note" }, options: { budgetUsd: 0.001 }, idempotencyKey: "two-resumes" }, { script: [press()] });
     expect(first.result.status).toBe("budget_out");
     lane.arm({ taskProcessing: null, script: [complete("Saved.")] });
     const body = request({ resumeHandle: first.result.resumeHandle });

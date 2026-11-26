@@ -93,8 +93,9 @@ async function build(rounds: Array<(request: AutomationStudioFlowBootstrapRoundR
 describe("a round that stopped short with a clean test of a changed Flow (run-musp474o-e0ed7432)", () => {
   it("preflights a stopped-short draft and skips its whole test when it cannot be built", async () => {
     const accepted: string[][] = [];
+    // The one round's $0.005 spends the purse, so no second round opens.
     const { outcome, tests, judged } = await build([() => repeatsRefused(firstFlow())], [], {
-      maxRounds: 1,
+      budget: { maxCostUsd: 0.005, maxDurationMs: 540_000 },
       acceptStopped: async (loop) => {
         accepted.push(loop.steps.map((item) => item.id ?? ""));
         return false;

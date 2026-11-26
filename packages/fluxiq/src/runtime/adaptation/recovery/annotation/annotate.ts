@@ -446,7 +446,14 @@ async function annotateRunDetail(input: AutomationStudioRuntimeRecoveryAnnotatio
   // both of which come from Core's own classification, so no look can change
   // either, and re-deciding it after the exploration would only spend the
   // run's budget to reach the same answer.
-  const intentRefusal = explicitProposalRun ? intentSkipReason(plannedBeforeLooking) : undefined;
+  //
+  // A `diagnosis_only` run ends with its diagnosis: no exploration, no re-plan
+  // and no patch call, so no reserve is held for one either. Its fix could
+  // never run (`service/runtime-session/in/run-repair.ts`), and the plan asked
+  // for a patch whatever the intent; only a declared count of one call kept the
+  // patch from being bought, and with no count of calls (t1056) it was paid for
+  // and thrown away.
+  const intentRefusal = intent === "diagnosis_only" ? DIAGNOSIS_ONLY_REASON : explicitProposalRun ? intentSkipReason(plannedBeforeLooking) : undefined;
   // What a patch would still need after the exploration, whichever plan is
   // standing by then. It bounds the reserve, so the share held back is held for
   // a patch that could actually be made.
@@ -774,6 +781,9 @@ async function annotateRunDetail(input: AutomationStudioRuntimeRecoveryAnnotatio
  * belongs in the exploration-and-authoring loop rather than in the patch
  * planner at all (see the t124 report).
  */
+/** Why a `diagnosis_only` run asks for no patch, in its record's words (`intentRefusal` above). */
+const DIAGNOSIS_ONLY_REASON = "A diagnosis_only run asks for the diagnosis alone, so nothing was explored and no patch was requested.";
+
 function intentSkipReason(plan: { allowedPatchKinds: readonly string[]; diagnosis: { failureClass: string } }): string | undefined {
   if (!plan.allowedPatchKinds.includes("temporary_target_override")) {
     return `A diagnose_and_adapt run asks for only a target override, and the recovery plan allows none for a ${plan.diagnosis.failureClass.replace(/_/gu, " ")} failure, so no patch was requested.`;

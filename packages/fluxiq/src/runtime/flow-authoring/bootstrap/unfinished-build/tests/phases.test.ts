@@ -228,15 +228,17 @@ describe("a build whose exploration stops before the Flow is ready", () => {
     expect(announced).toEqual(["exploring: Exploring again"]);
   });
 
-  it("never ends an empty draft not doable: it explores again until a budget ends it, and says so", async () => {
-    const empty = (request: AutomationStudioFlowBootstrapRoundRequest) => { throw request.stalled({ issueCodes: ["bootstrap.instructed_act_missing"], trace: [], accounting: spent(12, 0.01), steps: [] }); };
-    const { input, requests } = harness([empty, empty, empty], { maxRounds: 3 });
+  // No count of rounds ends it (t1056; it was six): eight rounds at $0.125 each spend the $1 purse, and the money ends it.
+  it("never ends an empty draft not doable: it explores again, past any count of rounds, until its money ends it, and says so", async () => {
+    const empty = (request: AutomationStudioFlowBootstrapRoundRequest) => { throw request.stalled({ issueCodes: ["bootstrap.instructed_act_missing"], trace: [], accounting: spent(12, 0.125), steps: [] }); };
+    const { input, requests } = harness(Array.from({ length: 8 }, () => empty), { budget: { maxCostUsd: 1, maxDurationMs: 540_000 } });
 
     const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
 
-    expect(requests).toHaveLength(3);
-    expect(outcome.kind === "unfinished" && outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "rounds", tried: { rounds: 3, decisions: 36, stepsInFlow: 0 } });
-    expect(outcome.kind === "unfinished" && outcome.ending.message).toContain("its limit of 3 live rounds");
+    expect(requests).toHaveLength(8);
+    expect(outcome.kind === "unfinished" && outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost", tried: { rounds: 8, decisions: 96, stepsInFlow: 0 } });
+    expect(outcome.kind === "unfinished" && outcome.ending.message).toContain("It used all of its spending limit of $1.00.");
+    expect(outcome.kind === "unfinished" && outcome.accounting.estimatedCostUsd).toBe(1);
   });
 
   // The ending's record is the whole build's, not the last round's: a build
@@ -266,11 +268,12 @@ describe("a build whose exploration stops before the Flow is ready", () => {
       throw request.stalled({
         issueCodes: ["llm.provider_malformed_response"],
         trace: [{ iteration: 0, decision: "tool_call", toolId: "demo.look" }, { iteration: 1, decision: "unusable" }, { iteration: 2, decision: "unusable" }],
-        accounting: spent(2, 0.01),
+        accounting: spent(2, 0.125),
         steps: []
       });
     };
-    const { input } = harness([empty, empty, empty], { maxRounds: 3 });
+    // Three rounds at $0.125 spend the $0.375 purse.
+    const { input } = harness([empty, empty, empty], { budget: { maxCostUsd: 0.375, maxDurationMs: 540_000 } });
 
     const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
 

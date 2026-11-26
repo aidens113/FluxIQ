@@ -60,7 +60,6 @@ export type AutomationStudioFlowBootstrapBudgetSizes = {
   maxCostUsd?: number | undefined;
   maxDurationMs?: number | undefined;
   maxTotalTokens?: number | undefined;
-  maxRounds?: number | undefined;
 };
 
 /**
@@ -191,7 +190,8 @@ function budgetSaid(bound: AutomationStudioFlowBootstrapBudgetBound, sizes: Auto
     case "calls": return "its limit on model calls";
     // No build reaches it since t240 -- repairs are bounded by money and progress -- but published records may carry it.
     case "repair_rounds": return "its limit on repairs";
-    case "rounds": return sizes.maxRounds !== undefined ? `its limit of ${sizes.maxRounds} live rounds` : "its limit on live rounds";
+    // No build reaches it since t1056 -- rounds end on the result, the purse, the clock or Stop -- but published records may carry it.
+    case "rounds": return "its limit on live rounds";
   }
 }
 

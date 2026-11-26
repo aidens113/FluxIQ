@@ -51,9 +51,10 @@
 // saying what stood still. A round that ended on refused repeats and handed
 // back the very Flow it started from ends it too: a second round would repeat
 // it exactly (run 38, cause C8); for the first round of an extend build the
-// Flow it started from is the caller's (`seedSignature`). The live-round backstop
-// (`AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS`) still bounds every build, as
-// the published record's reader is bounded by it.
+// Flow it started from is the caller's (`seedSignature`). No count of rounds
+// ends a build (t1056): it was six live rounds, and an empty build whose rounds
+// each ended on loop detection explored again until that count ended it with
+// money left. Rounds end on the result, the purse, the clock or Stop.
 //
 // **A round that stops with nothing in its Flow never ends the build while
 // budget remains (supervisor, t208).** It was the main case -- 57 of 117 live
@@ -192,7 +193,6 @@ import { automationStudioResultUnconfirmedInspection } from "../../../result-ver
 import type { AutomationStudioFlowBootstrapBudgetBound, AutomationStudioFlowBootstrapBuildEnding } from "../generation-failure/index.ts";
 import type { AutomationStudioFlowBootstrapIncompleteDraftPointer } from "../incomplete-draft/index.ts";
 import type { AutomationStudioInstructedActChecklistItem } from "../instructed-acts/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS } from "../../../loop-limits/index.ts";
 import { automationStudioLlmStepLogScope } from "../../../llm/step-log/index.ts";
 import { automationStudioLlmBuildTrace } from "../../../llm/evidence-progress/index.ts";
 import { automationStudioFlowBootstrapBudgetExhausted, type AutomationStudioFlowBootstrapCostSpending, type AutomationStudioFlowBootstrapNextRoundHold } from "./budget-exhausted.ts";
@@ -225,6 +225,7 @@ import { automationStudioFlowBootstrapRepairingJudgedSaid, automationStudioFlowB
 import { automationStudioFlowBootstrapRoundEnding } from "./round-ending.ts";
 import { automationStudioFlowBootstrapRoundFunding } from "./round-funding.ts";
 import { AutomationStudioFlowBootstrapUnfinishedStall } from "./unfinished-stall.ts";
+import { automationStudioFlowBootstrapUnreadableInBuild } from "./unreadable-in-build.ts";
 
 /** The least time worth starting a repair with: a look, a few decisions and the test. */
 export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MIN_REPAIR_MS = 30_000;
@@ -320,8 +321,6 @@ export type AutomationStudioFlowBootstrapBuildPhasesInput = {
    * round (run 38, cause C8). Absent: the first round starts from nothing.
    */
   seedSignature?: string | undefined;
-  /** Live rounds in all, the exploration included: at most `AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS` (`../../loop-limits/`), which the published record's reader is bounded by. */
-  maxRounds?: number;
   now?: () => number;
 };
 
@@ -382,7 +381,6 @@ export type AutomationStudioFlowBootstrapBuildPhasesOutcome =
 export async function runAutomationStudioFlowBootstrapBuildPhases(input: AutomationStudioFlowBootstrapBuildPhasesInput): Promise<AutomationStudioFlowBootstrapBuildPhasesOutcome> {
   const clock = input.now ?? Date.now;
   const startedAt = clock();
-  const maxRounds = Math.min(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, Math.max(1, input.maxRounds ?? AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS));
   const spent = emptyAccounting();
   /** Every round's trace rows, numbered across the build. */
   const record: AutomationStudioLlmEvidenceLoopTrace[] = [];
@@ -532,7 +530,7 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
             ? automationStudioFlowBootstrapNotFinished({ ...told, stoodStill: kind.notFinished, kept: kept !== undefined })
           : typeof kind === "object" && "providerUnavailable" in kind
             ? automationStudioFlowBootstrapProviderUnavailable({ ...told, providerUnavailable: kind.providerUnavailable, changes: record.filter((row) => row.decision === "tool_call" && row.effectApplied === true).length, kept: kept !== undefined })
-            : automationStudioFlowBootstrapBudgetExhausted({ ...told, bound: kind, kept: kept !== undefined, ...(phase2.progress.unreadable ? { unreadable: phase2.progress.unreadable } : {}), sizes: { maxCostUsd: input.purse?.ceilingUsd ?? input.budget.maxCostUsd, maxDurationMs: input.budget.maxDurationMs, maxTotalTokens: input.budget.maxTotalTokens, maxRounds }, spending: kind === "cost" ? costSpending(phase2.progress.exhaustion?.costRefusal, input.purse, spentBefore, spent.estimatedCostUsd, unfunded, judgedAtStopUsd, unchangedAtStop) : undefined, lastRound: phase2.progress.trace }),
+            : automationStudioFlowBootstrapBudgetExhausted({ ...told, bound: kind, kept: kept !== undefined, ...(phase2.progress.unreadable ? { unreadable: automationStudioFlowBootstrapUnreadableInBuild(phase2.progress.unreadable, record) } : {}), sizes: { maxCostUsd: input.purse?.ceilingUsd ?? input.budget.maxCostUsd, maxDurationMs: input.budget.maxDurationMs, maxTotalTokens: input.budget.maxTotalTokens }, spending: kind === "cost" ? costSpending(phase2.progress.exhaustion?.costRefusal, input.purse, spentBefore, spent.estimatedCostUsd, unfunded, judgedAtStopUsd, unchangedAtStop) : undefined, lastRound: phase2.progress.trace }),
         progress: { trace: [...record], accounting: { ...spent }, ...(phase2.progress.exhaustion ? { exhaustion: phase2.progress.exhaustion } : {}) },
         lastIssueCodes: phase2.lastIssueCodes,
         kept,
@@ -556,7 +554,6 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
     const resume = (): AutomationStudioLlmEvidenceLoopResume => ({ revision: round + 1, stopped, outstandingIssueCodes: [...judgement.lastIssueCodes, ...judgement.testIssueCodes], judgement: automationStudioFlowBootstrapJudgementValue(judgement) });
     // Nothing in the Flow: never an ending while budget remains. The model is told so, with the checklist all to do, and explores on live.
     if (!judgement.stepsInFlow) {
-      if (rounds >= maxRounds) return await end("rounds");
       const exhausted = exhaustedForNextRound();
       if (exhausted) return await end(exhausted);
       const allTodo = todo === 1 ? ", and the one thing you asked is still to do" : todo ? `, and all ${todo} of the things you asked are still to do` : "";
@@ -592,7 +589,6 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
     // Whether the round before this one also held steps never run, and this one ran none of them: what the announcement says.
     const ranNoneAgain = unmeasured && previous !== undefined && automationStudioFlowBootstrapJudgementUnmeasured(previous) && !moved?.includes("fewer_steps_not_run");
     previous = judgement;
-    if (rounds >= maxRounds) return await end("rounds");
     const exhausted = exhaustedForNextRound();
     if (exhausted) return await end(exhausted);
     const notRunSteps = judgement.judge?.untestedCarried?.length ? [] : judgement.notRunInThisBuild ?? [];

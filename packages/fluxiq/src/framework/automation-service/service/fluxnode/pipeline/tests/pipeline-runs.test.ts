@@ -120,10 +120,10 @@ describe("a pipeline maps a FluxNode over records", () => {
 
   it("ends budget_out with a resume handle when a mapped call's budget is gone, and refuses inputs that do not fit", async () => {
     const lane = await fluxNodeLane(cleanups);
-    // Each call is held and charged at $0.001 (`../../tests/library-lane.ts`), and an attempt keeps one judge call back
-    // even with its judge off: $0.0025 pays for the find, and the completion after it does not fit. A budget below one
-    // call's hold ($0.0001 here before t1056, when this model's calls were held at nothing) now sends nothing at all.
-    await lane.fluxNodes.register(OWNER, { spec: fluxNodeSpecSchema.parse(findLoansSpec({ hasCheck: false, options: { judge: "off", budgetUsd: 0.0025 } })) });
+    // Each call is held and charged at $0.001 (`../../tests/library-lane.ts`), and with the judge off nothing is kept back
+    // for one: $0.0015 pays for the find, and the completion after it does not fit. A budget below one call's hold
+    // ($0.0001 here before t1056, when this model's calls were held at nothing) now sends nothing at all.
+    await lane.fluxNodes.register(OWNER, { spec: fluxNodeSpecSchema.parse(findLoansSpec({ hasCheck: false, options: { judge: "off", budgetUsd: 0.0015 } })) });
     const run = await lane.run({ pipeline: REPORT, inputs: TITLES }, { script: [findLoans("Atlas"), complete("Found the loans.")] });
     expectContractShapes(run);
     expect(run.result.status).toBe("budget_out");

@@ -228,7 +228,11 @@ describe("a run a person asked the model into, with no grant", () => {
 
     expect(run.status).toBe("failed");
     expect(nativeExecutionCount).toBe(1);
+    // A diagnosis_only run ends with its diagnosis: the plan's patch is never bought, whatever the purse could pay
+    // (t1056: no count of calls stops it any more), and the record says why.
     expect(taskKinds).toEqual(["runtime_diagnosis"]);
+    const detail = await service.getFlowRunDetail(project.id, run.runId);
+    expect(detail?.metadata?.llmGate).toMatchObject({ patchSkippedCode: "llm.runtime_patch_grant_scope_refused", patchSkippedRung: "plan", patchSkipped: expect.stringContaining("diagnosis_only") });
   });
 
   it("runs a model run attached to a pre-staged session exactly as a run with no model would", async () => {

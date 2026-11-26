@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { AUTOMATION_STUDIO_LLM_PROVIDER_PREFLIGHT_ERROR_CODES } from "../../../../llm/index.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS, AUTOMATION_STUDIO_LLM_EVIDENCE_ACCOUNTED_BYTES_MAX } from "../../../../loop-limits/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_ACCOUNTED_BYTES_MAX } from "../../../../loop-limits/index.ts";
 
 /** The ceiling a loop's turns and calls were once held to, which readers of a record were bounded by (t1056 removed it). */
 const OLD_LOOP_CEILING = 64;
@@ -247,7 +247,8 @@ describe("Flow Bootstrap generation failure diagnostics", () => {
     // that ran past the old sixty-four in every live round a build may run reads back whole -- the old ceiling refused
     // such a record and replaced its named reason with a generic transport failure. A build that could not finish
     // publishes all of its rounds, not the last one's alone (t214).
-    const rounds = AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS;
+    // Twice the six live rounds a build once ran at most: no count of rounds ends a build either (t1056).
+    const rounds = 12;
     const longest = (OLD_LOOP_CEILING + 1) * rounds + 1;
     const long = {
       ...valid,
