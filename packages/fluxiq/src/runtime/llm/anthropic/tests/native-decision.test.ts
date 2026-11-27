@@ -54,7 +54,8 @@ describe("an evidence decision sent as tools", () => {
     const { provider, sent } = adapter([() => toolUseStreamReply([decisionCall(DECISION)])]);
     await provider.runTask(decider());
     const wire = sent[0]!;
-    expect(wire.tools!.map((tool) => tool.name)).toEqual(["core_inspect_values"]);
+    // The check's answer tool goes last in every decision sent as tools, so a continuing judge's tool list is the same bytes (t1065).
+    expect(wire.tools!.map((tool) => tool.name)).toEqual(["core_inspect_values", "core_check_answer"]);
     expect(wire.tool_choice).toEqual({ type: "auto", disable_parallel_tool_use: true });
     // Haiku runs at its default effort, so nothing at all is left of output_config.
     expect(wire.output_config).toBeUndefined();
@@ -139,8 +140,8 @@ describe("an evidence decision sent as tools", () => {
 });
 
 describe("a judge continuing a decider sent as tools", () => {
-  it("sends the decider's tools, tool choice and system unchanged, no format of its own, and reads its plain-text answer", async () => {
-    const { provider, sent } = adapter([() => toolUseStreamReply([decisionCall(DECISION)]), () => streamReply(JSON.stringify(VERDICT))]);
+  it("sends the decider's tools, tool choice and system unchanged, no format of its own, and reads its answer from the check's answer tool", async () => {
+    const { provider, sent } = adapter([() => toolUseStreamReply([decisionCall(DECISION)]), () => toolUseStreamReply([{ name: "core_check_answer", input: VERDICT }], "tool_use", undefined, "The shelf read lists the book.")]);
     await provider.runTask(decider());
     const answer = await provider.runTask(judge()) as { response: unknown };
     expect(answer.response).toMatchObject({ kind: "diagnosis", diagnosis: { answersRequest: "yes" } });
@@ -153,14 +154,40 @@ describe("a judge continuing a decider sent as tools", () => {
     const marks = (decided.messages[0]!.content as Block[]).map((block) => block.cache_control !== undefined).lastIndexOf(true);
     expect(JSON.stringify((judged.messages[0]!.content as Block[]).slice(0, marks + 1))).toBe(JSON.stringify((decided.messages[0]!.content as Block[]).slice(0, marks + 1)));
     expect(judged.messages[1]).toMatchObject({ role: "system" });
-    expect(judged.messages[1]!.content).toContain("its tools are not for this answer: call none");
+    expect(judged.messages[1]!.content).toContain("by calling core_check_answer once, with the JSON object the judge's outputSchema asks for as its whole input");
     expect(judged.messages[1]!.content).not.toContain("result_json");
   });
 
-  it("refuses a judge's reply that calls a tool, as a paid failure that says so", async () => {
-    const { provider } = adapter([() => toolUseStreamReply([decisionCall(DECISION)]), () => toolUseStreamReply([decisionCall(DECISION)])]);
+  it("refuses a judge's reply that calls a decision tool, or none, as a paid failure that says which (t1065)", async () => {
+    const { provider } = adapter([() => toolUseStreamReply([decisionCall(DECISION)]), () => toolUseStreamReply([decisionCall(DECISION)]), () => streamReply(JSON.stringify(VERDICT))]);
     await provider.runTask(decider());
-    const failure = await failureOf(provider.runTask(judge()));
-    expect(failure).toMatchObject({ code: "llm.provider_output_invalid", reply: { case: "tool_call_unexpected" }, paid: { outputTokens: 30 } });
+    expect(await failureOf(provider.runTask(judge()))).toMatchObject({ code: "llm.provider_output_invalid", reply: { case: "tool_call_not_answer" }, paid: { outputTokens: 30 } });
+    expect(await failureOf(provider.runTask(judge()))).toMatchObject({ code: "llm.provider_output_invalid", reply: { case: "tool_call_missing" } });
+  });
+
+  // t1065: the purse holds each call at the provider's measure. A continuation was measured as the judge's own request,
+  // a fraction of the decider's conversation it sends; each in-conversation ask is larger again.
+  it("measures what it sends: the continuation, then each ask in the conversation, without changing what is held (t1065)", async () => {
+    const { provider, sent } = adapter([() => toolUseStreamReply([decisionCall(DECISION)]), () => streamReply("The shelf lists it."), () => toolUseStreamReply([{ name: "core_check_answer", input: VERDICT }])]);
+    await provider.runTask(decider());
+    const own = automationStudioAnthropicRequest(judge(), "claude-haiku-5-5").estimatedInputTokens;
+    const continuing = provider.measureInput!(judge()).estimatedInputTokens;
+    expect(continuing).toBeGreaterThan(own);
+    expect(provider.measureInput!(judge()).estimatedInputTokens).toBe(continuing);
+    expect(await failureOf(provider.runTask(judge()))).toMatchObject({ reply: { case: "tool_call_missing" } });
+    // Measuring held nothing back: the call still went as the continuation.
+    expect(sent[1]!.messages).toHaveLength(2);
+    const again = { ...judge(), metadata: { ...judge().metadata, judgeAnswersInConversation: true } };
+    const asking = provider.measureInput!(again).estimatedInputTokens;
+    expect(asking).toBeGreaterThan(continuing);
+    expect(provider.measureInput!(again).estimatedInputTokens).toBe(asking);
+    await provider.runTask(again);
+    expect(sent[2]!.messages).toHaveLength(4);
+    expect(Math.abs(asking - (Buffer.byteLength(JSON.stringify({ tools: sent[2]!.tools, tool_choice: sent[2]!.tool_choice, system: sent[2]!.system, messages: sent[2]!.messages, output_config: sent[2]!.output_config }), "utf8") / 3))).toBeLessThan(40);
+  });
+
+  it("refuses a decision that calls the check's answer tool, by name (t1065)", async () => {
+    const { provider } = adapter([() => toolUseStreamReply([{ name: "core_check_answer", input: VERDICT }])]);
+    expect(await failureOf(provider.runTask(decider()))).toMatchObject({ code: "llm.provider_output_invalid", reply: { case: "tool_call_check_only" } });
   });
 });

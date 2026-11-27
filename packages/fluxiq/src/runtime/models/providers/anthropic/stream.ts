@@ -49,8 +49,13 @@ export async function readAutomationStudioAnthropicStream(response: Response, ma
         // A tool call's input arrives as JSON text in pieces (D12): joined here and parsed when its block stops.
         if (block.type !== "tool_use" || typeof value.delta.partial_json !== "string") throw malformed();
         toolInputs.set(value.index as number, (toolInputs.get(value.index as number) ?? "") + value.delta.partial_json);
+      } else if (block.type === "thinking" && value.delta.type === "thinking_delta" && typeof value.delta.thinking === "string") {
+        block.thinking = String(block.thinking ?? "") + value.delta.thinking;
+      } else if (block.type === "thinking" && value.delta.type === "signature_delta" && typeof value.delta.signature === "string") {
+        block.signature = String(block.signature ?? "") + value.delta.signature;
       }
-      // Thinking/signature deltas are not the answer and never become one.
+      // Thinking and its signature stay on their block, whole, only so a turn that must go back to the model can go back
+      // unchanged (t1065: a judge's call answered in its own conversation, `./continuation.ts`). They never become the answer.
     } else if (value.type === "content_block_stop") {
       if (!Number.isInteger(value.index) || !active.delete(value.index as number)) throw malformed();
       const input = toolInputs.get(value.index as number);

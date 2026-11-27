@@ -20,9 +20,9 @@
 // at HTTP 200 -- a long diagnosis whose JSON, nested as text in the decider's `result_json` transport, collapsed part-way
 // through -- and with no answer the check was not judged and the attempt had to decide again to be asked again. Such a
 // check is now asked again within this one call of the judge (`../unreadable-asks/`): every such ask carries a short
-// note of what could not be read, last in what it is shown; a judge continuing the decider's conversation is, after its
-// first unreadable reply, asked on its own request in its own native answer format on the same model, which nests no
-// JSON as text at all. Every re-ask stays on the same model. No count ends it: the purse, the attempt's budget and this
+// note of what could not be read, last in what it is shown; a judge continuing the decider's conversation is asked again
+// in that conversation, its reply answered there, never handed to a judge that sees less (t1065,
+// `../unreadable-asks/asks.ts`). Every re-ask stays on the same model. No count ends it: the purse, the attempt's budget and this
 // check's own deadline do, the deadline as `not_judged` for time as before. A refused key, an empty balance and a
 // purse's refusal are not asked again. A readable reply is read exactly as a first one is.
 //
@@ -156,7 +156,7 @@ export async function automationStudioFlowLessJudge(input: AutomationStudioFlowL
           ...(input.tokenLimits ? { tokenLimits: input.tokenLimits } : {}),
           signal,
           // A judge continuing the decider's conversation says so, for its routing and its adapter (`./types.ts`, t965), until
-          // an unreadable reply sends it standalone on the same model (header, t979).
+          // an unreadable reply keeps it in that conversation, the reply answered there, on the same model (header, t979, t1065).
           metadata: { source: SOURCE, expectedOutput: "diagnosis", ...automationStudioResultUnreadableRouting(unreadable, input.continuesDecider === true) }
         })
       });
@@ -204,8 +204,8 @@ type Reading = { judgement: AutomationStudioFlowLessJudgement; refuted?: readonl
 
 /** A check asked again after an unreadable reply, said in the run's step log: Core's words only, never the reply. */
 function automationStudioFlowLessUnreadableNoted(step: AutomationStudioResultUnreadableStep, said: string): void {
-  const how = step === "standalone"
-    ? "so it is asked again on its own request, in its own answer format, on the same model"
+  const how = step === "in_conversation"
+    ? "so it stays in the decider's conversation: the reply is answered there and the verdict asked for again, on the same model (on its own request where the decider answered in JSON text)"
     : step === "steered"
       ? "the same way as the reply before it, so it is caught as repeating itself and asked again on the same model, told what it repeated and to decide how to go on"
       : "so it is asked again on the same model with a note saying what could not be read";
