@@ -21,6 +21,7 @@ import type { AutomationStudioResultReadAccount, AutomationStudioResultRecordSet
 import type { AutomationStudioResultReadCondition } from "../../../read-condition.ts";
 import { AutomationStudioRequestRowId } from "../../row/index.ts";
 import { automationStudioRequestRowLabel } from "../reads.ts";
+import { automationStudioResultSummaryWithRowHandles } from "./row-handles.ts";
 import type { AutomationStudioRequestRowsStoredMark } from "../../types.ts";
 
 /** What a label that may not be said reads as (`../read-account/alone-rows.ts`). */
@@ -51,5 +52,5 @@ export function automationStudioResultSummaryWithRowIds(summary: AutomationStudi
     ...set,
     processing: { ...set.processing, conditions: set.processing.conditions.map((entry) => entry.leftOutOnlyByThis?.length ? { ...entry, leftOutOnlyByThis: said(entry.leftOutOnlyByThis, entry.leftOutSettled) } : entry) }
   });
-  return changed ? { ...summary, ...(reads ? { reads } : {}), recordSets } : summary;
+  return automationStudioResultSummaryWithRowHandles(changed ? { ...summary, ...(reads ? { reads } : {}), recordSets } : summary);
 }
