@@ -8,12 +8,14 @@
 // conversation sends its whole message after the decider's cached blocks
 // (`../../models/providers/anthropic/continuation.ts`), so the note is after that prefix too.
 //
-// **With the pages a judge on its own request needs (t1067).** An ask after an unreadable reply is always asked on its
-// own request: a continuing judge goes standalone at its first unreadable reply (`./asks.ts`), and any other judge was
-// standalone from the start. Such a request holds no decider conversation, so no page: `run-mwy3btww-31d32e0d`'s
-// standalone judges said unsure for want of what the page showed. So the page views kept beside the judge's summary
-// (`../judge-evidence/page-views.ts`: the end view, the before view where a lasting act ran, within the page budget)
-// go in here, just before the note, after everything the first ask sent.
+// **With the pages a judge on its own request needs (t1067).** A judge that never continues the decider, and a continuing
+// judge after a decider in the JSON-text transport (t979), are asked again on their own request, which holds no decider
+// conversation and so no page: `run-mwy3btww-31d32e0d`'s standalone judges said unsure for want of what the page showed.
+// So the page views kept beside the judge's summary (`../judge-evidence/page-views.ts`: the end view, the before view
+// where a lasting act ran, within the page budget) go in here, just before the note, after everything the first ask sent.
+// A continuing judge's reply answered in its own conversation (t1065) sends back the continuation and only this note
+// (`../../models/providers/anthropic/judge-call-answered.ts`), so the pages are not sent twice there; only a continuation
+// asked again with no reply held (`continues_the_decider_again`) carries them beside the decider's own.
 
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { AutomationStudioJudgePageViews } from "../judge-evidence/index.ts";

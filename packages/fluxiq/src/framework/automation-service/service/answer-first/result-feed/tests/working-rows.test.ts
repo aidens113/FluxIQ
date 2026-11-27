@@ -1,9 +1,11 @@
 // A working read reaches the judge with its rows (t1048). Run-mwvgjb8c-5a1f2ae3 read page 1 of a list as a draft step that
 // was not the answer, then page 2 as a look, then the cart as the answer. Page 1 held the right row; the judge was told
 // page 1 only as `{step, position, listKey, kept: 15}`, saw page 2's dearer row as the cheapest, and said yes.
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
-import { AutomationStudioLlmProviderError, runAutomationStudioLlmHarness, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../../../../../../runtime/llm/index.ts";
+import { AutomationStudioLlmProviderError, automationStudioLlmModelLadder, automationStudioLlmRoleRoutedResolution, runAutomationStudioLlmHarness, runWithAutomationStudioLlmModelLadder, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../../../../../../runtime/llm/index.ts";
+import { createAutomationStudioAnthropicProvider } from "../../../../../../runtime/llm/anthropic/index.ts";
+import { decisionCall, decisionRequest, toolUseStreamReply, useFixtureModel } from "../../../../../../runtime/llm/anthropic/tests/fixtures.ts";
 import { automationStudioFlowLessJudge, automationStudioResultEvidenceFromBatches, type AutomationStudioResultEvidenceBundle, type AutomationStudioResultEvidencePage } from "../../../../../../runtime/result-verification/index.ts";
 import { readAutomationStudioAnswerFirstResultEvidence } from "../index.ts";
 import { resultPipeline } from "./pipeline.ts";
@@ -166,7 +168,7 @@ describe("a read that left the draft, as the judge is told it", () => {
     expect(evidence.working.filter(isPage).map((page) => page.source)).toEqual(["c10", "c15"]);
   });
 
-  it("reaches the judge asked on its own request after an unreadable reply, rows, ratings and pickup words in it", async () => {
+  it("reaches a judge that never continues the decider, asked again on its own request after an unreadable reply, rows, ratings and pickup words in it", async () => {
     const p = await leftRun();
     const seen: AutomationStudioLlmTaskRequest[] = [];
     const provider: AutomationStudioLlmProvider = {
@@ -178,12 +180,10 @@ describe("a read that left the draft, as the judge is told it", () => {
         return { response: { kind: "diagnosis", summary: "Judged.", diagnosis: { answersRequest: "unknown", observed: "Scripted." } }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 } } as Awaited<ReturnType<AutomationStudioLlmProvider["runTask"]>>;
       }
     };
-    await automationStudioFlowLessJudge({
-      summary: { instructions: LEFT_INSTRUCTION, rows: { totalRows: 2, truncated: false, columns: [{ id: "item", label: "item" }, { id: "quantity", label: "quantity" }, { id: "price", label: "price" }], rows: LEFT_CART_ROWS }, acts: [], resultEvidence: p.feed.evidence() },
-      provider, run: runAutomationStudioLlmHarness, projectId: "project-1", flowId: "flow-1", deniedEvidenceKeys: [], continuesDecider: true
-    });
+    await automationStudioFlowLessJudge({ summary: leftSummary(p), provider, run: runAutomationStudioLlmHarness, projectId: "project-1", flowId: "flow-1", deniedEvidenceKeys: [] });
     expect(seen).toHaveLength(2);
-    expect(seen[1]!.metadata).toMatchObject({ judgeStandaloneAfterUnreadable: true });
+    expect(seen[1]!.metadata).not.toHaveProperty("continuesDecider");
+    expect(seen[1]!.context.resultSummary).toHaveProperty("unreadableReply");
     const sent = seen[1]!.context.resultSummary?.resultEvidence as unknown as AutomationStudioResultEvidenceBundle;
     const working = sent.working.filter(isPage);
     expect(working.map((page) => page.source)).toEqual(["c15", "c50"]);
@@ -192,3 +192,52 @@ describe("a read that left the draft, as the judge is told it", () => {
     expect(request.split("Pickup today").length - 1).toBeGreaterThanOrEqual(8);
   });
 });
+
+// Since t1065 a continuing judge's unreadable reply is answered in its own conversation: the continuation's request again,
+// the reply, a tool result and the ask. The left reads ride in the judge's summary, so they must be in that re-ask too.
+// The real Anthropic adapter, routing, harness and Flow-less judge run over a scripted fetch, as t1065's own test does
+// (`runtime/result-verification/flow-less/tests/judge-tool-call-answered.test.ts`); no model is called.
+describe("a read that left the draft, asked of a continuing judge again in its own conversation", () => {
+  const MODEL = "claude-sonnet-5-5";
+  const DECISION = { kind: "evidence_tool_decision", summary: "Read the list.", decision: { kind: "tool_call", callId: "call.4", toolId: "core.inspect_values", input: { parameters: { list: { name: "results" } } } } };
+  const ANSWER = { kind: "diagnosis", summary: "Judged.", diagnosis: { answersRequest: "unknown", observed: "Scripted.", defects: [], checked: [], answerRecords: { asked: true } } };
+  type Wire = { messages: { role: string; content: string | Array<{ type: string; text?: string; content?: unknown }> }[] };
+  beforeEach(() => useFixtureModel(MODEL));
+  afterEach(() => useFixtureModel("claude-haiku-5-5"));
+
+  it("is in the request the in-conversation re-ask sends, rows, ratings and pickup words in it", async () => {
+    const p = await leftRun();
+    const sent: Wire[] = [];
+    const replies = [
+      () => toolUseStreamReply([decisionCall(DECISION)]),
+      // 0060's shape: prose, then a call of a decision tool.
+      () => toolUseStreamReply([{ name: decisionCall(DECISION).name, input: { summary: "placeholder" } }], "tool_use", undefined, "The single roll is the cheapest that qualifies."),
+      () => toolUseStreamReply([{ name: "core_check_answer", input: ANSWER }], "tool_use")
+    ];
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      sent.push(JSON.parse(String(init.body)) as Wire);
+      return replies[sent.length - 1]!();
+    });
+    const resolver = async (input: { modelId?: string }) => ({ provider: createAutomationStudioAnthropicProvider({ model: input.modelId ?? MODEL, secretReference: { kind: "secret_reference", id: "secret:claude" }, resolveSecret: async () => "dummy-provider-key", fetchImpl: fetchImpl as unknown as typeof fetch }) });
+    const provider = (await automationStudioLlmRoleRoutedResolution(resolver, { projectId: "project-1", flowId: "flow-1", modelId: MODEL }))!.provider;
+    const decider = decisionRequest();
+    decider.deniedEvidenceKeys = [];
+    await runWithAutomationStudioLlmModelLadder(automationStudioLlmModelLadder(), async () => {
+      await provider.runTask(decider);
+      return await automationStudioFlowLessJudge({ summary: leftSummary(p), provider, run: runAutomationStudioLlmHarness, projectId: "project-1", flowId: "flow-1", deniedEvidenceKeys: [], continuesDecider: true, tokenLimits: { maxInputTokens: 900_000, maxOutputTokens: 8_000, maxTotalTokens: 1_000_000 } });
+    });
+    expect(sent).toHaveLength(3);
+    const [, continuing, answered] = sent as [Wire, Wire, Wire];
+    // The re-ask is the continuation's request again, then the reply and the answer to it: nothing of the judge's message is lost.
+    expect(JSON.stringify(answered.messages.slice(0, continuing.messages.length))).toBe(JSON.stringify(continuing.messages));
+    expect(answered.messages.at(-1)!.content).toEqual(expect.arrayContaining([expect.objectContaining({ type: "tool_result" })]));
+    const asked = JSON.stringify(answered.messages);
+    for (const words of ["ValueRidge Essentials Paper Towels, 1 Roll", "c15", "c50"]) expect(asked).toContain(words);
+    expect(asked.split("Pickup today").length - 1).toBeGreaterThanOrEqual(8);
+  });
+});
+
+/** What the judge is asked about at 0101: the cart's rows as the answer, and the feed's evidence, left reads and all. */
+function leftSummary(p: Awaited<ReturnType<typeof leftRun>>) {
+  return { instructions: LEFT_INSTRUCTION, rows: { totalRows: 2, truncated: false, columns: [{ id: "item", label: "item" }, { id: "quantity", label: "quantity" }, { id: "price", label: "price" }], rows: LEFT_CART_ROWS }, acts: [], resultEvidence: p.feed.evidence() };
+}

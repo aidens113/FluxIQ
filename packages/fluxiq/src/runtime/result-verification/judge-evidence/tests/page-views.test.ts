@@ -1,9 +1,11 @@
 // A judge asked on its own request after an unreadable reply is shown the pages a judge needs (t1067): the end view, and
 // the before view where a lasting act ran, as the decider read them, within the page budget. Live run
 // run-mwy3btww-31d32e0d's standalone judges were shown every view as semantic state only (`captureOmitted`) and said
-// unsure for want of what the page showed. A continuing judge's first ask, and the deciding digest's view of the summary,
-// are unchanged: the pages go only into an ask after an unreadable reply. No model is called; the provider is scripted.
-// The site is a kind no realistic scenario uses (a garden centre).
+// unsure for want of what the page showed. A first ask, and the deciding digest's view of the summary, are unchanged: the
+// pages go only into an ask after an unreadable reply. Since t1065 a continuing judge's unreadable reply is answered in its
+// own conversation, which sends back the continuation and only the note, so the standalone ask exists for a judge that
+// never continues the decider, driven here, and after a decider in the JSON-text transport (t979). No model is called;
+// the provider is scripted. The site is a kind no realistic scenario uses (a garden centre).
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
 import { AutomationStudioLlmProviderError, runAutomationStudioLlmHarness, type AutomationStudioJudgeEvidenceProjector, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
@@ -47,15 +49,17 @@ function scripted(): { provider: AutomationStudioLlmProvider; seen: AutomationSt
 }
 
 describe("a judge asked on its own request after an unreadable reply", () => {
-  it("is shown the end view's page and the before view's, as the decider read them; the continuing first ask is not", async () => {
+  it("is shown the end view's page and the before view's, as the decider read them; the first ask is not", async () => {
     const { provider, seen } = scripted();
-    await automationStudioFlowLessJudge({ summary: summary(), provider, run: runAutomationStudioLlmHarness, projectId: "project-1", flowId: "flow-1", deniedEvidenceKeys: [], continuesDecider: true, judgeEvidenceVersion: 1, projectJudgeEvidence: projector });
+    // A judge that never continues the decider: every ask is its own request.
+    await automationStudioFlowLessJudge({ summary: summary(), provider, run: runAutomationStudioLlmHarness, projectId: "project-1", flowId: "flow-1", deniedEvidenceKeys: [], judgeEvidenceVersion: 1, projectJudgeEvidence: projector });
     expect(seen).toHaveLength(2);
     const first = seen[0]!.context.resultSummary as unknown as JsonObject;
     expect(first).not.toHaveProperty("pageViews");
     expect(JSON.stringify(first)).not.toContain("t21 ");
     const standalone = seen[1]!.context.resultSummary as unknown as JsonObject;
-    expect(seen[1]!.metadata).toMatchObject({ judgeStandaloneAfterUnreadable: true });
+    expect(seen[1]!.metadata).not.toHaveProperty("continuesDecider");
+    expect(seen[1]!.metadata).not.toHaveProperty("judgeAnswersInConversation");
     const pages = standalone.pageViews as JsonObject;
     expect((pages.endView as JsonObject).text).toBe(BASKET_TEXT);
     expect((pages["witnesses.before"] as JsonObject).text).toBe(HOME_TEXT);
