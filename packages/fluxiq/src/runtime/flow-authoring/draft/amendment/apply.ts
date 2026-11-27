@@ -98,12 +98,42 @@ const NOT_A_FLOW_STEP: AutomationStudioFlowDraftAmendmentRefusal["reason"] = "no
 export function applyAutomationStudioFlowDraftAmendments(
   steps: AutomationStudioFlowDraftStep[],
   amendments: readonly AutomationStudioFlowDraftAmendment[],
-  options: {
-    claimRefused?: AutomationStudioFlowDraftClaimRefused | undefined;
-    loopNeverEnds?: AutomationStudioFlowDraftLoopNeverEnds | undefined;
-    withdrawsReplacedAttempt?: boolean | undefined;
-  } = {}
-): { applied: number; refused: AutomationStudioFlowDraftAmendmentRefusal[]; moved?: ActMove[]; unreached?: AutomationStudioFlowDraftUnreachedStep[] } {
+  options: AmendmentOptions = {}
+): AmendmentReport {
+  const before = steps.map((step) => ({ step, copy: snapshot(step) }));
+  const report = applyEach(steps, amendments, options);
+  // All or none (t1068): a refused edit leaves the whole decision unapplied, each refusal still naming its edit and why.
+  if (!report.refused.some((entry) => !NOT_BLOCKING.has(entry.reason))) return report;
+  for (const { step, copy } of before) {
+    for (const key of Object.keys(step)) delete (step as Record<string, unknown>)[key];
+    Object.assign(step, copy);
+  }
+  return { applied: 0, refused: report.refused };
+}
+
+/** Refusals that stop nothing: the edit changed nothing, or one part of it was told and the rest applied. */
+const NOT_BLOCKING: ReadonlySet<string> = new Set(["already_so", "already_in_flow", "already_out", "changes_nothing", "act_already_named", "act_on_a_read", "act_not_done_there"]);
+
+function snapshot(step: AutomationStudioFlowDraftStep): AutomationStudioFlowDraftStep {
+  try {
+    return structuredClone(step);
+  } catch {
+    return { ...step };
+  }
+}
+
+type AmendmentOptions = {
+  claimRefused?: AutomationStudioFlowDraftClaimRefused | undefined;
+  loopNeverEnds?: AutomationStudioFlowDraftLoopNeverEnds | undefined;
+  withdrawsReplacedAttempt?: boolean | undefined;
+};
+type AmendmentReport = { applied: number; refused: AutomationStudioFlowDraftAmendmentRefusal[]; moved?: ActMove[]; unreached?: AutomationStudioFlowDraftUnreachedStep[] };
+
+function applyEach(
+  steps: AutomationStudioFlowDraftStep[],
+  amendments: readonly AutomationStudioFlowDraftAmendment[],
+  options: AmendmentOptions
+): AmendmentReport {
   let applied = 0;
   const refused: AutomationStudioFlowDraftAmendmentRefusal[] = [];
   const claims: { act: string; from: AutomationStudioFlowDraftStep; to: AutomationStudioFlowDraftStep }[] = [];
@@ -180,6 +210,12 @@ export function applyAutomationStudioFlowDraftAmendments(
     }
     // `result`: this read holds the answer (`./edits/result.ts`).
     if (amendment.change === "result") {
+      // Checked like `keep`: a step that is a second copy of one in the Flow cannot be the result (t1068).
+      const copy = step.disposition !== "kept" ? automationStudioFlowDraftSecondCopy(steps, step) : undefined;
+      if (copy) {
+        refused.push({ step: amendment.step, reason: "second_copy", copyOf: shown.number(copy) });
+        continue;
+      }
       const ruled = automationStudioFlowDraftEditResult(step);
       if (ruled.ok) applied += 1;
       else refused.push({ step: amendment.step, reason: ruled.reason });

@@ -57,7 +57,7 @@ describe("a judge's no, as the model is shown it", () => {
 
   it("names the result's processing declared anew as new evidence, keeping every way it named before", () => {
     const said = AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS.judged("No.");
-    expect(said).toContain("a read that returns different rows or the same rows in a different order, the result's processing declared anew so that it keeps other rows or another order, after your acts a look");
+    expect(said).toContain("a read that returns different rows or the same rows in a different order, the result's processing declared anew so that it keeps other rows or another order, after your acts a read of the page");
     expect(said).not.toContain("defects lists");
   });
 
