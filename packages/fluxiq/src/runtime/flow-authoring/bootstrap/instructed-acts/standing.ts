@@ -80,10 +80,17 @@
 // `stood`. That run owed "for pickup" for 190 steps while the site had Pickup
 // chosen all along.
 //
+// **A step that claims only an act's choice (F6, `run-mwyfc9uf-215bbd84`).** A step
+// named for `a1.fulfilment` and not for `a1`, which presses the act, left `a1` at
+// `no_step_added`. A kept lasting step named only for an act's choice is tried for the
+// act too, through the same rules, when its change shows the act or its words name it; the act is
+// done when it answers, and the choices it claims are made by it.
+//
 // Nothing here calls a provider or reads a page; it is the draft and the claims.
 import { automationStudioFlowDraftStepMovedTarget, type AutomationStudioFlowDraftStep, type AutomationStudioFlowDraftStepChosen } from "../../draft/index.ts";
 import {
   automationStudioInstructedActChangeShows,
+  automationStudioInstructedActStepDoesItsVerb,
   automationStudioInstructedActIsEvidenceFault,
   automationStudioInstructedActStepDidInstead,
   automationStudioInstructedActStepThatNamesIt
@@ -132,6 +139,14 @@ export function automationStudioInstructedActsStanding(input: {
 }): Map<string, AutomationStudioInstructedStanding> {
   const choices = input.acts.flatMap((act) => act.requires ?? []);
   const named = new Map([...input.acts, ...choices].map((item) => [item.id, namedFor(input.steps, item.id, input.claimedFor?.(item.id) ?? [])]));
+  const borrowedActSteps = new Map<string, Set<Step>>();
+  // A step that claims only an act's choice and does a lasting act stands for the act too (F6, `run-mwyfc9uf-215bbd84`).
+  for (const act of input.acts) {
+    if (named.get(act.id)?.length) continue;
+    const borrowed = (act.requires ?? []).flatMap((choice) => named.get(choice.id) ?? []).filter((step) => step.effect === "mutate" && step.disposition === "kept" && automationStudioInstructedActStepDoesItsVerb(act, step));
+    if (borrowed.length) borrowedActSteps.set(act.id, new Set(borrowed));
+    if (borrowed.length) named.set(act.id, [...new Set(borrowed)].sort((left, right) => left.position - right.position));
+  }
   // Steps named for any act or choice: a lasting step after a repeat that one names is the next act, not this one's end.
   const kept = new Set([...named.values()].flat().filter((step) => step.disposition === "kept"));
   const claimed = (step: Step): boolean => kept.has(step);
@@ -207,7 +222,7 @@ export function automationStudioInstructedActsStanding(input: {
       if (elsewhere) return elsewhere;
       const quantity = automationStudioInstructedQuantityStanding(choice, act, step, actSteps.get(choice.of), input.steps);
       if (quantity) return "counted" in quantity ? undefined : quantity;
-      if (!used.has(step) || automationStudioInstructedChoiceSetBy(step, choice)) return undefined;
+      if (!used.has(step) || automationStudioInstructedChoiceSetBy(step, choice) || borrowedActSteps.get(choice.of)?.has(step)) return undefined;
       return { fault: actSteps.get(choice.of) === step ? "choice_is_the_act_step" : "step_claimed_twice" };
     });
     // A choice made after the step that does its act: information, never a fault (`./choice-order.ts`).

@@ -1505,6 +1505,24 @@ this order:
    counted apart, any progress resets a target's count, and the run's step
    limit still bounds everything else.
 
+**A step whose page never arose** (`state-routing/not-arisen.ts`,
+`executor.state.not_arisen`). A step written on the page an earlier act brings
+about, whose target is not found because that act did not run this time (it was
+already done, or passed over), goes on by its declared way on instead of failing.
+Whether it may be passed over is asked of what it declares, never of its verb
+(t1073, live run `run-mwyfc9uf-215bbd84`). It lasts when it:
+
+- declares consequences;
+- carries permission consequences or an explicit lasting risk;
+- is claimed by the plan for an asked act (`stepClaimsAct`);
+- or acted with an effect earlier in the run.
+
+Any other press is a navigation and is passed over. A drawer's "View cart" after
+an Add that was already done is the case this rule exists for. Every web click is
+floored `commit` so that it is not repeated after a lost acknowledgement, and that
+floor alone no longer makes a navigation last. A lasting act is still never passed
+over.
+
 A routed attempt reads `status: "succeeded"`, `route: "state_routed"` and
 `skipped: { reason: "state_routed", code, toNodeId, direction }`, with no
 `failure`, `fault` or `message`; the chat says which step was passed over and

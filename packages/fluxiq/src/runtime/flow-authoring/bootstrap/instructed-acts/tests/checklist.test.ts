@@ -89,6 +89,19 @@ describe("the acts checklist", () => {
     expect(checkAutomationStudioInstructedActs({ instructionText: TOWELS, result: { summary: "x" }, draftSteps: given }).ok).toBe(true);
   });
 
+  // F6 (`run-mwyfc9uf-215bbd84`): the step claimed the act's choices and not the act, and showed the act as missing.
+  it("shows an act done by the lasting step that claims only its choices", () => {
+    const TOWELS = "Add two packs of the Softly Paper Towels in the 12 Double Rolls size to my cart.";
+    const draft = [step(1, { acts: ["a1.size", "a1.quantity"], input: { quantity: "2" }, words: { target: "Add to cart" } })];
+    const items = automationStudioInstructedActsChecklist({ instructionText: TOWELS, draftSteps: draft })!;
+    expect(items[0]!.todo).toBeUndefined();
+    expect(items[0]!.done).toBe(1);
+    expect(automationStudioInstructedActsNotDone(items)).toEqual([]);
+    // A read that claims only a choice does not stand for the act.
+    const reading = [step(1, { acts: ["a1.size"], effect: "observe", proposes: true, words: { target: "Add to cart" } })];
+    expect(automationStudioInstructedActsChecklist({ instructionText: TOWELS, draftSteps: reading })![0]!.todo).toBeDefined();
+  });
+
   it("is nothing for an instruction that asks only for something to be read", () => {
     expect(automationStudioInstructedActsChecklist({ instructionText: "List the dining tables for sale in Kelford.", draftSteps: [] })).toBeUndefined();
   });

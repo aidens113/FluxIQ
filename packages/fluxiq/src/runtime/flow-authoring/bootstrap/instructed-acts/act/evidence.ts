@@ -135,6 +135,18 @@ export function automationStudioInstructedActChangeShows(act: AutomationStudioIn
 }
 
 /**
+ * Whether the step does the act's own verb, not only a choice of it: the act is one of adding, saving,
+ * claiming, submitting or moving, and the step's change shows it or its words name it (F6). A step that
+ * claims only the act's choice stands for the act when it does.
+ */
+export function automationStudioInstructedActStepDoesItsVerb(act: AutomationStudioInstructedAct, step: Step): boolean {
+  if (!LASTING.has(act.kind)) return false;
+  if (automationStudioInstructedActChangeShows(act, step)) return true;
+  const words = wordsOf(step);
+  return words !== undefined && namesAct(act, words);
+}
+
+/**
  * What the step did instead of the act, as its own record shows, or nothing
  * when the act is not one of adding, saving, claiming, submitting or moving,
  * the step's change shows the act, its control has no words, its words name
