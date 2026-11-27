@@ -21,6 +21,7 @@
 //      replay of run `run-mwveg5ls-0266dfe0` (t1037) kept a read with the wrong fields and dropped the
 //      corrected read after it while the first copy won. This follows `dead_end`, so a press made again
 //      after a detour came back keeps the second, the one that stayed.
+//   6. `repeat`, again: a paging loop a later loop over the same list replaced (`./superseded-loop.ts`).
 //
 // **The model has the last word.** A step is the framework's while it carries `drafted`, or is `taken`
 // with none (just appended). Every other step is the model's ruling and is copied as it is; when it is
@@ -36,6 +37,7 @@ import { automationStudioFlowDraftMarkAfterResult } from "./after-result.ts";
 import { automationStudioFlowDraftMarkDeadEnds } from "./dead-end.ts";
 import { automationStudioFlowDraftIsFrameworkStep } from "./framework-step.ts";
 import { automationStudioFlowDraftMark } from "./mark.ts";
+import { automationStudioFlowDraftMarkSupersededLoops } from "./superseded-loop.ts";
 import { automationStudioFlowDraftResultReads } from "./result-reads.ts";
 import { automationStudioFlowDraftComposeUndone } from "./undone.ts";
 
@@ -80,6 +82,7 @@ export function automationStudioFlowDraftCompose(input: {
   automationStudioFlowDraftMarkDeadEnds(ordered, framework, resultReads);
   automationStudioFlowDraftMarkAfterResult(ordered, framework, resultReads);
   markRepeats(ordered, framework);
+  automationStudioFlowDraftMarkSupersededLoops(ordered, framework, resultReads);
   return working;
 }
 

@@ -136,10 +136,13 @@ describe("F23: a later attempt's replay of a saved stepper Flow", () => {
     expect(seed.acts[0]).toMatchObject({ undeclared: true, changedState: true, heldOnRepeat: true, carried: true });
   });
 
-  it("today: refuses the saved Continue with nothing sent, so the option never arises and its step ends gone", async () => {
+  it("today: refuses the saved Continue with nothing sent; the option the plan claims never arises and its step ends gone", async () => {
     const page = stepper();
     const record = new AutomationStudioAttemptActRecord({ seed: automationStudioAttemptActSeed({ data: firstAttempt().data() })! });
-    const trace = await runAutomationStudioGraph(savedFlow(), automationStudioAnswerFirstRunActGate(page.options, { record, settle: true }));
+    // The plan claims the option's press as a lasting act the person asked for, so no rule passes over it.
+    const flow = savedFlow();
+    flow.nodes.find((node) => node.id === "pick")!.metadata = { bootstrapSymbolicKey: "pick" };
+    const trace = await runAutomationStudioGraph(flow, automationStudioAnswerFirstRunActGate(page.options, { record, settle: true, claimedActs: new Set(["pick"]) }));
     // The run gate answered Continue as already done: nothing was pressed and the stepper stayed on its first step.
     const next = trace.attempts.filter((attempt) => attempt.nodeId === "next");
     expect(next).toHaveLength(1);
@@ -152,6 +155,17 @@ describe("F23: a later attempt's replay of a saved stepper Flow", () => {
     expect(page.looks).toEqual([1]);
     expect(pick.at(-1)?.failure?.code).toBe(AUTOMATION_STUDIO_TARGET_GONE_CODE);
     expect(trace.status).toBe("failed");
+  });
+
+  // F2 (`run-mwyfc9uf-215bbd84`): the same replay, the option's press claimed by no act: a plain navigation after an
+  // act not done again, so its state never arose and the run goes on past it. Before, every press was floored as lasting.
+  it("a plain press after the refused Continue, claimed by no act, is passed over as a state that never arose", async () => {
+    const page = stepper();
+    const record = new AutomationStudioAttemptActRecord({ seed: automationStudioAttemptActSeed({ data: firstAttempt().data() })! });
+    const trace = await runAutomationStudioGraph(savedFlow(), automationStudioAnswerFirstRunActGate(page.options, { record, settle: true }));
+    expect(page.sent).toEqual([]);
+    const pick = trace.attempts.filter((attempt) => attempt.nodeId === "pick");
+    expect(pick.at(-1)).toMatchObject({ route: "skipped", skipped: { code: "executor.state.not_arisen" } });
   });
 
   // The fix (t995's proposal, t994): a carried act held only to a look (undeclared, `heldOnRepeat`)

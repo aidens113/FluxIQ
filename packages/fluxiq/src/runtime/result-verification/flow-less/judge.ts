@@ -50,6 +50,11 @@
 //
 // **A yes that also advises a change is a yes.** Its `patchNeeded` is about a Flow, and
 // there is none here to change.
+//
+// **A no that names no contradiction is unknown (t1072).** The question allows a no only on a concrete contradiction,
+// said in `observed`. Run `run-mwyfoz8o-507c92f6` (0101) said no over right rows in the right order, its own summary
+// saying only that one value could not be seen, with `observed` empty and no defect beyond a cell it also checked as right.
+// Such a no is read from the reply's shape (`./named-contradiction.ts`) as the unknown it is, with Core's words first.
 
 import type { AutomationStudioFlowInstruction } from "../../../flows/authoring/model/index.ts";
 import { automationStudioLlmBuildTrace, automationStudioLlmStepLogNote, type AutomationStudioLlmTaskResult } from "../../llm/index.ts";
@@ -63,6 +68,7 @@ import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES, automationStudioResultVerdict }
 import { automationStudioFlowLessScreenedWords } from "./screened-words.ts";
 import { automationStudioFlowLessJudgedSummary } from "./judged-summary.ts";
 import { automationStudioFlowLessJudgedNoFound } from "./judged-no-found.ts";
+import { automationStudioFlowLessNoNamesContradiction } from "./named-contradiction.ts";
 import { automationStudioFlowLessHeldYesReason } from "./held-yes.ts";
 import { automationStudioFlowLessSummaryFitting } from "./window-fitting.ts";
 import { automationStudioLlmUnreadableReplySaid } from "../../models/failures/index.ts";
@@ -89,6 +95,8 @@ const PURSE_REFUSED = "The attempt's budget could not pay for the check, so it w
 const READING_MOST = 450;
 const WITHHELD_SENTENCE = "(withheld)";
 const NO_ANSWER = "The check answered without saying whether this is what was asked for, so it was not judged.";
+/** A no read as unknown (header, t1072): Core's words, before the check's own. */
+const NAMED_NOTHING = "The check answered no without naming a contradiction in the evidence: it said nothing in observed, and listed no row, act or value it found wrong that it did not also give as right. So it is read as unknown, not no: nothing is shown wrong.";
 
 /** The harness's refusals of a call by what its purse or run budget holds: a request too large for the model is another matter. */
 const PURSE_CODES: ReadonlySet<string> = new Set(["llm_budget.run_cost_limit", "llm_budget.run_call_limit", "llm_budget.run_total_limit", "llm_budget.run_output_limit", "llm_budget.allowance_unavailable"]);
@@ -248,6 +256,8 @@ function reading(result: AutomationStudioLlmTaskResult, read: AutomationStudioRu
   if (verdict.verdict === "answers") return { judgement: { verdict: "yes", reason: "It was judged to be what was asked for.", checkedWhat: checked(summary) } };
   if (verdict.verdict === "does_not_answer") {
     const said = readingWords(verdict.repair?.judgement);
+    // A no that names no contradiction is read as the unknown its question asks for (header, `./named-contradiction.ts`, t1072).
+    if (!automationStudioFlowLessNoNamesContradiction(response.diagnosis)) return { judgement: { verdict: "unsure", reason: said ? `${NAMED_NOTHING} What it said: ${said}` : NAMED_NOTHING, checkedWhat: meantToCheck(summary) } };
     // What it found wrong goes on to the model beside its words (`./judged-no-found.ts`, t1011).
     const found = automationStudioFlowLessJudgedNoFound(verdict.repair);
     return { judgement: { verdict: "no", reason: said ?? "It was judged not to be what was asked for.", checkedWhat: failed(summary, said), ...(found ? { found } : {}) } };

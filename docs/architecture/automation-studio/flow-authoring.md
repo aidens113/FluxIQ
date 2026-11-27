@@ -122,15 +122,19 @@ reason under `drafted`, shown to the model as `out`:
 | `not_the_result` | it is a read that is not one of the result's reads |
 | `undone` | a later press of the same control undid it (a toggle pair, `compose/undone.ts`) |
 | `dead_end` | a detour from a press that moved the state, came back to that state with nothing lasting, or a press after the result's last read that nothing lasting follows (`compose/dead-end.ts`, `compose/after-result.ts`) |
-| `repeat` | it copies a step already in the Flow (`draft/second-copy.ts`): of two presses the first stays; of two reads of one list with nothing between them the later stays |
+| `repeat` | it copies a step already in the Flow (`draft/second-copy.ts`): of two presses the first stays; of two reads of one list with nothing between them the later stays; and a paging loop that a later paging loop over the same list replaced, holding no result read and no act claim, goes (`compose/superseded-loop.ts`, t1073) |
 
 The rules run in that order, on the facts the host stated on each call. The
 composition is pure and idempotent, so it runs after every append and every
 edit, and a later, better read moves the result while the earlier pick goes back
 out. **The model's word stands:** a step the model has ruled on, and a step
 carried from a saved Flow or an earlier attempt, is never recomposed
-(`compose/framework-step.ts`, `isRuled`). A step a loop covers (`coveredBy`)
-stays out for as long as the loop covers it.
+(`compose/framework-step.ts`, `isRuled`). The one exception is a superseded
+paging loop (t1073): a saved Flow that paged its list twice ran both loops on
+every replay (job-board run-mwyfoz8o, about 20 s each). Such a loop is taken out
+`repeat` even when the model wrote it, unless the model keeps it by name, which
+sets `supersededLoop` on the step (`draft/step.ts`). A step a loop covers
+(`coveredBy`) stays out for as long as the loop covers it.
 
 **The result's reads.** Every read that answer-first does not mark intermediate
 is a result read; the asked table is the one the instruction's named columns

@@ -61,9 +61,20 @@ function leftOut(value: unknown): boolean {
     && optional(value, "found", (found) => list(found, (entry) => entry === null || entry === undefined || list(entry, text)));
 }
 
+function hiddenSortKey(value: unknown): boolean {
+  return shape(value, ["field", "position", "order", "kind", "read"], ["inOrder", "readings"]) && identity(value.field) && count(value.position)
+    && (value.order === "asc" || value.order === "desc") && text(value.kind) && ["number", "date", "text"].includes(value.kind) && count(value.read)
+    && optional(value, "inOrder", (entry) => typeof entry === "boolean")
+    && optional(value, "readings", (readings) => list(readings, (entry) => entry === null || (typeof entry === "number" && Number.isFinite(entry))));
+}
+
 function processing(value: unknown): boolean {
-  if (!shape(value, ["declared", "collected", "leftOut", "repeats", "cut", "kept", "filters"]) || !isJsonObject(value.declared)) return false;
+  if (!shape(value, ["declared", "collected", "leftOut", "repeats", "cut", "kept", "filters"], ["keptRows", "hiddenSortKeys"]) || !isJsonObject(value.declared)) return false;
   if (![value.collected, value.leftOut, value.repeats, value.cut, value.kept].every(count)) return false;
   if ((value.collected as number) - (value.leftOut as number) - (value.repeats as number) - (value.cut as number) !== value.kept) return false;
+  // Each kept row with the values processing read on it (t1072): one per kept row, or absent.
+  if (!optional(value, "keptRows", (rows) => list(rows, isJsonObject) && (rows as unknown[]).length === value.kept)) return false;
+  // Each sort key the asked columns leave out, as the processor read it (t1072), or absent.
+  if (!optional(value, "hiddenSortKeys", (keys) => list(keys, hiddenSortKey))) return false;
   return list(value.filters, (filter) => shape(filter, ["condition", "leftOut", "leftOutOnlyByThis"]) && text(filter.condition) && count(filter.leftOut) && (filter.leftOut as number) <= (value.collected as number) && list(filter.leftOutOnlyByThis, text));
 }

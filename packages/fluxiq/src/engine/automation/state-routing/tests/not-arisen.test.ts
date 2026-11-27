@@ -64,4 +64,27 @@ describe("state routing a follow-on of a lasting act not done again", () => {
     const decision = await decideAutomationStudioStateRoute({ flow: flowOf(send), node: send, attempt: notFound(), attempts: [carried(), notFound()], options, guard: automationStudioStateRouteGuard() });
     expect(decision.kind).toBe("none");
   });
+
+  // F2 (`run-mwyfc9uf-215bbd84`): every web click is floored `commit`, which said the drawer's "View cart" lasts.
+  describe("when every press is floored as a lasting act by its verb", () => {
+    const click = { resolveActionEffect: () => ({ effectClass: "commit" as const, permissionConsequences: [] }) };
+    const run = (node: AutomationStudioFlowNode, more: Record<string, unknown> = {}) =>
+      decideAutomationStudioStateRoute({ flow: flowOf(node), node, attempt: notFound(), attempts: [carried(), joined(), notFound()], options: { ...click, ...more }, guard: automationStudioStateRouteGuard() });
+
+    it("goes on past a plain navigation click that declared nothing and claimed no act", async () => {
+      expect(await run(view)).toMatchObject({ kind: "declared", code: AUTOMATION_STUDIO_STATE_NOT_ARISEN_CODE, edge: { targetNodeId: "done" } });
+      expect(await run({ ...view, metadata: { declaredConsequences: [] } })).toMatchObject({ kind: "declared", code: AUTOMATION_STUDIO_STATE_NOT_ARISEN_CODE });
+    });
+
+    it("keeps a click that declared a lasting consequence, or whose plan claims an act, on its recovery", async () => {
+      expect((await run({ ...view, metadata: { declaredConsequences: ["create_new"] } })).kind).toBe("none");
+      expect((await run(view, { stepClaimsAct: () => true })).kind).toBe("none");
+    });
+
+    it("keeps a click an earlier attempt of it landed", async () => {
+      const landed = attempt("view", "domain.press", { effects: [{ type: "policy.output.dispatch" }] });
+      const decision = await decideAutomationStudioStateRoute({ flow: flowOf(), node: view, attempt: notFound(), attempts: [carried(), joined(), landed, notFound()], options: click, guard: automationStudioStateRouteGuard() });
+      expect(decision.kind).toBe("none");
+    });
+  });
 });

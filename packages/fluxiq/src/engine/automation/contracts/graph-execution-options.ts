@@ -46,6 +46,8 @@ export type AutomationStudioGraphExecutionOptions = {
   referenceNow?: number;
   /** Trusted client floor from the canonical registry; raw unresolved parameter slots must not be dropped. */
   resolveActionEffect?: (node: AutomationStudioFlowNode, parameterValues?: Readonly<Record<string, unknown>>) => AutomationStudioResolvedActionEffect | undefined;
+  /** Whether the step's draft claims a lasting act the person asked for (the run gate's act claims); a claimed step lasts whatever its verb. */
+  stepClaimsAct?: (node: AutomationStudioFlowNode) => boolean;
   /** Compatibility interpretation for legacy nodes without trusted action-effect contracts; the bound host's classifier takes precedence. */
   classifyLegacyStepAct?: AutomationStudioHostRuntimeBoundary["classifyLegacyStepAct"];
   /** Trusted canonical registry access; the matching host cannot grant a refresh write-set. */

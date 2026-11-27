@@ -1,3 +1,4 @@
+import type { AutomationStudioRecordProcessingHiddenSortKey } from "@fluxiq/contracts/automation";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioFlowLessReadLeftOut } from "../flow-less/index.ts";
 import type { AutomationStudioResultEvidenceSourceReplacements } from "./replacement/index.ts";
@@ -51,6 +52,24 @@ export type AutomationStudioResultEvidenceProcessing = {
   kept: number;
   /** One per filter, in the declaration's order: its words, how many rows it left out, and those it alone left out, by label. */
   filters: readonly { condition: string; leftOut: number; leftOutOnlyByThis: readonly string[] }[];
+  /**
+   * Each kept row, in the answer's order, with its asked columns and, beside them, every value the declaration's
+   * conditions, dedupe and order read on it (t1072): a filter's or sort's field the asked columns leave out, and a derived
+   * column as processing computed it beside the field it is derived from; `null` where the row holds no value. The
+   * rows keep every column upstream and the asked columns are a view over them, so the judge checks the order and each
+   * condition on the values processing used, row by row, rather than doubting what it cannot see (run-mwyfoz8o-507c92f6,
+   * 0101: right rows in the right order were answered no because the sort key was in no row shown). Absent where every
+   * value the declaration reads is already an asked column.
+   */
+  keptRows?: readonly JsonObject[];
+  /**
+   * Each sort key the asked columns leave out, as the processor read it on the kept rows (t1072): what it read the key
+   * as, on how many rows, and for the first key `inOrder`, Core's own reading of whether the kept rows run in that key's
+   * order; a few readings, never text. The Flow judge's processing account carries the same
+   * (`../processing-account.ts`); beside `keptRows` it says what Core made of the values the judge can check. Absent where
+   * every sort key is an asked column.
+   */
+  hiddenSortKeys?: readonly AutomationStudioRecordProcessingHiddenSortKey[];
 };
 
 /** A working read step said by its count alone: one that has read no page yet, or one a bundle stored before t1048 holds. */
