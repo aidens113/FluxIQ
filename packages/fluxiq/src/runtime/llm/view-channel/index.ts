@@ -3,8 +3,9 @@
 // of its target, so no framework path names a browser concept: the keyed-line
 // page view a domain hands Core, the channel declaration and the loop field
 // that turns it on, the default page budget, the git-style change lines and
-// the parts a long delivery is cut into, the projection that shows each
-// result's page whole once and as changes after, and `core.full_page`.
+// the parts a long delivery is cut into, the projection that delivers each
+// result's page whole once and as changes after, the id of the one trailing
+// entry those deliveries sit in (`core.page_window`), and `core.full_page`.
 export * from "./binding.ts";
 export * from "./budget.ts";
 export * from "./changes.ts";
@@ -18,3 +19,4 @@ export * from "./tool-id.ts";
 export * from "./tool.ts";
 export * from "./view-of.ts";
 export * from "./view.ts";
+export * from "./window-tool-id.ts";

@@ -14,13 +14,14 @@ import { AUTOMATION_STUDIO_LLM_EVIDENCE_BUDGET_TOOL_ID } from "../../loop-budget
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CHECK_TOOL_ID, AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID } from "../../repeat-guard/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID } from "../../unusable-decision.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID } from "../../decision-context/index.ts";
+import { AUTOMATION_STUDIO_LLM_PAGE_WINDOW_TOOL_ID } from "../../view-channel/index.ts";
 import { AUTOMATION_STUDIO_LLM_PASSING_NOTE_TOOL_IDS, automationStudioLlmEvidenceEntryMoves } from "../index.ts";
 
 const moves = (toolId: string, callId = toolId) => automationStudioLlmEvidenceEntryMoves({ callId, toolId });
 
 describe("what changes between one decision and the next", () => {
   it("names what Core writes afresh for every decision", () => {
-    for (const toolId of [AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID, AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID, AUTOMATION_STUDIO_LLM_EVIDENCE_BUDGET_TOOL_ID, AUTOMATION_STUDIO_LLM_EVIDENCE_CURRENT_FLOW_TOOL_ID, "core.current_view"]) expect(moves(toolId), toolId).toBe(true);
+    for (const toolId of [AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID, AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID, AUTOMATION_STUDIO_LLM_EVIDENCE_BUDGET_TOOL_ID, AUTOMATION_STUDIO_LLM_EVIDENCE_CURRENT_FLOW_TOOL_ID, "core.current_view", AUTOMATION_STUDIO_LLM_PAGE_WINDOW_TOOL_ID]) expect(moves(toolId), toolId).toBe(true);
   });
 
   it("names every note a newer one or a later call takes away", () => {

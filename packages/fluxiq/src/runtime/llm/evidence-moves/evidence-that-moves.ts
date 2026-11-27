@@ -12,8 +12,8 @@
 // no edge into the loop's handlers; `./tests/evidence-that-moves.test.ts` holds
 // the names to their owners.
 
-/** Written afresh for every decision: the page as it now stands, the record, the draft and what is left. */
-const REWRITTEN_TOOL_IDS: ReadonlySet<string> = new Set(["core.current_view", "core.current_flow", "core.evidence_history", "core.flow_draft", "core.budget", "core.newly_described_nodes"]);
+/** Written afresh for every decision: the pages and views as they now stand, the record, the draft and what is left. */
+const REWRITTEN_TOOL_IDS: ReadonlySet<string> = new Set(["core.page_window", "core.current_view", "core.current_flow", "core.evidence_history", "core.flow_draft", "core.budget", "core.newly_described_nodes"]);
 
 /**
  * Core's notes on one decision. Each leaves the window when a newer one of its

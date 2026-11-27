@@ -1,35 +1,48 @@
 // The page channel: what each result's page view is shown as, projected over the window's own records (D1, D3, D6, D7).
 //
 // **Whole once, then changes.** Walking the records in call order, the first
-// view of a page key in this window is shown whole; each later view of that key
-// is shown as what changed since the last one shown (`./changes.ts`), or as
-// unchanged. Lines marked `extra` show in their own delivery and never enter
-// the state a later view is compared with. A `core.full_page` capture is shown
-// whole and starts that key again from it.
+// view of a page key in this window is delivered whole; each later view of that
+// key is delivered as what changed since the last one delivered
+// (`./changes.ts`), or as unchanged. Lines marked `extra` show in their own
+// delivery and never enter the state a later view is compared with. A
+// `core.full_page` capture is delivered whole and starts that key again from it.
+//
+// **Results stay as they were sent; the pages sit in one trailing entry
+// (t1080).** Each result's page member becomes a short note of what its delivery
+// was -- whole, changes since a call, unchanged -- fixed the moment the record
+// is projected, from earlier records alone. The deliveries themselves go in one
+// entry after every result, `core.page_window`, which holds the pages as they
+// now stand. So appending a record never changes a byte of an earlier one, and
+// the request's cached prefix only grows. Up to t1080 the deliveries sat inside
+// the results and an earlier copy was rewritten into a reference when it was
+// replaced or let go: live run `run-mwytbimp-e0c33977` read results pages 1 and
+// 2 of one list (11,762 and 10,202 characters under one key, the budget fitting
+// one), each visit rewrote the other's copy, and 10 of its 28 decisions read the
+// cache back only to the system prompt and re-wrote everything after it
+// (482,628 cache-write tokens in attempt 1).
 //
 // **A projection, not a store.** What a key's state is depends only on earlier
 // records of the same window, so the same records always project to the same
-// bytes, a new record never changes how an earlier one reads -- except at the
-// two rewrites below -- and a window that does not hold a key's earlier views (a
-// fresh round's) shows that page whole again. Nothing outlives the run.
+// bytes, and a window that does not hold a key's earlier views (a fresh
+// round's) delivers that page whole again. Nothing outlives the run.
 //
 // **One current copy per key (D7).** When the changes since a key's last whole
-// view would outgrow that whole view, the key is shown whole again instead, and
-// every earlier copy of that key in the window becomes a short reference to
-// the call that now carries it (`{ key, replacedBy }`).
+// view would outgrow that whole view, the key is delivered whole again instead,
+// and the trailing entry drops that key's earlier deliveries: its newest whole
+// delivery and the changes after it are what it holds.
 //
 // **The page budget per request (D6, user 2026-11-25: "a data limit on pages
 // to ensure we dont just send everything on every single request").** The page
-// text of every copy the window shows, across all keys, stays within the
-// budget. One delivery longer than it is shown up to the budget at a line
-// boundary, saying how many lines are left and how to ask for them
-// (`core.full_page` with `part`). When a new delivery would take the window
-// over, the copies of the least recently delivered other pages become short
-// references (`{ key, droppedAt }`), oldest first, until it fits; the page
-// being delivered is never dropped, and a dropped page is shown whole when the
-// work comes back to it. Changes that would take the current page's own copies
-// over the budget are sent as the page whole instead. The budget bounds what one
-// request carries; it never ends or resets a round or a run.
+// text the trailing entry holds, across all keys, stays within the budget. One
+// delivery longer than it is shown up to the budget at a line boundary, saying
+// how many lines are left and how to ask for them (`core.full_page` with
+// `part`). When a new delivery would take the entry over, the deliveries of the
+// least recently delivered other pages leave it, oldest first, until it fits,
+// and their keys are named under `letGo`; the page being delivered is never let
+// go, and a page let go is delivered whole when the work comes back to it.
+// Changes that would take the current page's own deliveries over the budget are
+// sent as the page whole instead. The budget bounds what one request carries; it
+// never ends or resets a round or a run.
 //
 // Core never parses a page text here: keys and texts are compared for equality
 // and measured by length, nothing more.
@@ -42,73 +55,81 @@ import type { AutomationStudioLlmPageLine } from "./line.ts";
 import { automationStudioLlmPageParts } from "./parts.ts";
 import { AUTOMATION_STUDIO_LLM_FULL_PAGE_TOOL_ID } from "./tool-id.ts";
 import { automationStudioLlmPageViewOf } from "./view-of.ts";
+import { AUTOMATION_STUDIO_LLM_PAGE_WINDOW_TOOL_ID } from "./window-tool-id.ts";
 
 type Entry = { callId: string; toolId: string; value: JsonValue };
 
 /** `core.recall_result`, written as its name so this module takes no edge into the recall's binding (`./tests/projection.test.ts` holds it to its owner). */
 const RECALL_TOOL_ID = "core.recall_result";
 
-/** Told once in a window, on its first delivery of changes. */
+/** Told in the trailing entry whenever it holds a delivery of changes. */
 const CHANGES_LEGEND = "A line after \"- \" left the page, after \"+ \" arrived, after \"~ \" now reads as shown; each group of changes follows the unchanged line before it, shown after two spaces.";
 
 type Shape = "whole" | "changes";
 
 type Parted = { call: string; shape: Shape; parts: string[][] };
 
-/** What a key's next view is compared with. Gone when the key's copies left the window: its next view is then whole. */
+/** What a key's next view is compared with. Gone when the key's deliveries left the window: its next view is then whole. */
 type KeyState = {
-  /** The page's lines as last shown, without extra lines. */
+  /** The page's lines as last delivered, without extra lines. */
   lines: readonly AutomationStudioLlmPageLine[];
-  /** Characters of the last whole view, and of the changes shown since it. */
+  /** Characters of the last whole view, and of the changes delivered since it. */
   baseChars: number;
   sinceBase: number;
   /** The call of the delivery a next view is compared with. */
   last: string;
 };
 
-/** The copies of one page the window shows -- a page key's, or one recalled page's -- with their page text and when the last arrived. */
-type Holder = { key: string; lastAt: number; copies: Array<{ index: number; chars: number }> };
+/** The deliveries of one page the trailing entry holds -- a page key's, or one recalled page's -- with their page text and when the last arrived. */
+type Holder = { key: string; recalled: boolean; lastAt: number; copies: Array<{ index: number; chars: number }> };
 
 /**
- * Each record with its page member shown as its delivery, in call order. A
- * record without a page view under `channel.member` is returned as it came.
- * The input is never mutated. This is the function an offline replay drives:
- * records in, projected evidence out.
+ * Each record with its page member shown as a short note of its delivery, in
+ * call order, and the one trailing entry holding the deliveries the window keeps
+ * (`window`, absent when it would hold nothing). A record without a page view
+ * under `channel.member` is returned as it came. How a record reads depends only
+ * on the records before it, so appending never changes an earlier one. The input
+ * is never mutated. This is the function an offline replay drives: records in,
+ * projected evidence out.
  */
-export function automationStudioLlmPageChannelProjection(records: readonly Entry[], channel: AutomationStudioLlmPageChannel): Entry[] {
+export function automationStudioLlmPageChannelProjection(records: readonly Entry[], channel: AutomationStudioLlmPageChannel): { history: Entry[]; window?: Entry } {
   const budget = channel.budgetChars !== undefined && Number.isInteger(channel.budgetChars) && channel.budgetChars > 0 ? channel.budgetChars : AUTOMATION_STUDIO_LLM_PAGE_BUDGET_CHARS;
   const member = channel.member;
   const states = new Map<string, KeyState>();
   const parted = new Map<string, Parted>();
   const holders = new Map<string, Holder>();
-  const shown = new Map<number, JsonObject>();
-  const references = new Map<number, JsonObject>();
+  /** Each projected record's note, fixed when it is projected. */
+  const notes = new Map<number, JsonObject>();
+  /** Each held delivery's page text and what it is, by its record; it leaves when its page is replaced or let go. */
+  const deliveries = new Map<number, JsonObject>();
+  /** Pages let go for the budget, by key, with the call that let them go; a page held again leaves this. */
+  const letGo = new Map<string, string>();
   let current: string | undefined;
-  let legendTold = false;
 
   const liveChars = (holder: Holder | undefined): number => (holder ? holder.copies.reduce((sum, copy) => sum + copy.chars, 0) : 0);
   const windowChars = (): number => [...holders.values()].reduce((sum, holder) => sum + liveChars(holder), 0);
-  const retire = (id: string, reference: JsonObject): void => {
-    for (const copy of holders.get(id)?.copies ?? []) references.set(copy.index, reference);
+  const release = (id: string): void => {
+    for (const copy of holders.get(id)?.copies ?? []) deliveries.delete(copy.index);
     holders.delete(id);
     states.delete(id);
   };
-  // A new copy, then the window brought back within the budget: other pages' copies leave oldest first; the
-  // page just delivered keeps its newest copy, and if its own older copies must go its next view is whole.
-  const hold = (id: string, key: string, index: number, chars: number, callId: string): void => {
-    const holder = holders.get(id) ?? { key, lastAt: index, copies: [] };
+  // A new delivery, then the entry brought back within the budget: other pages leave oldest first; the
+  // page just delivered keeps its newest delivery, and if its own older ones must go its next view is whole.
+  const hold = (id: string, key: string, recalled: boolean, index: number, chars: number, callId: string): void => {
+    const holder = holders.get(id) ?? { key, recalled, lastAt: index, copies: [] };
     holder.copies.push({ index, chars });
     holder.lastAt = index;
     holders.set(id, holder);
     while (windowChars() > budget) {
       const oldest = [...holders.entries()].filter(([other]) => other !== id).sort(([, a], [, b]) => a.lastAt - b.lastAt)[0];
       if (oldest) {
-        retire(oldest[0], { key: oldest[1].key, droppedAt: callId });
+        release(oldest[0]);
+        if (!oldest[1].recalled) letGo.set(oldest[1].key, callId);
         continue;
       }
       const older = holder.copies.filter((copy) => copy.index !== index);
       if (!older.length) break;
-      for (const copy of older) references.set(copy.index, { key, droppedAt: callId });
+      for (const copy of older) deliveries.delete(copy.index);
       holder.copies = holder.copies.filter((copy) => copy.index === index);
       states.delete(id);
     }
@@ -117,16 +138,18 @@ export function automationStudioLlmPageChannelProjection(records: readonly Entry
   const delivered = (callId: string, key: string, shape: Shape, lines: readonly string[], extra: JsonObject): { page: JsonObject; chars: number } => {
     const parts = automationStudioLlmPageParts(lines, budget);
     if (parts.length > 1) parted.set(key, { call: callId, shape, parts });
-    return { page: { key, ...extra, ...partShown(shape, parts, 1, budget) }, chars: joinedLength(parts[0]!) };
+    return { page: { call: callId, ...extra, ...partShown(shape, parts, 1, budget) }, chars: joinedLength(parts[0]!) };
   };
 
-  // Shown whole, as the key's new state: its earlier copies point here (D7).
+  // Delivered whole, as the key's new state: its earlier deliveries leave the entry (D7).
   const whole = (index: number, callId: string, key: string, lines: readonly AutomationStudioLlmPageLine[], comparable: boolean): void => {
-    retire(key, { key, replacedBy: callId });
+    release(key);
+    letGo.delete(key);
     current = key;
     const { page, chars } = delivered(callId, key, "whole", lines.map((line) => line.text), {});
-    shown.set(index, page);
-    hold(key, key, index, chars, callId);
+    notes.set(index, { key, shown: "whole", in: AUTOMATION_STUDIO_LLM_PAGE_WINDOW_TOOL_ID });
+    deliveries.set(index, page);
+    hold(key, key, false, index, chars, callId);
     if (!comparable) return;
     const kept = lines.filter((line) => line.extra !== true);
     states.set(key, { lines: kept, baseChars: joinedLength(kept.map((line) => line.text)), sinceBase: 0, last: callId });
@@ -136,24 +159,28 @@ export function automationStudioLlmPageChannelProjection(records: readonly Entry
     const value = record.value;
     if (!isObject(value)) return;
     if (record.toolId === AUTOMATION_STUDIO_LLM_FULL_PAGE_TOOL_ID && value[member] === undefined && typeof value.part === "number") {
-      const answer = partAnswer(value.part, current, current === undefined ? undefined : parted.get(current), budget);
-      shown.set(index, answer.page);
-      if (answer.chars !== undefined && current !== undefined) hold(current, current, index, answer.chars, record.callId);
+      const answer = partAnswer(record.callId, value.part, current, current === undefined ? undefined : parted.get(current), budget);
+      notes.set(index, answer.note);
+      if (answer.page !== undefined && answer.chars !== undefined && current !== undefined) {
+        deliveries.set(index, answer.page);
+        hold(current, current, false, index, answer.chars, record.callId);
+      }
       return;
     }
     if (record.toolId === RECALL_TOOL_ID && isObject(value.restored)) {
       const recalled = automationStudioLlmPageViewOf(value.restored[member]);
       if (!recalled) return;
-      const { page, chars } = recalledShown(recalled.key, recalled.lines.map((line) => line.text), budget);
-      shown.set(index, page);
+      const { page, chars } = recalledShown(record.callId, recalled.lines.map((line) => line.text), budget);
+      notes.set(index, { key: recalled.key, recalled: true, shown: "whole", in: AUTOMATION_STUDIO_LLM_PAGE_WINDOW_TOOL_ID });
+      deliveries.set(index, page);
       // Its own holder, so it is let go like any other page and never changes the current page's state.
-      hold(`\u0000recalled:${index}`, recalled.key, index, chars, record.callId);
+      hold(`\u0000recalled:${index}`, recalled.key, true, index, chars, record.callId);
       return;
     }
     const view = automationStudioLlmPageViewOf(value[member]);
     if (!view) return;
     const { key, lines } = view;
-    // Keys that do not name one line each cannot be compared: shown whole, and the next view of this page is whole too.
+    // Keys that do not name one line each cannot be compared: delivered whole, and the next view of this page is whole too.
     if (new Set(lines.map((line) => line.key)).size !== lines.length) {
       whole(index, record.callId, key, lines, false);
       return;
@@ -175,35 +202,60 @@ export function automationStudioLlmPageChannelProjection(records: readonly Entry
     state.last = record.callId;
     current = key;
     if (!changes.length) {
-      shown.set(index, { key, since, unchanged: true });
-      hold(key, key, index, 0, record.callId);
+      notes.set(index, { key, since, unchanged: true });
+      hold(key, key, false, index, 0, record.callId);
       return;
     }
-    const legend: JsonObject = legendTold ? {} : { read: CHANGES_LEGEND };
-    legendTold = true;
-    const { page, chars } = delivered(record.callId, key, "changes", changes, { since, ...legend });
-    shown.set(index, page);
-    hold(key, key, index, chars, record.callId);
+    const { page, chars } = delivered(record.callId, key, "changes", changes, { since });
+    notes.set(index, { key, shown: "changes", since, in: AUTOMATION_STUDIO_LLM_PAGE_WINDOW_TOOL_ID });
+    deliveries.set(index, page);
+    hold(key, key, false, index, chars, record.callId);
   });
 
-  return records.map((record, index) => {
-    const delivery = references.get(index) ?? shown.get(index);
-    if (!delivery || !isObject(record.value)) return record;
-    return { callId: record.callId, toolId: record.toolId, value: withMember(record.toolId, record.value, member, delivery) };
+  const history = records.map((record, index) => {
+    const note = notes.get(index);
+    if (!note || !isObject(record.value)) return record;
+    return { callId: record.callId, toolId: record.toolId, value: withMember(record.toolId, record.value, member, note) };
   });
+  const window = pageWindow(holders, deliveries, letGo, current);
+  return window ? { history, window } : { history };
 }
 
-/** The value with its page shown as `delivery`, every other property where it was. */
-function withMember(toolId: string, value: JsonObject, member: string, delivery: JsonObject): JsonObject {
-  if (toolId === RECALL_TOOL_ID && isObject(value.restored) && value[member] === undefined) {
-    return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, name === "restored" && isObject(item) ? replaced(item, member, delivery) : item]));
+/**
+ * The trailing entry: every held page in the order it was last delivered, so the
+ * page the work is on comes last, each with its deliveries in call order; then
+ * the pages let go for the budget. Nothing when it would hold nothing.
+ */
+function pageWindow(holders: ReadonlyMap<string, Holder>, deliveries: ReadonlyMap<number, JsonObject>, letGo: ReadonlyMap<string, string>, current: string | undefined): Entry | undefined {
+  const pages: JsonObject[] = [];
+  let changes = false;
+  for (const [id, holder] of [...holders.entries()].sort(([, a], [, b]) => a.lastAt - b.lastAt)) {
+    const shown: JsonObject[] = [];
+    for (const copy of holder.copies) {
+      const delivery = deliveries.get(copy.index);
+      if (delivery) shown.push(delivery);
+    }
+    if (!shown.length) continue;
+    changes ||= shown.some((delivery) => delivery.changes !== undefined);
+    pages.push({ key: holder.key, ...(holder.recalled ? { recalled: true } : {}), ...(id === current ? { current: true } : {}), shown });
   }
-  if (toolId === AUTOMATION_STUDIO_LLM_FULL_PAGE_TOOL_ID && value[member] === undefined) return { ...value, [member]: delivery };
-  return replaced(value, member, delivery);
+  const gone = [...letGo.entries()].filter(([key]) => !holders.has(key)).map(([key, at]): JsonObject => ({ key, at }));
+  if (!pages.length && !gone.length) return undefined;
+  const value: JsonObject = { ...(changes ? { read: CHANGES_LEGEND } : {}), pages, ...(gone.length ? { letGo: gone } : {}) };
+  return { callId: AUTOMATION_STUDIO_LLM_PAGE_WINDOW_TOOL_ID, toolId: AUTOMATION_STUDIO_LLM_PAGE_WINDOW_TOOL_ID, value };
 }
 
-function replaced(value: JsonObject, member: string, delivery: JsonObject): JsonObject {
-  return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, name === member ? delivery : item]));
+/** The value with its page shown as `note`, every other property where it was. */
+function withMember(toolId: string, value: JsonObject, member: string, note: JsonObject): JsonObject {
+  if (toolId === RECALL_TOOL_ID && isObject(value.restored) && value[member] === undefined) {
+    return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, name === "restored" && isObject(item) ? replaced(item, member, note) : item]));
+  }
+  if (toolId === AUTOMATION_STUDIO_LLM_FULL_PAGE_TOOL_ID && value[member] === undefined) return { ...value, [member]: note };
+  return replaced(value, member, note);
+}
+
+function replaced(value: JsonObject, member: string, note: JsonObject): JsonObject {
+  return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, name === member ? note : item]));
 }
 
 /** Part `n` of a delivery: its lines, which part it is, and how to ask for the next. */
@@ -218,24 +270,32 @@ function partShown(shape: Shape, parts: readonly string[][], n: number, budget: 
   return { part: `${n} of ${parts.length}`, [shape]: text, ...next };
 }
 
-/** A `core.full_page` part request, answered from the current page's latest delivery in parts. Never an ending: a part that does not exist is told so. */
-function partAnswer(n: number, key: string | undefined, parted: Parted | undefined, budget: number): { page: JsonObject; chars?: number } {
+/**
+ * A `core.full_page` part request, answered from the current page's latest delivery in parts: the note its result
+ * carries, and the part itself for the trailing entry. Never an ending: a part that does not exist is told so in
+ * the note, and nothing is held.
+ */
+function partAnswer(callId: string, n: number, key: string | undefined, parted: Parted | undefined, budget: number): { note: JsonObject; page?: JsonObject; chars?: number } {
   const named: JsonObject = key === undefined ? {} : { key };
   if (!parted) {
-    return { page: { ...named, missing: `No delivery of the current page was sent in parts. Call ${AUTOMATION_STUDIO_LLM_FULL_PAGE_TOOL_ID} without part for the whole page.` } };
+    return { note: { ...named, missing: `No delivery of the current page was sent in parts. Call ${AUTOMATION_STUDIO_LLM_FULL_PAGE_TOOL_ID} without part for the whole page.` } };
   }
   if (!Number.isInteger(n) || n < 1 || n > parted.parts.length) {
-    return { page: { ...named, missing: `There is no part ${n}: the delivery in call ${parted.call} has ${parted.parts.length} parts.` } };
+    return { note: { ...named, missing: `There is no part ${n}: the delivery in call ${parted.call} has ${parted.parts.length} parts.` } };
   }
-  return { page: { ...named, from: parted.call, ...partShown(parted.shape, parted.parts, n, budget) }, chars: joinedLength(parted.parts[n - 1]!) };
+  return {
+    note: { ...named, from: parted.call, shown: `part ${n} of ${parted.parts.length}`, in: AUTOMATION_STUDIO_LLM_PAGE_WINDOW_TOOL_ID },
+    page: { call: callId, from: parted.call, ...partShown(parted.shape, parted.parts, n, budget) },
+    chars: joinedLength(parted.parts[n - 1]!)
+  };
 }
 
-/** A page an earlier call ended on, given back by a recall: shown whole up to the budget, and never the current page's state. */
-function recalledShown(key: string, lines: readonly string[], budget: number): { page: JsonObject; chars: number } {
+/** A page an earlier call ended on, given back by a recall: delivered whole up to the budget, and never the current page's state. */
+function recalledShown(callId: string, lines: readonly string[], budget: number): { page: JsonObject; chars: number } {
   const parts = automationStudioLlmPageParts(lines, budget);
   const left = parts.slice(1).reduce((sum, part) => sum + part.length, 0);
   const rest: JsonObject = left ? { rest: `${left} more lines past the budget of ${budget} characters are not shown here; ${AUTOMATION_STUDIO_LLM_FULL_PAGE_TOOL_ID} gives the current page whole.` } : {};
-  return { page: { key, recalled: true, whole: parts[0]!.join("\n"), ...rest }, chars: joinedLength(parts[0]!) };
+  return { page: { call: callId, whole: parts[0]!.join("\n"), ...rest }, chars: joinedLength(parts[0]!) };
 }
 
 function joinedLength(lines: readonly string[]): number {

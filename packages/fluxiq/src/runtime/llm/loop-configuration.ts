@@ -124,8 +124,9 @@ export type AutomationStudioLlmEvidenceLoopInput = {
   /**
    * The bound domain's page channel, from the registry's loop binding
    * (`AutomationStudioLlmEvidenceRuntimeBinding.pageChannel`). Given, each
-   * result's page is shown in place, whole once and as changes after, within
-   * the page budget per request (`./view-channel/`). Absent, the window is as
+   * result keeps a fixed note of its page's delivery and the deliveries, whole
+   * once and as changes after, sit in one trailing `core.page_window` entry
+   * within the page budget per request (`./view-channel/`). Absent, the window is as
    * `observedStateKeys` alone makes it.
    */
   pageChannel?: AutomationStudioLlmPageChannel | undefined;

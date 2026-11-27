@@ -243,16 +243,20 @@ describe("runAutomationStudioRecoveryExploration", () => {
     expect(exploration.outcome).toBe("evidence_gathered");
     for (const toolIds of offered) expect(toolIds).toContain("core.full_page");
     expect(fullPages).toEqual(["call.3"]);
-    // The second decision is shown the first page whole; the third, the second page as the one line that arrived.
+    // The second decision is shown the first page whole; the third, the second page as the one line that arrived. Each
+    // result notes its delivery, and the deliveries ride in the window's one trailing page entry (t1080).
     const pageOf = (decision: number, callId: string) => (evidence[decision]!.find((entry) => entry.callId === callId)!.value as { pageView: JsonObject }).pageView;
-    expect(pageOf(1, "call.1")).toEqual({ key: "page.one", whole: lines.join("\n") });
-    expect(pageOf(2, "call.2").whole).toBeUndefined();
-    expect(JSON.stringify(pageOf(2, "call.2").changes)).toContain("line arrived");
-    expect(JSON.stringify(pageOf(2, "call.2").changes)).not.toContain("line B of the page");
+    const deliveryOf = (decision: number, callId: string) => (evidence[decision]!.find((entry) => entry.toolId === "core.page_window")!.value as { pages: Array<{ shown: JsonObject[] }> })
+      .pages.flatMap((page) => page.shown).find((delivery) => delivery.call === callId)!;
+    expect(pageOf(1, "call.1")).toEqual({ key: "page.one", shown: "whole", in: "core.page_window" });
+    expect(deliveryOf(1, "call.1")).toEqual({ call: "call.1", whole: lines.join("\n") });
+    expect(deliveryOf(2, "call.2").whole).toBeUndefined();
+    expect(JSON.stringify(deliveryOf(2, "call.2").changes)).toContain("line arrived");
+    expect(JSON.stringify(deliveryOf(2, "call.2").changes)).not.toContain("line B of the page");
     // The whole page was captured (the domain answers with a result holding the view, as the web domain does) and shown whole.
     const fourth = evidence[3]!.find((entry) => entry.callId === "call.3")!.value as { pageView?: JsonObject; unavailable?: string };
     expect(fourth.unavailable).toBeUndefined();
-    expect(fourth.pageView?.whole).toBe(whole.join("\n"));
+    expect(deliveryOf(3, "call.3").whole).toBe(whole.join("\n"));
     // The patch is still handed the domain's own packets as they were returned, never the window's projection.
     expect(explored.map((entry) => entry.packet)).toEqual([first, second]);
   });

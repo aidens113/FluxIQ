@@ -43,8 +43,8 @@ domain names, and its lines in page order with a key stable for the run while th
 line is the same thing on the page. Core compares keys and texts for equality only
 and never parses a text.
 
-With a channel, the window shows each result's page in place as its delivery,
-projected over the window's own records (`automationStudioLlmPageChannelProjection`):
+With a channel, each result's page is delivered over the window's own records
+(`automationStudioLlmPageChannelProjection`):
 
 - whole (`whole`) the first time the window meets the page key, and whenever a fresh
   window does not hold its earlier views;
@@ -52,20 +52,39 @@ projected over the window's own records (`automationStudioLlmPageChannelProjecti
   `changes`, git style: each group opens with the unchanged line before it after two
   spaces, then `- ` left, `+ ` arrived, `~ ` now reads as shown), or `unchanged`;
 - whole again once the changes since its last whole view would outgrow that view,
-  or would take that page's own copies past the budget, when every earlier copy of
-  that key becomes `{ key, replacedBy }`;
+  or would take that page's own deliveries past the budget;
 - in parts past the budget (default `AUTOMATION_STUDIO_LLM_PAGE_BUDGET_CHARS`, 20,000
   characters), cut at line boundaries with a note of the lines left and the part to
   ask for.
 
-The budget holds for the whole request, across pages: the page text of every copy
-the window shows stays within it. When a new delivery would take the window over,
-the copies of the least recently delivered other pages become `{ key, droppedAt }`,
-oldest first, until it fits. The page being delivered is never dropped (reading a
-later part may let its own earlier parts go), and a dropped page is shown whole when
-the work comes back to it. These references and the `replacedBy` ones are the only
-rewrites of history; between them the window is append-only. The budget bounds what
-a request carries; it ends or resets nothing.
+**Results keep a note; the deliveries sit in one trailing entry (t1080).** Each
+result's member becomes a short note of its delivery, fixed when the record is first
+projected and read from earlier records only: `{ key, shown: "whole", in:
+"core.page_window" }`, `{ key, shown: "changes", since, in }`, `{ key, since,
+unchanged: true }`, a part answer `{ key, from, shown: "part 2 of 3", in }` or
+`{ key, missing }`, a recall `{ key, recalled: true, shown: "whole", in }`. The
+deliveries themselves go in one entry after every result, `core.page_window`:
+`{ read?, pages: [{ key, recalled?, current?, shown: [{ call, whole | since and
+changes | part, from, rest }] }], letGo?: [{ key, at }] }`, its pages in the order they
+were last delivered, so the page the work is on comes last and is marked `current`.
+Appending a record never changes a byte of an earlier one, so the request's cached
+prefix only grows. Until t1080 the deliveries sat in the results and an earlier copy
+was rewritten into `{ key, replacedBy }` or `{ key, droppedAt }`; live run
+`run-mwytbimp-e0c33977` went between two results pages of one key, each visit rewrote
+the other's copy, and 10 of its 28 decisions read the cache back only to the system
+prompt.
+
+The budget holds for the whole request, across pages: the page text the trailing
+entry holds stays within it. A page shown whole again drops that key's earlier
+deliveries from it (D7). When a new delivery would take it over, the deliveries of the
+least recently delivered other pages leave, oldest first, until it fits, and their keys
+are named under `letGo` until they are held again. The page being delivered is never
+let go (reading a later part may let its own earlier parts go), and a page let go is
+delivered whole when the work comes back to it. The budget bounds what a request
+carries; it ends or resets nothing. The trailing entry is re-sent, uncached, on every
+request: the cost of a per-request budget over an append-only history. Marking it for
+the cache when it is unchanged was measured on two recorded runs (t1080) and saves
+nothing, because a new result almost always lands before it.
 
 Lines marked `extra` show in their own delivery and never enter the state a later
 view is compared with. The member takes no view reference and no current-view tail;
@@ -88,8 +107,8 @@ situation carries `state`; later situations identify `baseSituation` and contain
 only `updates` and `removed` keys. Model-facing deltas are computed after
 screening, while full execution state and existing route equality remain intact.
 
-Historical tool and route entries, with any page deliveries in place, precede Core's
-passing notes, then the changing current-view/current-Flow, history, draft and
+Historical tool and route entries, with any page notes, precede Core's passing
+notes, then the changing page-window, current-view/current-Flow, history, draft and
 budget tails. Stable provider schemas
 remain before evidence; actual offer changes can still change that earlier prefix.
 Owning request tests capture the provider's serialized body and measure common
@@ -103,7 +122,7 @@ request sends again byte for byte. One place names the entries that change
 between one call and the next (`runtime/llm/evidence-moves/evidence-that-moves.ts`),
 and a new Core entry that is rewritten, replaced or taken away belongs there:
 
-- written afresh for every decision: `core.current_view`, `core.current_flow`,
+- written afresh for every decision: `core.page_window`, `core.current_view`, `core.current_flow`,
   `core.evidence_history`, `core.flow_draft`, `core.budget`, and the list of calls
   `core.run_nodes` may run again;
 - Core's passing notes, which a newer one or a later call takes away and whose call

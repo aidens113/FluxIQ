@@ -1,18 +1,19 @@
 // What one decision is shown: every evidence entry, and beside them the
 // decision history, the draft and the budget.
 //
-// Order is [...immutable evidence, current view, current Flow, history, draft,
-// budget]. Declared view members are references from their first appearance;
-// one dynamic current-view tail carries each latest whole group. History,
+// Order is [...immutable evidence, page window, current view, current Flow,
+// history, draft, budget]. Declared view members are references from their
+// first appearance; one dynamic current-view tail carries each latest whole group. History,
 // draft and budget remain whole. There is no byte allowance to divide between
 // them; the harness and provider enforce the model context window loudly.
 //
 // **Cache order (page-diff D8).** The request's head -- system text, the tool
 // list, the task and the draft's guidance -- never changes mid-run. After it
-// comes the append-only history of results, each carrying its page delivery in
-// place when a page channel is declared (`../view-channel/projection.ts`), and
-// last the entries rewritten for every decision
-// (`../evidence-moves/evidence-that-moves.ts`). The draft entry stays among
+// comes the append-only history of results, each carrying a fixed note of its
+// page delivery when a page channel is declared, and last the entries rewritten
+// for every decision, the deliveries' own `core.page_window` first
+// (`../evidence-moves/evidence-that-moves.ts`; `../view-channel/projection.ts`,
+// t1080). The draft entry stays among
 // those last ones, after the history, not before it: in the five t1015 bigbox
 // recordings it read differently from one decision to the next in 296 of 462
 // consecutive pairs, because it lists every step that ran, so placed first it

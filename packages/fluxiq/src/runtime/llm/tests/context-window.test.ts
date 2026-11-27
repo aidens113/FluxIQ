@@ -13,6 +13,8 @@ import { AutomationStudioLlmProviderError } from "../provider-contract.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_CURRENT_FLOW_TOOL_ID, automationStudioLlmEvidenceContextWindow, type AutomationStudioLlmEvidenceEntry } from "../context-window.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_TOOL_ID } from "../evidence-recall/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID, AutomationStudioLlmDecisionContextRecorder, automationStudioLlmDecisionContextEntry, automationStudioLlmDecisionContextShown } from "../decision-context/index.ts";
+import { automationStudioLlmEvidenceEntryMoves } from "../evidence-moves/index.ts";
+import { AUTOMATION_STUDIO_LLM_PAGE_WINDOW_TOOL_ID } from "../view-channel/index.ts";
 
 const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value), "utf8");
 const page = (callId: string, size: number, toolId = "inspect"): AutomationStudioLlmEvidenceEntry =>
@@ -412,21 +414,48 @@ describe("immutable view history from its first appearance", () => {
   });
 });
 
-describe("the window with a page channel (page-diff D3, D8)", () => {
+describe("the window with a page channel (page-diff D3, D8; t1080)", () => {
   const view = (key: string, ...texts: string[]) => ({ key, lines: texts.map((text, index) => ({ key: `t${index}`, text })) });
   const channelKeys = ["pageView", "read.rows"];
   const pageChannel = { member: "pageView" };
+  const pageWindow = (window: AutomationStudioLlmEvidenceEntry[]) =>
+    window.find(({ toolId }) => toolId === AUTOMATION_STUDIO_LLM_PAGE_WINDOW_TOOL_ID)?.value as { pages: Array<{ key: string; shown: JsonObject[] }> } | undefined;
 
-  it("shows each result's page in place as its delivery, with no view reference or current-view tail for it, while held rows keep theirs", () => {
+  it("gives each result a note of its page's delivery and the deliveries one trailing entry, with no view reference or current-view tail for the page, while held rows keep theirs", () => {
     const log = [
       entry("c1", { ok: true, pageView: view("~/", "PAGE one", "t1 a", "t2 b", "t3 c", "t4 d") }),
       entry("c2", { ok: true, pageView: view("~/", "PAGE one", "t1 a", "t2 B", "t3 c", "t4 d"), read: { rows: [{ name: "x" }] } })
     ];
     const window = automationStudioLlmEvidenceContextWindow(log, channelKeys, pageChannel);
-    expect((window[0]!.value as JsonObject).pageView).toEqual({ key: "~/", whole: "PAGE one\nt1 a\nt2 b\nt3 c\nt4 d" });
-    expect((window[1]!.value as JsonObject).pageView).toMatchObject({ key: "~/", since: "c1", changes: "  t1 a\n~ t2 B" });
+    expect(window.map(({ toolId }) => toolId)).toEqual(["core.run_node", "core.run_node", AUTOMATION_STUDIO_LLM_PAGE_WINDOW_TOOL_ID, "core.current_view"]);
+    expect((window[0]!.value as JsonObject).pageView).toEqual({ key: "~/", shown: "whole", in: AUTOMATION_STUDIO_LLM_PAGE_WINDOW_TOOL_ID });
+    expect((window[1]!.value as JsonObject).pageView).toEqual({ key: "~/", shown: "changes", since: "c1", in: AUTOMATION_STUDIO_LLM_PAGE_WINDOW_TOOL_ID });
+    expect(pageWindow(window)!.pages[0]!.shown).toEqual([{ call: "c1", whole: "PAGE one\nt1 a\nt2 b\nt3 c\nt4 d" }, { call: "c2", since: "c1", changes: "  t1 a\n~ t2 B" }]);
     expect((window[1]!.value as JsonObject).read).toEqual({ rows: reference("c2", "holder:read") });
     expect(groups(window)).toEqual([{ group: "holder:read", callId: "c2", holder: "read", value: { rows: [{ name: "x" }] } }]);
+  });
+
+  // t1080: live run-mwytbimp-e0c33977 went between results pages 1 and 2 of one list, one page key, and the page budget
+  // fits one of them. The decider keeps both pages' rows through its reads, not by holding both pages, and no result is
+  // rewritten as the page held changes.
+  it("keeps both pages' read rows while the page budget holds one page, and appends without rewriting a result", () => {
+    const keys = ["pageView", "read.extracted"];
+    const big = (word: string) => view("~/results", `PAGE ${word}`, ...Array.from({ length: 6 }, (_, index) => `item ${word} ${index} ${"x".repeat(20)}`));
+    const read = (callId: string, word: string, place: string) => entry(callId, {
+      ok: true, pageView: big(word), read: { extracted: [{ title: `${word} 1` }, { title: `${word} 2` }], listKey: "list.results", place, url: `https://shop.test/results?page=${place}` }
+    });
+    const log = [read("read_p1", "one", "1"), entry("next", { ok: true, pageView: big("two") }), read("read_p2", "two", "2"), entry("back", { ok: true, pageView: big("one") })];
+    const channel = { member: "pageView", budgetChars: 300 };
+    let previous: AutomationStudioLlmEvidenceEntry[] = [];
+    for (let count = 1; count <= log.length; count += 1) {
+      const window = automationStudioLlmEvidenceContextWindow(log.slice(0, count), keys, channel);
+      expect(JSON.stringify(window.slice(0, previous.length)), `after ${count}`).toBe(JSON.stringify(previous));
+      previous = window.slice(0, count);
+    }
+    const window = automationStudioLlmEvidenceContextWindow(log, keys, channel);
+    expect(pageWindow(window)!.pages.map((held) => held.shown.map((delivery) => delivery.call))).toEqual([["back"]]);
+    const rows = groups(window).filter((group) => group.holder === "read").map((group) => [group.callId, (group.value as JsonObject).extracted]);
+    expect(rows).toEqual([["read_p1", [{ title: "one 1" }, { title: "one 2" }]], ["read_p2", [{ title: "two 1" }, { title: "two 2" }]]]);
   });
 
   it("is today's window exactly without a channel", () => {
@@ -440,7 +469,10 @@ describe("the window with a page channel (page-diff D3, D8)", () => {
     recorder.record(1, { kind: "call", signature: "s", callId: "c1", toolId: "core.run_node", actionId: "press", resultCode: "ok", changed: "yes" });
     const step: AutomationStudioFlowDraftStep = { position: 1, iteration: 1, callId: "c1", actionId: "press", input: {}, effect: "mutate", effectApplied: true, disposition: "kept" };
     const { shown } = automationStudioLlmDecisionContextShown({ evidence, records: recorder.records(), observedStateKeys: channelKeys, pageChannel, draft: { steps: [step] }, budgetEntry: entry("budget", { left: 1 }, "core.budget") });
-    expect(shown.map(({ toolId }) => toolId)).toEqual(["core.run_node", "core.evidence_history", "core.flow_draft", "core.budget"]);
-    expect((shown[0]!.value as JsonObject).pageView).toEqual({ key: "~/", whole: "PAGE one\nt1 a" });
+    expect(shown.map(({ toolId }) => toolId)).toEqual(["core.run_node", AUTOMATION_STUDIO_LLM_PAGE_WINDOW_TOOL_ID, "core.evidence_history", "core.flow_draft", "core.budget"]);
+    expect((shown[0]!.value as JsonObject).pageView).toEqual({ key: "~/", shown: "whole", in: AUTOMATION_STUDIO_LLM_PAGE_WINDOW_TOOL_ID });
+    expect(pageWindow(shown)!.pages[0]!.shown).toEqual([{ call: "c1", whole: "PAGE one\nt1 a" }]);
+    // The page's own entry rides after the cache marker, with the rest that is written afresh for each decision.
+    expect(automationStudioLlmEvidenceEntryMoves(shown[1]!)).toBe(true);
   });
 });
