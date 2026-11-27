@@ -3,6 +3,7 @@ export * from "./identity-reason.ts";
 export * from "./identity-record.ts";
 export * from "./refresh-patch.ts";
 export * from "./refresh-resolution.ts";
+export * from "./route-reach.ts";
 export * from "./target-reacquire.ts";
 export * from "./target-refresh.ts";
 export * from "./unbound-answer.ts";

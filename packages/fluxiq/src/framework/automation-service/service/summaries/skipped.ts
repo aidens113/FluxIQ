@@ -39,6 +39,11 @@ export function automationStudioRunDetailSkipped(attempt: AutomationStudioNodeAt
     return { reason: "already_in_state", code, ...(row ? { row } : {}) };
   }
   // `target_absent`, and a reason from an older trace that named none; a
-  // skipped step that does a lasting act keeps that the act was not done (r4b F4).
-  return { reason: "target_absent", code, ...(fields.notDone === true ? { notDone: true as const } : {}) };
+  // skipped step that does a lasting act keeps that the act was not done (r4b F4),
+  // and one passed over as never arisen how the page reached where it went (t1083).
+  const reached = REACHED.has(fields.reached as string) ? { reached: fields.reached as NonNullable<Extract<RunDetailSkipped, { reason: "target_absent" }>["reached"]> } : {};
+  return { reason: "target_absent", code, ...(fields.notDone === true ? { notDone: true as const } : {}), ...reached };
 }
+
+/** How a passed-over step's route was reached, in the closed words its attempt carries (`executor/state-routing/route-owed.ts`). */
+const REACHED: ReadonlySet<string> = new Set(["already_there", "pressed", "went"]);

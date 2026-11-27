@@ -15,12 +15,13 @@ import type { AutomationStudioStateRouteDecision } from "./decision.ts";
  * not after "Passed over" or "Continuing at" (`run-muw5zv4m-52d83027`). Neither
  * is a recovery, so neither says one started. A return to the step that showed
  * a control a later step found hidden (`./reopen.ts`, t661) says that, not that
- * the page went back.
+ * the page went back. A step passed over as never arisen whose recorded effect
+ * moved the page says how the page got where it leads (`./route-owed.ts`, t1083).
  */
 export function announceAutomationStudioStateRoute(flow: AutomationStudioFlowDocument, node: AutomationStudioFlowNode, decision: AutomationStudioStateRouteDecision): void {
   if (decision.kind !== "declared" && decision.kind !== "routed") return;
   const said = decision.kind === "declared"
-    ? `${automationStudioActivityAction({ parameters: node.parameterValues, label: node.label, notShown: true }) ?? "Skipped a step"}${decision.notDone ? ", so it was not done" : ""}`
+    ? `${automationStudioActivityAction({ parameters: node.parameterValues, label: node.label, notShown: true }) ?? "Skipped a step"}${decision.notDone ? ", so it was not done" : ""}${decision.reached ? REACHED_SAID[decision.reached] : ""}`
     : decision.record.outcome === "effect_holds"
       ? `Skipped ${stepName(flow, node)}: the page already shows what it does. Continuing with ${stepName(flow, decision.node)}`
       : decision.reopen
@@ -35,6 +36,13 @@ export function announceAutomationStudioStateRoute(flow: AutomationStudioFlowDoc
     skipped: { reason: decision.kind === "declared" ? "optional_absent" : "state_routed", ...(subject ? { subject } : {}) }
   });
 }
+
+/** How the page got where a passed-over step leads, said after the skip (`./route-owed.ts`). */
+const REACHED_SAID: Readonly<Record<NonNullable<Extract<AutomationStudioStateRouteDecision, { kind: "declared" }>["reached"]>, string>> = {
+  already_there: ", and the page is already where it leads",
+  pressed: ", so another control that leads to the same page was pressed",
+  went: ", so the run went straight to the page it leads to"
+};
 
 /**
  * A step as a person reads it: its authored label, else what it does in the

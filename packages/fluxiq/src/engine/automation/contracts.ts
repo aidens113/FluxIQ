@@ -6,7 +6,7 @@ import type { AutomationNodeTargetResolution } from "../../components/automation
 import type { AutomationStudioNativeLogEntry } from "../../runtime/automation-host/index.ts";
 
 import type { AutomationStudioHostStateSnapshotRef } from "../../runtime/automation-host/index.ts";
-import type { AutomationStudioTargetReacquireRecord } from "../../runtime/automation-host/contracts/index.ts";
+import type { AutomationStudioRouteReached, AutomationStudioTargetReacquireRecord } from "../../runtime/automation-host/contracts/index.ts";
 import type { AutomationStudioAskKind, AutomationStudioParkedRun } from "../../runtime/parking/index.ts";
 
 import type { AutomationStudioRecordedState } from "./transitions/index.ts";
@@ -447,8 +447,12 @@ export type AutomationStudioNodeAttemptTrace = {
    * node's ready state was judged and not met, and nothing was dispatched.
    */
   skipped?:
-    /** `notDone`: the step does a lasting act, and the page did not show its effect, so the act was not done (r4b F4, `step-skip/act-not-done.ts`). */
-    | { reason: "target_absent"; code: string; notDone?: true }
+    /**
+     * `notDone`: the step does a lasting act, and the page did not show its effect, so the act was not done (r4b F4, `step-skip/act-not-done.ts`).
+     * `reached`: a step passed over as `executor.state.not_arisen` whose recorded effect moved the page, and how the page was brought to that
+     * route before the run went on (t1083, `state-routing/route-owed.ts`): already on it, a control pressed, or the recorded destination gone to.
+     */
+    | { reason: "target_absent"; code: string; notDone?: true; reached?: AutomationStudioRouteReached }
     /**
      * The step could not run and the page matched another node's recorded
      * pre-state, so the run continued at `toNodeId` (`state-routing/`). The
