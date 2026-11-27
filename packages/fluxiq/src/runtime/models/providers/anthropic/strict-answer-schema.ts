@@ -7,7 +7,7 @@
 // nothing but the model's care held a nested object an object. The check was asked again at about $0.25.
 //
 // **The reshape.** Every property of every object is required, and a property the original schema leaves optional may be
-// `null` instead (a type array with `"null"`, and `null` in an `enum`): it costs a union-typed parameter, not an optional
+// `null` instead (a type array with `"null"`, or for an enum an `anyOf` with a `null` alternative): it costs a union-typed parameter, not an optional
 // one. The platform's limits (structured-outputs page, "Explicit limits"): 20 strict tools, 24 optional parameters, and 16
 // parameters with union types (`anyOf` or a type array such as `["string", "null"]`), each across every strict schema of a
 // request. The answer then costs no optional parameter, so it fits beside the decision tools and is sent strict. An open
@@ -19,6 +19,13 @@
 // reads the same. A `null` on a required member stays, and is a miss. A string where an object belongs is a miss, never read
 // back into the object: the grammar is what keeps a model from writing it, not a reader that forgives it.
 
+// **Not sent (lead, 2026-11-27).** Measured against the API on 0088's recorded tools with this reshape last and strict:
+// the platform refused the request, "The compiled grammar is too large, which would cause performance issues. Simplify your
+// tool schemas or reduce the number of strict tools." The counted limits above held (0 optional, 12 unions); the compiled
+// grammar's size is a further limit the structured-outputs page does not count. Every decider request carries the answer
+// tool, so sending it strict would refuse every decision: `../../../llm/anthropic/request.ts` sends the judge's own schema,
+// non-strict, as before t1087. This module stays for the fix that makes the answer fit (an open item in the page-diff plan).
+
 import { isRecord } from "../../transport/index.ts";
 
 /** An optional member that is an open object (`{ type: "object" }` and nothing more), such as a `metadata` bag: left out of the reshape. */
@@ -28,9 +35,11 @@ function isOpenObject(child: unknown): boolean {
 
 /** `child` as a schema that also takes `null`, its own constraints and enum kept. */
 function orNull(child: Record<string, unknown>): Record<string, unknown> {
-  if (Array.isArray(child.type)) return child.type.includes("null") ? child : { ...child, type: [...child.type, "null"], ...(Array.isArray(child.enum) ? { enum: [...child.enum, null] } : {}) };
-  if (typeof child.type === "string") return { ...child, type: [child.type, "null"], ...(Array.isArray(child.enum) ? { enum: [...child.enum, null] } : {}) };
-  if (Array.isArray(child.enum) && child.enum.length > 0 && child.enum.every((option) => typeof option === "string")) return { ...child, type: ["string", "null"], enum: [...child.enum, null] };
+  // An enum takes null as its own alternative: the platform refuses `null` inside an enum whose type is an array
+  // ("Enum value 'yes' does not match declared type '['string', 'null']'", checked against the API on 0088's tools).
+  if (Array.isArray(child.enum)) return { anyOf: [child, { type: "null" }] };
+  if (Array.isArray(child.type)) return child.type.includes("null") ? child : { ...child, type: [...child.type, "null"] };
+  if (typeof child.type === "string") return { ...child, type: [child.type, "null"] };
   return { anyOf: [child, { type: "null" }] };
 }
 

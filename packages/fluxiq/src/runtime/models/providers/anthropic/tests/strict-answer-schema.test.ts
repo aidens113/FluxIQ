@@ -36,7 +36,7 @@ describe("the check's answer tool on the wire", () => {
     expect(strictOf(wire).map((tool) => tool.name)).toEqual(DECISION_STRICT);
   });
 
-  it("is sent strict once reshaped, last, within the strict-tool, optional-parameter and union limits, and the decision tools keep theirs", () => {
+  it("fits the counted strict-tool, optional-parameter and union limits once reshaped, last (the platform still refused its compiled grammar as too large, 2026-11-27, so it is not sent)", () => {
     const wire = automationStudioAnthropicDecisionToolsWire(offered(automationStudioAnthropicStrictAnswerSchema(original)));
     expect(wire.tools.find((tool) => tool.name === ANSWER)!.strict).toBe(true);
     expect(strictOf(wire).map((tool) => tool.name)).toEqual([...DECISION_STRICT, ANSWER]);
@@ -56,7 +56,7 @@ describe("the check's answer tool on the wire", () => {
     expect(reshaped.properties!.confidence!.type).toEqual(["number", "null"]);
     const diagnosis = reshaped.properties!.diagnosis!;
     expect(diagnosis.required).toEqual(Object.keys(diagnosis.properties!));
-    expect(diagnosis.properties!.stillAchievable).toMatchObject({ type: ["string", "null"], enum: ["yes", "no", "unknown", null] });
+    expect(diagnosis.properties!.stillAchievable).toMatchObject({ anyOf: [{ enum: ["yes", "no", "unknown"] }, { type: "null" }] });
     expect(diagnosis.properties!.answersRequest!.type).toBeUndefined();
     expect(JSON.stringify(original)).toContain("\"metadata\"");
   });

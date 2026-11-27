@@ -1,5 +1,4 @@
 import { automationStudioAnthropicMessageBody } from "../../models/providers/anthropic/index.ts";
-import { automationStudioAnthropicStrictAnswerSchema } from "../../models/providers/anthropic/index.ts";
 export { AUTOMATION_STUDIO_ANTHROPIC_JSON_TEXT_INSTRUCTION, automationStudioAnthropicMessageBody } from "../../models/providers/anthropic/index.ts";
 import { AUTOMATION_STUDIO_ANTHROPIC_JUDGE_ANSWER_TOOL, automationStudioAnthropicCacheContent, automationStudioAnthropicDecisionToolsWire, automationStudioAnthropicTrailCacheContent } from "../../models/providers/anthropic/index.ts";
 import { AUTOMATION_STUDIO_LLM_FLOW_LESS_JUDGE_SOURCE } from "../verification-checked/index.ts";
@@ -49,9 +48,8 @@ export function automationStudioAnthropicRequest(request: AutomationStudioLlmTas
 /**
  * The input of the check's answer tool (`../../models/providers/anthropic/judge-answer-tool.ts`): the outputSchema of the
  * judge that continues a decider, the Flow-less judge's (`../provider-task/output-schema.ts`). It depends on nothing in
- * `request` but its kind, so it is the same in every decision and the tool is the same bytes. Reshaped so no member is optional and an
- * absent one is `null` (`../../models/providers/anthropic/strict-answer-schema.ts`, t1087), which is what lets it be sent strict.
+ * `request` but its kind, so it is the same in every decision and the tool is the same bytes.
  */
 export function automationStudioAnthropicJudgeAnswerSchema(request: AutomationStudioLlmTaskRequest): Record<string, unknown> {
-  return automationStudioAnthropicStrictAnswerSchema(automationStudioLlmTaskOutputSchema({ ...request, taskKind: "loop_verification", metadata: { source: AUTOMATION_STUDIO_LLM_FLOW_LESS_JUDGE_SOURCE } })!);
+  return automationStudioLlmTaskOutputSchema({ ...request, taskKind: "loop_verification", metadata: { source: AUTOMATION_STUDIO_LLM_FLOW_LESS_JUDGE_SOURCE } })!;
 }
