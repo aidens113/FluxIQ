@@ -20,6 +20,8 @@ export function automationStudioAnswerFirstAmendProcessing(result: AutomationStu
       ...(bound === undefined ? {} : { set: JSON.parse(JSON.stringify(bound)) as JsonObject }),
       ...(evidence === undefined ? {} : { read: evidence.collected, leftOut: evidence.leftOut, repeats: evidence.repeats, cut: evidence.cut, kept: evidence.kept, filters: [...evidence.filters] as unknown as JsonObject[] }),
       ...(readiness.state === "missing-evidence" ? { code: readiness.code, said: readiness.reason } : {}),
+      // Where the rows hold the request's columns, when the framework placed any under other keys (t1074).
+      ...(readiness.state !== "missing-evidence" && result.columnNames() ? { columns: result.columnNames()! } : {}),
       rows: rows.rows.map((row) => Object.fromEntries(rows.columns.filter(({ id }) => Object.hasOwn(row, id)).map(({ id }) => [id, row[id]!]))),
     }
   };

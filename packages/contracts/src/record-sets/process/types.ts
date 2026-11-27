@@ -143,7 +143,7 @@ export type AutomationStudioRecordProcessing = {
   /** Absent: the whole row is the key (the answer's columns when `columns` is set). `false`: no dedupe. */
   dedupe?: AutomationStudioRecordDedupe | false;
   where?: AutomationStudioRecordCondition[];
-  /** Groups of conditions, each holding when any one of its conditions holds (t970): an "or" across columns. */
+  /** Alternatives (t970; t1074): a row passes when every condition of any one group holds, an "or" across columns (`any-of.ts`). */
   anyOf?: AutomationStudioRecordCondition[][];
   /** Comparisons between two columns of a row (t970). */
   compare?: AutomationStudioRecordFieldComparison[];
@@ -240,7 +240,7 @@ export type AutomationStudioRecordProcessingAccount = {
   passes: AutomationStudioRecordProcessingPass[];
   /** One per `where` condition, in its order; absent when the declaration has none. */
   conditions?: AutomationStudioRecordProcessingConditionAccount[];
-  /** One per `anyOf` group, then one per `compare`, in their order (t970); absent when the declaration has neither. */
+  /** One for `anyOf` (its groups are alternatives, t1074), then one per `compare`, in their order (t970); absent when the declaration has neither. */
   filters?: AutomationStudioRecordProcessingFilterAccount[];
   /** Each sort key the answer's `columns` leave out, as the sort read it before they were applied (t515); absent when none is. */
   hiddenSortKeys?: AutomationStudioRecordProcessingHiddenSortKey[];

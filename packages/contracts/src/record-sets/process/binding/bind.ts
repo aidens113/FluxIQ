@@ -9,10 +9,19 @@ import type { AutomationStudioRecordProcessingBinding } from "./result.ts";
 const UNBOUND_CODES: ReadonlySet<string> = new Set(["record_output.process_unknown_field", "record_output.process_excluded_field"]);
 
 /**
- * Binds exact ids or unique normalized labels (case, spaces, `_` and `-` aside: `./name-key.ts`), then uses the
- * existing strict processing parser.
+ * Other names the framework knows for a stored field, by evidence it holds rather than a model's word (t1074): written
+ * name to stored field id. The read the result moved to may have renamed the keys an earlier declaration named (its
+ * `fields`: `title` read from `link_text`, so `link_text` names `title`), and the columns a request names may be held
+ * under the read's own keys (`../../asked-columns/`, `title` held as `link_text`). An alias is tried only after the
+ * exact id and a unique label, and only when it names a stored field of `schema`.
  */
-export function bindAutomationStudioRecordProcessing(value: unknown, schema: AutomationStudioRecordSchema): AutomationStudioRecordProcessingBinding {
+export type AutomationStudioRecordProcessingAliases = Readonly<Record<string, string>>;
+
+/**
+ * Binds exact ids or unique normalized labels (case, spaces, `_` and `-` aside: `./name-key.ts`), then the framework's
+ * `aliases`, then uses the existing strict processing parser.
+ */
+export function bindAutomationStudioRecordProcessing(value: unknown, schema: AutomationStudioRecordSchema, aliases: AutomationStudioRecordProcessingAliases = {}): AutomationStudioRecordProcessingBinding {
   if (!isPlainRecord(value)) {
     const parsed = parseAutomationStudioRecordProcessing(value, schema);
     return parsed.ok ? { ...parsed, bindings: {} } : { ok: false, issues: parsed.issues, unresolved: [], refusals: parsed.refusals };
@@ -27,7 +36,10 @@ export function bindAutomationStudioRecordProcessing(value: unknown, schema: Aut
     if (typeof written !== "string") return written;
     const exact = schema.fields.find((field) => field.id === written);
     if (!exact && allowDerived && derived.has(written)) return written;
-    const matches = exact ? [exact] : schema.fields.filter((field) => automationStudioRecordBindingNameKey(field.label) === automationStudioRecordBindingNameKey(written));
+    const labelled = exact ? [exact] : schema.fields.filter((field) => automationStudioRecordBindingNameKey(field.label) === automationStudioRecordBindingNameKey(written));
+    // A name no field holds by id or label, which the framework knows as another name of a stored field (header).
+    const alias = labelled.length === 0 && Object.hasOwn(aliases, written) ? schema.fields.find((field) => field.id === aliases[written]) : undefined;
+    const matches = alias ? [alias] : labelled;
     const field = matches.length === 1 ? matches[0] : undefined;
     const reason = matches.length === 0 ? "missing" : matches.length > 1 ? "ambiguous" : field?.handling === "exclude" ? "excluded" : undefined;
     if (reason) {

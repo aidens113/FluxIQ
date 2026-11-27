@@ -151,10 +151,10 @@ describe("automatic processing in the existing evaluator", () => {
   });
 
   it("short-circuits a proven true OR branch but reports unknown branches that could qualify", () => {
-    const process = { anyOf: [[{ field: "title", contains: "wanted" }, { field: "count", atLeast: 5 }]] };
+    const process = { anyOf: [[{ field: "title", contains: "wanted" }], [{ field: "count", atLeast: 5 }]] };
     expect(automatic([{ title: "Wanted row" }], process).state).toBe("ready");
     const unknown = automatic([{ title: "Other row" }], process);
-    expect(unknown.state === "missing-evidence" && unknown.missingEvidence).toEqual([{ operator: "anyOf", index: 0, condition: 1, field: "count", reason: "missing", source: { nodeId: "read", batchKey: "capture", row: 0 } }]);
+    expect(unknown.state === "missing-evidence" && unknown.missingEvidence).toEqual([{ operator: "anyOf", index: 1, condition: 0, field: "count", reason: "missing", source: { nodeId: "read", batchKey: "capture", row: 0 } }]);
   });
 
   it("preserves short-circuit truth within a multi-comparison condition and its negation", () => {

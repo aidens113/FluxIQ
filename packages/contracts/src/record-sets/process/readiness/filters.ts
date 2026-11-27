@@ -27,11 +27,20 @@ export function automationStudioRecordProcessingFilterChecks(process: Automation
   };
   return [
     ...(process.where ?? []).map((entry, index): Check => (values, notShown) => condition(entry, values, notShown, { operator: "where", index })),
-    ...(process.anyOf ?? []).map((group, index): Check => (values, notShown) => {
-      const readings = group.map((entry, at) => condition(entry, values, notShown, { operator: "anyOf", index, condition: at }));
-      if (readings.some((reading) => reading.holds)) return { holds: true, missing: [] };
-      return { holds: false, missing: readings.flatMap((reading) => reading.missing) };
-    }),
+    // `anyOf` is one filter, its groups alternatives (`../any-of.ts`, t1074). A group holds when each of its conditions
+    // does and is settled false by one condition known false; a row is decided by the groups that have evidence for it:
+    // kept when any group holds, left out when every group is known false, and only otherwise unknown, then naming the
+    // values of the groups still undecided. A value one group cannot read never withholds a row another group keeps.
+    ...(process.anyOf?.length ? [((values, notShown) => {
+      const groups = process.anyOf!.map((group, index): Reading => {
+        const readings = group.map((entry, at) => condition(entry, values, notShown, { operator: "anyOf", index, condition: at }));
+        if (readings.every((reading) => reading.holds)) return { holds: true, missing: [] };
+        if (readings.some((reading) => !reading.holds && reading.missing.length === 0)) return { holds: false, missing: [] };
+        return { holds: false, missing: readings.flatMap((reading) => reading.missing) };
+      });
+      if (groups.some((group) => group.holds)) return { holds: true, missing: [] };
+      return { holds: false, missing: groups.flatMap((group) => group.missing) };
+    }) as Check] : []),
     ...(process.compare ?? []).map((entry, index): Check => (values, notShown) => {
       // A side the item does not show fails the comparison whatever `not` says, as saved processing reads it.
       const settled = !automatic || automationStudioRecordFieldComparisonFields(entry).some(notShown);

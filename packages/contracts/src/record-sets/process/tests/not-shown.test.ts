@@ -56,7 +56,7 @@ describe("a captured cell the item does not show", () => {
   });
 
   it("reads anyOf, a comparison and a derived column over the source the item does not show", () => {
-    const anyOf = automatic(rows(SHELF), { anyOf: [[{ field: "tag", contains: "online" }, { field: "fine", atMost: 1 }]], columns: ["title"] });
+    const anyOf = automatic(rows(SHELF), { anyOf: [[{ field: "tag", contains: "online" }], [{ field: "fine", atMost: 1 }]], columns: ["title"] });
     expect(anyOf.state === "ready" && anyOf.rows.map((row) => row.title)).toEqual(["Birds", "Dunes"]);
     const compared = automatic(rows([{ title: "Over", fine: "$5", limit: "$3" }, { title: "Unlimited", fine: "$5" }]), { compare: [{ field: "fine", greaterThan: "limit", not: true }], columns: ["title"] });
     // "Unlimited" shows no limit: the comparison fails whatever `not` says, as saved processing reads it.
