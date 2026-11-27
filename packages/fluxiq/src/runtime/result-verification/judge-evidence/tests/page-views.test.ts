@@ -71,12 +71,15 @@ describe("a judge asked on its own request after an unreadable reply", () => {
     expect(JSON.stringify(asked)).toBe(JSON.stringify(first));
   });
 
-  it("is not shown them on a first ask that continues the decider, which reads the pages in its conversation", async () => {
+  // t1089: only the provider knows whether a judge marked as continuing really continues, so its request carries the views
+  // too; the Anthropic adapter leaves them out of a continuation (`runtime/llm/anthropic/tests/judge-own-request-pages.test.ts`).
+  it("is shown them on a first ask marked as continuing the decider too, for the provider to leave out where it really continues", async () => {
     const { provider, seen } = scripted();
     await automationStudioFlowLessJudge({ summary: summary(), provider, run: runAutomationStudioLlmHarness, projectId: "project-1", flowId: "flow-1", deniedEvidenceKeys: [], judgeEvidenceVersion: 1, projectJudgeEvidence: projector, continuesDecider: true });
     const first = seen[0]!.context.resultSummary as unknown as JsonObject;
-    expect(first).not.toHaveProperty("pageViews");
-    expect(JSON.stringify(first)).not.toContain("t21 ");
+    expect(seen[0]!.metadata).toMatchObject({ continuesDecider: true });
+    expect(Object.keys(first).at(-1)).toBe("pageViews");
+    expect(((first.pageViews as JsonObject).endView as JsonObject).text).toBe(BASKET_TEXT);
   });
 
   it("is shown nothing the deciding digest compares: the judge's summary itself holds no page", () => {

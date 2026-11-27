@@ -52,7 +52,11 @@ export function createAutomationStudioAnthropicProvider(options: AutomationStudi
     // then charge the actual read/write split. Output is the harness reserve.
     estimateCostUsd: ({ inputTokens, outputTokens }) => estimateAutomationStudioAnthropicCostUsd(inputTokens, outputTokens, 0, model, inputTokens),
     runTask: async (request, execution) => {
-      const { continuation, judgeTurn, ...prepared } = continued(request, prepare(request, model, decisionTools), model, deciders, judges);
+      // A judge marked as continuing is held to the window by what is sent (t1089): the request it was built as carries
+      // page views that a continuation leaves out, so its size refuses only the judge sent on that request.
+      const marked = request.taskKind === "loop_verification" && request.metadata?.continuesDecider === true;
+      const { continuation, judgeTurn, ...prepared } = continued(request, prepare(request, model, decisionTools, !marked), model, deciders, judges);
+      if (marked && continuation?.used !== true) withinWindow(request, prepared, model);
       const tools = prepared.decisionTools;
       // A continuing judge's reply as it arrived, held where it is then not read: the next ask answers it in this conversation (t1065).
       let arrived: ReadonlyArray<Record<string, unknown>> | undefined;
@@ -102,6 +106,11 @@ export function createAutomationStudioAnthropicProvider(options: AutomationStudi
  * was held (none arrived), it continues the decider again with the note (`continues_the_decider_again`). Only after a
  * decider in the JSON-text transport is it asked on its own request (`standalone_after_unreadable`, t979). Every other
  * judge call, and every decision, ends a held reply.
+ *
+ * **The pages go with the judge's own request (t1089).** Every judge's message carries the page views its result rests on
+ * (`resultSummary.pageViews`), and this is the one place that decides whether it continues: every fallback to its own
+ * request (`own(...)`) sends the request as built, the views included, and a continuation leaves them out of its message
+ * (`../../models/providers/anthropic/continuation.ts`), save one asked again with no reply held, which keeps them (t1067).
  */
 /** The attempts whose latest decider request a model's adapter holds, the oldest dropped first. */
 const DECIDERS_HELD = 8;
@@ -140,7 +149,9 @@ function continued(request: AutomationStudioLlmTaskRequest, prepared: Automation
   const [system, user] = automationStudioLlmTaskMessages(request);
   // The reply that could not be read, answered in its conversation; with none held (it never arrived), the judging again from the decider.
   const answered = again && open ? automationStudioAnthropicJudgeCallAnswered(open, user!.content) : undefined;
-  const wire = answered ?? automationStudioAnthropicJudgeContinuation(prefix, system!.content, user!.content);
+  // Its page views are left out where it continues: it reads the pages in the decider's conversation (t1089). Every
+  // `own(...)` above and below sends the request as it was built, the views included.
+  const wire = answered ?? automationStudioAnthropicJudgeContinuation(prefix, system!.content, user!.content, { pages: again });
   const body = JSON.stringify(wire);
   const estimatedInputBytes = Buffer.byteLength(JSON.stringify({ tools: wire.tools, tool_choice: wire.tool_choice, system: wire.system, messages: wire.messages, output_config: wire.output_config }), "utf8");
   const estimatedInputTokens = estimateAutomationStudioLlmTokensFromUtf8Bytes(estimatedInputBytes) + 16;
@@ -165,20 +176,26 @@ function held<T>(map: Map<string, T>, key: string, value: T): void {
   }
 }
 
-function prepare(request: AutomationStudioLlmTaskRequest, model: AutomationStudioAnthropicModel, decisionTools: boolean): AutomationStudioAnthropicPreparedRequest {
+/** `sized`: refuse the request here if it exceeds the window; a judge marked as continuing is refused after the adapter decides (`runTask`, t1089). */
+function prepare(request: AutomationStudioLlmTaskRequest, model: AutomationStudioAnthropicModel, decisionTools: boolean, sized = true): AutomationStudioAnthropicPreparedRequest {
   try {
     validateAutomationStudioLlmTaskRequest(request);
     const prepared = automationStudioAnthropicRequest(request, model, { decisionTools });
-    const limits = request.tokenLimits;
-    const window = AUTOMATION_STUDIO_ANTHROPIC_MODEL_LIMITS[model].contextTokens;
-    if (prepared.estimatedInputTokens > limits.maxInputTokens || prepared.estimatedInputTokens + limits.maxOutputTokens > limits.maxTotalTokens || prepared.estimatedInputTokens + limits.maxOutputTokens > window) {
-      const inputSize = { estimatedInputTokens: prepared.estimatedInputTokens, estimatedInputBytes: prepared.estimatedInputBytes, maxInputTokens: limits.maxInputTokens, maxOutputTokens: limits.maxOutputTokens, maxTotalTokens: limits.maxTotalTokens, contextWindowTokens: window };
-      throw new AutomationStudioLlmProviderError("llm.provider_input_budget_exceeded", "Anthropic request exceeds the context window; nothing was trimmed.", false, undefined, undefined, undefined, undefined, undefined, inputSize);
-    }
+    if (sized) withinWindow(request, prepared, model);
     return prepared;
   } catch (error) {
     if (error instanceof AutomationStudioLlmProviderError) throw error;
     throw new AutomationStudioLlmProviderError("llm.provider_request_construction_failed", "Anthropic request construction failed.");
+  }
+}
+
+/** Refuses `prepared` where it exceeds the request's limits or the model's window: nothing is trimmed. */
+function withinWindow(request: AutomationStudioLlmTaskRequest, prepared: AutomationStudioAnthropicPreparedRequest, model: AutomationStudioAnthropicModel): void {
+  const limits = request.tokenLimits;
+  const window = AUTOMATION_STUDIO_ANTHROPIC_MODEL_LIMITS[model].contextTokens;
+  if (prepared.estimatedInputTokens > limits.maxInputTokens || prepared.estimatedInputTokens + limits.maxOutputTokens > limits.maxTotalTokens || prepared.estimatedInputTokens + limits.maxOutputTokens > window) {
+    const inputSize = { estimatedInputTokens: prepared.estimatedInputTokens, estimatedInputBytes: prepared.estimatedInputBytes, maxInputTokens: limits.maxInputTokens, maxOutputTokens: limits.maxOutputTokens, maxTotalTokens: limits.maxTotalTokens, contextWindowTokens: window };
+    throw new AutomationStudioLlmProviderError("llm.provider_input_budget_exceeded", "Anthropic request exceeds the context window; nothing was trimmed.", false, undefined, undefined, undefined, undefined, undefined, inputSize);
   }
 }
 
