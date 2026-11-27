@@ -33,9 +33,14 @@ import { automationStudioFlowDraftStepId, type AutomationStudioFlowDraftStep } f
 import type { AutomationStudioFlowDraftWrittenStep } from "../authoring/index.ts";
 import { automationStudioInstructedActs } from "./instruction-acts.ts";
 import { automationStudioInstructedActsStanding } from "./standing.ts";
+import { AUTOMATION_STUDIO_STEP_RUN_PARAMETERS } from "../run-parameters/index.ts";
 
-/** The node parameter a saved act's standing options are written under, which a host's act node declares to take them. */
-export const AUTOMATION_STUDIO_REQUIRES_CHOSEN_PARAMETER = "requiresChosen";
+/**
+ * The node parameter a saved act's standing options are written under, which a host's act node declares to take them.
+ * A run parameter (`../run-parameters/`, t1075): it says what must stand before the act, never which act it is, so the
+ * act record leaves it out of the node's identity and a carried act still matches its step.
+ */
+export const AUTOMATION_STUDIO_REQUIRES_CHOSEN_PARAMETER = AUTOMATION_STUDIO_STEP_RUN_PARAMETERS.requiresChosen;
 
 /**
  * The last segment of the failure code a host refuses such an act with

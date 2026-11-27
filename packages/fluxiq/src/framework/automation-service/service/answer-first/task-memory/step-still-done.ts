@@ -1,11 +1,12 @@
 // Whether a step the saved Flow does not hold has its act done by a step it does (t869). A step is
 // left out only when no step of the saved Flow does that act: one that replaced it (a rerun), stands
 // for the same carried step, names the same act, presses the same control, or runs the same node with
-// the same parameters (Core's own `ensureState` aside, as a stamped step carries it) still does it.
+// the same parameters (Core's own run parameters aside, as a stamped step carries them: the one list every identity
+// reader takes off, `runtime/flow-authoring/bootstrap/run-parameters/`, t1075) still does it.
 
 import { automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
-
-const ENSURE_STATE = "ensureState";
+import { automationStudioStepWithoutRunParameters } from "../../../../../runtime/flow-authoring/bootstrap/run-parameters/index.ts";
+import type { JsonObject } from "../../../../../core/index.ts";
 
 /** The step's own name, and what it stood for: every id a replacing or re-added step may carry. */
 function namesOf(step: AutomationStudioFlowDraftStep): string[] {
@@ -17,12 +18,11 @@ function wordsOf(step: AutomationStudioFlowDraftStep): string {
   return (step.words?.target ?? step.control ?? "").replace(/\s+/gu, " ").trim().toLowerCase();
 }
 
-/** The node and its parameters, `ensureState` taken off; nothing where the step has no node. */
+/** The node and its parameters, Core's run parameters taken off; nothing where the step has no node. */
 function nodeOf(step: AutomationStudioFlowDraftStep): string | undefined {
   const input = step.input as { node?: unknown; parameters?: unknown };
   if (typeof input.node !== "string") return undefined;
-  const parameters = input.parameters && typeof input.parameters === "object" && !Array.isArray(input.parameters) ? { ...(input.parameters as Record<string, unknown>) } : {};
-  delete parameters[ENSURE_STATE];
+  const parameters = automationStudioStepWithoutRunParameters(input.parameters && typeof input.parameters === "object" && !Array.isArray(input.parameters) ? input.parameters as JsonObject : undefined);
   return JSON.stringify([input.node, parameters, step.actionId]);
 }
 

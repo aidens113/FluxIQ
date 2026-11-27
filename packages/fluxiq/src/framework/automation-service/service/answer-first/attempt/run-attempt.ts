@@ -69,7 +69,7 @@ import { automationStudioAnswerFirstRunActStoreOf } from "../run-acts/index.ts";
 import { automationStudioAnswerFirstResultFeed, automationStudioAnswerFirstRestoreResult } from "../result-feed/index.ts";
 import { automationStudioAnswerFirstRunAgainScope, type AutomationStudioAnswerFirstRunAgainHold } from "../run-again/index.ts";
 import { automationStudioAnswerFirstTaskMemoryOf } from "../task-memory/index.ts";
-import { automationStudioAnswerFirstBeforeReadingsOf, automationStudioAnswerFirstEarlierBefore, automationStudioAnswerFirstWitnesses } from "../witnesses/index.ts";
+import { automationStudioAnswerFirstActEvidence, automationStudioAnswerFirstBeforeReadingsOf, automationStudioAnswerFirstCarriedEvidenceOf, automationStudioAnswerFirstCarriedTrail, automationStudioAnswerFirstEarlierBefore, automationStudioAnswerFirstWitnesses } from "../witnesses/index.ts";
 import { automationStudioAnswerFirstBestEffort } from "./best-effort.ts";
 import { automationStudioAnswerFirstCallChain } from "./call-chain.ts";
 import type { AutomationStudioAnswerFirstAttemptInput } from "./contracts.ts";
@@ -244,6 +244,12 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
   const trail = journal.of(attemptId, { carriedOn: hold !== undefined, askedAgain: again !== undefined, ...(carried && Object.hasOwn(carried, "judgeEvidence") ? { judgeEvidence: carried.judgeEvidence ?? null } : {}), ...(carried && Object.hasOwn(carried, "judgeEvidenceIssue") ? { judgeEvidenceIssue: carried.judgeEvidenceIssue ?? null } : {}) });
   const restoredWitnesses = journal.witnesses(trail, {});
   const witnesses = automationStudioAnswerFirstWitnesses({ read: async () => (await lookNow())?.view as JsonObject | undefined, earlier: restoredWitnesses.before === undefined ? earlier : { before: restoredWitnesses.before }, earlierActions: trail.flatMap((step) => step.judgeAct === undefined ? [] : [step.judgeAct]), ...(restoredWitnesses.association === undefined ? {} : { earlierAssociation: restoredWitnesses.association }), keep: (before) => befores.keep(attemptId, before) });
+  // Carried acts come with the trail entries they landed with, held in memory as the before reading is, and shown to this attempt's judge ahead of its own trail
+  // (`../witnesses/carried-evidence.ts`, t1075). What this attempt hands a later one is read when that one opens: what it was handed, and what its own acts landed with.
+  const evidence = automationStudioAnswerFirstCarriedEvidenceOf(input.owner);
+  const carriedEvidence = opening.seed !== undefined && opening.seedFrom !== undefined ? evidence.get(opening.seedFrom) : undefined;
+  evidence.hold(attemptId, () => new Map([...(carriedEvidence ?? []), ...automationStudioAnswerFirstActEvidence({ trail, actOfCall: (callId) => record.calls.actOf(callId), own: new Set(record.data().acts.filter((act) => act.carried !== true).map((act) => act.id)) })]));
+  const carriedTrail = () => automationStudioAnswerFirstCarriedTrail(record.data().acts.filter((act) => act.carried === true).map((act) => act.id), carriedEvidence);
   const judgeEvidence = { ...journal.capability(trail, input.binding), projectJudgeEvidence: input.binding?.projectJudgeEvidence, deniedEvidenceKeys: input.binding?.deniedEvidenceKeys };
   const completion = automationStudioAnswerFirstCompletionCheck({
     instructions: input.instructionText,
@@ -265,7 +271,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
     })).view,
     witnesses: () => journal.witnesses(trail, witnesses.readings()),
     looked: () => looked,
-    trail: () => trail,
+    trail: () => [...carriedTrail(), ...trail],
     readPages: () => result.readPages(),
     resultEvidence: () => result.evidence(),
     askedAgain: again !== undefined || carried?.askedAgain === true,

@@ -24,20 +24,25 @@
 //
 // **What is not identity.** Everything Core or the model adds to a step's parameters
 // that does not change what it does: how long to wait, what to expect, how to record.
-// Read by a list, since a list is what the assembly adds from; a new such key the list
-// misses makes an act look new, which the Lab's double-act oracle exists to catch (D6).
+// Core's own are read from the one list the assembly writes from
+// (`flow-authoring/bootstrap/run-parameters/`, t1075), never restated here: a key the two
+// lists disagreed on made an act look new, and `run-mwynbry2-f3c88dc7` pressed a landed
+// "+ Add" again because the assembly had written `requiresChosen` onto its node. What a
+// model or a domain adds beside them is read by the words below; one those miss makes an
+// act look new, which the Lab's double-act oracle exists to catch (D6).
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { automationStudioAttemptActCountsPlaces, automationStudioAttemptActIsAddress } from "./address-shape.ts";
 import { automationStudioAttemptActDigest } from "./digest.ts";
 import { automationStudioAttemptActOwnFields } from "./fields.ts";
+import { automationStudioIsStepRunParameter } from "../../../flow-authoring/bootstrap/run-parameters/index.ts";
 
 const SLOT_TARGET = "target";
 const SLOT_ELEMENT = "element";
 const SLOT_HANDLE = "handle";
 
-/** Parameters that say how a step runs and never which act it is (header). */
-const NOT_IDENTITY = /^(?:consequences|ensureState|effect|expected.*|wait.*|timeout.*|retr(?:y|ies).*|maxRetries|maxAttempts|pace.*|delay.*|settle.*|record.*|optional|metadata|description|notes?|label|scroll.*|force|routeSignatures|confidence|visualTarget)$/u;
+/** What a model or a domain adds beside them that says how a step runs and never which act it is (header). */
+const HOW_IT_RUNS = /^(?:consequences|effect|expected.*|wait.*|timeout.*|retr(?:y|ies).*|maxRetries|maxAttempts|pace.*|delay.*|settle.*|record.*|optional|metadata|description|notes?|label|scroll.*|force|confidence|visualTarget)$/u;
 /** A fingerprint field that is a place on a page, not the control. */
 export const POSITIONAL_FIELD = /^(?:nth.*|index|position|ordinal|bounds|documentBounds|rect|box|x|y|left|top|right|bottom|width|height|anchor|frameId|layerId|documentLayerId)$/iu;
 /**
@@ -74,7 +79,7 @@ export function automationStudioAttemptActTargetKeys(actionId: string, parameter
   const named = record(flat[SLOT_ELEMENT]);
   const fingerprint = named ? stableFingerprint(named) : undefined;
   const rest: JsonObject = {};
-  for (const [key, value] of Object.entries(flat)) if (key !== SLOT_HANDLE && key !== SLOT_ELEMENT && !NOT_IDENTITY.test(key) && value !== undefined) rest[key] = value;
+  for (const [key, value] of Object.entries(flat)) if (key !== SLOT_HANDLE && key !== SLOT_ELEMENT && !notIdentity(key) && value !== undefined) rest[key] = value;
   const inputs = Object.fromEntries(Object.entries(rest).filter(([, value]) => typeof value !== "string" || !automationStudioAttemptActIsAddress(value)));
   // A handle is read beside the fields and never among them, since what a read mints is taken out of those.
   const key = (form: unknown, named?: string) => automationStudioAttemptActDigest({ actionId, handle: named ?? null, form: automationStudioAttemptActOwnFields(form) });
@@ -96,6 +101,11 @@ export function automationStudioAttemptActTargetKeys(actionId: string, parameter
     placeKeys,
     ...(says ? { says } : {})
   };
+}
+
+/** Whether a parameter says how a step runs rather than which act it is (header). */
+function notIdentity(key: string): boolean {
+  return automationStudioIsStepRunParameter(key) || HOW_IT_RUNS.test(key);
 }
 
 /** The parameters with what a `target` object holds lifted beside them; a bare `target` word is a handle by another spelling. */

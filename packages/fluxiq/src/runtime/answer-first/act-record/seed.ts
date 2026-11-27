@@ -80,7 +80,9 @@ function union(acts: readonly AutomationStudioAttemptActEntry[]): AutomationStud
   const held = new Map<string, AutomationStudioAttemptActEntry>();
   for (const act of acts) {
     const known = held.get(act.id);
-    held.set(act.id, known ? { ...act, ...(known.doneInAchieved || act.doneInAchieved ? { doneInAchieved: true as const } : {}), keys: [...new Set([...known.keys, ...act.keys])], rows: [...new Set([...known.rows, ...act.rows])], actions: [...new Set([...known.actions, ...act.actions])] } : act);
+    // The steps it is named by are a union too (`./record.ts`, "An act named by the step it became"): each names a step of a Flow some attempt saved.
+    const steps = [...new Set([...(known?.steps ?? []), ...(act.steps ?? [])])];
+    held.set(act.id, known ? { ...act, ...(known.doneInAchieved || act.doneInAchieved ? { doneInAchieved: true as const } : {}), keys: [...new Set([...known.keys, ...act.keys])], rows: [...new Set([...known.rows, ...act.rows])], actions: [...new Set([...known.actions, ...act.actions])], ...(steps.length > 0 ? { steps } : {}) } : act);
   }
   return [...held.values()];
 }

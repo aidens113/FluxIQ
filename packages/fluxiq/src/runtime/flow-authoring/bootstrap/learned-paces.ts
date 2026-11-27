@@ -13,7 +13,7 @@
 // **A step is known by its identity, never by its key.** As a trial's toggle press
 // is (`./script-statements/toggle-tie.ts`, t792), a learned pace belongs to the
 // step written as the trial's node was: the same node definition and the same
-// parameters, compared whole with Core's `ensureState` taken off. A step's key is
+// parameters, compared whole with Core's run parameters taken off (`./run-parameters/`, t1075). A step's key is
 // its place in the script, which a repair renumbers; a step whose identity matches
 // no recorded pace gets none, and a trial node the graph does not show is not
 // recorded. Two steps written the same share the pace, as they share the control.
@@ -27,6 +27,7 @@
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../../framework/automation-service/executor/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PACE_LIMITS, type AutomationStudioFlowBootstrapPlan } from "./plan/index.ts";
+import { automationStudioStepWithoutRunParameters } from "./run-parameters/index.ts";
 
 /** The trial's graph, as far as its nodes' written parameters go (as `./explored-toggles.ts` reads it). */
 type TrialGraph = { readonly nodes: readonly { readonly id: string; readonly parameterValues?: JsonObject | undefined }[] };
@@ -35,7 +36,7 @@ type TrialGraph = { readonly nodes: readonly { readonly id: string; readonly par
 export type AutomationStudioExploredPace = {
   /** The node definition the step runs. */
   definitionId: string;
-  /** The parameters the trial node ran with, `ensureState` taken off. */
+  /** The parameters the trial node ran with, Core's run parameters taken off. */
   parameters: JsonObject;
   /** The most the trial raised its pace to, in milliseconds. */
   paceMs: number;
@@ -45,8 +46,6 @@ export type AutomationStudioExploredPace = {
 const MAX_RECORDS = 128;
 /** The longest parameters kept as a step's identity, as JSON; longer, the step is not recorded. */
 const MAX_PARAMETERS_CHARS = 16_384;
-/** The parameter Core gives a toggle step, never part of a step's identity. */
-const ENSURE_STATE = "ensureState";
 /** A pace is written in whole steps of this many milliseconds. */
 const STEP_MS = 100;
 const MADE = new WeakMap<object, AutomationStudioLearnedPaces>();
@@ -118,11 +117,9 @@ function written(paceMs: number): number {
   return Math.min(maxPaceMs, Math.max(minPaceMs, Math.ceil(paceMs / STEP_MS) * STEP_MS));
 }
 
-/** A step's parameters as its identity: a copy without Core's `ensureState` (header). */
+/** A step's parameters as its identity: a copy without Core's run parameters, the one list every reader takes off (header). */
 function own(parameters: JsonObject | undefined): JsonObject {
-  if (!parameters) return {};
-  const { [ENSURE_STATE]: _core, ...rest } = parameters;
-  return rest;
+  return automationStudioStepWithoutRunParameters(parameters);
 }
 
 /** A JSON value written with its keys in order, so two of the same value compare equal. */

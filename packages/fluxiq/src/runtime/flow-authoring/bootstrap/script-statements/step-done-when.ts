@@ -29,9 +29,10 @@ import type { AutomationStudioFlowScriptStep } from "../authoring/index.ts";
 import type { AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
 import { automationStudioFlowScriptFacts } from "./fact-condition.ts";
 import { scriptStatementRefusal } from "./statement-refusal.ts";
+import { AUTOMATION_STUDIO_STEP_RUN_PARAMETERS } from "../run-parameters/index.ts";
 
-/** The parameter a node keeps what it is meant to leave the page showing in. */
-const EXPECTED_STATE_PARAMETER = "expectedState";
+/** The parameter a node keeps what it is meant to leave the page showing in: a run parameter, never the act's identity (`../run-parameters/`). */
+const EXPECTED_STATE_PARAMETER = AUTOMATION_STUDIO_STEP_RUN_PARAMETERS.expectedState;
 /** Core's own nodes that act outside the run: a Run Output dispatches a domain's output, a database node writes. */
 const CORE_ACTING_NODE = /^builtin\.(?:policy\.action$|database\.)/u;
 

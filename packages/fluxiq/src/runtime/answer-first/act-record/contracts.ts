@@ -38,6 +38,8 @@ export type AutomationStudioAttemptActCall = {
   stage: AutomationStudioAttemptActStage;
   /** What the domain says it would be, for a call that names its target by a handle. */
   foreseen?: AutomationStudioAttemptActForeseen;
+  /** The loop's own id for the call, where it has one: what a draft step names the call it came from by, so the act can be named by the step it became (`./call-acts.ts`). */
+  callId?: string;
 };
 
 export type AutomationStudioAttemptActAdmission =

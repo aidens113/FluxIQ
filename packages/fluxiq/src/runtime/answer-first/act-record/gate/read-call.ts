@@ -39,7 +39,7 @@ export type AutomationStudioAttemptActCallRead =
 const NOT_SENT: ReadonlySet<string> = new Set(["node", "consequences", "instructedAct", REPLAY_KEY, ITEM_KEY, WRITE_KEY, REACH_KEY, "from", "produced"]);
 
 /** What `call` is, for the gate (header). */
-export function automationStudioAttemptActCallRead(call: { toolId: string; value: JsonObject }): AutomationStudioAttemptActCallRead {
+export function automationStudioAttemptActCallRead(call: { toolId: string; value: JsonObject; callId?: string }): AutomationStudioAttemptActCallRead {
   const { value } = call;
   const replay = value[REPLAY_KEY];
   if (replay === "reset" || value[WRITE_KEY] === true) return { kind: "pass" };
@@ -55,7 +55,9 @@ export function automationStudioAttemptActCallRead(call: { toolId: string; value
       consequences: declared(value.consequences) ?? declared(nested?.consequences) ?? [],
       ...(instructed !== undefined ? { instructedAct: instructed } : {}),
       ...(row !== undefined ? { row } : {}),
-      stage: replay === "step" ? "forward" : "exploration"
+      stage: replay === "step" ? "forward" : "exploration",
+      // What the draft names the call by, so the act can be named by the step it became (`../call-acts.ts`, t1075).
+      ...(typeof call.callId === "string" && call.callId ? { callId: call.callId } : {})
     }
   };
 }

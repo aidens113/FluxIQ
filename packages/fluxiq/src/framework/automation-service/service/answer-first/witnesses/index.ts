@@ -1,5 +1,8 @@
 // Barrel for the answer-first witnesses. The directory's driver exports it (`../index.ts`, not here).
+export { automationStudioAnswerFirstActEvidence } from "./act-evidence.ts";
 export { automationStudioAnswerFirstBeforeReadingsOf, type AutomationStudioAnswerFirstBeforeReadings } from "./before-readings.ts";
+export { automationStudioAnswerFirstCarriedEvidenceOf, type AutomationStudioAnswerFirstCarriedEvidence } from "./carried-evidence.ts";
+export { automationStudioAnswerFirstCarriedTrail } from "./carried-trail.ts";
 export { automationStudioAnswerFirstEarlierBefore } from "./earlier.ts";
 export { AUTOMATION_STUDIO_ANSWER_FIRST_EARLIER_BEFORE_WORDS } from "./earlier-words.ts";
 export type { AutomationStudioAnswerFirstWitnessesInput } from "./input.ts";
