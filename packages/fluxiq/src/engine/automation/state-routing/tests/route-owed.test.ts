@@ -56,6 +56,7 @@ function hostAnswering(answer: AutomationStudioRouteReachAnswer | (() => never))
   return {
     asked,
     host: {
+      capabilities: [],
       reachRouteEffect: (request) => {
         asked.push(request);
         return typeof answer === "function" ? answer() : answer;
@@ -85,7 +86,7 @@ describe("run-mwz29d50 attempt 2: View cart passed over as never arisen", () => 
   });
 
   it("is not passed over when the page could not be brought there, nor when the host threw or answered nonsense", async () => {
-    for (const answer of ["unreached", (() => { throw new Error("gateway gone"); }) as () => never, "maybe" as AutomationStudioRouteReachAnswer]) {
+    for (const answer of ["unreached", (() => { throw new Error("gateway gone"); }) as () => never, "maybe"] as Array<AutomationStudioRouteReachAnswer | (() => never)>) {
       const decision = await decide(hostAnswering(answer).host);
       expect(decision.kind).toBe("none");
       if (decision.kind === "none") expect(decision.record.reason).toMatch(/could not be brought to where its recorded effect went/u);
@@ -96,7 +97,7 @@ describe("run-mwz29d50 attempt 2: View cart passed over as never arisen", () => 
     const stays = await decide(hostAnswering("stays").host);
     expect(stays).toMatchObject({ kind: "declared", code: AUTOMATION_STUDIO_STATE_NOT_ARISEN_CODE, edge: { targetNodeId: cartRead.id } });
     expect(stays).not.toHaveProperty("reached");
-    expect(await decide({})).not.toHaveProperty("reached");
+    expect(await decide({ capabilities: [] })).not.toHaveProperty("reached");
     const unsigned: AutomationStudioFlowNode = { ...viewCart, metadata: { declaredConsequences: [] } };
     const { host, asked } = hostAnswering("pressed");
     expect(await decide(host, unsigned)).toMatchObject({ kind: "declared", code: AUTOMATION_STUDIO_STATE_NOT_ARISEN_CODE });
@@ -126,6 +127,6 @@ describe("a chain of steps passed over as never arisen", () => {
 describe("the owed route on its own", () => {
   it("asks nothing of a host without the method and reads it as nothing owed", async () => {
     expect(await automationStudioNotArisenRouteOwed({ node: viewCart, hostRuntime: undefined, projectId: "p", flowId: "f" })).toBe("stays");
-    expect(await automationStudioNotArisenRouteOwed({ node: viewCart, hostRuntime: {}, projectId: "p", flowId: "f" })).toBe("stays");
+    expect(await automationStudioNotArisenRouteOwed({ node: viewCart, hostRuntime: { capabilities: [] }, projectId: "p", flowId: "f" })).toBe("stays");
   });
 });
