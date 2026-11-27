@@ -50,10 +50,10 @@
 //
 // **Derived columns, groups and comparisons (t970).** `derive` computes its
 // columns on a copy of each row before the filters (`derive.ts`); the filters
-// are every `where` condition, then every `anyOf` group (`any-of.ts`), then
-// every `compare` (`field-comparison.ts`), and a row is kept only when each
-// holds. A group or comparison names the rows it alone left out as a condition
-// does, on the account's `filters`. The answer is each kept row's own stored
+// are every `where` condition, then the `anyOf` alternatives as one filter
+// (`any-of.ts`, t1074), then every `compare` (`field-comparison.ts`), and a row
+// is kept only when each holds. `anyOf` and each comparison name the rows they
+// alone left out as a condition does, on the account's `filters`. The answer is each kept row's own stored
 // values: a derived column is never in it.
 
 import { automationStudioRecordAnyOfFields, automationStudioRecordAnyOfText } from "./any-of.ts";
@@ -219,7 +219,8 @@ export function processAutomationStudioRecordRows(input: AutomationStudioRecordP
   const labelFields = process.columns ?? storedFields;
   if (where.length) account.conditions = conditionAccounts(where, working, failed, labelFields, input.now);
   const otherFilters = [
-    ...groups.map((group): FilterOf => ({ kind: "any_of", fields: automationStudioRecordAnyOfFields(group), condition: automationStudioRecordAnyOfText(group) })),
+    // `anyOf` is one filter, its groups alternatives (`any-of.ts`, t1074).
+    ...(groups.length ? [{ kind: "any_of", fields: automationStudioRecordAnyOfFields(groups.flat()), condition: automationStudioRecordAnyOfText(groups) } satisfies FilterOf] : []),
     ...comparisons.map((comparison): FilterOf => ({ kind: "compare", fields: automationStudioRecordFieldComparisonFields(comparison), condition: automationStudioRecordFieldComparisonText(comparison) }))
   ];
   if (otherFilters.length) account.filters = filterAccounts(otherFilters, where.length, working, failed, labelFields);

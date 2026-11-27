@@ -413,8 +413,9 @@ declared or not. Processing is the one pure function
    deduplicated by, and is never stored or shown (`columns` naming one is
    `record_output.process_derived_column_shown`);
 2. the filters, each of which must hold: `where`, conditions over stored or
-   derived columns; `anyOf` (t970), groups of conditions, a group holding when
-   any one of its conditions does, so "this or that" across columns
+   derived columns; `anyOf` (t970; alternatives since t1074), one filter whose
+   groups are alternatives: a row passes when every condition of any one group
+   holds, so `[[a], [b, c]]` is "a, or else b and c" across columns
    (`any-of.ts`); and `compare` (t970), two columns of a row set against each
    other (`atLeast`, `atMost`, `lessThan`, `greaterThan`, `equals` naming the
    other column), read as numbers or, with `as: "date"`, dates; a side stating
@@ -479,8 +480,9 @@ summary's `processing`): `collected` (= `filteredOut` + `duplicates` + `cut`
 short, and `passes`: one entry per batch with its node, its pass number per
 node, its rows and its `newRows` (rows that repeat no earlier collected row).
 
-Each `where` condition also accounts for the rows it alone excluded; each
-`anyOf` group and `compare` does the same on the account's `filters` (t970),
+Each `where` condition also accounts for the rows it alone excluded; `anyOf`
+(one entry for all its groups, words `any of (a and b; c)`) and each `compare`
+do the same on the account's `filters` (t970, t1074),
 with its kind, the columns it reads and its words. Its optional
 tested-value evidence comes from the same processing evaluation over collected
 rows, before answer-column projection. Evidence is screened before it reaches a
@@ -511,11 +513,64 @@ Flow's steps:
   draft steps (`runtime/llm/evidence-loop.ts`). A declaration naming no
   `columns` shows the columns the person named, where the request names them
   surely and the rows hold them all.
+- **`anyOf` is read as alternatives (t1074).** All 31 recorded declarations
+  that used `anyOf` (runs run-mwyn25dg-3ba0b41c, run-mwyg0x66-4d561a42,
+  run-mwyfoz8o-507c92f6) wrote one group per way a row qualifies -- a price in
+  the site's own currency in one, the site's estimate of a foreign price in
+  another -- and the old reading ("every group holds") kept no row or withheld
+  the answer. In automatic processing a row is decided by the groups that have
+  evidence for it (`readiness/filters.ts`): kept when one group holds, left
+  out when every group is known false (one condition known false settles a
+  group), and withheld only when no group decides it; the missing evidence then
+  names only the undecided groups' values, never a value one group cannot read
+  while another decides the row.
+- **Binding names a field by its other names (t1074).** A declaration binds an
+  exact id, then a unique label, then an alias the framework holds by evidence
+  (`bindAutomationStudioRecordProcessing(value, schema, aliases)`,
+  `process/binding/bind.ts`), only onto a stored field; the bindings are stamped
+  on the declaration. The data stage (`service/answer-first/result-feed/stage.ts`,
+  `column-names.ts`) gives two kinds:
+  - a renamed read: each key the output read's own `fields` rename (`title` read
+    from `link_text`) names its new column, so a held declaration written over
+    an earlier read's keys still binds when the result moves to the renamed
+    read (run-mwyfx9fs-06a170bf, 0067-0081);
+  - the request's columns: where the request names its columns surely, each is
+    placed on the stored field that holds it (`automationStudioRecordAskedColumns`,
+    `packages/contracts/src/record-sets/asked-columns/`) by name (id or label,
+    case, separators and a plural aside), else by its own name read as words in
+    at least half the field's shown values and more than in any other field's
+    (`9 bids`, `+£5.20 postage`; fields with the same values are one, a tie
+    places nothing), else by the declaration's own `columns` order where it
+    lists as many columns as the request and every other placing agrees. Nothing
+    is guessed: an unplaced column is said so. Only the request's own names and
+    the rows' values are compared, so nothing mirrors a site or task.
+- **The answer shows the request's names, as a view (t1074).** Each placed field
+  is shown under the request's name in the answer's schema, rows and columns
+  (`result-feed/asked-view.ts`; a name that is no valid id is written with `_`,
+  one that would take another field's id or label is left as it was). The
+  stored rows the processing reads are unchanged, and the declaration saved
+  with the Flow stays bound to the stored ids, so a replay applies it to the
+  rows as read. The tool's answer and the processing readiness messages say the
+  placing in ids and the request's names only (run-mwyn25dg-3ba0b41c spent 13
+  calls re-reading the list under the asked names after `not_asked_table`).
 - **The answer.** The attempt's result feed merges the declaration over the
   output step's own `recordOutput.process`, key by key, and makes the answer
   from the pages' whole rows (`service/answer-first/result-feed/feed.ts`), so
   the completion check, the person and the store's publication all have the
   processed rows.
+- **A re-read replaces a list's page at its address (t1074).** Each page of the
+  answer stands at its place in its step (`service/answer-first/result/place-order.ts`):
+  a place already read is read again, and so is the same spot
+  (`result-feed/place-of.ts`). A model's read or a run's pass on the page that
+  one record batch of the same step read, the list not moved since, takes that
+  batch's spot, so it replaces the saved run's page; two batches on one page (a
+  Flow's own in-place paging loop) stay two pages. A page of a list (`listKey`)
+  at an address (`where`, query included, so a page reached by its address is
+  another address) also removes that list's page at that address from every
+  other step (`result/page-set.ts`), places the pager named on both sides
+  agreeing. Bigbox run run-mwynbry2-f3c88dc7 had kept a stale cart quantity
+  beside two re-runs and then both of two steps' readings of the cart. Exact
+  whole-row repeats collapse with no declaration, as before.
 - **The judge.** What the processing did goes on `resultEvidence.processing`
   (`AutomationStudioResultEvidenceProcessing`,
   `runtime/result-verification/result-evidence/types.ts`): the declaration, the

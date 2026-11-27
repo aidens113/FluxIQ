@@ -201,6 +201,41 @@ commercial contract templates remain separate owner-controlled release work.
 
 ## Migration Notes
 
+### Next minor (unreleased): `anyOf` groups are alternatives, and binding and the answer name fields by evidence (`@fluxiq/contracts`, `fluxiq`)
+
+t1074 (runs run-mwyn25dg-3ba0b41c, run-mwyfx9fs-06a170bf, run-mwynbry2-f3c88dc7).
+
+- **`AutomationStudioRecordProcessing.anyOf` changed meaning.** A row passes when every
+  condition of any one group holds; until now each group was its own filter that had to
+  hold, true when any one of its conditions held. The parser is unchanged, so every saved
+  declaration still parses, but one that relied on the old reading reads differently:
+  - a saved Flow holding **one group with several conditions** (`[[a, b]]`, formerly "a or
+    b") now reads it as **"all of these"** (a and b). Rewrite it as `[[a], [b]]`;
+  - a saved Flow holding several single-condition groups (`[[a], [b]]`, formerly "a and b")
+    now reads "a or b"; a conjunction belongs in `where`.
+  No recorded run wrote the old form: all 31 recorded `anyOf` declarations were written
+  as alternatives. In automatic processing each row is decided by the groups with evidence
+  for it, and the account carries one `any_of` filter for the whole `anyOf`
+  (`any of (a and b; c)`) instead of one per group.
+- **New exports from `@fluxiq/contracts/automation`:** `automationStudioRecordAskedColumns`
+  and its type `AutomationStudioRecordAskedColumns` (where the rows hold each column a
+  request names), and `AutomationStudioRecordProcessingAliases`.
+  `bindAutomationStudioRecordProcessing` and `stampAutomationStudioRecordProcessing` take an
+  optional `aliases` argument last; existing callers are unchanged.
+- **`fluxiq`, answer-first:**
+  - the data stage binds a held declaration through the output read's renamed `fields`;
+  - it places the request's columns on the read's keys and shows the answer under the
+    request's names, the stored rows unchanged. A published answer's dataset can therefore
+    carry the request's column ids where it used to carry the read's keys;
+  - the result feed's interface gains `columnNames()`.
+- **A re-read replaces a list's page at its address (`fluxiq`).** A model's read or a run's
+  pass on the page that one record batch of the same step read, with the list not moved
+  since, is that page again (`result-feed/place-of.ts`). A page of a list (`listKey`) at an
+  address (`where`, query included) removes that list's page at that address from every
+  other step of the ledger (`result/page-set.ts`). An answer that used to hold a stale run
+  page beside a fresh read, or two steps' readings of one list, now holds the latest
+  reading once. Exact whole-row repeats still collapse with no declaration, as before.
+
 ### Next minor (unreleased): no count of calls or rounds ends a run (`fluxiq`)
 
 Only a run's result, its purse (dollars), its clock or Stop end it (t1056; user,

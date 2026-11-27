@@ -16,8 +16,9 @@
 // leaves it out; processing the collected rows again gives the same answer.
 //
 // **And may derive, group and compare (t970).** `derive` names columns computed
-// from one stored column (`derive.ts`); `anyOf` holds groups of conditions any
-// one of which keeps a row (`any-of.ts`); `compare` sets two columns of a row
+// from one stored column (`derive.ts`); `anyOf` holds alternative groups, a row
+// passing when every condition of any one group holds (`any-of.ts`, t1074);
+// `compare` sets two columns of a row
 // against each other (`field-comparison.ts`).
 //
 // **Each refused part says why (t1070).** Run `run-mwyg0x66-4d561a42` called
