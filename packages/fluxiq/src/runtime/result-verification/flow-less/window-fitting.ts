@@ -28,8 +28,9 @@
 // is told their rows were left out of this request. The trail of everything the attempt did
 // (`../run-trail/`, t963) and the final data go last (user, 2026-11-19: the judge sees
 // everything that happened, then judges by it and the final data): what each trail step was
-// asked, oldest first, then what each found, oldest first, then the acts, and the rows held
-// last of all, first to their labels and only then to counts. An item whose account would
+// asked, oldest first, then what each found, oldest first, then the acts, then each kept row with
+// the values the result's processing read on it (t1072), and the rows held last of all, first to
+// their labels and only then to counts. An item whose account would
 // be no shorter than the item itself is left whole.
 
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
@@ -90,6 +91,8 @@ function steps(summary: JsonObject): Step[] {
     ...trailed("asked"),
     ...trailed("found"),
     { item: "acts", path: ["acts"], account },
+    // Each kept row with the values processing read on it (t1072) is the final data told again with its keys: with it.
+    { item: "resultEvidence.processing.keptRows", path: ["resultEvidence", "processing", "keptRows"], account },
     ...rows
   ];
 }
