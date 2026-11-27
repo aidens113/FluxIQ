@@ -3,6 +3,7 @@ import type { AutomationStudioFlowNode } from "../../flows/executable/graph/inde
 import type { AutomationNodeExpectationEvaluation, AutomationNodeExpectationEvaluationContext, AutomationNodeExpectationEvaluator } from "../../components/automation/index.ts";
 import type { AutomationStudioFactCondition, AutomationStudioFactTruth } from "./contracts/index.ts";
 import type { AutomationStudioSourcePlaceAnswer, AutomationStudioSourcePlaceRequest, AutomationStudioTargetReacquireAnswer, AutomationStudioTargetReacquireRequest } from "./contracts/index.ts";
+import type { AutomationStudioRouteReachAnswer, AutomationStudioRouteReachRequest } from "./contracts/index.ts";
 import type { AutomationStudioUnboundTargetReacquireAnswer } from "./contracts/index.ts";
 import type { AutomationStudioUnboundTargetReacquireRequest } from "./contracts/index.ts";
 import type { AutomationStudioHostResourcePort } from "./resources.ts";
@@ -252,6 +253,15 @@ export type AutomationStudioHostRuntimeBoundary = {
    * lasting act). A missing method reads as `same_place`; a throw as `unavailable`.
    */
   returnToSourcePlace?(request: AutomationStudioSourcePlaceRequest): AutomationStudioSourcePlaceAnswer | Promise<AutomationStudioSourcePlaceAnswer>;
+  /**
+   * Brings the page to the route a passed-over step's recorded effect went to
+   * (t1083, `./contracts/route-reach.ts`): `stays` when the effect moved to no
+   * other route, `already_there`, `pressed` or `went` when the page is on it,
+   * `unreached` when the host could not bring it there. A move, never a
+   * lasting act. A missing method reads as `stays`, so a host that cannot say
+   * passes the step over as before; a throw or any other answer as `unreached`.
+   */
+  reachRouteEffect?(request: AutomationStudioRouteReachRequest): AutomationStudioRouteReachAnswer | Promise<AutomationStudioRouteReachAnswer>;
 };
 
 /** What the host is asked about an act whose answer was lost: the node that made it, the attempt, and how long it may wait. */

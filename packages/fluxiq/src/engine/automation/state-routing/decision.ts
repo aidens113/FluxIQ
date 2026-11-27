@@ -18,6 +18,8 @@ import { automationStudioStateReopenOpener } from "./reopen.ts";
 import { automationStudioRepeatedLastingAct } from "./repeated-act.ts";
 import { automationStudioUnboundSkippedValue } from "./skipped-values.ts";
 import { AUTOMATION_STUDIO_STATE_NOT_ARISEN_CODE, automationStudioStateNotArisenWayOn } from "./not-arisen.ts";
+import { automationStudioNotArisenRouteOwed, automationStudioUnreachedRouteSaid } from "./route-owed.ts";
+import type { AutomationStudioRouteReached } from "../../../runtime/automation-host/contracts/index.ts";
 
 /**
  * What a run does with a step that cannot run.
@@ -29,7 +31,9 @@ import { AUTOMATION_STUDIO_STATE_NOT_ARISEN_CODE, automationStudioStateNotArisen
  *   attempt and the chat say (r4b F4).
  *   Also a step whose state never arose because its way in did not act this
  *   run (`./not-arisen.ts`), which does no lasting act: its `code` is
- *   `executor.state.not_arisen`, the code its skipped attempt carries.
+ *   `executor.state.not_arisen`, the code its skipped attempt carries. When
+ *   that step's recorded effect moved the page to another route, the host
+ *   brought the page there first, and `reached` says how (`./route-owed.ts`).
  * - `routed`: the page already shows the failing step's own effect, and the
  *   run goes on along its success `edge` to `node` (record outcome
  *   `effect_holds`); or the page matched `node`'s recorded pre-state, and the
@@ -44,7 +48,7 @@ import { AUTOMATION_STUDIO_STATE_NOT_ARISEN_CODE, automationStudioStateNotArisen
  * A record names every way on a safety guard refused (`refused`), when one was.
  */
 export type AutomationStudioStateRouteDecision =
-  | { kind: "declared"; edge: AutomationStudioFlowEdge; notDone?: true; code?: string }
+  | { kind: "declared"; edge: AutomationStudioFlowEdge; notDone?: true; code?: string; reached?: AutomationStudioRouteReached }
   | { kind: "routed"; node: AutomationStudioFlowNode; direction: AutomationStudioStateRouteDirection; closeness?: number; edge?: AutomationStudioFlowEdge; reopen?: true; record: AutomationStudioGuardedStateRoutingRecord }
   | { kind: "stopped"; message: string; record: AutomationStudioGuardedStateRoutingRecord }
   | { kind: "none"; record: AutomationStudioGuardedStateRoutingRecord };
@@ -70,7 +74,9 @@ export type AutomationStudioStateRouteInput = {
  * 1. The Flow's declared way on past a sometimes-present step, unobserved.
  *    Then, unobserved too, the way on past a step whose state never arose
  *    because its way in did not act this run (`./not-arisen.ts`), when it does
- *    no lasting act.
+ *    no lasting act -- once the page is on the route that step's recorded
+ *    effect went to, when it went to one (`./route-owed.ts`). A route the host
+ *    could not reach leaves the step to the cases below.
  * 2. Every other node with a recorded pre-state is a candidate. With none, and
  *    no effect of the failing step's own to test, nothing is observed.
  * 3. The page is observed, once. When the failing step recorded its effect and
@@ -109,9 +115,17 @@ export async function decideAutomationStudioStateRoute(input: AutomationStudioSt
   if (!automationStudioTargetFailureProvesUnacted(input.attempt)) return none("no_match", 0, "The target failure does not prove the act was unacted; its effect must be settled before routing.");
   const declared = automationStudioAbsentStepSkip(input.flow, input.node, input.attempt);
   if (declared) return doesAct(input) ? await declaredAct(input, declared) : { kind: "declared", edge: declared };
-  // A step written on the page an act brings about, after that act did not run (`./not-arisen.ts`).
+  // A step written on the page an act brings about, after that act did not run (`./not-arisen.ts`),
+  // passed over once the page is where the step went, when it went somewhere (`./route-owed.ts`, t1083).
   const notArisen = targetNotFound(input) ? automationStudioStateNotArisenWayOn({ flow: input.flow, node: input.node, attempts: input.attempts }) : undefined;
-  if (notArisen && !followOnLasts(input)) return { kind: "declared", edge: notArisen, code: AUTOMATION_STUDIO_STATE_NOT_ARISEN_CODE };
+  const owed = notArisen && !followOnLasts(input) ? await automationStudioNotArisenRouteOwed({ node: input.node, hostRuntime: input.options.hostRuntime, ...flowScope(input.flow), signal: input.options.signal }) : undefined;
+  if (notArisen && owed && owed !== "unreached") return { kind: "declared", edge: notArisen, code: AUTOMATION_STUDIO_STATE_NOT_ARISEN_CODE, ...(owed === "stays" ? {} : { reached: owed }) };
+  const decided = await routeByPage(input);
+  return owed === "unreached" ? automationStudioUnreachedRouteSaid(decided, input.node.id) : decided;
+}
+
+/** Steps 2 to 5 of the decision (above): the page observed once, and compared with the failing step's effect and every other step's pre-state. */
+async function routeByPage(input: AutomationStudioStateRouteInput): Promise<AutomationStudioStateRouteDecision> {
   const candidates = input.flow.nodes
     .filter((node) => node.id !== input.node.id)
     .map((node) => ({ node, signatures: automationStudioNodeRouteSignatures(node) }))
