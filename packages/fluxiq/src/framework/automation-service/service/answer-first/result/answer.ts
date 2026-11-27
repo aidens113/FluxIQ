@@ -1,6 +1,8 @@
 // The answer's rows: every row the output step's current version kept, page by page in place order, after the rows of
-// the steps appending to the same output before it (`./output-group.ts`), holding the contract's columns (I5) and
-// nothing else.
+// the steps appending to the same output before it and of the other result reads of its list, step by step in draft
+// order (`./output-group.ts`), holding the contract's columns (I5) and nothing else. Steps that read one list with
+// different extractions hold different fields; each named column is placed by name over the fields of them all, and the
+// feed's data layer dedupes the rows (`../result-feed/feed.ts`, `rows`).
 //
 // Run-mwb2kkv5: the read kept `link`, which the request never named, and the answer kept it too. Where the contract is
 // sure and every named column is one the read holds (by its name, or the same name written with other case, spaces,

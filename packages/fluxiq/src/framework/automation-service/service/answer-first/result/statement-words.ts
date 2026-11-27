@@ -33,6 +33,19 @@ export const automationStudioAnswerFirstResultWords = {
   look(look: AutomationStudioAnswerFirstResultRead): string {
     return `call ${look.source} (${automationStudioAnswerFirstResultWords.rows(look.kept.length)})`;
   },
+  /**
+   * How the answer's steps (`./output-group.ts`, the output step last) are one answer: "each appending to one record
+   * output", "each a result read of the same list", or both. `undefined` for one step or none.
+   */
+  joined(group: readonly AutomationStudioAnswerFirstResultStep[]): string | undefined {
+    const output = group.at(-1);
+    if (!output || group.length < 2) return undefined;
+    const datasetId = output.writes?.append ? output.writes.datasetId : undefined;
+    if (datasetId !== undefined && group.every((step) => step.writes?.datasetId === datasetId)) return "each appending to one record output";
+    const listKey = output.reads.listKey;
+    if (listKey !== undefined && group.every((step) => step.reads.listKey === listKey)) return "each a result read of the same list";
+    return "each appending to one record output or a result read of the same list";
+  },
   /** The rows the step's current version holds. */
   keptCount(step: AutomationStudioAnswerFirstResultStep): number {
     return step.pages.reduce((sum, page) => sum + page.kept.length, 0);

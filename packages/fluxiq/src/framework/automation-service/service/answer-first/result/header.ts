@@ -44,16 +44,22 @@ export function automationStudioAnswerFirstResultHeader(ledger: AutomationStudio
 
 function resultWords(ledger: AutomationStudioAnswerFirstResultLedger, group: readonly AutomationStudioAnswerFirstResultStep[], answerRows?: number, answerColumns?: readonly string[]): string {
   const kept = group.reduce((sum, step) => sum + words.keptCount(step), 0);
-  // Steps appending to one output (`./output-group.ts`) are each named with their own pages, then the rows in all.
+  // Steps appending to one output, and the result reads of one list (`./output-group.ts`), are each named with their
+  // own pages, then how they are one answer and the rows in all.
   const parts = group.length === 1
     ? [stepWords(group[0]!, answerRows ?? kept)]
-    : [...group.map((step, index) => `${index ? "then " : ""}${stepWords(step, words.keptCount(step))}`), `each appending to one record output, ${words.rows(answerRows ?? kept)} in all`];
+    : [...group.map((step, index) => `${index ? "then " : ""}${stepWords(step, words.keptCount(step))}`), `${words.joined(group)}, ${words.rows(answerRows ?? kept)} in all`];
   if (answerRows !== undefined && answerRows !== kept) parts.push(`${words.rows(kept)} kept before result processing`);
   const columns = columnWords(ledger, group, answerColumns);
   if (columns) parts.push(columns);
-  for (const step of group) {
-    const coverage = coverageWords(step, ledger.pagers);
-    if (coverage) parts.push(group.length === 1 ? coverage : `${words.step(step)}: ${coverage}`);
+  // The result reads of the output step's list say what was read of it once, from the pages of them all (`./coverage.ts`).
+  const listKey = group.at(-1)!.reads.listKey;
+  const together = listKey === undefined ? [] : group.filter((step) => step.reads.listKey === listKey);
+  const covered = together.length > 1 ? [together, ...group.filter((step) => !together.includes(step))] : group;
+  for (const read of covered) {
+    const steps = Array.isArray(read) ? read : [read as AutomationStudioAnswerFirstResultStep];
+    const coverage = coverageWords(steps, ledger.pagers);
+    if (coverage) parts.push(steps.length === group.length ? coverage : `${steps.map((step) => words.step(step)).join(", ")}: ${coverage}`);
   }
   return parts.join("; ");
 }
@@ -82,8 +88,10 @@ function columnWords(ledger: AutomationStudioAnswerFirstResultLedger, group: rea
   return `columns asked: ${contract.columns.join(", ")}, but the rows hold ${held.length ? held.join(", ") : "no column"} (no ${lacking.join(" or ")})`;
 }
 
-function coverageWords(output: AutomationStudioAnswerFirstResultStep, pagers: AutomationStudioAnswerFirstResultLedger["pagers"]): string | undefined {
-  const coverage = automationStudioAnswerFirstResultCoverage(output);
+/** What the steps (one, or the result reads of one list) have read of their list, in words. */
+function coverageWords(steps: readonly AutomationStudioAnswerFirstResultStep[], pagers: AutomationStudioAnswerFirstResultLedger["pagers"]): string | undefined {
+  const output = steps.at(-1)!;
+  const coverage = automationStudioAnswerFirstResultCoverage(steps);
   if (!coverage.last) return undefined;
   const parts: string[] = [];
   if (coverage.first === "not read") parts.push("the first place is not among them");

@@ -1,6 +1,6 @@
 // One case per operation of the result ledger (design (b)1's table), each through the port the wiring will feed.
 import { describe, expect, it } from "vitest";
-import { automationStudioAnswerFirstResultPlaceLabels, automationStudioAnswerFirstResultPort } from "../index.ts";
+import { automationStudioAnswerFirstResultPlaceLabels, automationStudioAnswerFirstResultPort, type AutomationStudioAnswerFirstResultVersion } from "../index.ts";
 import { AISLE, ENDED, FREE, look, MOVED, page, seats, seatVersion, SEAT_LIST, SEAT_REQUEST, step } from "./support.ts";
 
 const labels = (port: ReturnType<typeof automationStudioAnswerFirstResultPort>) => automationStudioAnswerFirstResultPlaceLabels(port.outputStep()?.pages ?? []);
@@ -52,11 +52,17 @@ describe("a new step reading the same list the same way (D2)", () => {
   });
 
   it("does not fold a step whose list was not said, or whose list, conditions or fields differ", () => {
-    for (const other of [seatVersion([FREE], null), seatVersion([FREE], "list:another"), seatVersion([FREE, AISLE]), seatVersion([FREE], SEAT_LIST, { seat: "seat label" })]) {
-      const port = automationStudioAnswerFirstResultPort(SEAT_REQUEST);
-      port.record([page(step(9), "c1", seats("A", 12), { place: "page=1" }), page(step(12), "c2", seats("B", 5), { place: "page=2", version: other })]);
-      expect(port.ledger().steps).toHaveLength(2);
-      expect(port.answer().rows).toHaveLength(5);
+    // A step of the same list read another way is not folded, but where both read at one address it is a result read of
+    // that list's state, and the answer holds both steps' rows (t1091, `../output-group.ts`). With no address recorded,
+    // and for a step of another list or one whose list was not said, the output step holds its own.
+    const cases: [AutomationStudioAnswerFirstResultVersion, number][] = [[seatVersion([FREE], null), 5], [seatVersion([FREE], "list:another"), 5], [seatVersion([FREE, AISLE]), 17], [seatVersion([FREE], SEAT_LIST, { seat: "seat label" }), 17]];
+    for (const [other, rows] of cases) {
+      for (const where of [undefined, "https://cinema.example/seats?show=7"]) {
+        const port = automationStudioAnswerFirstResultPort(SEAT_REQUEST);
+        port.record([page(step(9), "c1", seats("A", 12), { place: "page=1", ...(where ? { where } : {}) }), page(step(12), "c2", seats("B", 5), { place: "page=2", version: other, ...(where ? { where } : {}) })]);
+        expect(port.ledger().steps).toHaveLength(2);
+        expect(port.answer().rows).toHaveLength(where ? rows : 5);
+      }
     }
   });
 
