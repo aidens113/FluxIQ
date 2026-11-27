@@ -397,8 +397,13 @@ export function automationStudioLlmLoopDetector(options: {
       near.set(at(key, page), { runs: (earlier?.runs ?? 0) + 1, toolId, look: earlier?.look ?? answered === true, answer: earlier?.answer, guarded: earlier?.guarded ?? [], callId: earlier?.callId });
     },
     amendmentRepeats(key, draftBefore) {
-      const leads = amendmentsLed.get(automationStudioLlmLoopDigest([key, draftBefore ?? ""]));
-      return leads === undefined ? undefined : { pattern: "same_fix", repeats: record.known(leads)?.times ?? 2, toolIds: ["amend_draft"], unchanged: ["draft"] };
+      const asked = automationStudioLlmLoopDigest([key, draftBefore ?? ""]);
+      const leads = amendmentsLed.get(asked);
+      if (leads !== undefined) return { pattern: "same_fix", repeats: record.known(leads)?.times ?? 2, toolIds: ["amend_draft"], unchanged: ["draft"] };
+      // An edit that changed nothing on this very draft twice (`amended`, below) changes nothing a third time: the draft
+      // is the same, so it is refused before it runs once the ladder stands, as a repeated call is (t1078).
+      const nothing = record.known(asked);
+      return nothing?.outcome === "changed_nothing" && nothing.times >= 2 ? { pattern: "same_fix", repeats: nothing.times, toolIds: ["amend_draft"], unchanged: ["draft"] } : undefined;
     },
     amended(amendment) {
       const { key, draftBefore, draftAfter, applied, undone, changes } = amendment;

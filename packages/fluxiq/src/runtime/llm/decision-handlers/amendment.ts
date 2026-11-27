@@ -361,7 +361,8 @@ function refusedUnrun(
     { draftChanged: false }
   );
   const inARow = context.repeats.refusedAgain(iteration);
-  const stop = automationStudioLlmEvidenceRepeatStop(context, inARow);
+  // An edit refused unrun is an amendment repeated, said as that and not as a refused call (t1078), as the ran path says it.
+  const stop = automationStudioLlmEvidenceRepeatStop(context, inARow, AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENTS_REFUSED_CODE);
   if (stop?.kind === "stalled") {
     if (context.input.propagateDecisionErrors) throw stop.error;
     return { kind: "end", result: failure(context.draftSteps, "llm_evidence_loop.repeat_without_progress", context.trace, context.accounting) };

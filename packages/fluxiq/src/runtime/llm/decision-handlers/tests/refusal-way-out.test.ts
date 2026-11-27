@@ -153,7 +153,7 @@ describe("W2: every amendment refusal names its way out, in the draft's numbers"
     expect(told({ step: 2, reason: "run_by_the_loop" })).toContain(`{"step": 2, "change": "rerun", "input": {`);
     expect(told({ step: 2, reason: "no_such_position" })).toContain(`{"step": 2, "change": "repeat", "over": <the listing>, "through": <the span's last step>}`);
     expect(told({ step: 2, reason: "no_step_before_it" })).toContain(`{"step": 2, "change": "repeat", "over": <the listing>}`);
-    expect(told({ step: 2, reason: "already_so" })).toContain("Step 2 already says that");
+    expect(told({ step: 2, reason: "already_so" })).toContain("already holds exactly what that amendment says for step 2");
     expect(told({ step: 3, reason: "already_in_flow" })).toContain("Run what the Flow still lacks, or complete");
     expect(told({ step: 5, reason: "already_out" })).toContain(`{"step": 5, "change": "keep"}`);
     expect(told({ step: 3, reason: "did_not_work" })).toContain(`{"step": 3, "change": "rerun", "input": {`);

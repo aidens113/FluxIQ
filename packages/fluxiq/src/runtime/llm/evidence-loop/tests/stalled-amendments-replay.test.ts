@@ -126,15 +126,19 @@ describe("replaying the recorded amendment stall", () => {
   it("says so when an amendment is refused for the same reason it was refused for before", async () => {
     // everything-store round 2 #16-#19: the same refused amendment, four decisions in a row.
     const same = amend({ step: 2, change: "keep" }, { step: 3, change: "keep" });
-    const { shown } = await replay([...opening, same, same, same]);
+    const { result, shown } = await replay([...opening, same, same, same]);
     const first = amendmentCheck(shown, 5)!;
-    const again = amendmentCheck(shown, 7)!;
+    const again = amendmentCheck(shown, 6)!;
     expect((first.refused as JsonObject[]).some((refusal) => refusal.repeated)).toBe(false);
     expect(again.refused).toEqual([
       { step: 2, reason: "did_not_work", repeated: true, next: expect.stringContaining("Step 2 did not work") },
-      { step: 3, reason: "already_in_flow", repeated: true, next: expect.stringContaining("Step 3 is in the Flow already") }
+      // The first keep of step 3 was applied (it made the step the model's), so this is the first time it is refused.
+      { step: 3, reason: "already_in_flow", next: expect.stringContaining("Step 3 is in the Flow already") }
     ]);
     expect(again.instruction).toMatch(/refused for the same reason before/);
+    // The third is an edit that changed nothing twice on this draft, so it is refused before it runs (t1078).
+    expect(amendmentCheck(shown, 7)).toBeUndefined();
+    expect(result.trace.filter((row) => row.decision === "amend_draft")[2]).toMatchObject({ resultCode: "llm_evidence_loop.repeat_refused", amended: 0 });
   });
 
   it("counts a toggle that puts the draft back as it stood as no progress, and steers off it", async () => {
@@ -224,5 +228,24 @@ describe("the draft signature an undone edit is told by", () => {
     memory.after(4, [step(1), step(2, { acts: ["a3"] })]);
     memory.before(5, [step(1), step(2, { acts: ["a3"] })]);
     expect(memory.after(5, [step(1, { acts: ["a3"] }), step(2)])).toBe(4);
+  });
+});
+
+// A refusal is marked repeated only when an earlier decision gave it (t1078). Live run `run-mwyt3s48-b943f344`, 0023:
+// `repeat step 7 while step 8` and `result step 7` were both refused already so in one decision, and the second was marked
+// repeated and told "refused for the same reason before" though the model had never been told anything about step 7.
+describe("the refusals an amendment decision was given", () => {
+  const alreadySo = { step: 7, reason: "already_so", nodeId: "web.output.dom-extract_list" };
+
+  it("are all new in the decision that first gives them, however alike", () => {
+    const memory = automationStudioLlmEvidenceAmendmentMemory();
+    expect(memory.refusals([alreadySo, alreadySo]).map((refusal) => refusal.repeated)).toEqual([undefined, undefined]);
+  });
+
+  it("are all repeated in the decision after, and in every one since", () => {
+    const memory = automationStudioLlmEvidenceAmendmentMemory();
+    memory.refusals([alreadySo, alreadySo]);
+    expect(memory.refusals([alreadySo, alreadySo]).map((refusal) => refusal.repeated)).toEqual([true, true]);
+    expect(memory.refusals([alreadySo]).map((refusal) => refusal.repeated)).toEqual([true]);
   });
 });
