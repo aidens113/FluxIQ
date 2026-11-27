@@ -6,8 +6,8 @@ import { validateAutomationStudioLlmTaskRequest } from "../provider-task/index.t
 import type { AutomationStudioLlmSecretReference } from "../deepseek/index.ts";
 import { automationStudioAnthropicMessage, automationStudioAnthropicPaidFailure } from "./messages.ts";
 import { automationStudioAnthropicRequest, type AutomationStudioAnthropicPreparedRequest } from "./request.ts";
-import { AUTOMATION_STUDIO_ANTHROPIC_JUDGE_ANSWER_TOOL, automationStudioAnthropicDeciderPrefix, automationStudioAnthropicJudgeCallAnswered, automationStudioAnthropicJudgeContinuation, automationStudioAnthropicReadReply, type AutomationStudioAnthropicDeciderPrefix, type AutomationStudioAnthropicJudgeOpenTurn, type AutomationStudioAnthropicToolCall } from "../../models/providers/anthropic/index.ts";
-import { automationStudioLlmDecisionFromToolCall, automationStudioLlmTaskMessages, type AutomationStudioLlmDecisionTools } from "../provider-task/index.ts";
+import { AUTOMATION_STUDIO_ANTHROPIC_JUDGE_ANSWER_TOOL, automationStudioAnthropicAnswerNullsAbsent, automationStudioAnthropicDeciderPrefix, automationStudioAnthropicJudgeCallAnswered, automationStudioAnthropicJudgeContinuation, automationStudioAnthropicReadReply, type AutomationStudioAnthropicDeciderPrefix, type AutomationStudioAnthropicJudgeOpenTurn, type AutomationStudioAnthropicToolCall } from "../../models/providers/anthropic/index.ts";
+import { automationStudioLlmDecisionFromToolCall, automationStudioLlmTaskMessages, automationStudioLlmTaskOutputSchema, type AutomationStudioLlmDecisionTools } from "../provider-task/index.ts";
 import { automationStudioLlmAttemptKey } from "../role-routing/index.ts";
 import { estimateAutomationStudioAnthropicCostUsd } from "./pricing.ts";
 import { estimateAutomationStudioLlmTokensFromUtf8Bytes } from "../../models/limits/index.ts";
@@ -213,5 +213,6 @@ function parseJudgeAnswer(call: AutomationStudioAnthropicToolCall, usage: Automa
   const contentChars = JSON.stringify(call.input ?? null).length;
   if (call.name !== AUTOMATION_STUDIO_ANTHROPIC_JUDGE_ANSWER_TOOL.name) throw automationStudioAnthropicPaidFailure("llm.provider_output_invalid", usage, { case: "tool_call_not_answer", finishReason: "tool_use", contentChars, usage });
   if (usage.inputTokens! > request.tokenLimits.maxInputTokens || usage.totalTokens! > request.tokenLimits.maxTotalTokens) throw automationStudioAnthropicPaidFailure("llm.provider_usage_limit_exceeded", usage);
-  return automationStudioAnthropicTaskAnswer(call.input, request, usage, contentChars, "tool_use");
+  // A `null` the strict answer lets through for an optional member is the member left out (`../../models/providers/anthropic/strict-answer-schema.ts`, t1087); nothing else is read differently.
+  return automationStudioAnthropicTaskAnswer(automationStudioAnthropicAnswerNullsAbsent(call.input, automationStudioLlmTaskOutputSchema(request)), request, usage, contentChars, "tool_use");
 }
