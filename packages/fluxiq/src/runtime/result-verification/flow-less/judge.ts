@@ -48,6 +48,12 @@
 // for unread evidence, the calls it was (`./held-yes.ts`). And where the result's own contract names the table asked for, a
 // yes must stand on rows that are that table (`askedColumns`, `../cited-yes/records-yes.ts`).
 //
+// **A judge on its own request is shown the pages (t1084).** A judge that continues no decider -- every replay's, since a
+// replay makes no decision -- reads no decider's conversation, and the trail it is shown leaves the pages out. Live run
+// `run-mwz29d50-c3a32a9c` attempt 3: its replay judge could not see the rating and pickup line the item was chosen by,
+// answered unknown, and a Flow that had worked was repaired. So each form it is sent carries the page views kept beside
+// the summary, last (`../judge-evidence/page-views.ts`). A judge continuing the decider is sent what it was before.
+//
 // **A yes that also advises a change is a yes.** Its `patchNeeded` is about a Flow, and
 // there is none here to change.
 //
@@ -83,6 +89,7 @@ import {
 import { AUTOMATION_STUDIO_RESULT_SIZE_REFUSED, automationStudioResultSummaryFormForWindow } from "../run-trail/index.ts";
 import type { AutomationStudioFlowLessJudgeInput, AutomationStudioFlowLessJudgement, AutomationStudioFlowLessSummary } from "./types.ts";
 import { automationStudioJudgeEvidenceCapability } from "../../llm/harness-options/index.ts";
+import { AutomationStudioJudgePageViews } from "../judge-evidence/index.ts";
 
 /** Where the call's intervention says it came from, and what gives it the Flow-less schema (`../../llm/verification-checked/reply-required.ts`). */
 const SOURCE = AUTOMATION_STUDIO_LLM_FLOW_LESS_JUDGE_SOURCE;
@@ -135,9 +142,13 @@ export async function automationStudioFlowLessJudge(input: AutomationStudioFlowL
   // A yes whose citations Core refutes is asked again, within this one check and its one deadline, until the refuted citations repeat.
   const tried = new Set<string>();
   let sentNow: AutomationStudioRunResultSummary = sent;
+  // A judge on its own request reads no decider's conversation, so each form carries the pages the result rests on, last
+  // (`../judge-evidence/page-views.ts`, t1084): a replay's judge, which no decision precedes, could not otherwise see what
+  // the page showed. A judge continuing the decider reads them there, and its request is as it was.
+  const pageViews = input.continuesDecider === true ? undefined : AutomationStudioJudgePageViews.of(sent);
   // The forms of what is sent, whole first, and the one to send: the first that fits the judging model's window by a
   // conservative measure (`../run-trail/window.ts`, t965). A refusal for size steps down one form, and is never read as not judged while one is left.
-  const formsOf = (summary: AutomationStudioRunResultSummary) => [summary, ...automationStudioFlowLessSummaryFitting(summary)];
+  const formsOf = (summary: AutomationStudioRunResultSummary) => [summary, ...automationStudioFlowLessSummaryFitting(summary)].map((each) => AutomationStudioJudgePageViews.shown(each, pageViews));
   let forms = formsOf(sentNow);
   let form = automationStudioResultSummaryFormForWindow(forms, input.tokenLimits, Buffer.byteLength(input.summary.instructions, "utf8"));
   // This check's unreadable replies: the note and the request its next ask carries (header, t979).
