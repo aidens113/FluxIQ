@@ -46,6 +46,15 @@
 // A reply that still is not that call is answered in this same conversation and the verdict asked for again there
 // (`./judge-call-answered.ts`), never handed to a judge that sees less. A judge of its own (no decider held, or a decider
 // in the JSON-text transport whose reply could not be read) still gets its native format.
+//
+// **The pages stay with a judge of its own (t1089).** Every judge's message carries the page views the result rests on,
+// last (`resultSummary.pageViews`, `../../../result-verification/judge-evidence/page-views.ts`), whether or not it was
+// marked as continuing: whether it really continues is decided in the adapter, after the request was built. So a judge
+// sent on its own request after all -- no decider held for its attempt, a continuation past the window, a decider that
+// offered no answer tool -- is sent the request it was built as, pages included, and a judge that continues has them left
+// out of its message here: it reads the pages in the decider's conversation above, the current view's tail included
+// (t1065). A continuation asked again after a reply that never arrived (`continues_the_decider_again`) keeps them, as it
+// did before (`../../../result-verification/unreadable-asks/note.ts`, t1067).
 
 import { AUTOMATION_STUDIO_ANTHROPIC_JUDGE_ANSWER_TOOL } from "./judge-answer-tool.ts";
 
@@ -136,10 +145,15 @@ function referenceKey(callId: string, group: string): string {
  * It is not read from the evidence: a decider's evidence also holds Core's own entries (where the page's state routed
  * the run, notes to the attempt, described nodes, a forward run), which are this attempt's history and no call of its
  * trail (run-mwohvt8n-a57cad8a, 0021/0022: five route-state entries, and every judge of the run fell back).
+ *
+ * `pages`: keep the judge's page views (`resultSummary.pageViews`) in its message; they are left out otherwise (header).
  */
-export function automationStudioAnthropicJudgeContinuation(prefix: AutomationStudioAnthropicDeciderPrefix, judgeSystem: string, judgeUser: string): Record<string, unknown> {
-  const payload = JSON.parse(judgeUser) as { context?: { resultSummary?: { trail?: { entries?: TrailEntry[]; [key: string]: unknown } } } };
-  const trail = payload.context?.resultSummary?.trail;
+export function automationStudioAnthropicJudgeContinuation(prefix: AutomationStudioAnthropicDeciderPrefix, judgeSystem: string, judgeUser: string, options: { pages?: boolean } = {}): Record<string, unknown> {
+  const payload = JSON.parse(judgeUser) as { context?: { resultSummary?: { trail?: { entries?: TrailEntry[]; [key: string]: unknown }; pageViews?: unknown } } };
+  const summary = payload.context?.resultSummary;
+  // The page views a judge on its own request is sent, left out where it continues the decider (header, t1089).
+  if (options.pages !== true && summary !== undefined) delete summary.pageViews;
+  const trail = summary?.trail;
   if (trail && Array.isArray(trail.entries)) {
     const held = new Set(prefix.callIds);
     const shown = trail.entries.filter((entry) => typeof entry.callId !== "string" || !held.has(entry.callId));
