@@ -4,13 +4,14 @@
 // 0023, repeating through Next page 7), and its replay stopped at step 3, so 6 never ran. The model pressed Auction (9)
 // and read the same list (11): the draft left 11 out `not_the_result` and 9 out `dead_end`.
 import { describe, expect, it } from "vitest";
+import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../step.ts";
 import { automationStudioFlowDraftCompose } from "../compose.ts";
 
 type Step = AutomationStudioFlowDraftStep;
 
 const LIST = "list:auctions";
-const node = (actionId: string, parameters: Record<string, unknown>) => ({ node: actionId, parameters, consequences: [] });
+const node = (actionId: string, parameters: JsonObject) => ({ node: actionId, parameters, consequences: [] });
 const press = (position: number, handle: string, before: string, after: string, rest: Partial<Step> = {}): Step => ({
   position, id: `d${position}`, iteration: position, actionId: "web.output.dom-click", toolId: "core.run_node", input: node("web.output.dom-click", { target: { handle } }),
   effect: "mutate", effectApplied: true, proposes: true, stateBefore: before, stateAfter: after, disposition: "kept", ...rest

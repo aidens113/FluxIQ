@@ -282,7 +282,7 @@ describe("a read step that leaves the draft and comes back", () => {
     p.feed.draft([step({ input: other })]);
     expect(p.feed.rows().totalRows).toBe(0);
     expect(p.feed.port.header()).toContain("has read no page yet");
-    expect(p.feed.evidence().working.map((entry) => entry.source)).toEqual(["read4"]);
+    expect(p.feed.evidence().working.map((entry) => ("source" in entry ? entry.source : undefined))).toEqual(["read4"]);
   });
 
   it("comes back with no page another step has read again since, at the same address of the same list (t1074)", async () => {
