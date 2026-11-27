@@ -98,11 +98,11 @@ describe("routing that would leave an illegal repeat body", () => {
     const amendments: AutomationStudioFlowDraftAmendment[] = [{ step: 3, change: "repeat", while: 3 }, { step: 2, change: "repeat", while: 3 }];
     if (first) amendments.reverse();
     expect(applyAutomationStudioFlowDraftAmendments(steps, amendments)).toEqual({
-      applied: 0, refused: [{ step: 2, reason: "span_holds_routing", repeat: 2, through: 3, routed: 3 }]
+      applied: 1, refused: [{ step: 2, reason: "span_holds_routing", repeat: 2, through: 3, routed: 3 }]
     });
-    // All or none (t1068): the valid half is not applied either.
+    // The refused repeat is taken back and told; the repeat on another step stands (t1069).
     expect(steps[1]!.routing).toBeUndefined();
-    expect(steps[2]!.routing).toBeUndefined();
+    expect(steps[2]!.routing).toBeDefined();
     assembles(steps);
   });
 

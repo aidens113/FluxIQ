@@ -1,4 +1,4 @@
-// One decision's edits apply all or none (t1068). Live run `run-mwy3btww-31d32e0d` (0144) sent
+// One step's edits in a decision apply all or none (t1068, per step since t1069). Live run `run-mwy3btww-31d32e0d` (0144) sent
 // `36 keep` and `36 result`: the keep was refused as a second copy of step 13, the result was
 // applied anyway, and the result went from 2 rows to 0.
 import { describe, expect, it } from "vitest";
@@ -32,14 +32,14 @@ describe("an amendment that is refused in part", () => {
     expect(steps[1]!.result).toBeUndefined();
   });
 
-  it("applies a good edit that stands beside a refused one nowhere", () => {
+  it("applies an edit on another step beside a refused one (atomic per step, t1069)", () => {
     const steps = draft();
     steps.push(read(40, "kept"));
-    const before = structuredClone(steps);
     const report = applyAutomationStudioFlowDraftAmendments(steps, [{ step: 40, change: "drop" }, { step: 36, change: "keep" }]);
-    expect(report.applied).toBe(0);
+    expect(report.applied).toBe(1);
     expect(report.refused.map((entry) => entry.reason)).toEqual(["second_copy"]);
-    expect(steps).toEqual(before);
+    expect(steps[2]!.disposition).toBe("dropped");
+    expect(steps[1]!.disposition).toBe("taken");
   });
 
   it("refuses a result edit alone on a copy", () => {
