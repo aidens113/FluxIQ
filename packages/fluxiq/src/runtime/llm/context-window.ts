@@ -2,9 +2,10 @@
 // Declared view members become references on their first appearance; appending
 // evidence never rewrites an earlier historical result. Raw evidence stays whole
 // for recall and execution. No entry, view member or row is ranked or truncated.
-// A declared page channel is the exception for its own member: the page is shown
-// in place, whole once and as changes after, and a page's earlier copies become
-// references when it is shown whole again (`./view-channel/projection.ts`, D7).
+// A declared page channel's member is projected by its own rule: each result
+// keeps a short note of its page's delivery, fixed when it is first shown, and
+// the deliveries -- whole once, changes after -- sit in one trailing
+// `core.page_window` entry (`./view-channel/projection.ts`, t1080).
 import type { JsonObject, JsonValue } from "../../core/index.ts";
 import { automationStudioLlmEvidenceCurrentView } from "./decision-context/index.ts";
 import { AUTOMATION_STUDIO_LLM_PASSING_NOTE_TOOL_IDS } from "./evidence-moves/index.ts";
@@ -19,7 +20,8 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_SUPERSEDED_KEY = "supersededBy";
 /**
  * Keep every historical result in call order, projecting declared view members
  * immediately into immutable references to their own original call and group.
- * Append one full current-view tail, then the existing current-Flow tail.
+ * Append the page window when a page channel holds pages, then one full
+ * current-view tail, then the existing current-Flow tail.
  * Undeclared data is kept whole and in its original property order; without
  * declared view keys no client view is invented. The input is never mutated.
  *
@@ -34,14 +36,15 @@ export function automationStudioLlmEvidenceContextWindow(
   observedStateKeys: readonly string[] = [],
   pageChannel?: AutomationStudioLlmPageChannel
 ): AutomationStudioLlmEvidenceEntry[] {
-  // With a page channel each result's page is shown in place as its delivery (D3): whole once, changes after.
-  // Its member then takes no view reference and no current-view tail; every other view key keeps both.
-  const paged = pageChannel ? automationStudioLlmPageChannelProjection(records, pageChannel) : records;
+  // With a page channel each result carries a note of its page's delivery (D3) and the deliveries sit in one
+  // trailing entry, so no earlier result is rewritten when a page is replaced or let go (t1080). Its member then
+  // takes no view reference and no current-view tail; every other view key keeps both.
+  const paged: { history: readonly AutomationStudioLlmEvidenceEntry[]; window?: AutomationStudioLlmEvidenceEntry } = pageChannel ? automationStudioLlmPageChannelProjection(records, pageChannel) : { history: records };
   const keys = pageChannel ? observedStateKeys.filter((key) => key !== pageChannel.member) : observedStateKeys;
-  const { history, currentView } = automationStudioLlmEvidenceCurrentView(paged, keys);
+  const { history, currentView } = automationStudioLlmEvidenceCurrentView(paged.history, keys);
   const current = currentFlow(records);
   const passing = (entry: AutomationStudioLlmEvidenceEntry): boolean => AUTOMATION_STUDIO_LLM_PASSING_NOTE_TOOL_IDS.has(entry.toolId);
-  return [...history.filter((entry) => !passing(entry)), ...history.filter(passing), ...(currentView ? [currentView] : []), ...(current ? [current] : [])];
+  return [...history.filter((entry) => !passing(entry)), ...history.filter(passing), ...(paged.window ? [paged.window] : []), ...(currentView ? [currentView] : []), ...(current ? [current] : [])];
 }
 
 /** The tool whose results carry a candidate's Flow script (`flow-bootstrap/candidate/authoring-loop.ts`). */

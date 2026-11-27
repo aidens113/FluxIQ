@@ -3915,7 +3915,8 @@ the check already wrote those keys.
 Nothing is withdrawn (page-diff D4, D11, t1036). An ignored redirect used to take
 looks away for a decision, narrowing the offered tools and `core.run_node`'s `node`
 enum; every such change moved the provider's cached prefix. There is no look command
-now: each result carries its page (`./evidence-window.md`, "The page channel"), and
+now: each result names its page delivery, and the pages ride in `core.page_window`
+(`./evidence-window.md`, "The page channel"), and
 a tool not on offer is refused by name rather than removed from the schema. The
 loop still strips `actionInputKey` (the input that picks an action, `node` on
 `core.run_node`) from every tool it offers: it is the loop's own bookkeeping and is
