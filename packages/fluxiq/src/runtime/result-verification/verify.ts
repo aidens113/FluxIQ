@@ -224,7 +224,7 @@ import { emitAutomationStudioActivity } from "../automation-activity/index.ts";
 import { AUTOMATION_STUDIO_RESULT_SIZE_REFUSED, automationStudioResultSummaryFormForWindow, automationStudioResultTrailFitting } from "./run-trail/index.ts";
 import { automationStudioLlmUnreadableReplySaid } from "../models/failures/index.ts";
 import { automationStudioJudgeEvidenceCapability, type AutomationStudioJudgeEvidenceProjector } from "../llm/harness-options/index.ts";
-import { automationStudioResultJudgeSummary } from "./judge-evidence/index.ts";
+import { AutomationStudioJudgePageViews, automationStudioResultJudgeSummary } from "./judge-evidence/index.ts";
 import {
   automationStudioResultSummaryWithUnreadableNote,
   automationStudioResultUnreadableAsks,
@@ -516,7 +516,10 @@ async function askOnce(
   // The same unreadable reply again is a loop, steered in the same note (`./unreadable-asks/steer.ts`, t1000).
   const noted = unreadable.said;
   const steer = unreadable.steer;
-  const forms = [judged, ...automationStudioResultTrailFitting(judged)].map((each) => (noted === undefined ? each : automationStudioResultSummaryWithUnreadableNote(each, noted, steer)));
+  // This judge never continues a decider's conversation, so every form carries the pages the result rests on, last, as a
+  // Flow-less judge on its own request does (`./judge-evidence/page-views.ts`, t1084).
+  const pageViews = AutomationStudioJudgePageViews.of(judged);
+  const forms = [judged, ...automationStudioResultTrailFitting(judged)].map((each) => AutomationStudioJudgePageViews.shown(each, pageViews)).map((each) => (noted === undefined ? each : automationStudioResultSummaryWithUnreadableNote(each, noted, steer)));
   let form = automationStudioResultSummaryFormForWindow(forms, request.tokenLimits, Buffer.byteLength(request.instructions.map((instruction) => instruction.body).join(" "), "utf8"));
   const harnessed = () => runAutomationStudioLlmHarness({
     taskKind: "loop_verification",
