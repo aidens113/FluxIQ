@@ -11,7 +11,13 @@
 //
 //   1. `replaced` (a rerun took its place), `look` (it only looked), `did_not_work` (it failed or
 //      changed nothing);
-//   2. reads that are not the result's -- `not_the_result` (`./result-reads.ts`);
+//   2. reads that are not the result's -- `not_the_result` (`./result-reads.ts`). A read the model named
+//      the result in an earlier attempt, carried into this one (`isRuled`), holds the result against no
+//      read of the same list made here: the later read is the model's latest word on that list, as rule 5
+//      says. Live run `run-mwz2jc4w-0c207128` (attempt 2, 0051-0058): the saved Flow's read, named the
+//      result in attempt 1 and not reached this attempt, stayed the draft's result, so each of four fresh
+//      reads of the same list came out `not_the_result`, while the result's header said no read step was
+//      the result at all;
 //   3. `undone`: a press a later press of the same control undid (`./undone.ts`);
 //   4. `dead_end`: a detour that came back to where it started with nothing lasting (`./dead-end.ts`),
 //      and a press after the result's last read that nothing lasting follows (`./after-result.ts`);
@@ -77,7 +83,7 @@ export function automationStudioFlowDraftCompose(input: {
     const reason = leftOutBeforeReads(step);
     automationStudioFlowDraftMark(step, reason ?? "in");
   }
-  const resultReads = markReads(ordered, framework, input);
+  const resultReads = markReads(ordered, framework, input, ruled);
   automationStudioFlowDraftComposeUndone(ordered, framework);
   automationStudioFlowDraftMarkDeadEnds(ordered, framework, resultReads);
   automationStudioFlowDraftMarkAfterResult(ordered, framework, resultReads);
@@ -95,13 +101,15 @@ function leftOutBeforeReads(step: Step): "replaced" | "look" | "did_not_work" | 
 }
 
 /** Rule 2: marks the framework's reads that are not the result's, and returns the reads that are. */
-function markReads(ordered: readonly Step[], framework: ReadonlySet<Step>, tests: Pick<Parameters<typeof automationStudioFlowDraftCompose>[0], "isAskedTable" | "isRead" | "isResult">): Set<Step> {
+function markReads(ordered: readonly Step[], framework: ReadonlySet<Step>, tests: Pick<Parameters<typeof automationStudioFlowDraftCompose>[0], "isAskedTable" | "isRead" | "isResult">, ruled: ((step: Step) => boolean) | undefined): Set<Step> {
   const { isAskedTable, isRead, isResult } = tests;
   const reads = ordered.filter((step) => framework.has(step) && step.disposition === "kept" && step.effect === "observe" && (isRead?.(step) ?? true));
   // The model's own pick, even on a step it ruled on, outranks the framework's choice.
   const named = ordered.filter((step) => !framework.has(step) && step.result === true && step.disposition === "kept");
+  // Except a pick carried from an earlier attempt over a read of the same list made here (header, rule 2).
+  const holding = named.filter((step) => !(ruled?.(step) === true && step.reads !== undefined && reads.some((read) => read.reads === step.reads)));
   const chosen = isResult ? reads.filter((step) => step.result === true || isResult(step)) : automationStudioFlowDraftResultReads(reads, isAskedTable);
-  const results = new Set(named.length > 0 ? reads.filter((step) => step.result === true) : chosen);
+  const results = new Set(holding.length > 0 ? reads.filter((step) => step.result === true) : chosen);
   for (const step of named) results.add(step);
   for (const step of reads) {
     if (!results.has(step)) automationStudioFlowDraftMark(step, "not_the_result");

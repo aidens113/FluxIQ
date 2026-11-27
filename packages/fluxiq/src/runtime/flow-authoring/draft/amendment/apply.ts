@@ -6,10 +6,10 @@ import { automationStudioFlowDraftKeepOpeners } from "../opener.ts";
 import { automationStudioFlowDraftDropReversals } from "../reversal.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_ROUTE_PLACE_VALUE, automationStudioFlowDraftSetRoutePlaces } from "../route-places/index.ts";
 import { automationStudioFlowDraftRepeatIsWhile } from "../routing.ts";
-import { automationStudioFlowDraftSecondCopy } from "../second-copy.ts";
 import { automationStudioFlowDraftStepIsAction, automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../step.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID } from "./act-id.ts";
 import { automationStudioFlowDraftAmendmentBind } from "./bind.ts";
+import { automationStudioFlowDraftCopyAfterDrops } from "./copy-after-drops.ts";
 import { automationStudioFlowDraftEditPutInNamed, automationStudioFlowDraftEditResult, automationStudioFlowDraftStepLeftOut } from "./edits/index.ts";
 import { automationStudioFlowDraftAmendmentRoute } from "./route.ts";
 import { automationStudioFlowDraftHoldRepeatSteps, automationStudioFlowDraftSettleSpanRouting, automationStudioFlowDraftSpanChangeRefusal, type AutomationStudioFlowDraftWrittenRouting } from "./repeat-hold.ts";
@@ -168,6 +168,14 @@ function applyEach(
   const appliedOn = new Map<AutomationStudioFlowDraftStep, number>();
   const refusedOn = new Map<AutomationStudioFlowDraftStep, AutomationStudioFlowDraftAmendmentRefusal[]>();
   const struck = new Set<AutomationStudioFlowDraftStep>();
+  // The steps this decision drops: a step it keeps, or makes the result, copies only what stands after them (`./copy-after-drops.ts`, t1085).
+  const dropping = new Set<AutomationStudioFlowDraftStep>();
+  for (const each of amendments) {
+    const dropped = each.change === "drop" && !skip.has(each.step) ? shown.step(each.step) : undefined;
+    if (dropped) dropping.add(dropped);
+  }
+  // A keep or result that stands only because a step it copies is dropped by this decision: refused at the end if that drop did not stand.
+  const leaning: { step: AutomationStudioFlowDraftStep; named: number; on: AutomationStudioFlowDraftStep }[] = [];
   for (const amendment of amendments) {
     if (skip.has(amendment.step)) continue;
     const appliedBefore = applied;
@@ -229,12 +237,13 @@ function applyEach(
     }
     // `result`: this read holds the answer (`./edits/result.ts`).
     if (amendment.change === "result") {
-      // Checked like `keep`: a step that is a second copy of one in the Flow cannot be the result (t1068).
-      const copy = step.disposition !== "kept" ? automationStudioFlowDraftSecondCopy(steps, step) : undefined;
-      if (copy) {
-        refused.push({ step: amendment.step, reason: "second_copy", copyOf: shown.number(copy) });
+      // Checked like `keep`: a step that is a second copy of one in the Flow cannot be the result (t1068), once the decision's drops stand.
+      const copied = step.disposition !== "kept" ? automationStudioFlowDraftCopyAfterDrops(steps, step, dropping) : {};
+      if (copied.copy) {
+        refused.push({ step: amendment.step, reason: "second_copy", copyOf: shown.number(copied.copy) });
         continue;
       }
+      if (copied.leansOn) leaning.push({ step, named: amendment.step, on: copied.leansOn });
       const ruled = automationStudioFlowDraftEditResult(step);
       if (ruled.ok) applied += 1;
       else refused.push({ step: amendment.step, reason: ruled.reason });
@@ -258,12 +267,14 @@ function applyEach(
     // press on the same page, or a read of the same list with nothing changed in
     // between -- is refused whole, before anything about it changes: the Flow
     // does each step once. Live run `run-murwdp4f-35f976d2` (C9, 0046) put a
-    // second press of step 18's 3-Pack link from the same page in (`../second-copy.ts`).
-    const copyOf = amendment.change === "keep" && step.disposition !== "kept" ? automationStudioFlowDraftSecondCopy(steps, step) : undefined;
-    if (copyOf) {
-      refused.push({ step: amendment.step, reason: "second_copy", copyOf: shown.number(copyOf) });
+    // second press of step 18's 3-Pack link from the same page in (`../second-copy.ts`). Judged on the steps as they
+    // stand once this decision's drops do (`./copy-after-drops.ts`, run `run-mwz29d50-c3a32a9c` 0058, t1085).
+    const keepCopy = amendment.change === "keep" && step.disposition !== "kept" ? automationStudioFlowDraftCopyAfterDrops(steps, step, dropping) : {};
+    if (keepCopy.copy) {
+      refused.push({ step: amendment.step, reason: "second_copy", copyOf: shown.number(keepCopy.copy) });
       continue;
     }
+    if (keepCopy.leansOn) leaning.push({ step, named: amendment.step, on: keepCopy.leansOn });
     // An act is something done: a step that only reads -- a listing a Flow may
     // hold, as much as the look above -- does none, whatever the model calls it.
     // Live run 36 (`run-muq3uozx-3153564b`, E11) named act a1 on a withdrawn
@@ -442,6 +453,13 @@ function applyEach(
     if (!step || struck.has(step) || (appliedOn.get(step) ?? 0) < 2) continue;
     struck.add(step);
     refusedOn.set(step, [...(refusedOn.get(step) ?? []), ...guardRefused.filter((each) => each.step === entry.step)]);
+  }
+  // A keep or result that stood on this decision's drop of the step it copies, where a guard put that drop back: the step
+  // is a second copy after all, so its edits are struck and the decision applied again without them (t1085, t1069).
+  for (const { step, named, on } of leaning) {
+    if (struck.has(step) || on.disposition !== "kept" || (step.disposition !== "kept" && step.result !== true)) continue;
+    struck.add(step);
+    refusedOn.set(step, [...(refusedOn.get(step) ?? []), { step: named, reason: "second_copy", copyOf: shown.number(on) }]);
   }
   // A kept half whose partner really left the Flow -- dropped, and not put back
   // by the strand check -- would flip the control the wrong way (live run

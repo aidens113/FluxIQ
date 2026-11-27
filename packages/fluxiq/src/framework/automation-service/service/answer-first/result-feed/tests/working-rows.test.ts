@@ -8,6 +8,7 @@ import { createAutomationStudioAnthropicProvider } from "../../../../../../runti
 import { decisionCall, decisionRequest, toolUseStreamReply, useFixtureModel } from "../../../../../../runtime/llm/anthropic/tests/fixtures.ts";
 import { automationStudioFlowLessJudge, automationStudioResultEvidenceFromBatches, type AutomationStudioResultEvidenceBundle, type AutomationStudioResultEvidencePage } from "../../../../../../runtime/result-verification/index.ts";
 import { readAutomationStudioAnswerFirstResultEvidence } from "../index.ts";
+import type { AutomationStudioFlowDraftStep } from "../../../../../../runtime/flow-authoring/draft/index.ts";
 import { resultPipeline } from "./pipeline.ts";
 
 const RESULTS = "list.030ae6af307e2d1035ef1f5d969b";
@@ -241,3 +242,66 @@ describe("a read that left the draft, asked of a continuing judge again in its o
 function leftSummary(p: Awaited<ReturnType<typeof leftRun>>) {
   return { instructions: LEFT_INSTRUCTION, rows: { totalRows: 2, truncated: false, columns: [{ id: "item", label: "item" }, { id: "quantity", label: "quantity" }, { id: "price", label: "price" }], rows: LEFT_CART_ROWS }, acts: [], resultEvidence: p.feed.evidence() };
 }
+
+// Which read is the result, said the same by the draft and the header, and the rows a read took kept with it when it
+// comes back into the draft (`../returned-pages.ts`, `../feed.ts`, t1085). Live run `run-mwz2jc4w-0c207128`, attempt 2:
+// the read of 0057 became step 14 with page=1's 26 rows; the draft left it out, then 0058 kept it and made it the
+// result, and the header said "step 14 (v1: no conditions), 0 rows: v1 has read no page yet".
+
+const K3_LIST = "list.1232f628ba511b1e44ec00602195";
+const K3_WHERE = "http://127.0.0.1:52619/scenarios/auction-marketplace/sch/i.html?_nkw=kestrel+35&LH_Auction=1";
+const K3_PAGE_ONE: JsonObject[] = Array.from({ length: 26 }, (_, index) => ({ title: `Lot ${index + 1}`, price: `£${index + 10}.00` }));
+
+async function k3Read14() {
+  const p = resultPipeline("List the auctions and give columns title and price.");
+  const value = p.input();
+  await p.read({ source: "read4", value, position: 14, listKey: K3_LIST, place: "page=1", rows: K3_PAGE_ONE, extra: { url: K3_WHERE } });
+  const step = (rest: Partial<AutomationStudioFlowDraftStep>): AutomationStudioFlowDraftStep => ({ ...p.step("read4", value, 14), ...rest });
+  return { p, value, step };
+}
+
+describe("a read step that leaves the draft and comes back", () => {
+  it("run mwz2jc4w 0058: step 14 kept and made the result holds page=1's 26 rows again", async () => {
+    const { p, step } = await k3Read14();
+    expect(p.feed.rows().totalRows).toBe(26);
+    p.feed.draft([step({ disposition: "taken", drafted: "not_the_result" })]);
+    expect(p.feed.rows().totalRows).toBe(0);
+    expect(p.feed.slot()).toContain("step 14 left the draft");
+    p.feed.draft([step({ result: true })]);
+    expect(p.feed.rows().totalRows).toBe(26);
+    expect(p.feed.port.header()).toContain("step 14 (v1: no conditions), 26 rows over 1 page: page=1 (26)");
+    expect(p.feed.port.header()).not.toContain("has read no page yet");
+    expect(p.feed.evidence().pages.map((page) => page.source)).toEqual(["read4"]);
+    expect(p.feed.evidence().working).toEqual([]);
+  });
+
+  it("comes back with no page where it now reads another way: those rows were read under the old reading", async () => {
+    const { p, step, value } = await k3Read14();
+    p.feed.draft([step({ disposition: "taken" })]);
+    const other = { ...value, parameters: { read: { fields: { title: ".name", price: ".price", bids: ".bids" }, where: [] } } };
+    p.feed.draft([step({ input: other })]);
+    expect(p.feed.rows().totalRows).toBe(0);
+    expect(p.feed.port.header()).toContain("has read no page yet");
+    expect(p.feed.evidence().working.map((entry) => entry.source)).toEqual(["read4"]);
+  });
+
+  it("comes back with no page another step has read again since, at the same address of the same list (t1074)", async () => {
+    const { p, step, value } = await k3Read14();
+    p.feed.draft([step({ disposition: "taken" })]);
+    await p.read({ source: "read5", value, position: 15, listKey: K3_LIST, place: "page=1", rows: K3_PAGE_ONE.slice(0, 20), extra: { url: K3_WHERE } });
+    p.feed.draft([step({}), { ...p.step("read5", value, 15) }]);
+    expect(p.feed.evidence().pages.map((page) => page.source)).toEqual(["read5"]);
+  });
+});
+
+describe("a result read carried from an earlier attempt that has read nothing here", () => {
+  it("run mwz2jc4w 0052: the header names it, as the draft does, and not 'no read step'", () => {
+    const p = resultPipeline("List the auctions and give columns title and price.");
+    const carried = { ...p.step("d6", { node: "web.output.dom-extract_list", parameters: { extractList: { handle: "extraction.1" } } }, 6), result: true as const };
+    p.feed.draft([carried]);
+    const header = p.feed.port.header();
+    expect(header).not.toContain("the draft has no read step yet");
+    expect(header).toContain("step 6");
+    expect(header).toContain("has read no page yet");
+  });
+});
