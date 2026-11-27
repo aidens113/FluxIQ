@@ -33,6 +33,7 @@
 // saying nothing of records, or whose own words say it could not judge
 // (`unjudged-words.ts`, lane C `run-mw4bxkn9-004e2667`) is refused toward where
 // the site now shows what was asked.
+export { AUTOMATION_STUDIO_RESULT_CITATION_RULE } from "./citation-rule.ts";
 export { automationStudioResultCitationRefuted } from "./citation-refuted.ts";
 export { automationStudioResultHeldRowCount, automationStudioResultRecordsYesRefuted } from "./records-yes.ts";
 export { automationStudioResultYesSaysUnjudged } from "./unjudged-words.ts";

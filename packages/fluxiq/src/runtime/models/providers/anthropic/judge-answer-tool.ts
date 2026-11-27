@@ -15,14 +15,16 @@
 // alone and checked against the judge's unchanged schema as every answer is (`../../../llm/anthropic/task-answer.ts`).
 // Generic words: no site, task or answer.
 //
-// **Last, so the decision tools keep their strictness.** Strict schemas share one budget per request (24 optional
+// **Last, and strict (t1087).** Strict schemas share one budget per request (24 optional
 // parameters, `./grammar.ts`), taken in the order offered (`./decision-tools-wire.ts`). Measured on that run's deciders
 // (0032, 0059, 0129): their six strict tools use 23 of the 24, and this tool's schema, without its open `metadata` bag,
-// would need 12. Offered first it would turn decision tools non-strict on every decision, so it goes last and is sent
-// non-strict; an answer that does not fit is answered in the judge's conversation with where it parted from the schema.
+// would need 12 as the judge wrote it, so it was sent non-strict, and live run `run-mwz2jc4w-0c207128` (0088) sent `diagnosis` as a
+// JSON string. It is now reshaped to cost no optional parameter (`./strict-answer-schema.ts`) and goes last and strict, so the tools
+// that came first keep theirs; the answer is still read against the judge's unchanged schema and checked there. An answer that does
+// not fit is answered in the judge's conversation with where it parted from the schema.
 
 /** The answer tool's name and description; its input schema is the judge's outputSchema, given where the tool is offered. */
 export const AUTOMATION_STUDIO_ANTHROPIC_JUDGE_ANSWER_TOOL = Object.freeze({
   name: "core_check_answer",
-  description: "The answer of the check of an attempt's result, and only that: called once by the check, when a system message asks it to judge, with its verdict, the JSON object its outputSchema asks for, as the whole input. It is never a decision: called while deciding, it is refused and does nothing."
+  description: "The answer of the check of an attempt's result, and only that: called once by the check, when a system message asks it to judge, with its verdict, the JSON object its outputSchema asks for, as the whole input. Every member is written: one that does not apply is null. It is never a decision: called while deciding, it is refused and does nothing."
 });

@@ -1,0 +1,197 @@
+{
+  "0038": {
+    "kind": "diagnosis",
+    "diagnosis": {
+      "answersRequest": "yes",
+      "expected": "Auctions only for the original Kestrel 35 camera (not 35S, Mark II, 350, accessories, parts/not working, or current bid at or above £150 using the site's pound estimate), each once, soonest-ending first, with title, price, bids and postage as shown.",
+      "observed": "10 rows across both auction-filtered pages (paging ended), sorted ascending by end time. Each row is a Kestrel 35 camera, none for parts, all under £150 by listed or approx. pound price, with Buy it now auctions included and fixed-price items excluded.",
+      "changed": "No lasting acts were asked for. Rows were read from both pages and filtered by declared processing.",
+      "stillAchievable": "yes",
+      "deterministicRecoveryPossible": "yes",
+      "defects": [],
+      "checked": [
+        {
+          "row": "Kestrel 35 Rangefinder Camera (ends Mon 21 Sep 15:35)",
+          "column": "price",
+          "value": "£64.00"
+        },
+        {
+          "row": "KESTREL 35 45mm f/2.8 Voss-Anastigmat — film tested, new seals",
+          "column": "price",
+          "value": "EUR 109,00"
+        },
+        {
+          "row": "Kestrel 35 rangefinder camera body + original leather case",
+          "column": "bids",
+          "value": "4 bids"
+        },
+        {
+          "row": "Kestrel 35 — CLA'd 2025, shutter accurate, lovely example",
+          "column": "price",
+          "value": "US $189.00"
+        },
+        {
+          "row": "Kestrel 35 Kamera Messsucher 45mm 2.8 — sehr gut",
+          "column": "postage",
+          "value": "+EUR 19,90 postage"
+        },
+        {
+          "row": "Kestrel 35 rangefinder — collection only, Sheffield",
+          "column": "postage",
+          "value": "Collection in person"
+        }
+      ],
+      "answerRecords": {
+        "asked": true,
+        "siteShows": 10
+      },
+      "explorationNeeded": false,
+      "patchNeeded": false
+    },
+    "summary": "The 10 kept rows meet every condition (original Kestrel 35 cameras, auctions only, none for parts, under £150 by the site's estimate, soonest-ending first), and both pages were read."
+  },
+  "0087": {
+    "kind": "diagnosis",
+    "diagnosis": {
+      "answersRequest": "yes",
+      "expected": "Auctions for the original Kestrel 35 camera only (no 35S, Mk II, 350, accessories, parts/not-working), current bid under £150 using the site's £ estimate, Buy-it-now-with-bids auctions included, deduplicated, soonest-ending first, columns title, price, bids, postage.",
+      "observed": "10 rows, all original Kestrel 35 cameras, each under £150 (by £ price or approx. £ estimate), none parts or accessories, in ascending end-time order, with both result pages read and paging ended. The sponsored duplicate of the £96 listing was kept once.",
+      "changed": "Nothing was changed on the site; this was a read-only collection.",
+      "stillAchievable": "yes",
+      "deterministicRecoveryPossible": "yes",
+      "defects": [],
+      "checked": [
+        {
+          "row": "Kestrel 35 Rangefinder Camera (ends Mon 21 Sep 15:35)",
+          "column": "price",
+          "value": "£64.00"
+        },
+        {
+          "row": "KESTREL 35 45mm f/2.8 Voss-Anastigmat — film tested, new seals",
+          "column": "price",
+          "value": "EUR 109,00"
+        },
+        {
+          "row": "Kestrel 35 Rangefinder Camera (ends Mon 21 Sep 23:05)",
+          "column": "price",
+          "value": "£41.00"
+        },
+        {
+          "row": "Kestrel 35 rangefinder camera body + original leather case",
+          "column": "price",
+          "value": "£96.00"
+        },
+        {
+          "row": "Kestrel 35 — CLA'd 2025, shutter accurate, lovely example",
+          "column": "price",
+          "value": "US $189.00"
+        },
+        {
+          "row": "Vintage Kestrel 35 35mm film camera, working, light meter dead",
+          "column": "price",
+          "value": "£27.50"
+        },
+        {
+          "row": "Kestrel 35 rangefinder, 45mm f/2.8 lens, film tested",
+          "column": "price",
+          "value": "£78.00"
+        },
+        {
+          "row": "Kestrel 35 camera with flash & manual — refurbished by seller",
+          "column": "price",
+          "value": "£122.00"
+        },
+        {
+          "row": "Kestrel 35 Kamera Messsucher 45mm 2.8 — sehr gut",
+          "column": "price",
+          "value": "EUR 169,00"
+        },
+        {
+          "row": "Kestrel 35 rangefinder — collection only, Sheffield",
+          "column": "price",
+          "value": "£35.00"
+        }
+      ],
+      "answerRecords": {
+        "asked": true,
+        "siteShows": 10
+      },
+      "explorationNeeded": false,
+      "patchNeeded": false
+    },
+    "summary": "The 10 kept rows are original Kestrel 35 camera auctions under £150, soonest-ending first, both pages read, with the excluded models, accessories, parts listings and fixed-price listings left out.",
+    "confidence": 0.9
+  },
+  "0088": {
+    "kind": "diagnosis",
+    "diagnosis": "{\"answersRequest\":\"yes\",\"expected\":\"Each Kestrel 35 camera auction (not 35S, Mk II, 350, accessories, parts or not working), current bid under £150 using the site's pound estimate for foreign listings, once each, soonest-ending first, with columns title, price, bids and postage as the search result shows them.\",\"observed\":\"10 rows in ascending end-time order. Accessories, 35S, Mk II and 350 listings, parts and not-working listings, and the four listings at or over £150 are all excluded. The sponsored duplicate of the body + leather case auction appears once. Foreign prices are kept in their own currency. Both pages of the 42 auction results were read, and paging ended after page 2.\",\"changed\":\"Nothing was changed on the site beyond searching and applying the Auction filter.\",\"stillAchievable\":\"yes\",\"deterministicRecoveryPossible\":\"yes\",\"defects\":[],\"checked\":[{\"row\":\"1 (Kestrel 35 Rangefinder Camera, ends Mon 21 Sep 15:35)\",\"column\":\"price\",\"value\":\"£64.00\"},{\"row\":\"KESTREL 35 45mm f/2.8 Voss-Anastigmat — film tested, new seals\",\"column\":\"price\",\"value\":\"EUR 109,00\"},{\"row\":\"3 (Kestrel 35 Rangefinder Camera, ends Mon 21 Sep 23:05)\",\"column\":\"price\",\"value\":\"£41.00\"},{\"row\":\"Kestrel 35 rangefinder camera body + original leather case\",\"column\":\"price\",\"value\":\"£96.00\"},{\"row\":\"Kestrel 35 — CLA'd 2025, shutter accurate, lovely example\",\"column\":\"price\",\"value\":\"US $189.00\"},{\"row\":\"Vintage Kestrel 35 35mm film camera, working, light meter dead\",\"column\":\"price\",\"value\":\"£27.50\"},{\"row\":\"Kestrel 35 rangefinder, 45mm f/2.8 lens, film tested\",\"column\":\"price\",\"value\":\"£78.00\"},{\"row\":\"Kestrel 35 camera with flash & manual — refurbished by seller\",\"column\":\"price\",\"value\":\"£122.00\"},{\"row\":\"Kestrel 35 Kamera Messsucher 45mm 2.8 — sehr gut\",\"column\":\"price\",\"value\":\"EUR 169,00\"},{\"row\":\"Kestrel 35 rangefinder — collection only, Sheffield\",\"column\":\"price\",\"value\":\"£35.00\"}]",
+    "answerRecords": {
+      "asked": true,
+      "siteShows": 10
+    },
+    "explorationNeeded": false,
+    "patchNeeded": false,
+    "confidence": 0.85,
+    "summary": "The 10 kept rows are original Kestrel 35 camera auctions under £150, deduplicated and sorted soonest-ending first, with all accessories, other models and parts listings excluded, and both result pages read."
+  },
+  "0090": {
+    "kind": "diagnosis",
+    "diagnosis": {
+      "answersRequest": "yes",
+      "expected": "Each Kestrel 35 camera auction (not 35S, Mk II, 350, accessories, parts or not working), current bid under £150 using the site's pound estimate for foreign listings, once each, soonest-ending first, with columns title, price, bids and postage as the search result shows them.",
+      "observed": "10 rows in ascending end-time order. Accessories, 35S, Mk II and 350 listings, parts and not-working listings, and the four listings at or over £150 are all excluded. The sponsored duplicate of the body plus leather case auction appears once. Foreign prices are kept in their own currency. Both pages of the 42 auction results were read and paging ended after page 2.",
+      "changed": "Nothing was changed on the site beyond searching and applying the Auction filter.",
+      "stillAchievable": "yes",
+      "deterministicRecoveryPossible": "yes",
+      "defects": [],
+      "checked": [
+        {
+          "row": "KESTREL 35 45mm f/2.8 Voss-Anastigmat — film tested, new seals",
+          "column": "price",
+          "value": "EUR 109,00"
+        },
+        {
+          "row": "Kestrel 35 rangefinder camera body + original leather case",
+          "column": "price",
+          "value": "£96.00"
+        },
+        {
+          "row": "Kestrel 35 — CLA'd 2025, shutter accurate, lovely example",
+          "column": "price",
+          "value": "US $189.00"
+        },
+        {
+          "row": "Vintage Kestrel 35 35mm film camera, working, light meter dead",
+          "column": "price",
+          "value": "£27.50"
+        },
+        {
+          "row": "Kestrel 35 rangefinder, 45mm f/2.8 lens, film tested",
+          "column": "price",
+          "value": "£78.00"
+        },
+        {
+          "row": "Kestrel 35 camera with flash & manual — refurbished by seller",
+          "column": "price",
+          "value": "£122.00"
+        },
+        {
+          "row": "Kestrel 35 Kamera Messsucher 45mm 2.8 — sehr gut",
+          "column": "price",
+          "value": "EUR 169,00"
+        },
+        {
+          "row": "Kestrel 35 rangefinder — collection only, Sheffield",
+          "column": "price",
+          "value": "£35.00"
+        }
+      ],
+      "answerRecords": {
+        "asked": true,
+        "siteShows": 10
+      }
+    },
+    "confidence": 0.85,
+    "summary": "The 10 kept rows are original Kestrel 35 camera auctions under £150, deduplicated and sorted soonest-ending first, with accessories, other models and parts listings excluded and both result pages read."
+  }
+}
