@@ -141,6 +141,7 @@ export function automationStudioAnswerFirstRunActGate(options: AutomationStudioG
   /** The node the engine last asked about under `settle`, the only node a Core node's output can be read by (`./settling.ts`, `sawNode`). */
   let running: AutomationStudioFlowNode | undefined;
   const gated: AutomationStudioGraphExecutionOptions = { ...options };
+  gated.stepClaimsAct = claimsAct;
   const native = options.nativeNodeExecutor;
   const dispatcher = options.effectDispatcher;
   if (settling) gated.resolveActionEffect = (node, parameterValues) => {

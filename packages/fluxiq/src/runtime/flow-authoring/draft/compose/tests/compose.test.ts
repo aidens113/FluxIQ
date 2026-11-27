@@ -277,3 +277,33 @@ describe("a step the caller says is the model's word", () => {
     expect(out.map((each) => [each.drafted, each.disposition])).toEqual([["in", "kept"], ["dead_end", "taken"], ["repeat", "taken"]]);
   });
 });
+
+// F5 (`run-mwyfoz8o-507c92f6`): the model moved the result to a later paging loop and never dropped the first one.
+describe("a paging loop a later loop over the same list replaced", () => {
+  const modelsLoop = (first: number, list: string, result: boolean): Step[] => [
+    read(first, { reads: list, disposition: "kept", ...(result ? { result: true as const } : {}), routing: { kind: "repeat", through: `p${first + 1}`, while: `p${first + 1}` } }),
+    step(first + 1, { input: { target: `next${first}` }, disposition: "kept" })
+  ];
+
+  it("is left out, so the Flow pages the list once", () => {
+    const out = automationStudioFlowDraftCompose({ steps: [...modelsLoop(1, "L", false), ...modelsLoop(3, "L", true)] });
+    expect(out.map((each) => [each.drafted, each.disposition])).toEqual([["repeat", "taken"], ["repeat", "taken"], [undefined, "kept"], [undefined, "kept"]]);
+  });
+
+  it("settles, and leaves a loop over another list in", () => {
+    const steps = [...modelsLoop(1, "M", false), ...modelsLoop(3, "L", true)];
+    const once = automationStudioFlowDraftCompose({ steps });
+    expect(once.map((each) => each.disposition)).toEqual(["kept", "kept", "kept", "kept"]);
+    const replaced = automationStudioFlowDraftCompose({ steps: [...modelsLoop(1, "L", false), ...modelsLoop(3, "L", true)] });
+    expect(automationStudioFlowDraftCompose({ steps: replaced })).toEqual(replaced);
+  });
+
+  it("stays out of a loop a step outside it still names, and out of one the model keeps again", () => {
+    const named = [...modelsLoop(1, "L", false), ...modelsLoop(3, "L", true), step(5, { disposition: "kept", routing: { kind: "only_if", check: "p1" } })];
+    expect(automationStudioFlowDraftCompose({ steps: named }).map((each) => each.disposition)).toEqual(["kept", "kept", "kept", "kept", "kept"]);
+    const dropped = automationStudioFlowDraftCompose({ steps: [...modelsLoop(1, "L", false), ...modelsLoop(3, "L", true)] });
+    // The model's `keep` deletes `drafted` and says kept.
+    const kept = dropped.map((each) => (each.position <= 2 ? (({ drafted: _gone, ...rest }) => ({ ...rest, disposition: "kept" as const }))(each) : each));
+    expect(automationStudioFlowDraftCompose({ steps: kept }).map((each) => each.disposition)).toEqual(["kept", "kept", "kept", "kept"]);
+  });
+});

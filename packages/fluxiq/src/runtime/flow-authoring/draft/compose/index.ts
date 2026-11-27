@@ -10,4 +10,5 @@ export * from "./in-place.ts";
 export * from "./lasting.ts";
 export * from "./mark.ts";
 export * from "./result-reads.ts";
+export * from "./superseded-loop.ts";
 export * from "./undone.ts";
