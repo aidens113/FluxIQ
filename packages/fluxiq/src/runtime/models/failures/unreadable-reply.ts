@@ -62,7 +62,9 @@ const CASE_SAID: Readonly<Record<AutomationStudioLlmProviderReplyCase, string>> 
   tool_call_missing: "it called none of the offered tools: call exactly one",
   tool_call_several: "it called more than one tool: call exactly one",
   tool_call_unknown: "it called a tool by a name that was not offered: call one of the offered tools by its exact name",
-  tool_call_unexpected: "it called a tool where the answer asked for was a JSON object as text"
+  tool_call_unexpected: "it called a tool where the answer asked for was a JSON object as text",
+  tool_call_not_answer: "it called one of the decision tools, which do not run for the check: the check's answer is a call of core_check_answer, with the verdict as its input",
+  tool_call_check_only: "it called core_check_answer, which only the check of a result calls: decide by calling one of the decision tools"
 });
 
 /** The same, for the provider codes that carry no case of their own. */

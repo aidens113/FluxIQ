@@ -10,7 +10,8 @@
 // **The tool choice is `auto`, one call at most.** A choice that forces a call (`any`, `tool`) is a 400 on Claude
 // Sonnet 5.5 and Opus 5.5 (the tool-use pages, "Forcing tool use"). Haiku 5.5 accepts it, but a judge that continues
 // the decider's cached conversation (`./continuation.ts`) must send the decider's own tool choice -- changing it
-// invalidates the cached messages -- and a judge answers in text, which `any` would not allow. So every model gets
+// invalidates the cached messages -- and a judge answers by the check's answer tool, which these tools end with
+// (`./judge-answer-tool.ts`, t1065). So every model gets
 // `auto` with `disable_parallel_tool_use`, and the system prompt asks for exactly one call; a reply with none is a
 // paid, accounted failure (`./messages.ts`, `tool_call_missing`).
 //

@@ -162,8 +162,8 @@ describe("a Flow-less judge's check whose reply could not be read", () => {
 // format only to share its cache; the judge's own grammar is native (`../../../models/providers/anthropic/schema.ts`,
 // `jsonText: false`, `../../../llm/anthropic/tests/native-judge-schema.test.ts`). So after its first unreadable reply it
 // is asked standalone, in its own format, on the same model; every later retry stays on that model. The decider here is
-// sent in the JSON-text transport (`decisionTools: false`); a judge after a decider sent as tools answers in plain text
-// (D12, t1038: `../../../llm/anthropic/tests/native-decision.test.ts`).
+// sent in the JSON-text transport (`decisionTools: false`); a judge after a decider sent as tools answers by the check's
+// answer tool and stays in its conversation (t1065: `./judge-tool-call-answered.test.ts`).
 describe("a judge continuing the decider's conversation whose reply could not be read", () => {
   /** One Messages reply as JSON, the model's answer its text. */
   const reply = (text: string, model: string): Response => new Response(JSON.stringify({ id: "msg_t979", type: "message", role: "assistant", model, content: [{ type: "text", text }], stop_reason: "end_turn", usage: { input_tokens: 100, output_tokens: 30, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } }), { status: 200, headers: { "content-type": "application/json" } });
@@ -172,7 +172,7 @@ describe("a judge continuing the decider's conversation whose reply could not be
   type Wire = { model: string; messages: { role: string; content: string | { text: string }[] }[]; output_config?: { format?: { schema?: { properties?: Record<string, unknown> } } } };
   const text = (wire: Wire) => wire.messages.map((message) => (Array.isArray(message.content) ? message.content.map((block) => block.text).join("") : message.content)).join("\n");
 
-  it.each(["claude-haiku-5-5", "claude-sonnet-5-5"])("keeps %s after continuation fails and re-asks in its native standalone format", async (startingModel) => {
+  it.each(["claude-haiku-5-5", "claude-sonnet-5-5"])("keeps %s after a JSON-text continuation fails and re-asks in its native standalone format (t979; t1065 keeps a decider sent as tools in its conversation)", async (startingModel) => {
     const directory = mkdtempSync(join(tmpdir(), "t979-step-log-"));
     process.env.FLUXIQ_LLM_STEP_LOG_DIR = directory;
     try {
@@ -221,7 +221,7 @@ describe("a judge continuing the decider's conversation whose reply could not be
       expect(retried.messages).toHaveLength(1);
       expect(text(retried)).toContain("unreadableReply");
       const notes = readdirSync(directory).filter((folder) => folder.endsWith("-note")).map((folder) => (JSON.parse(readFileSync(join(directory, folder, "meta.json"), "utf8")) as { line: string }).line);
-      expect(notes.some((note) => note.includes("asked again on its own request, in its own answer format, on the same model"))).toBe(true);
+      expect(notes.some((note) => note.includes("on its own request where the decider answered in JSON text"))).toBe(true);
       // Both replies stopped part-way through the same way: the second is the same unreadable reply again, a loop for the
       // judge, caught and steered on the same model (t1000; before t1000 it was only asked again with a note).
       expect(notes.some((note) => note.includes("the same way as the reply before it, so it is caught as repeating itself and asked again on the same model"))).toBe(true);

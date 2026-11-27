@@ -1,5 +1,5 @@
 // How one judge's check is asked again while its replies cannot be read (t979): which failures those are, the note,
-// when a continuing judge goes standalone, that every retry keeps its model, and what its routing is told.
+// that a continuing judge stays in its conversation (t1065), that every retry keeps its model, and what its routing is told.
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioRunResultSummary } from "../../contracts/index.ts";
 import {
@@ -43,7 +43,7 @@ describe("one check's unreadable replies", () => {
   it("asks again after every unreadable reply and resets its note after a readable reply", () => {
     const asks = automationStudioResultUnreadableAsks({ continuesDecider: false });
     expect(asks.unread("a")).toBe("asked_again");
-    expect(asks).toMatchObject({ said: "a", inARow: 1, standalone: false });
+    expect(asks).toMatchObject({ said: "a", inARow: 1, inConversation: false });
     expect(asks.unread("b")).toBe("asked_again");
     expect(asks).toMatchObject({ said: "b", inARow: 2 });
     asks.readable();
@@ -54,16 +54,28 @@ describe("one check's unreadable replies", () => {
     expect(asks.total).toBe(4);
   });
 
-  it("sends a continuing judge standalone on its first, on the same model, and keeps asking standalone on that model", () => {
+  // t1065: run-mwy3btww-31d32e0d sent all 7 of its unreadable continuing judges standalone, to a judge that saw less.
+  it("keeps a continuing judge in its conversation after an unreadable reply, on the same model, for the rest of the check", () => {
     const asks = automationStudioResultUnreadableAsks({ continuesDecider: true });
-    expect(asks.unread("a")).toBe("standalone");
-    expect(asks).toMatchObject({ standalone: true });
-    expect(automationStudioResultUnreadableRouting(asks, true)).toEqual({ judgeStandaloneAfterUnreadable: true });
+    expect(asks.unread("a")).toBe("in_conversation");
+    expect(asks).toMatchObject({ inConversation: true });
+    expect(automationStudioResultUnreadableRouting(asks, true)).toEqual({ continuesDecider: true, judgeAnswersInConversation: true });
     expect(asks.unread("b")).toBe("asked_again");
-    expect(automationStudioResultUnreadableRouting(asks, true)).toEqual({ judgeStandaloneAfterUnreadable: true });
+    expect(automationStudioResultUnreadableRouting(asks, true)).toEqual({ continuesDecider: true, judgeAnswersInConversation: true });
     asks.readable();
-    // Standalone stays for the rest of the check.
-    expect(automationStudioResultUnreadableRouting(asks, true)).toEqual({ judgeStandaloneAfterUnreadable: true });
+    expect(automationStudioResultUnreadableRouting(asks, true)).toEqual({ continuesDecider: true, judgeAnswersInConversation: true });
+    // A judge of its own is never told to stay in a conversation it does not have.
+    const own = automationStudioResultUnreadableAsks({ continuesDecider: false });
+    own.unread("a");
+    expect(automationStudioResultUnreadableRouting(own, false)).toEqual({});
+  });
+
+  it("steers a continuing judge's repeat in its conversation, as every repeat is (t1000, t1065)", () => {
+    const asks = automationStudioResultUnreadableAsks({ continuesDecider: true });
+    expect(asks.unread("a")).toBe("in_conversation");
+    expect(asks.unread("a")).toBe("steered");
+    expect(asks.steer).toBe(automationStudioResultUnreadableSteer({ repeats: 2 }));
+    expect(automationStudioResultUnreadableRouting(asks, true)).toEqual({ continuesDecider: true, judgeAnswersInConversation: true });
   });
 
   it("catches the same unreadable reply again as a loop and steers it, with the count, until a different or readable reply (t1000)", () => {

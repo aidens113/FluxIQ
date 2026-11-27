@@ -52,7 +52,7 @@ function adapter() {
 const lastMark = (blocks: Block[]) => blocks.map((block) => block.cache_control !== undefined).lastIndexOf(true);
 
 describe("a judge continuing the decider's conversation", () => {
-  it("is the decider's request byte for byte up to its last cache mark, then the judging, and is read as the judge's answer", async () => {
+  it("is the decider's request byte for byte, its whole user turn included, then the judging, and is read as the judge's answer", async () => {
     const { provider, sent } = adapter();
     await provider.runTask(decider());
     const answer = await provider.runTask(judge(["call.1", "call.2", "call.3"]));
@@ -65,14 +65,15 @@ describe("a judge continuing the decider's conversation", () => {
     expect(JSON.stringify(judged.system)).toBe(JSON.stringify(decided.system));
     expect(JSON.stringify(judged.output_config)).toBe(JSON.stringify(decided.output_config));
     expect(Object.keys(judged)).toEqual(Object.keys(decided));
-    // The user turn's blocks, up to and including the decider's last mark, are the same bytes.
+    // The user turn's blocks are the decider's, every one, the tail after its last mark included (t1065), with the marks where it put them.
     const deciderBlocks = decided.messages[0]!.content as Block[];
     const judgeBlocks = judged.messages[0]!.content as Block[];
-    const mark = lastMark(deciderBlocks);
-    expect(mark).toBeGreaterThan(0);
-    expect(JSON.stringify(judgeBlocks.slice(0, mark + 1))).toBe(JSON.stringify(deciderBlocks.slice(0, mark + 1)));
+    expect(lastMark(deciderBlocks)).toBeGreaterThan(0);
+    expect(lastMark(deciderBlocks)).toBeLessThan(deciderBlocks.length - 1);
+    expect(JSON.stringify(judgeBlocks.slice(0, deciderBlocks.length))).toBe(JSON.stringify(deciderBlocks));
+    expect(judgeBlocks).toHaveLength(deciderBlocks.length + 1);
     // Then the judge's own message, with the calls the decider's evidence holds left out, and its instructions as a system message, last.
-    const appended = JSON.parse(judgeBlocks[mark + 1]!.text) as { expectedOutput: string; outputSchema: unknown; context: { resultSummary: { trail: { entries: { callId?: string }[]; shownAbove: string } } } };
+    const appended = JSON.parse(judgeBlocks[judgeBlocks.length - 1]!.text) as { expectedOutput: string; outputSchema: unknown; context: { resultSummary: { trail: { entries: { callId?: string }[]; shownAbove: string } } } };
     expect(appended.expectedOutput).toBe("diagnosis");
     expect(appended.outputSchema).toBeDefined();
     expect(appended.context.resultSummary.trail.entries).toEqual([{ n: 4, did: "catalogue.read", outcome: "succeeded" }]);
@@ -111,9 +112,9 @@ describe("a judge continuing the decider's conversation", () => {
       await provider.runTask(judge(["call.1"]));
       await provider.runTask(judge(["call.1"], true, "attempt.2")).catch(() => undefined);
       await provider.runTask(judge(["call.1"], false)).catch(() => undefined);
-      // t979: a continuing judge asked again on its own request after a reply it could not read.
-      const standalone = judge(["call.1"], false);
-      await provider.runTask({ ...standalone, metadata: { ...standalone.metadata, judgeStandaloneAfterUnreadable: true } }).catch(() => undefined);
+      // t979: after a decider in the JSON-text transport, a continuing judge asked again after a reply it could not read goes on its own request.
+      const again = judge(["call.1"]);
+      await provider.runTask({ ...again, metadata: { ...again.metadata, judgeAnswersInConversation: true } }).catch(() => undefined);
       const metas = readdirSync(directory).filter((folder) => folder.endsWith("-judge")).sort().map((folder) => JSON.parse(readFileSync(join(directory, folder, "meta.json"), "utf8")) as { continuation?: unknown });
       expect(metas.map((meta) => meta.continuation)).toEqual([
         { used: true, reason: "continues_the_decider" },

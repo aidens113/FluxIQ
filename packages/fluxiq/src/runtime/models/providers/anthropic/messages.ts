@@ -38,6 +38,12 @@ export type AutomationStudioAnthropicMessageInput<T> = {
    * place of `readAnswer`. The reply must hold exactly one `tool_use` block; text beside it is not the answer.
    */
   readToolCall?: ((call: AutomationStudioAnthropicToolCall, usage: AutomationStudioLlmUsageSummary) => T) | undefined;
+  /**
+   * Handed the reply's content blocks as they arrived, once the reply has passed the credential check and before it is
+   * read, so a caller whose reply then cannot be read can answer it in the same conversation (a judge continuing the
+   * decider, `./judge-call-answered.ts`, t1065). Reading and every refusal are unchanged.
+   */
+  replyArrived?: ((content: ReadonlyArray<Record<string, unknown>>) => void) | undefined;
 };
 
 /** The one tool call a reply made: the tool's name and its input as parsed JSON. */
@@ -139,6 +145,7 @@ export async function automationStudioAnthropicMessage<T>(input: AutomationStudi
       return new AutomationStudioLlmProviderError("llm.provider_output_invalid", "Anthropic returned an unusable answer.", false, undefined, undefined, undefined, undefined, { case: reason, finishReason: stopReason, contentChars: chars, ...(paid ? { usage: paid } : {}) }, undefined, paid);
     };
     // A tool where text was the answer, or no single offered call where one was: paid, and said which.
+    input.replyArrived?.(envelope.content as Array<Record<string, unknown>>);
     if (!toolAnswer && calls.length) throw unusable("tool_call_unexpected", text.length);
     if (toolAnswer && calls.length === 0) throw unusable("tool_call_missing", text.length);
     if (toolAnswer && calls.length > 1) throw unusable("tool_call_several", text.length);
