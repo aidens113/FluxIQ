@@ -75,6 +75,7 @@ import { automationStudioAnswerFirstListMoveOf, automationStudioAnswerFirstListM
 import { automationStudioAnswerFirstListPagerEvents } from "./list-pager.ts";
 import { automationStudioAnswerFirstReadPlaces } from "./place-of.ts";
 import { automationStudioAnswerFirstLeftReads } from "./left-reads.ts";
+import { automationStudioAnswerFirstReturnedPages } from "./returned-pages.ts";
 
 /** What the latest decision says its call is: a step the draft adds as it runs, or a rerun of a kept step. Absent: a look. */
 export type AutomationStudioAnswerFirstResultIntent =
@@ -193,9 +194,14 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
   };
   const refOf = (step: AutomationStudioFlowDraftStep): AutomationStudioAnswerFirstResultStepRef => withWrites({ id: idOf(step), position: step.position, intermediate: automationStudioAnswerFirstResultIntermediate(step.input) }, step.input);
   const isLook = (source: string | undefined): boolean => source !== undefined && port.ledger().looks.some((look) => look.source === source);
-  /** A kept step that reads a list: one the ledger met, one written with a read's columns, or a look the draft took. */
+  /**
+   * A kept step that reads a list: one the ledger met, one written with a read's columns, a look the draft took, one the
+   * model named the result (so the header names the step the draft does, t1085), or one whose pages left the ledger
+   * with it and come back with it (`./returned-pages.ts`).
+   */
   const isReadStep = (step: AutomationStudioFlowDraftStep): boolean => step.disposition === "kept" && step.effect === "observe" && automationStudioFlowDraftStepIsAction(step)
-    && (automationStudioAnswerFirstResultStepHolder(port.ledger(), idOf(step)) !== undefined || Object.keys(automationStudioAnswerFirstResultVersionOf(step.input).fields).length > 0 || automationStudioAnswerFirstResultWritesOf(step.input) !== undefined || isLook(step.callId));
+    && (automationStudioAnswerFirstResultStepHolder(port.ledger(), idOf(step)) !== undefined || Object.keys(automationStudioAnswerFirstResultVersionOf(step.input).fields).length > 0 || automationStudioAnswerFirstResultWritesOf(step.input) !== undefined || isLook(step.callId)
+      || step.result === true || left.reads().some((gone) => gone.step.id === idOf(step)));
   const stored = (source: string, datasetId: string | undefined, cut: boolean, schema?: AutomationStudioRecordSchema): void => {
     carriedLeftOut.delete(source);
     carriedVersions.delete(source);
@@ -478,7 +484,10 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
         const ref = refOf(step);
         declare(ref.id, step.input);
         if (step.callId !== undefined && !automationStudioAnswerFirstResultStepHolder(ledger, ref.id) && isLook(step.callId)) events.push({ kind: "take", source: step.callId, step: ref });
-        events.push({ kind: "step", step: ref, version: automationStudioAnswerFirstResultVersionOf(step.input) });
+        const version = automationStudioAnswerFirstResultVersionOf(step.input);
+        events.push({ kind: "step", step: ref, version });
+        // A read step back in the draft has the pages it read before it left: its rows stay credited to it (`./returned-pages.ts`, t1085).
+        events.push(...automationStudioAnswerFirstReturnedPages(ledger, left.reads(), ref, version));
       }
       if (events.length) told(record(events, before));
     },

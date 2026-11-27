@@ -79,8 +79,41 @@ describe("a Flow that does not assemble", () => {
     for (const a of labels) for (const b of labels) expect(better(stepsOnly("k", a, A), stepsOnly("n", b, B), calm)?.attemptId).toBe("n");
   });
   it("leaves the label table to decide between two that assemble", () => {
-    expect(better(stepsOnly("k", "confirmed", A), flow("n", "confirmed", B), { ...calm, keptAssembles: true })?.attemptId).toBe("k");
+    // A kept Flow proven whole: one that ran here unproven and was not judged yes gives way (t1085, below).
+    expect(better(stepsOnly("k", "confirmed", A, true), flow("n", "confirmed", B), { ...calm, keptAssembles: true })?.attemptId).toBe("k");
+    expect(better(stepsOnly("k", "confirmed", A), flow("n", "confirmed", B), { ...calm, keptAssembles: true })?.attemptId).toBe("n");
     expect(better(stepsOnly("k", "unverified", A), flow("n", "confirmed", B), { ...calm, keptAssembles: true })?.attemptId).toBe("n");
+  });
+});
+
+describe("proof beats no proof between two confirmed Flows", () => {
+  // Live run run-mwz29d50-c3a32a9c's task memory, as attempt 3 left it: `best` (attempt 2's Flow, saved 14:16:29) and
+  // `latest` (attempt 3's repair, saved 14:18:05). Their records as stored; the steps cut to position and action, which
+  // is all the choice reads of them beside the stored digest.
+  const at = (actions: string[]) => actions.map((actionId, index) => step(index + 1, actionId));
+  const opening = ["navigate", "click", "click", "click", "type", "check", "select", "click", "click", "click", "detect", "extract_list", "extract_list", "capture_snapshot", "click", "detect", "extract_list", "extract_list"];
+  const best: AutomationStudioAnswerFirstSavedFlow = {
+    attemptId: "attempt.3b5de563-d4ae-4fcf-a2ac-cf519977f0bf", flowId: "flow.34fbe190-d9ae-4ad9-8e6e-dca74ed9319d", candidateId: "candidate.3f08b234-26e3-476f-87db-d8e07a2911e6",
+    steps: at(opening), stepsDigest: "02d89f440bfc551c7eb690781ae499946bf8600696a37680389ca11a4c06a2b2", label: "confirmed", provenWhole: false,
+    shape: { columns: ["item", "quantity", "price"], empty: false }, savedAtMs: 1795788989684, spend: { calls: 8, usd: 0.30897290000000005 }
+  };
+  const latest: AutomationStudioAnswerFirstSavedFlow = {
+    attemptId: "attempt.bdda70f0-8ad3-4541-9d05-ab0a70970a11", flowId: "flow.34fbe190-d9ae-4ad9-8e6e-dca74ed9319d", candidateId: "candidate.88cbdae1-f699-44e4-a170-d5976c6d864c",
+    steps: at([...opening, "capture_snapshot", "type", "check", "check", "select", "click", "detect", "extract_list"]), stepsDigest: "5b601b2921a91855358016dddc3d7d288ddb91542fa15370470488e0001ccff0", label: "confirmed", provenWhole: false,
+    shape: { columns: ["item", "quantity", "price"], empty: false }, savedAtMs: 1795789085117, spend: { calls: 12, usd: 0.5932142 }
+  };
+  // Attempt 3 replayed `best` on its `use` route; the replay reached its end, its judge said unsure, and the attempt repaired.
+  const attempt3 = { flowFailedLive: false, wholeRunYes: false, keptAssembles: true };
+
+  it("run mwz29d50 attempt 3: the repair judged yes replaces the kept Flow whose replay was not judged yes", () => {
+    expect(better(best, latest, attempt3)).toBe(latest);
+  });
+  it("keeps a kept Flow proven whole, or one whose whole run here was judged yes", () => {
+    expect(better({ ...best, provenWhole: true }, latest, attempt3)).toMatchObject({ attemptId: best.attemptId });
+    expect(better(best, latest, { ...attempt3, wholeRunYes: true })).toBe(best);
+  });
+  it("keeps a kept Flow this attempt did not run: another attempt may have kept it since", () => {
+    expect(better(best, latest, { flowFailedLive: false, wholeRunYes: false })).toBe(best);
   });
 });
 

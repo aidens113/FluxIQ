@@ -6,9 +6,17 @@
 //   one assembles, the other does not    the one that assembles
 //   neither assembles                    next: it was built from the kept one and went further
 //   kept not confirmed, next confirmed   next
-//   both confirmed                       next if the kept one just broke on the site, else kept
+//   both confirmed                       next if the kept one just broke on the site, or if it did not stand
+//                                        here (below); else kept
 //   kept confirmed, next not             kept
 //   neither confirmed                    next: it was built from the best and went further
+//
+// **Proof beats no proof.** Of two confirmed Flows, a kept one that did not stand in this attempt gives way to
+// the next: one never proven whole (`provenWhole`) that this attempt ran (`keptAssembles` said true, which the
+// caller says only of the Flow its route ran) and whose judged whole run here did not come back yes. The next
+// one is the Flow the attempt ended with, its result judged yes. Live run `run-mwz29d50-c3a32a9c`, attempt 3:
+// the kept Flow's replay was judged unsure, the repair's Flow was judged yes, and the kept one stayed best, so
+// attempt 4 replayed it and met the same unsure judge, as every later attempt would have.
 //
 // **Whether a Flow assembles comes before its label.** Saved steps that cannot be made into a Flow
 // never run: a later attempt is only seeded with them, to repair (`../route/route.ts`). So a Flow
@@ -38,7 +46,12 @@ export function automationStudioAnswerFirstBetterFlow(
   if (!keptAssembles) return next;
   const keptConfirmed = kept.label === "confirmed";
   const nextConfirmed = next.label === "confirmed";
-  if (keptConfirmed && nextConfirmed) return how.flowFailedLive ? next : kept;
+  if (keptConfirmed && nextConfirmed) return how.flowFailedLive || didNotStandHere(kept, how) ? next : kept;
   if (keptConfirmed) return kept;
   return next;
+}
+
+/** The kept Flow, never proven whole, ran in this attempt and its whole run was not judged yes (header, "Proof beats no proof"). */
+function didNotStandHere(kept: AutomationStudioAnswerFirstSavedFlow, how: { wholeRunYes: boolean; keptAssembles?: boolean | undefined }): boolean {
+  return !kept.provenWhole && how.keptAssembles === true && !how.wholeRunYes;
 }
