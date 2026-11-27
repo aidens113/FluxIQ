@@ -154,9 +154,10 @@ export function automationStudioResultJudgeSummary(summary: AutomationStudioRunR
   entries.splice(insert < 0 ? entries.length : insert, 0, ["evidenceProjection", { version: 1, missing: uniqueGaps }]);
   const screened = automationStudioResultEvidenceScreen(Object.fromEntries(entries), options.deniedEvidenceKeys);
   const shown = { ...screened.value, withheld: withheld || screened.withheld } as unknown as AutomationStudioRunResultSummary;
-  // The pages of the views a judge needs, as the decider read them: kept beside this copy, never in it, for a judge asked
-  // on its own request (`./page-views.ts`, t1067). The before view only where a lasting act ran, as above.
-  if (stateRequired) AutomationStudioJudgePageViews.keep(shown, AutomationStudioJudgePageViews.read({ endView: held.endView, witnesses: held.witnesses }, lastingActs || lastingSteps, options.deniedEvidenceKeys));
+  // The pages the result rests on, as the model read them: kept beside this copy, never in it, for a judge asked on its
+  // own request (`./page-views.ts`, t1067, t1084). Whatever the run did, from the views and from the trail as held, before
+  // its projection left the pages out; the before view only where a lasting act ran, as above.
+  AutomationStudioJudgePageViews.keep(shown, AutomationStudioJudgePageViews.read({ endView: held.endView, witnesses: held.witnesses, trail: summary.trail?.entries }, lastingActs || lastingSteps, options.deniedEvidenceKeys));
   return shown;
 }
 

@@ -1,10 +1,10 @@
 // What a replay is accepted on (task speed S9): each step's closed skip reason, a check a person
 // cleared, and the retries it took, read from the trace the engine really leaves where it can be.
 import { describe, expect, it } from "vitest";
-import { createBlankAutomationStudioFlowArtifact } from "../../../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioFlowBuildPlan, AutomationStudioFlowBootstrapIssueLocator } from "../../../../../../runtime/flow-authoring/bootstrap/index.ts";
-import { runAutomationStudioGraph, type AutomationStudioGraphExecutionTrace, type AutomationStudioNodeAttemptTrace } from "../../../../../../engine/automation/index.ts";
-import { automationStudioAnswerFirstFlowRunStepsRan } from "../steps-ran.ts";
+import { createBlankAutomationStudioFlowArtifact } from "../../../../../../../../flows/authoring/model/index.ts";
+import type { AutomationStudioFlowBuildPlan, AutomationStudioFlowBootstrapIssueLocator } from "../../../../../../../../runtime/flow-authoring/bootstrap/index.ts";
+import { runAutomationStudioGraph, type AutomationStudioGraphExecutionTrace, type AutomationStudioNodeAttemptTrace } from "../../../../../../../../engine/automation/index.ts";
+import { automationStudioAnswerFirstFlowRunStepsRan } from "../../../steps-ran.ts";
 
 const plan = (keys: readonly string[]): AutomationStudioFlowBuildPlan => ({ plan: { subflows: [{ key: "primary", nodes: keys.map((key) => ({ key, definitionId: "library.step" })) }] } }) as unknown as AutomationStudioFlowBuildPlan;
 const locator = (keys: readonly string[]): AutomationStudioFlowBootstrapIssueLocator => ({ paths: {}, nodes: Object.fromEntries(keys.map((_, index) => [`0.${index}`, { step: "library.step", draftStep: index + 1, draftStepId: `d${index + 1}` }])), edges: {}, subflows: {}, rules: {}, lines: [] });

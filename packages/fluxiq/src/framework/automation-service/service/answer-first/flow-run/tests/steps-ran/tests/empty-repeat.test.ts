@@ -1,11 +1,11 @@
 // A repeat over a list with nothing left has run, and is told apart from a repeat that was never
 // reached (an earlier step failed) and from one whose list step failed to read (t945).
 import { describe, expect, it } from "vitest";
-import { createBlankAutomationStudioFlowArtifact } from "../../../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioFlowBuildPlan, AutomationStudioFlowBootstrapIssueLocator } from "../../../../../../runtime/flow-authoring/bootstrap/index.ts";
-import type { AutomationStudioFlowDraftStep } from "../../../../../../runtime/flow-authoring/draft/index.ts";
-import type { AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "../../../../executor/index.ts";
-import { automationStudioAnswerFirstFlowRunStepsRan } from "../steps-ran.ts";
+import { createBlankAutomationStudioFlowArtifact } from "../../../../../../../../flows/authoring/model/index.ts";
+import type { AutomationStudioFlowBuildPlan, AutomationStudioFlowBootstrapIssueLocator } from "../../../../../../../../runtime/flow-authoring/bootstrap/index.ts";
+import type { AutomationStudioFlowDraftStep } from "../../../../../../../../runtime/flow-authoring/draft/index.ts";
+import type { AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "../../../../../../executor/index.ts";
+import { automationStudioAnswerFirstFlowRunStepsRan } from "../../../steps-ran.ts";
 
 const keys = ["list", "press"];
 const buildPlan = { plan: { subflows: [{ key: "primary", nodes: keys.map((key) => ({ key, definitionId: "library.step" })) }] } } as unknown as AutomationStudioFlowBuildPlan;

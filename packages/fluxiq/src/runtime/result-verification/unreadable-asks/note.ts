@@ -12,20 +12,24 @@
 // judge after a decider in the JSON-text transport (t979), are asked again on their own request, which holds no decider
 // conversation and so no page: `run-mwy3btww-31d32e0d`'s standalone judges said unsure for want of what the page showed.
 // So the page views kept beside the judge's summary (`../judge-evidence/page-views.ts`: the end view, the before view
-// where a lasting act ran, within the page budget) go in here, just before the note, after everything the first ask sent.
+// where a lasting act ran, the pages the trail's acts were pressed on and its steps landed on, within the page budget) go
+// in here, just before the note, after everything the first ask sent. A judge on its own request already sent them last
+// on its first ask (t1084); they stay where they were, so its bytes before the note are the first ask's.
 // A continuing judge's reply answered in its own conversation (t1065) sends back the continuation and only this note
 // (`../../models/providers/anthropic/judge-call-answered.ts`), so the pages are not sent twice there; only a continuation
 // asked again with no reply held (`continues_the_decider_again`) carries them beside the decider's own.
 
+import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { AutomationStudioJudgePageViews } from "../judge-evidence/index.ts";
 
 /** The judge's copy of `summary` with the note on what could not be read of its last reply (`said`), and the steer of a repeat (`steer`), last, after the page views kept beside it (header). */
 export function automationStudioResultSummaryWithUnreadableNote<TSummary extends AutomationStudioRunResultSummary>(summary: TSummary, said: string, steer?: string): TSummary {
-  const { unreadableReply: _earlier, pageViews: _shown, ...rest } = summary as TSummary & { pageViews?: unknown };
-  const pageViews = AutomationStudioJudgePageViews.of(summary);
+  const { unreadableReply: _earlier, ...rest } = summary as TSummary;
+  const held = (summary as TSummary & { pageViews?: unknown }).pageViews;
+  const pageViews = AutomationStudioJudgePageViews.of(summary) ?? (held !== null && typeof held === "object" && !Array.isArray(held) ? (held as JsonObject) : undefined);
   const unreadableReply = `Your last reply to this check could not be read: ${said}. Answer the same question again with exactly one JSON object of the outputSchema and nothing before or after it, every quote and backslash inside its strings escaped.${steer ? ` ${steer}` : ""}`;
-  const noted = { ...rest, ...(pageViews === undefined ? {} : { pageViews }), unreadableReply } as TSummary;
+  const noted = { ...AutomationStudioJudgePageViews.shown(rest, pageViews), unreadableReply } as TSummary;
   AutomationStudioJudgePageViews.keep(noted, pageViews);
   return noted;
 }

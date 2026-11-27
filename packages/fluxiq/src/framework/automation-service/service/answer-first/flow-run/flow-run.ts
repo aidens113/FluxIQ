@@ -83,6 +83,11 @@ import { automationStudioAnswerFirstFlowRunPermission } from "./permission.ts";
 import { automationStudioAnswerFirstFlowRunPersonCheckPort } from "./person-check-port.ts";
 import { automationStudioAnswerFirstFlowRunStepBound } from "./step-bound.ts";
 import { automationStudioAnswerFirstFlowRunStoppedNote } from "./stopped-note.ts";
+import { automationStudioAnswerFirstFlowRunStopSeen } from "./stop-observed.ts";
+import { hasUnvisitedAutomationStudioNodes } from "../../../../../engine/automation/graph-navigation/index.ts";
+import { automationStudioLlmStepLogNote } from "../../../../../runtime/llm/index.ts";
+import { AUTOMATION_STUDIO_RECORDED_EFFECT_UNSEEN_FAILURE } from "../../../../../engine/automation/node-execution/index.ts";
+import type { AutomationStudioHostRuntimeBoundary } from "../../../../../runtime/automation-host/index.ts";
 import type { AutomationStudioAnswerFirstFlowRunEngine, AutomationStudioAnswerFirstFlowRunPorts } from "./ports.ts";
 import type { AutomationStudioAnswerFirstSourceRead } from "./source-authority.ts";
 import { automationStudioAnswerFirstFlowRunStepsRan, type AutomationStudioAnswerFirstFlowRunEnded } from "./steps-ran.ts";
@@ -90,12 +95,16 @@ import { automationStudioAnswerFirstFlowRunStepsRan, type AutomationStudioAnswer
 type Assembled = Extract<AutomationStudioAnswerFirstFlowRunAssembly, { ok: true }>;
 type Saved = { steps: readonly AutomationStudioFlowDraftStep[]; stepsDigest: string; candidateId?: string | undefined; stated?: readonly AutomationStudioAnswerFirstStatedToggle[] | undefined };
 type Ended = AutomationStudioAnswerFirstFlowRunEnded & { executableSource?: AutomationStudioAnswerFirstExecutableSource };
+/** What `run` hands back: the host the run's options carried, so a stop can be read against the page as it is (`./stop-observed.ts`). */
+type Went = Ended & { hostRuntime?: AutomationStudioHostRuntimeBoundary | undefined };
 
 /** What a thrown error reads as: its words may quote a value, so none is kept. */
 const THREW = "answer_first.flow_run_threw";
 /** A run's identity asks for a requirement digest only a parked requirement chain produces (`../../candidate-trial/run.ts`). */
 const NO_REQUIREMENTS = "candidate.requirements.unbound";
 const CANCELLED = "candidate.execution_cancelled";
+/** The executor's code for a frame that ended with nodes it never visited. */
+const UNVISITED = "executor.graph.unvisited_nodes";
 
 export async function automationStudioAnswerFirstFlowRun(ports: AutomationStudioAnswerFirstFlowRunPorts, saved: Saved): Promise<AutomationStudioAnswerFirstFlowRunOutcome> {
   // The run's own signal: the attempt's Stop, or the person's Stop on a check, which halts the engine before the check step's failed route (`./person-check-port.ts`).
@@ -118,7 +127,8 @@ export async function automationStudioAnswerFirstFlowRun(ports: AutomationStudio
     const declined = await automationStudioAnswerFirstFlowRunPermission(ports, assembly, saved.steps);
     if (stopped()) return { kind: "stopped" };
     if (declined) return { kind: "permission_declined", consequences: declined };
-    const ended = await run(ports, assembly, saved, basis, watch, signal, () => halt.abort(), scope, pages);
+    const went = await run(ports, assembly, saved, basis, watch, signal, () => halt.abort(), scope, pages);
+    const ended = await handedOver(ports, went, signal, (from) => run(ports, assembly, saved, basis, watch, signal, () => halt.abort(), scope, pages, from));
     pages.ended(ended.graph);
     if (ended.code === CANCELLED || stopped()) return { kind: "stopped" };
     return outcome(ports, assembly, saved, ended, watch);
@@ -138,7 +148,7 @@ function outcome(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assem
 }
 
 /** The assembled Flow, run as a trial runs it (`../../candidate-trial/run.ts`, `runIn`) under what is this attempt's. */
-async function run(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assembled, saved: Saved, basis: AutomationStudioAnswerFirstSourceRead, watch: AutomationStudioAnswerFirstFlowRunWatch, signal: AbortSignal, halt: () => void, scope: AutomationStudioAnswerFirstReplayScope | undefined, pages: AutomationStudioAnswerFirstFlowRunLivePages): Promise<Ended> {
+async function run(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assembled, saved: Saved, basis: AutomationStudioAnswerFirstSourceRead, watch: AutomationStudioAnswerFirstFlowRunWatch, signal: AbortSignal, halt: () => void, scope: AutomationStudioAnswerFirstReplayScope | undefined, pages: AutomationStudioAnswerFirstFlowRunLivePages, fromNodeKey?: string): Promise<Went> {
   const { input, runId } = ports;
   const digest = saved.stepsDigest;
   const engine = ports.engine();
@@ -165,6 +175,7 @@ async function run(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Ass
       currentIdentity: async () => ({ ...identity, baseDependencyDigest: await engine.currentBaseDigest() }),
       registry: input.registry, resolution: input.resolution, snapshots, deprecatedPublicationIds,
       sourceInstructionIds: [...input.instructionIds], runId, start, options, selected: pages.selected,
+      ...(fromNodeKey !== undefined ? { fromNodeKey } : {}),
       ...(input.size ? { size: input.size } : {})
     }));
   } finally {
@@ -186,7 +197,37 @@ async function run(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Ass
   }
   ports.permissions.exploredToggles?.trial(executed.trace?.attempts ?? [], executed.graph);
   const executableSource = ports.sourceAuthority || saved.candidateId ? await source.finish(baseDependencyDigest) : undefined;
-  return { reachedEnd: executed.receipt.status === "succeeded", code: executed.code, trace: executed.trace, graph: executed.graph, ...(askedNobody ? { askedNobody } : {}), ...(executableSource ? { executableSource } : {}) };
+  return { reachedEnd: executed.receipt.status === "succeeded", code: executed.code, trace: executed.trace, graph: executed.graph, ...(askedNobody ? { askedNobody } : {}), ...(executableSource ? { executableSource } : {}), hostRuntime: options.hostRuntime };
+}
+
+/**
+ * A run that stopped on a step's unseen effect, told as the page is now (`./stop-observed.ts`, t1088). Where the effect is on
+ * the page, the run goes on from the next step in this same attempt (`again`), its trace carrying the stopped attempt as one
+ * the page's state held (`stateHeld`, as the engine's own ladder marks a step whose result already stood), so a reader of
+ * what the node came to reads it done and the run's failure is the later one, if any. The stopped step is not run again.
+ */
+async function handedOver(ports: AutomationStudioAnswerFirstFlowRunPorts, ended: Went, signal: AbortSignal, again: (fromNodeKey: string) => Promise<Went>): Promise<Ended> {
+  const { hostRuntime, ...kept } = ended;
+  const seen = await automationStudioAnswerFirstFlowRunStopSeen({ ended, hostRuntime, projectId: ports.input.projectId, flowId: ports.input.flowId, startLocation: ports.input.startLocation, signal });
+  if (!seen) return kept;
+  if (seen.kind === "page") return { ...kept, pageNow: seen.page ? { page: seen.page } : {} };
+  automationStudioLlmStepLogNote("The saved Flow's run stopped on a step's unseen effect, and the page showed it when the run was about to hand over: the run goes on from the step after it.");
+  const next = await again(seen.fromKey);
+  if (!next.trace || !ended.trace) return kept;
+  const earlier = ended.trace.attempts.map((attempt) => attempt.nodeId === seen.nodeId && attempt.status === "failed" && attempt.failure?.code === AUTOMATION_STUDIO_RECORDED_EFFECT_UNSEEN_FAILURE.code && attempt.stateHeld === undefined
+    ? { ...attempt, stateHeld: { rung: "skip_satisfied_node" as const, route: "success" as const } }
+    : attempt);
+  const { hostRuntime: _later, ...rest } = next;
+  const attempts = [...earlier, ...next.trace.attempts];
+  const graph = next.graph ?? ended.graph;
+  // A run begun past the Flow's first steps ends `unvisited_nodes` for the steps before its start (`../../subflow-trial/from-step.ts`);
+  // with the earlier run's steps counted as visited, that ending is the Flow's end when nothing is left unvisited.
+  if (!next.reachedEnd && next.trace.failure?.code === UNVISITED && graph && !hasUnvisitedAutomationStudioNodes(graph, attempts)) {
+    const { failure: _unvisited, message: _said, ...whole } = next.trace;
+    const { code: _code, ...reached } = rest;
+    return { ...reached, reachedEnd: true, trace: { ...whole, status: "succeeded", attempts }, graph, resumedPast: seen.nodeId };
+  }
+  return { ...rest, trace: { ...next.trace, attempts }, graph, resumedPast: seen.nodeId };
 }
 
 /**

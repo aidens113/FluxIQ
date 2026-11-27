@@ -7,7 +7,7 @@ import { AutomationStudioAttemptActRecord } from "../../../../../../runtime/answ
 import { automationStudioAnswerFirstRoundNote } from "../round-note.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "../state.ts";
 
-const runThatFailed = (failing: { position: number; happened: string } | undefined) => ({
+const runThatFailed = (failing: { position: number; happened: string; pageNow?: { page?: string } } | undefined) => ({
   route: { kind: "run", notes: [] },
   flowRun: { outcome: { kind: "ran", steps: [{ position: 1, ran: true }], ...(failing ? { failing } : {}) } },
   record: new AutomationStudioAttemptActRecord(),
@@ -29,6 +29,20 @@ describe("the note on a failed saved step", () => {
   it("names no site, no tool and no parameter", () => {
     const said = happened(runThatFailed({ position: 3, happened: "" }));
     expect(said).not.toMatch(/core\.|run_node|amend|rerun|write:|library|loan|renew|card/iu);
+  });
+
+  it("tells a stop on an unseen effect as the page was read at handoff, never as the step left it (t1088)", () => {
+    const run = runThatFailed({ position: 3, happened: "The step's effect was not seen.", pageNow: { page: "shop.example" } });
+    const said = happened(run);
+    expect(said.startsWith("The step's effect was not seen. The page was read again as the run stopped, and it does not show what this step brought; it shows shop.example.")).toBe(true);
+    expect(said).not.toMatch(/where it left it/u);
+    expect(said).toMatch(/write the changed step as a new step, drop the old one, and then run forward/u);
+  });
+
+  it("still says the page was read when it has no name to give", () => {
+    const said = happened(runThatFailed({ position: 3, happened: "x.", pageNow: {} }));
+    expect(said).toMatch(/does not show what this step brought\. Look at it as it is now/u);
+    expect(said).not.toMatch(/where it left it/u);
   });
 
   it("says nothing of it where the run stopped on no step", () => {

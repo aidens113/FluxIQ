@@ -3,12 +3,12 @@
 // which a step's parameters never become, so the whole path cannot reach one today. The reading is
 // proved here, so a Flow that gains one reads as any other failing step.
 import { describe, expect, it } from "vitest";
-import { createBlankAutomationStudioFlowArtifact, createCallFlowNode, createPublishedFlowSnapshot } from "../../../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioFlowBuildPlan, AutomationStudioFlowBootstrapIssueLocator } from "../../../../../../runtime/flow-authoring/bootstrap/index.ts";
-import { runCanonicalAutomationStudioFlow } from "../../../../composite-executor.ts";
-import { runAutomationStudioGraph } from "../../../../../../engine/automation/index.ts";
-import { AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION } from "../../../../../../runtime/automation-parking/index.ts";
-import { automationStudioAnswerFirstFlowRunStepsRan } from "../steps-ran.ts";
+import { createBlankAutomationStudioFlowArtifact, createCallFlowNode, createPublishedFlowSnapshot } from "../../../../../../../../flows/authoring/model/index.ts";
+import type { AutomationStudioFlowBuildPlan, AutomationStudioFlowBootstrapIssueLocator } from "../../../../../../../../runtime/flow-authoring/bootstrap/index.ts";
+import { runCanonicalAutomationStudioFlow } from "../../../../../../composite-executor.ts";
+import { runAutomationStudioGraph } from "../../../../../../../../engine/automation/index.ts";
+import { AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION } from "../../../../../../../../runtime/automation-parking/index.ts";
+import { automationStudioAnswerFirstFlowRunStepsRan } from "../../../steps-ran.ts";
 
 const plan = (keys: readonly string[]): AutomationStudioFlowBuildPlan => ({ plan: { subflows: [{ key: "primary", nodes: keys.map((key) => ({ key, definitionId: "library.step" })) }] } }) as unknown as AutomationStudioFlowBuildPlan;
 const locator = (keys: readonly string[]): AutomationStudioFlowBootstrapIssueLocator => ({ paths: {}, nodes: Object.fromEntries(keys.map((_, index) => [`0.${index}`, { step: "library.step", draftStep: index + 1, draftStepId: `d${index + 1}` }])), edges: {}, subflows: {}, rules: {}, lines: [] });
