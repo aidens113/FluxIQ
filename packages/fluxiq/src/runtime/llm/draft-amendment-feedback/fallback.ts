@@ -4,6 +4,7 @@ import type { AutomationStudioFlowDraftAmendmentRefusal } from "../../flow-autho
 import type { AutomationStudioDraftAmendmentFeedbackStep } from "./step.ts";
 import { didNotWork, under } from "./did-not-work.ts";
 import { existingPositions } from "./positions.ts";
+import { alreadySoWords } from "./stands-as.ts";
 
 /**
  * Each reason's own way out, by the number the model wrote, for a refusal no
@@ -25,7 +26,7 @@ export function fallback(refusal: AutomationStudioFlowDraftAmendmentRefusal, ste
         ? `Step ${n} is in the draft, but step ${refusal.over ?? refusal.through}, which its ${refusal.over !== undefined ? "over" : "through"} names, is not, so the repeat was not made: name only a step listed under positions, as the draft shows it; a step not run yet is run first, and running it puts it in the draft.`
         : `Step ${n} is in the draft, but the step its over, while or through named is not: name only a step listed under positions, as the draft shows it; a step not run yet is run first, and running it puts it in the draft.`
       : `There is no step ${n} in the draft: name a step listed under positions, as the draft shows it, or run the call you meant; running it puts it in the draft.`,
-    already_so: () => `Step ${n} already says that, so it stays as it is: do not send the same change again. Send step ${n} a different change only if it should say something else; otherwise go on with what the Flow still lacks.`,
+    already_so: () => `${alreadySoWords(n, steps)} Send step ${n} a different change only if it should say something else; otherwise go on with what the Flow still lacks.`,
     no_such_position: () => `Step ${n}'s repeat was not made: its through has to name a step of the draft at or after step ${n}. Send {"step": ${n}, "change": "repeat", "over": <the listing>, "through": <the span's last step>}, or leave step ${n} as it is.`,
     run_by_the_loop: () => `Step ${n} was not rerun. Send it on its own in the next decision, with an input: ${rerun} -- one rerun per decision -- or, when its action is no longer offered, run an offered tool as a new call.`,
     no_step_before_it: () => `Step ${n} has no step before it in the Flow for this repeat to be over: name the listing it is over -- {"step": ${n}, "change": "repeat", "over": <the listing>} -- or leave step ${n} as it is.`,
