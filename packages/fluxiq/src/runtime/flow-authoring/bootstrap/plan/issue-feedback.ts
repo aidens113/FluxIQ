@@ -275,9 +275,26 @@ const AUTHORED_CODES: ReadonlySet<string> = new Set([
   "record_output.process_where_column_dropped",
   // A condition refused (t790, run `run-mvswewhy-e4e469d4`): where for a date
   // bound that names no one date, Core's sentence names only the field ids the
-  // model wrote and how to write a bound, never the bound; otherwise its fixed
-  // fallback sentence, which quotes nothing (`./record-output-contract.ts`).
-  "record_output.process_invalid_condition"
+  // model wrote and how to write a bound, never the bound.
+  "record_output.process_invalid_condition",
+  // Every other refused part of a processing (t1070, run `run-mwyg0x66-4d561a42`,
+  // refused fourteen times with the code alone): the contract parser's sentence
+  // for each part names the part (`where[3]`, `derive[0]`), the field id and
+  // operator, and why -- a pattern's JavaScript parser reason, never the
+  // pattern -- quoting ids, keys and Core's rules only (`./record-output-contract.ts`).
+  "record_output.process_not_object",
+  "record_output.process_unknown_key",
+  "record_output.process_invalid_derive",
+  "record_output.process_invalid_dedupe",
+  "record_output.process_invalid_where",
+  "record_output.process_invalid_any_of",
+  "record_output.process_invalid_compare",
+  "record_output.process_invalid_sort",
+  "record_output.process_too_many_sort_keys",
+  "record_output.process_invalid_limit",
+  "record_output.process_invalid_columns",
+  "record_output.process_invalid_min_rows",
+  "record_output.process_derived_column_shown"
 ]);
 
 const ROUTE_CODES: ReadonlySet<string> = new Set([

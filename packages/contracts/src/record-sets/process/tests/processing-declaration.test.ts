@@ -27,7 +27,7 @@ function parseDeclaration(declaration: unknown) {
 }
 
 function invalid(declaration: unknown) {
-  expect(parseDeclaration(declaration)).toEqual({ ok: false, issues: ["record_output.process_invalid_declaration"] });
+  expect(parseDeclaration(declaration)).toMatchObject({ ok: false, issues: ["record_output.process_invalid_declaration"] });
 }
 
 describe("processing declaration provenance", () => {
@@ -112,9 +112,9 @@ describe("processing declaration provenance", () => {
 
   it("validates framework digest/revision and refuses unavailable fields before returning a stamp", () => {
     expect(stampAutomationStudioRecordProcessing({ columns: ["Product name"] }, SCHEMA, { source: "bad", revision: 1 }))
-      .toEqual({ ok: false, issues: ["record_output.process_invalid_declaration"], unresolved: [] });
+      .toMatchObject({ ok: false, issues: ["record_output.process_invalid_declaration"], unresolved: [] });
     expect(stampAutomationStudioRecordProcessing({ columns: ["Product name"] }, SCHEMA, { source: SOURCE, revision: 0 }))
-      .toEqual({ ok: false, issues: ["record_output.process_invalid_declaration"], unresolved: [] });
+      .toMatchObject({ ok: false, issues: ["record_output.process_invalid_declaration"], unresolved: [] });
     expect(stampAutomationStudioRecordProcessing({ columns: ["Private note"] }, SCHEMA, { source: SOURCE, revision: 1 }))
       .toMatchObject({ ok: false, unresolved: [{ field: "Private note", reason: "excluded" }] });
   });
@@ -123,7 +123,7 @@ describe("processing declaration provenance", () => {
     expect(stampAutomationStudioRecordProcessing({ minRows: 0 }, SCHEMA, { source: SOURCE, revision: 1 }))
       .toMatchObject({ ok: true, bindings: {}, processing: { minRows: 0, declaration: { ...DECLARATION, bindings: {} } } });
     expect(parseAutomationStudioRecordProcessing({ declaration: DECLARATION, invented: true }, SCHEMA))
-      .toEqual({ ok: false, issues: ["record_output.process_unknown_key"] });
+      .toMatchObject({ ok: false, issues: ["record_output.process_unknown_key"] });
   });
 
   it("keeps special written labels as own data keys across stamping and JSON without changing object prototypes", () => {

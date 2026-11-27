@@ -5,6 +5,9 @@ import { AUTOMATION_STUDIO_RECORD_FIELD_COMPARISONS } from "../processing-vocabu
 import { automationStudioRecordBindingNameKey } from "./name-key.ts";
 import type { AutomationStudioRecordProcessingBinding } from "./result.ts";
 
+/** The parser's codes for a field that is not a stored one, which a reference left unbound already explains. */
+const UNBOUND_CODES: ReadonlySet<string> = new Set(["record_output.process_unknown_field", "record_output.process_excluded_field"]);
+
 /**
  * Binds exact ids or unique normalized labels (case, spaces, `_` and `-` aside: `./name-key.ts`), then uses the
  * existing strict processing parser.
@@ -12,7 +15,7 @@ import type { AutomationStudioRecordProcessingBinding } from "./result.ts";
 export function bindAutomationStudioRecordProcessing(value: unknown, schema: AutomationStudioRecordSchema): AutomationStudioRecordProcessingBinding {
   if (!isPlainRecord(value)) {
     const parsed = parseAutomationStudioRecordProcessing(value, schema);
-    return parsed.ok ? { ...parsed, bindings: {} } : { ...parsed, unresolved: [] };
+    return parsed.ok ? { ...parsed, bindings: {} } : { ok: false, issues: parsed.issues, unresolved: [], refusals: parsed.refusals };
   }
   // Binding is the untrusted instruction/amendment boundary; persisted stamps are read by the parser.
   if (Object.hasOwn(value, "declaration")) return { ok: false, issues: ["record_output.process_declaration_framework_owned"], unresolved: [] };
@@ -55,10 +58,14 @@ export function bindAutomationStudioRecordProcessing(value: unknown, schema: Aut
   if (Array.isArray(value.columns)) rewritten.columns = value.columns.map((field) => resolve(field, true));
   const parsed = parseAutomationStudioRecordProcessing(rewritten, schema);
   if (!parsed.ok || unresolved.size) {
+    // A field `unresolved` names is said there with why; the parser's refusal of it as unknown would only repeat it.
+    const unbound = new Set([...unresolved.values()].map((field) => field.field));
+    const refusals = parsed.ok ? [] : parsed.refusals.filter((refusal) => refusal.field === undefined || !unbound.has(refusal.field) || !UNBOUND_CODES.has(refusal.code));
     return {
       ok: false,
       issues: [...new Set([...unresolved.values()].map((field) => `record_output.process_binding_${field.reason}_field`).concat(parsed.ok ? [] : parsed.issues))],
-      unresolved: [...unresolved.values()]
+      unresolved: [...unresolved.values()],
+      ...(refusals.length ? { refusals } : {})
     };
   }
   return { ok: true, processing: parsed.processing, bindings: Object.fromEntries(bound) };

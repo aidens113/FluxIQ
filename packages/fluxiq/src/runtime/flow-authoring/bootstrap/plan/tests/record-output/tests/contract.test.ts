@@ -292,7 +292,9 @@ describe("a date bound in a record output's processing", () => {
       expect(message).toContain("with its year");
       expect(message).not.toContain(bound);
     }
-    expect(automationStudioFlowBootstrapRecordOutputIssueMessage("record_output.process_invalid_condition", loans([{ field: "due", contains: "" }]))).toBeUndefined();
+    // Any other refused condition is named by its part, field and operator, with why (t1070).
+    expect(automationStudioFlowBootstrapRecordOutputIssueMessage("record_output.process_invalid_condition", loans([{ field: "due", contains: "" }])))
+      .toBe('where[0] (field "due", contains): must be nonblank text, or a nonempty list of nonblank texts.');
     // A within that names no span is refused with the same sentence (t800).
     const within = loans([{ field: "due", within: "3 months" }]);
     expect(automationStudioFlowBootstrapRecordOutputIssues(extractList, within)).toEqual(["record_output.process_invalid_condition"]);
@@ -304,5 +306,40 @@ describe("a date bound in a record output's processing", () => {
       expect(automationStudioFlowBootstrapRecordOutputIssues(extractList, loans([condition])), JSON.stringify(condition)).toEqual([]);
     }
     expect(automationStudioFlowBootstrapRecordOutputContract(extractList).text).toContain("within:\"<n> minutes|hours|days|weeks\"");
+  });
+});
+
+// t1070 (run `run-mwyg0x66-4d561a42`, step 0061): a refused processing was answered with its code alone fourteen
+// times. A refused plan's record output now names each refused part, its field and operator, and why; and the
+// contract says the pattern flavour.
+describe("a refused processing part in a record output", () => {
+  const auctions = (process: JsonObject): JsonObject => ({
+    datasetId: "auctions",
+    writeMode: "append",
+    schema: { schemaVersion: "0.1", fields: ["link_text", "price", "text_2"].map((id) => ({ id, label: id, valueType: "string" })) },
+    process
+  });
+
+  it("names the part, its field, its operator and the JavaScript parser's reason, and never the pattern", () => {
+    const value = auctions({
+      where: [
+        { field: "text_2", contains: "For parts", not: true },
+        { field: "link_text", matches: "(?i)^(new listing)?kestrel 35\\b" },
+        { field: "link_text", matches: "^new(?i)kestrel" }
+      ],
+      sort: [{ field: "price", order: "soonest" }]
+    });
+    expect(automationStudioFlowBootstrapRecordOutputIssues(extractList, value).sort()).toEqual(["record_output.process_invalid_condition", "record_output.process_invalid_sort"]);
+    expect(automationStudioFlowBootstrapRecordOutputIssueMessage("record_output.process_invalid_condition", value))
+      .toMatch(/^where\[2\] \(field "link_text", matches\): not a valid JavaScript regular expression \(Invalid group\)\. JavaScript reads no inline flag group inside a pattern/u);
+    expect(automationStudioFlowBootstrapRecordOutputIssueMessage("record_output.process_invalid_sort", value)).toBe('sort[0] (field "price", order): must be asc or desc.');
+  });
+
+  it("says the pattern flavour, its length and the list form in the contract a model is shown", () => {
+    const { text, condensedText } = automationStudioFlowBootstrapRecordOutputContract(extractList);
+    for (const shown of [text, condensedText]) {
+      expect(shown).toContain("matches and pattern: JavaScript regex (not PCRE), at most 200 characters");
+      expect(shown).toContain("a leading (?i), (?m) or (?s) is that flag");
+    }
   });
 });

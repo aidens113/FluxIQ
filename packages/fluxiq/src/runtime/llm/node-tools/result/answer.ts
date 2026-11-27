@@ -10,7 +10,8 @@
 // left out, folded as repeats, cut, kept -- and names, per condition, the rows
 // it alone left out, each by its label, and every row kept (user rule: no caps).
 // A declaration the schema refuses is answered with the contract's issue codes
-// and is not held: the result keeps the processing it had.
+// and each refused part with why (t1070), and is not held: the result keeps the
+// processing it had.
 //
 // **Before any row is read** there is no schema to read it against, so it is
 // held as written and the answer says so; the contract reads it when the Flow
@@ -20,7 +21,7 @@
 // **The answer is not the page's.** Nothing here touches the target, so the
 // call's effect is never applied (`effectApplied: false`), as a look's.
 
-import { parseAutomationStudioRecordProcessing, processAutomationStudioRecordRows, type AutomationStudioRecordProcessing, type AutomationStudioRecordSchema } from "@fluxiq/contracts/automation";
+import { automationStudioRecordProcessingRefusalText, parseAutomationStudioRecordProcessing, processAutomationStudioRecordRows, type AutomationStudioRecordProcessing, type AutomationStudioRecordSchema } from "@fluxiq/contracts/automation";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import {
   AUTOMATION_STUDIO_FLOW_DRAFT_RESULT_KEY,
@@ -62,7 +63,8 @@ export function automationStudioLlmSetResultProcessing(input: {
   const parsed = parseAutomationStudioRecordProcessing(input.value.process, read.schema);
   if (!parsed.ok) {
     const columns = read.schema.fields.filter((field) => field.handling !== "exclude").map((field) => field.id);
-    return { held: input.held, answer: refused("result_processing.invalid", parsed.issues, `The processing was not set, and the result keeps the processing it had. The columns this list holds are: ${columns.join(", ")}.`) };
+    // Each refused part with its field, operator and why (t1070), then what the list holds.
+    return { held: input.held, answer: refused("result_processing.invalid", parsed.issues, `The processing was not set, and the result keeps the processing it had. ${automationStudioRecordProcessingRefusalText(parsed)} The columns this list holds are: ${columns.join(", ")}.`) };
   }
   const made = processAutomationStudioRecordRows({
     rows: read.rows.map((values) => ({ values, nodeId: read.datasetId, batchKey: read.datasetId })),

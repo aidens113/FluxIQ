@@ -156,6 +156,21 @@ export type AutomationStudioRecordProcessing = {
   minRows?: number;
 };
 
+/**
+ * Why one part of a refused processing could not run (t1070), beside the issue code it explains: the part
+ * (`where[2]`, `anyOf[1][0]`, `derive[0]`, `compare[0]`, `sort[1]`, `dedupe`, `columns`, `limit`, `minRows`,
+ * `process`), the field id and the operator it names where it names them, and one sentence saying all of that
+ * and why. The sentence quotes field ids, keys and Core's own rules, never a value the part compares or a
+ * pattern it holds.
+ */
+export type AutomationStudioRecordProcessingRefusal = {
+  code: string;
+  part: string;
+  field?: string;
+  operator?: string;
+  said: string;
+};
+
 /** One batch of collected rows: a pass of one node. */
 export type AutomationStudioRecordProcessingPass = {
   node: string;

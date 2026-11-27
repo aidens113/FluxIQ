@@ -142,9 +142,13 @@ describe("the vocabulary a model writes an extraction filter from", () => {
     // steps ... a post-processing step") published the result-processing
     // operators in the same contract text -- anyOf across columns, compare two
     // columns, derive a computed column, and filters on hidden columns: 543
-    // bytes on purpose, to 5,555. The bound sits just above the intended
-    // entry, not room for another addition.
-    expect(Buffer.byteLength(JSON.stringify(entry), "utf8")).toBeLessThanOrEqual(5_575);
+    // bytes on purpose, to 5,555. The bound was 5,575 until t1070
+    // (2026-11-26; run-mwyg0x66-4d561a42 wrote PCRE's (?i) fourteen times and
+    // was never told the patterns are JavaScript's) said the pattern flavour,
+    // its length and how a leading (?i), (?m) or (?s) is read: 139 bytes on
+    // purpose (net of the dropped "matches a valid regex"), to 5,694. The
+    // bound sits just above the intended entry, not room for another addition.
+    expect(Buffer.byteLength(JSON.stringify(entry), "utf8")).toBeLessThanOrEqual(5_710);
     expect(Buffer.byteLength(JSON.stringify(context.nodeCatalog), "utf8")).toBe(context.catalogSelection.usedBytes);
   });
 

@@ -32,6 +32,7 @@ import { AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS, AUTOMATION_STUDIO_RECORD_CON
 import { readAutomationStudioRecordNumber } from "../read-number.ts";
 import { readAutomationStudioRecordConditionDate } from "../row-date.ts";
 import type { AutomationStudioRecordConditionTest, AutomationStudioRecordConditionValue } from "../types.ts";
+import { readAutomationStudioRecordConditionPattern } from "./pattern.ts";
 
 type ConditionBound = (typeof AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS)[number];
 type ConditionText = (typeof AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS)[number];
@@ -42,14 +43,8 @@ const DAY_MS = 86_400_000;
 /** How far apart two numbers may be and still be equal. */
 const EQUAL_WITHIN = 1e-9;
 
-/** The longest pattern a condition may carry, and the most of a value's text one is run against. */
-const PATTERN_CHARACTERS = 200;
+/** The most of a value's text a pattern is run against. */
 const MATCHED_CHARACTERS = 2_000;
-
-/** Flags a `/pattern/flags` form may name; `g` and `y` are accepted and dropped, since they carry state between rows. */
-const PATTERN_FLAGS = "dimsuv";
-const STATEFUL_FLAGS = "gy";
-const DELIMITED_PATTERN = /^\/(.+)\/([a-z]*)$/su;
 
 const BOUND_HOLDS: Record<ConditionBound, (value: number, bound: number) => boolean> = {
   atLeast: (value, bound) => value >= bound,
@@ -84,20 +79,10 @@ export function automationStudioRecordConditionHolds(condition: AutomationStudio
   return condition.not === true ? !held : held;
 }
 
-/** The regular expression a `matches` names, or `undefined` for one that cannot run. */
+/** The regular expression a `matches` names, or `undefined` for one that cannot run; why is `readAutomationStudioRecordConditionPattern`'s (`./pattern.ts`). */
 export function automationStudioRecordConditionPattern(written: string): RegExp | undefined {
-  if (written.length === 0 || written.length > PATTERN_CHARACTERS) return undefined;
-  const delimited = DELIMITED_PATTERN.exec(written);
-  const source = delimited?.[1] ?? written;
-  const asked = delimited?.[2] ?? "";
-  if ([...asked].some((flag) => !PATTERN_FLAGS.includes(flag) && !STATEFUL_FLAGS.includes(flag))) return undefined;
-  const flags = delimited === null ? "i" : [...asked].filter((flag) => !STATEFUL_FLAGS.includes(flag)).join("");
-  try {
-    return new RegExp(source, flags);
-  } catch (error) {
-    if (error instanceof SyntaxError) return undefined;
-    throw error;
-  }
+  const read = readAutomationStudioRecordConditionPattern(written);
+  return read.ok ? read.pattern : undefined;
 }
 
 function valueHolds(condition: AutomationStudioRecordConditionTest, cell: unknown, now: number): boolean {

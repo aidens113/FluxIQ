@@ -36,14 +36,30 @@
 // condition refused for a date bound that names no one date is refused with
 // Core's own sentence saying how to write one (`dateBoundRefusal`), which
 // quotes only the field id the model wrote, never the bound.
+//
+// **Every refused processing names its parts (t1070).** Run
+// `run-mwyg0x66-4d561a42` sent `core.set_result_processing` fourteen times
+// and was answered `record_output.process_invalid_condition` and nothing
+// else; loop detection told it to change approach, and it had nothing to
+// change on. The contract's parser now gives each refused part and why
+// (`AutomationStudioRecordProcessingRefusal`: `where[3]`, its field, its
+// operator, and the reason, a pattern's JavaScript parser reason among them),
+// quoting ids, keys and Core's rules, never a value or a pattern. A refused
+// plan's record output carries those sentences for its code
+// (`automationStudioFlowBootstrapRecordOutputIssueMessage`), and the tool's
+// refusal says them all (the contract's `automationStudioRecordProcessingRefusalText`).
+// The processing help says the pattern flavour is JavaScript's.
 
 import {
   AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS,
   AUTOMATION_STUDIO_RECORD_CONDITION_PRESENCES,
   AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS,
+  AUTOMATION_STUDIO_RECORD_PATTERN_CHARACTERS,
   AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS,
   AUTOMATION_STUDIO_RECORD_SORT_ORDERS,
   AUTOMATION_STUDIO_RECORD_SORT_TYPES,
+  parseAutomationStudioRecordProcessing,
+  parseAutomationStudioRecordSchema,
   readAutomationStudioRecordConditionDateBound,
   readAutomationStudioRecordConditionWithin
 } from "@fluxiq/contracts/automation";
@@ -158,7 +174,25 @@ export function automationStudioFlowBootstrapRecordOutputIssues(definition: Auto
  * field id instead" stays for a field `columns` alone names.
  */
 export function automationStudioFlowBootstrapRecordOutputIssueMessage(code: string, value: JsonValue | undefined): string | undefined {
-  return fieldRefusal(code, value)?.message ?? dateBoundRefusal(code, value);
+  const field = fieldRefusal(code, value)?.message;
+  if (field !== undefined) return field;
+  const said = [dateBoundRefusal(code, value), ...partRefusals(code, value)].filter((sentence): sentence is string => sentence !== undefined);
+  return said.length ? said.join(" ") : undefined;
+}
+
+/**
+ * The contract parser's sentence for each part of this record output's processing refused under `code` (header,
+ * t1070): `where[3] (field "title", matches): not a valid JavaScript regular expression (...)`. Empty for a code
+ * that is not a processing one, or where the schema itself is refused, since processing is read against it.
+ */
+function partRefusals(code: string, value: JsonValue | undefined): string[] {
+  if (!code.startsWith("record_output.process_") || !isPlainObject(value)) return [];
+  const read = automationStudioFlowBootstrapRecordOutputStaticValue(value);
+  if (!isPlainObject(read) || read.process === undefined) return [];
+  const schema = parseAutomationStudioRecordSchema(read.schema);
+  if (!schema.ok) return [];
+  const parsed = parseAutomationStudioRecordProcessing(read.process, schema.schema);
+  return parsed.ok ? [] : parsed.refusals.filter((refusal) => refusal.code === code).map((refusal) => refusal.said);
 }
 
 /**
@@ -304,7 +338,8 @@ function processingText(): string {
     "process is optional, with only derive, dedupe, where, anyOf, compare, sort, limit, columns, minRows; every member is optional.",
     "dedupe: false | {by:[fieldId,...]}; by is a nonempty list of distinct stored field ids. Absent dedupe uses the whole row (selected columns when columns is set); false keeps duplicates.",
     `where: [{field:fieldId, is?:${AUTOMATION_STUDIO_RECORD_CONDITION_PRESENCES.join("|")}, ${bounds}?:number|date text, within?:text, as?:date, equals?:string|number|nonempty list, ${texts}?:string|nonempty string list, not?:boolean}].`,
-    "Every comparison in a condition must hold; a value list means any; not inverts the condition. No comparison means presence; absent cannot accompany a comparison. Numbers must be finite, text nonblank, matches a valid regex.",
+    "Every comparison in a condition must hold; a value list means any; not inverts the condition. No comparison means presence; absent cannot accompany a comparison. Numbers must be finite, text nonblank.",
+    `matches and pattern: JavaScript regex (not PCRE), at most ${AUTOMATION_STUDIO_RECORD_PATTERN_CHARACTERS} characters; bare ignores case, /source/flags sets flags, a leading (?i), (?m) or (?s) is that flag.`,
     "A date bound is a date written with its year, as 2026-10-01 or 1 October 2026, or today|yesterday|now|<n> <unit> ago, with as:date; within:\"<n> minutes|hours|days|weeks\" keeps dates from n units before the run's now to it. It compares the date the value states, a bound with no time is its whole day, and a row stating no readable date is never kept. One condition's bounds are all numbers or all dates.",
     `sort: [{field:fieldId, order:${AUTOMATION_STUDIO_RECORD_SORT_ORDERS.join("|")}, as?:${AUTOMATION_STUDIO_RECORD_SORT_TYPES.join("|")}}]; at most ${AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS.maxSortKeys} keys; absent as means auto.`,
     `limit: integer 1-${AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS.limitCeiling}. columns: nonempty list of distinct stored field ids, in answer order.`,
