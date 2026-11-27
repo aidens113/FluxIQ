@@ -47,11 +47,13 @@ export function automationStudioLlmEvidenceAmendmentMemory(): AutomationStudioLl
   };
   return {
     refusals(refused) {
+      // Repeated means given in an earlier decision: two amendments of one decision refused alike (a repeat and a
+      // result on one step, both already so) are the first time the model hears it, not a refusal sent again (t1078).
+      const before = new Set(given);
       return refused.map((refusal) => {
         const key = `${refusal.step}:${refusal.reason}:${refusal.nodeId ?? ""}`;
-        const repeated = given.has(key);
         given.add(key);
-        return repeated ? { ...refusal, repeated: true as const } : { ...refusal };
+        return before.has(key) ? { ...refusal, repeated: true as const } : { ...refusal };
       });
     },
     before(iteration, steps) {

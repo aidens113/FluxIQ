@@ -24,6 +24,8 @@ export type AutomationStudioDraftAmendmentFeedbackStep = {
   disposition?: string;
   routing?: { kind: string; over?: string; through?: string; while?: string };
   proposes?: boolean;
+  /** The read holds the answer (`../flow-draft/step.ts`, `result`). */
+  result?: boolean;
   written?: true;
   checkedCandidate?: object;
   resultCode?: string;

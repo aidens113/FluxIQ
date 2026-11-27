@@ -657,7 +657,7 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
       // budget, each whole; the draft measured as it goes out
       // (`decision-context/shown.ts` says why each is where it is).
       const decisionContext = automationStudioLlmDecisionContextShown({
-        evidence, records: history.records(), budgetEntry, observedStateKeys: input.observedStateKeys, pageChannel: input.pageChannel, // The page shown in place, whole once and as changes after (`./view-channel/`).
+        evidence, records: history.records(), budgetEntry, observedStateKeys: input.observedStateKeys, pageChannel: input.pageChannel, // A result's page becomes a short note, and the page's deliveries (whole once, then as changes) go in a trailing `core.page_window` entry (`./view-channel/`).
         draft: drafting ? { steps: draftSteps, acts: input.draft ? input.draft.acts?.(draftSteps) : undefined, route: input.draft ? input.draft.route?.() : undefined } : undefined
       });
       rows.draftShown = decisionContext.draftShown;
