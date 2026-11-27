@@ -1,0 +1,3142 @@
+{
+ "source": "run-mwz29d50-c3a32a9c (bigbox-retail), as its step files recorded them: carriedCalls are attempt 1's two lasting acts, the calls the attempt-3 judge (0080) was shown as carried acts' evidence (0008 'Set as my store', call c3; 0018 'Add to cart', call c8), each with the domain's answer as recorded (its 'read' member left out); before is the page before attempt 1's first lasting act (0006's answer); end is the cart as attempt 3's replay left it (0081, the opening look of attempt 3's repair, taken right after judge 0080).",
+ "carriedCalls": [
+  {
+   "recordedStep": 8,
+   "callId": "c3",
+   "toolId": "core.run_node",
+   "value": {
+    "node": "web.output.dom-click",
+    "parameters": {
+     "target": {
+      "handle": "t361"
+     }
+    },
+    "consequences": [
+     "modify_existing"
+    ]
+   },
+   "answer": {
+    "schemaVersion": "web-llm-page.v4",
+    "trust": "untrusted-page-evidence",
+    "location": "http://127.0.0.1:52163/scenarios/bigbox-retail/",
+    "truncated": false,
+    "pageView": {
+     "key": "http://127.0.0.1:52163/scenarios/bigbox-retail",
+     "lines": [
+      {
+       "key": "PAGE",
+       "text": "PAGE \"Save Money. Live Better. - ValueRidge\""
+      },
+      {
+       "key": "URL",
+       "text": "URL ~/   (~ = http://127.0.0.1:52163/scenarios/bigbox-retail)"
+      },
+      {
+       "key": "VIEW",
+       "text": "VIEW 1280x720 scrolled to y=81 · 161 elements with visible words or a control, in page order"
+      },
+      {
+       "key": "ARRIVED",
+       "text": "ARRIVED reload"
+      },
+      {
+       "key": "-",
+       "text": ""
+      },
+      {
+       "key": "^t4",
+       "text": "[banner]"
+      },
+      {
+       "key": "t4",
+       "text": "t4 link \"ValueRidge\" ~/"
+      },
+      {
+       "key": "^t7",
+       "text": "[page]"
+      },
+      {
+       "key": "t7",
+       "text": "t7 button \"Pickup or delivery? Millbrook Crossing Neighborhood Market\""
+      },
+      {
+       "key": "^t11",
+       "text": "[search]"
+      },
+      {
+       "key": "t11",
+       "text": "t11 field[search] \"Search\" placeholder \"Search everything at ValueRidge online and in store\" =\"\""
+      },
+      {
+       "key": "t12",
+       "text": "t12 button \"Search\""
+      },
+      {
+       "key": "^t14",
+       "text": "[navigation]"
+      },
+      {
+       "key": "t14",
+       "text": "t14 link \"Reorder My Items\" ~/"
+      },
+      {
+       "key": "t16",
+       "text": "t16 link \"Sign In Account\" ~/"
+      },
+      {
+       "key": "t18",
+       "text": "t18 link \"🛒 1 $3.97\" ~/cart"
+      },
+      {
+       "key": "t23",
+       "text": "t23 link \"Departments\" ~/"
+      },
+      {
+       "key": "t24",
+       "text": "t24 link \"Services\" ~/"
+      },
+      {
+       "key": "t25",
+       "text": "t25 link \"Get it Fast\" ~/"
+      },
+      {
+       "key": "t26",
+       "text": "t26 link \"Rollbacks & More\" ~/search?q=paper+towels&facet=special_offers%3ARollback"
+      },
+      {
+       "key": "t27",
+       "text": "t27 link \"New Arrivals\" ~/"
+      },
+      {
+       "key": "t28",
+       "text": "t28 link \"Back to School\" ~/"
+      },
+      {
+       "key": "t29",
+       "text": "t29 link \"Household Essentials\" ~/"
+      },
+      {
+       "key": "t30",
+       "text": "t30 link \"Pharmacy Delivery\" ~/"
+      },
+      {
+       "key": "t31",
+       "text": "t31 link \"Registry\" ~/"
+      },
+      {
+       "key": "t32",
+       "text": "t32 link \"Weekly Ad\" ~/weekly-ad"
+      },
+      {
+       "key": "^t36",
+       "text": "[main]"
+      },
+      {
+       "key": "t36",
+       "text": "t36 h1 \"Rollbacks on household essentials\""
+      },
+      {
+       "key": "t37",
+       "text": "t37 \"Paper towels, napkins and more, for less.\""
+      },
+      {
+       "key": "t38",
+       "text": "t38 link \"Shop Rollbacks\" same href as t26"
+      },
+      {
+       "key": "t45",
+       "text": "t45 h2 \"Pickup today at Millbrook Crossing Neighborhood Market\""
+      },
+      {
+       "key": "t362",
+       "text": "t362 link \"View all\" ~/search?q=paper+towels"
+      },
+      {
+       "key": "^t49",
+       "text": "- 1/8"
+      },
+      {
+       "key": "t49",
+       "text": "t49 link \"Loftwell Ultra Strong Paper Towels, 6 Double Rolls\" ~/ip/loftwell-ultra-strong-paper-towels-6-double-rolls/402917554"
+      },
+      {
+       "key": "t54",
+       "text": "t54 \"$10.47\""
+      },
+      {
+       "key": "t57",
+       "text": "t57 \"1.4 ¢/sheet\""
+      },
+      {
+       "key": "t58",
+       "text": "t58 \"Loftwell Ultra Strong Paper Towels, 6 Double Rolls\""
+      },
+      {
+       "key": "t60",
+       "text": "t60 \"4.8\""
+      },
+      {
+       "key": "t62",
+       "text": "t62 \"4.8 out of 5 Stars. 8,902 reviews\""
+      },
+      {
+       "key": "t63",
+       "text": "t63 \"(8,902)\""
+      },
+      {
+       "key": "t65",
+       "text": "t65 \"Pickup today\""
+      },
+      {
+       "key": "t66",
+       "text": "t66 button \"+ Add\""
+      },
+      {
+       "key": "^t68",
+       "text": "- 2/8"
+      },
+      {
+       "key": "t68",
+       "text": "t68 link \"Hearthside Paper Towels, 12 Double Rolls\" ~/ip/hearthside-paper-towels-12-double-rolls/417553117"
+      },
+      {
+       "key": "t73",
+       "text": "t73 \"$17.48\""
+      },
+      {
+       "key": "t76",
+       "text": "t76 \"1.2 ¢/sheet\""
+      },
+      {
+       "key": "t77",
+       "text": "t77 \"Hearthside Paper Towels, 12 Double Rolls\""
+      },
+      {
+       "key": "t79",
+       "text": "t79 \"4.6\""
+      },
+      {
+       "key": "t81",
+       "text": "t81 \"4.6 out of 5 Stars. 2,764 reviews\""
+      },
+      {
+       "key": "t82",
+       "text": "t82 \"(2,764)\""
+      },
+      {
+       "key": "t84",
+       "text": "t84 \"Pickup today\""
+      },
+      {
+       "key": "t85",
+       "text": "t85 button \"+ Add\""
+      },
+      {
+       "key": "^t87",
+       "text": "- 3/8"
+      },
+      {
+       "key": "t87",
+       "text": "t87 link \"ValueRidge Everyday Dinner Napkins, 100 Count\" ~/ip/valueridge-everyday-dinner-napkins/418831402"
+      },
+      {
+       "key": "t92",
+       "text": "t92 \"$2.97\""
+      },
+      {
+       "key": "t95",
+       "text": "t95 \"3.0 ¢/each\""
+      },
+      {
+       "key": "t96",
+       "text": "t96 \"ValueRidge Everyday Dinner Napkins, 100 Count\""
+      },
+      {
+       "key": "t98",
+       "text": "t98 \"4.6\""
+      },
+      {
+       "key": "t100",
+       "text": "t100 \"4.6 out of 5 Stars. 2,812 reviews\""
+      },
+      {
+       "key": "t101",
+       "text": "t101 \"(2,812)\""
+      },
+      {
+       "key": "t103",
+       "text": "t103 \"Pickup today\""
+      },
+      {
+       "key": "t104",
+       "text": "t104 link \"Options\" same href"
+      },
+      {
+       "key": "^t106",
+       "text": "- 4/8"
+      },
+      {
+       "key": "t106",
+       "text": "t106 link \"ValueRidge Ultra Dish Soap, Lemon Scent, 24 fl oz\" ~/ip/valueridge-ultra-dish-soap-lemon-scent-24-fl-oz/418832007"
+      },
+      {
+       "key": "t111",
+       "text": "t111 \"$3.97\""
+      },
+      {
+       "key": "t114",
+       "text": "t114 \"16.5 ¢/fl oz\""
+      },
+      {
+       "key": "t115",
+       "text": "t115 \"ValueRidge Ultra Dish Soap, Lemon Scent, 24 fl oz\""
+      },
+      {
+       "key": "t117",
+       "text": "t117 \"4.7\""
+      },
+      {
+       "key": "t119",
+       "text": "t119 \"4.7 out of 5 Stars. 5,120 reviews\""
+      },
+      {
+       "key": "t120",
+       "text": "t120 \"(5,120)\""
+      },
+      {
+       "key": "t122",
+       "text": "t122 \"Pickup today\""
+      },
+      {
+       "key": "t123",
+       "text": "t123 button \"+ Add\""
+      },
+      {
+       "key": "^t125",
+       "text": "- 5/8"
+      },
+      {
+       "key": "t125",
+       "text": "t125 link \"ValueRidge Essentials Paper Towels Value Pack, 15 Rolls\" ~/ip/valueridge-essentials-paper-towels-value-pack-15-rolls/418830190"
+      },
+      {
+       "key": "t130",
+       "text": "t130 \"$15.88\""
+      },
+      {
+       "key": "t133",
+       "text": "t133 \"$1.06/roll\""
+      },
+      {
+       "key": "t134",
+       "text": "t134 \"ValueRidge Essentials Paper Towels Value Pack, 15 Rolls\""
+      },
+      {
+       "key": "t136",
+       "text": "t136 \"4.7\""
+      },
+      {
+       "key": "t138",
+       "text": "t138 \"4.7 out of 5 Stars. 7,733 reviews\""
+      },
+      {
+       "key": "t139",
+       "text": "t139 \"(7,733)\""
+      },
+      {
+       "key": "t141",
+       "text": "t141 \"Pickup today\""
+      },
+      {
+       "key": "t142",
+       "text": "t142 button \"+ Add\""
+      },
+      {
+       "key": "^t144",
+       "text": "- 6/8"
+      },
+      {
+       "key": "t144",
+       "text": "t144 link \"Hearthside Kitchen Paper Towels, 2 Rolls\" ~/ip/hearthside-kitchen-paper-towels-2-rolls/417553090"
+      },
+      {
+       "key": "t149",
+       "text": "t149 \"Now\""
+      },
+      {
+       "key": "t150",
+       "text": "t150 \"$2.97\""
+      },
+      {
+       "key": "t154",
+       "text": "t154 \"Was\""
+      },
+      {
+       "key": "t155",
+       "text": "t155 \"$3.48\""
+      },
+      {
+       "key": "t156",
+       "text": "t156 \"$1.49/roll\""
+      },
+      {
+       "key": "t157",
+       "text": "t157 \"Hearthside Kitchen Paper Towels, 2 Rolls\""
+      },
+      {
+       "key": "t159",
+       "text": "t159 \"4.3\""
+      },
+      {
+       "key": "t161",
+       "text": "t161 \"4.3 out of 5 Stars. 1,208 reviews\""
+      },
+      {
+       "key": "t162",
+       "text": "t162 \"(1,208)\""
+      },
+      {
+       "key": "t164",
+       "text": "t164 \"Pickup today\""
+      },
+      {
+       "key": "t165",
+       "text": "t165 button \"+ Add\""
+      },
+      {
+       "key": "^t167",
+       "text": "--- below the fold ---"
+      },
+      {
+       "key": "^t167.2",
+       "text": "- 7/8"
+      },
+      {
+       "key": "t167",
+       "text": "t167 link \"Softerra Paper Towels, 6 Double Rolls\" ~/ip/softerra-paper-towels-6-double-rolls/433201844"
+      },
+      {
+       "key": "t172",
+       "text": "t172 \"Now\""
+      },
+      {
+       "key": "t173",
+       "text": "t173 \"$9.47\""
+      },
+      {
+       "key": "t177",
+       "text": "t177 \"Was\""
+      },
+      {
+       "key": "t178",
+       "text": "t178 \"$11.97\""
+      },
+      {
+       "key": "t179",
+       "text": "t179 \"1.3 ¢/sheet\""
+      },
+      {
+       "key": "t180",
+       "text": "t180 \"Softerra Paper Towels, 6 Double Rolls\""
+      },
+      {
+       "key": "t182",
+       "text": "t182 \"4.5\""
+      },
+      {
+       "key": "t184",
+       "text": "t184 \"4.5 out of 5 Stars. 5,302 reviews\""
+      },
+      {
+       "key": "t185",
+       "text": "t185 \"(5,302)\""
+      },
+      {
+       "key": "t187",
+       "text": "t187 \"Pickup today\""
+      },
+      {
+       "key": "t188",
+       "text": "t188 button \"+ Add\""
+      },
+      {
+       "key": "^t190",
+       "text": "- 8/8"
+      },
+      {
+       "key": "t190",
+       "text": "t190 link \"Softerra Pick-A-Sheet Paper Towels, 12 Triple Rolls\" ~/ip/softerra-pick-a-sheet-paper-towels-12-triple-rolls/433201899"
+      },
+      {
+       "key": "t195",
+       "text": "t195 \"$27.97\""
+      },
+      {
+       "key": "t198",
+       "text": "t198 \"1.2 ¢/sheet\""
+      },
+      {
+       "key": "t199",
+       "text": "t199 \"Softerra Pick-A-Sheet Paper Towels, 12 Triple Rolls\""
+      },
+      {
+       "key": "t201",
+       "text": "t201 \"4.7\""
+      },
+      {
+       "key": "t203",
+       "text": "t203 \"4.7 out of 5 Stars. 4,021 reviews\""
+      },
+      {
+       "key": "t204",
+       "text": "t204 \"(4,021)\""
+      },
+      {
+       "key": "t206",
+       "text": "t206 \"Pickup today\""
+      },
+      {
+       "key": "t207",
+       "text": "t207 button \"+ Add\""
+      },
+      {
+       "key": "t210",
+       "text": "t210 h2 \"Rollbacks\""
+      },
+      {
+       "key": "t211",
+       "text": "t211 link \"View all\" same href as t26"
+      },
+      {
+       "key": "^t214",
+       "text": "- 1/4"
+      },
+      {
+       "key": "t214",
+       "text": "t214 link \"Hearthside Kitchen Paper Towels, 2 Rolls\" same href as t144"
+      },
+      {
+       "key": "t219",
+       "text": "t219 \"Now\""
+      },
+      {
+       "key": "t220",
+       "text": "t220 \"$2.97\""
+      },
+      {
+       "key": "t224",
+       "text": "t224 \"Was\""
+      },
+      {
+       "key": "t225",
+       "text": "t225 \"$3.48\""
+      },
+      {
+       "key": "t226",
+       "text": "t226 \"$1.49/roll\""
+      },
+      {
+       "key": "t227",
+       "text": "t227 \"Hearthside Kitchen Paper Towels, 2 Rolls\""
+      },
+      {
+       "key": "t229",
+       "text": "t229 \"4.3\""
+      },
+      {
+       "key": "t231",
+       "text": "t231 \"4.3 out of 5 Stars. 1,208 reviews\""
+      },
+      {
+       "key": "t232",
+       "text": "t232 \"(1,208)\""
+      },
+      {
+       "key": "t234",
+       "text": "t234 \"Pickup today\""
+      },
+      {
+       "key": "t235",
+       "text": "t235 button \"+ Add\""
+      },
+      {
+       "key": "^t237",
+       "text": "- 2/4"
+      },
+      {
+       "key": "t237",
+       "text": "t237 link \"Softerra Paper Towels, 6 Double Rolls\" same href as t167"
+      },
+      {
+       "key": "t242",
+       "text": "t242 \"Now\""
+      },
+      {
+       "key": "t243",
+       "text": "t243 \"$9.47\""
+      },
+      {
+       "key": "t247",
+       "text": "t247 \"Was\""
+      },
+      {
+       "key": "t248",
+       "text": "t248 \"$11.97\""
+      },
+      {
+       "key": "t249",
+       "text": "t249 \"1.3 ¢/sheet\""
+      },
+      {
+       "key": "t250",
+       "text": "t250 \"Softerra Paper Towels, 6 Double Rolls\""
+      },
+      {
+       "key": "t252",
+       "text": "t252 \"4.5\""
+      },
+      {
+       "key": "t254",
+       "text": "t254 \"4.5 out of 5 Stars. 5,302 reviews\""
+      },
+      {
+       "key": "t255",
+       "text": "t255 \"(5,302)\""
+      },
+      {
+       "key": "t257",
+       "text": "t257 \"Pickup today\""
+      },
+      {
+       "key": "t258",
+       "text": "t258 button \"+ Add\""
+      },
+      {
+       "key": "^t260",
+       "text": "- 3/4"
+      },
+      {
+       "key": "t260",
+       "text": "t260 link \"Loftwell Dinner Napkins, 2-Ply, 250 Count\" ~/ip/loftwell-dinner-napkins-2-ply-250-count/402918013"
+      },
+      {
+       "key": "t265",
+       "text": "t265 \"$7.97\""
+      },
+      {
+       "key": "t268",
+       "text": "t268 \"3.2 ¢/each\""
+      },
+      {
+       "key": "t269",
+       "text": "t269 \"Loftwell Dinner Napkins, 2-Ply, 250 Count\""
+      },
+      {
+       "key": "t271",
+       "text": "t271 \"4.7\""
+      },
+      {
+       "key": "t273",
+       "text": "t273 \"4.7 out of 5 Stars. 1,006 reviews\""
+      },
+      {
+       "key": "t274",
+       "text": "t274 \"(1,006)\""
+      },
+      {
+       "key": "t276",
+       "text": "t276 \"Pickup today\""
+      },
+      {
+       "key": "t277",
+       "text": "t277 button \"+ Add\""
+      },
+      {
+       "key": "^t279",
+       "text": "- 4/4"
+      },
+      {
+       "key": "t279",
+       "text": "t279 link \"Softerra Everyday Napkins, 250 Count\" ~/ip/softerra-everyday-napkins-250-count/433202210"
+      },
+      {
+       "key": "t284",
+       "text": "t284 \"$5.94\""
+      },
+      {
+       "key": "t287",
+       "text": "t287 \"2.4 ¢/each\""
+      },
+      {
+       "key": "t288",
+       "text": "t288 \"Softerra Everyday Napkins, 250 Count\""
+      },
+      {
+       "key": "t290",
+       "text": "t290 \"4.5\""
+      },
+      {
+       "key": "t292",
+       "text": "t292 \"4.5 out of 5 Stars. 734 reviews\""
+      },
+      {
+       "key": "t293",
+       "text": "t293 \"(734)\""
+      },
+      {
+       "key": "t295",
+       "text": "t295 \"Pickup today\""
+      },
+      {
+       "key": "t296",
+       "text": "t296 button \"+ Add\""
+      },
+      {
+       "key": "^t299",
+       "text": "[contentinfo]"
+      },
+      {
+       "key": "t299",
+       "text": "t299 link \"All Departments\" ~/"
+      },
+      {
+       "key": "t300",
+       "text": "t300 link \"Store Directory\" ~/"
+      },
+      {
+       "key": "t301",
+       "text": "t301 link \"Careers\" ~/"
+      },
+      {
+       "key": "t302",
+       "text": "t302 link \"Our Company\" ~/"
+      },
+      {
+       "key": "t303",
+       "text": "t303 link \"Sell on ValueRidge\" ~/"
+      },
+      {
+       "key": "t304",
+       "text": "t304 link \"Help\" ~/"
+      },
+      {
+       "key": "t305",
+       "text": "t305 link \"Product Recalls\" ~/"
+      },
+      {
+       "key": "t306",
+       "text": "t306 link \"Accessibility\" ~/"
+      },
+      {
+       "key": "t307",
+       "text": "t307 link \"Tax Exempt Program\" ~/"
+      },
+      {
+       "key": "t308",
+       "text": "t308 link \"Get the ValueRidge App\" ~/"
+      },
+      {
+       "key": "t309",
+       "text": "t309 link \"Privacy choices\" ~/"
+      },
+      {
+       "key": "t310",
+       "text": "t310 link \"Terms of Use\" ~/"
+      },
+      {
+       "key": "t311",
+       "text": "t311 link \"Notice at Collection\" ~/"
+      },
+      {
+       "key": "t312",
+       "text": "t312 \"© 2026 ValueRidge Stores, Inc. · web-2026.38.1\""
+      },
+      {
+       "key": "^t322",
+       "text": "--- on screen ---"
+      },
+      {
+       "key": "^t322.2",
+       "text": "[page]"
+      },
+      {
+       "key": "t322",
+       "text": "t322 clickable"
+      },
+      {
+       "key": "t323",
+       "text": "t323 \"Chat with us\""
+      },
+      {
+       "key": "t324",
+       "text": "t324 \"×\""
+      }
+     ]
+    },
+    "judgeState": {
+     "version": 1,
+     "location": "http://127.0.0.1:52163/scenarios/bigbox-retail/",
+     "controls": [],
+     "notices": [],
+     "marks": [],
+     "title": "Save Money. Live Better. - ValueRidge"
+    },
+    "ok": true,
+    "node": "web.output.dom-click",
+    "status": "succeeded",
+    "pageChanged": true,
+    "actedOn": "This acted on item 4/4 (Millbrook Crossing Neighborhood Market, 17 Canal St, Millbrook · 10.6 mi) only, through its \"Set as my store\"; no other item was acted on.",
+    "actedOnItem": "item 4/4 (Millbrook Crossing Neighborhood Market, 17 Canal St, Millbrook · 10.6 mi, Open until 10pm, Millbrook Crossing Neighborhood Market17 Canal St, Millbrook · 10.6 miOpen until 10pm)",
+    "layerCleared": {
+     "signature": {
+      "layer": {
+       "tag": "div"
+      },
+      "control": {
+       "tag": "button",
+       "role": "button",
+       "name": "Set as my store"
+      }
+     },
+     "control": "t361"
+    },
+    "changed": [
+     "t340 \"Stores near Carden Falls\" gone",
+     "t343 \"Carden Falls Supercenter\" gone",
+     "t344 \"1400 Orchard Pkwy, Carden Falls · 2.1 mi\" gone",
+     "t345 \"Open until 11pm\" gone",
+     "t346 \"Your store\" gone",
+     "t348 \"Carden Falls Neighborhood Market\" gone",
+     "t349 \"212 W Mill St, Carden Falls · 3.4 mi\" gone",
+     "t350 \"Open until 10pm\" gone",
+     "and 7 more changes"
+    ],
+    "control": "Set as my store",
+    "controlHandle": "t361",
+    "stoodChosen": [
+     "t338 \"Pickup\""
+    ],
+    "addable": true
+   }
+  },
+  {
+   "recordedStep": 18,
+   "callId": "c8",
+   "toolId": "core.run_node",
+   "value": {
+    "node": "web.output.dom-click",
+    "parameters": {
+     "target": {
+      "handle": "t1583"
+     }
+    },
+    "consequences": [
+     "modify_existing"
+    ]
+   },
+   "answer": {
+    "schemaVersion": "web-llm-page.v4",
+    "trust": "untrusted-page-evidence",
+    "location": "http://127.0.0.1:52163/scenarios/bigbox-retail/ip/valueridge-essentials-paper-towels-1-roll/418830166",
+    "truncated": false,
+    "pageView": {
+     "key": "http://127.0.0.1:52163/scenarios/bigbox-retail/ip/valueridge-essentials-paper-towels-1-roll/418830166",
+     "lines": [
+      {
+       "key": "PAGE",
+       "text": "PAGE \"ValueRidge Essentials Paper Towels, 1 Roll - ValueRidge\""
+      },
+      {
+       "key": "URL",
+       "text": "URL ~   (~ = http://127.0.0.1:52163/scenarios/bigbox-retail/ip/valueridge-essentials-paper-towels-1-roll/418830166)"
+      },
+      {
+       "key": "VIEW",
+       "text": "VIEW 1280x720 at the top · 159 elements with visible words or a control, in page order"
+      },
+      {
+       "key": "COVERING",
+       "text": "COVERING t1608 covers 15 · t1609 \"Customers also bought\" complementary covers 28 close t1612 \"×\""
+      },
+      {
+       "key": "-",
+       "text": ""
+      },
+      {
+       "key": "^t1375",
+       "text": "[banner]"
+      },
+      {
+       "key": "t1375",
+       "text": "t1375 link \"ValueRidge\" /scenarios/bigbox-retail/ covered-by t1608"
+      },
+      {
+       "key": "^t1378",
+       "text": "[page]"
+      },
+      {
+       "key": "t1378",
+       "text": "t1378 button \"Pickup or delivery? Millbrook Crossing Neighborhood Market\" covered-by t1608"
+      },
+      {
+       "key": "^t1382",
+       "text": "[search]"
+      },
+      {
+       "key": "t1382",
+       "text": "t1382 field[search] \"Search\" placeholder \"Search everything at ValueRidge online and in store\" =\"\" covered-by t1608"
+      },
+      {
+       "key": "t1383",
+       "text": "t1383 button \"Search\" covered-by t1609"
+      },
+      {
+       "key": "^t1385",
+       "text": "[navigation]"
+      },
+      {
+       "key": "t1385",
+       "text": "t1385 link \"Reorder My Items\" ~ covered-by t1609"
+      },
+      {
+       "key": "t1387",
+       "text": "t1387 link \"Sign In Account\" ~ covered-by t1609"
+      },
+      {
+       "key": "t1389",
+       "text": "t1389 link \"🛒 1 $3.97\" /scenarios/bigbox-retail/cart covered-by t1609"
+      },
+      {
+       "key": "t1394",
+       "text": "t1394 link \"Departments\" ~ covered-by t1608"
+      },
+      {
+       "key": "t1395",
+       "text": "t1395 link \"Services\" ~ covered-by t1608"
+      },
+      {
+       "key": "t1396",
+       "text": "t1396 link \"Get it Fast\" ~ covered-by t1608"
+      },
+      {
+       "key": "t1397",
+       "text": "t1397 link \"Rollbacks & More\" /scenarios/bigbox-retail/search?q=paper+towels&facet=special_offers%3ARollback covered-by t1608"
+      },
+      {
+       "key": "t1398",
+       "text": "t1398 link \"New Arrivals\" ~ covered-by t1608"
+      },
+      {
+       "key": "t1399",
+       "text": "t1399 link \"Back to School\" ~ covered-by t1608"
+      },
+      {
+       "key": "t1400",
+       "text": "t1400 link \"Household Essentials\" ~ covered-by t1608"
+      },
+      {
+       "key": "t1401",
+       "text": "t1401 link \"Pharmacy Delivery\" ~ covered-by t1608"
+      },
+      {
+       "key": "t1402",
+       "text": "t1402 link \"Registry\" ~ covered-by t1608"
+      },
+      {
+       "key": "t1403",
+       "text": "t1403 link \"Weekly Ad\" /scenarios/bigbox-retail/weekly-ad covered-by t1609"
+      },
+      {
+       "key": "t1405",
+       "text": "t1405 \"Household Essentials / Paper & Plastic / Paper Towels\""
+      },
+      {
+       "key": "^t1408",
+       "text": "[main]"
+      },
+      {
+       "key": "t1408",
+       "text": "t1408 img \"ValueRidge Essentials Paper Towels, 1 Roll\""
+      },
+      {
+       "key": "t1410",
+       "text": "t1410 link \"Visit the ValueRidge Essentials Store\" ~ covered-by t1609"
+      },
+      {
+       "key": "t1411",
+       "text": "t1411 h1 \"ValueRidge Essentials Paper Towels, 1 Roll\""
+      },
+      {
+       "key": "t1413",
+       "text": "t1413 \"4.5\""
+      },
+      {
+       "key": "t1415",
+       "text": "t1415 \"4.5 out of 5 Stars. 938 reviews\""
+      },
+      {
+       "key": "t1416",
+       "text": "t1416 \"(938)\""
+      },
+      {
+       "key": "t1419",
+       "text": "t1419 \"$1.28\""
+      },
+      {
+       "key": "t1422",
+       "text": "t1422 \"$1.28/roll\""
+      },
+      {
+       "key": "t1423",
+       "text": "t1423 \"Price when purchased online\""
+      },
+      {
+       "key": "t1424",
+       "text": "t1424 \"Sold and shipped by ValueRidge\""
+      },
+      {
+       "key": "t1425",
+       "text": "t1425 link \"ValueRidge\" /scenarios/bigbox-retail/seller/valueridge covered-by t1609"
+      },
+      {
+       "key": "t1427",
+       "text": "t1427 \"How you'll get this item:\""
+      },
+      {
+       "key": "t1429",
+       "text": "t1429 clickable marked covered-by t1609"
+      },
+      {
+       "key": "t1430",
+       "text": "t1430 \"Pickup\" covered-by t1609"
+      },
+      {
+       "key": "t1431",
+       "text": "t1431 \"Today\" covered-by t1609"
+      },
+      {
+       "key": "t1432",
+       "text": "t1432 clickable covered-by t1609"
+      },
+      {
+       "key": "t1433",
+       "text": "t1433 \"Delivery\" covered-by t1609"
+      },
+      {
+       "key": "t1434",
+       "text": "t1434 \"Tomorrow\" covered-by t1609"
+      },
+      {
+       "key": "t1435",
+       "text": "t1435 clickable disabled covered-by t1609"
+      },
+      {
+       "key": "t1436",
+       "text": "t1436 \"Shipping\""
+      },
+      {
+       "key": "t1437",
+       "text": "t1437 \"Not available\""
+      },
+      {
+       "key": "t1438",
+       "text": "t1438 \"Pickup at Millbrook Crossing Neighborhood Market · Change store\""
+      },
+      {
+       "key": "t1440",
+       "text": "t1440 link \"Change store\" ~ covered-by t1609"
+      },
+      {
+       "key": "t1442",
+       "text": "t1442 clickable \"−\" covered-by t1609"
+      },
+      {
+       "key": "t1443",
+       "text": "t1443 \"1\""
+      },
+      {
+       "key": "t1444",
+       "text": "t1444 clickable \"+\" covered-by t1609"
+      },
+      {
+       "key": "t1446",
+       "text": "t1446 link \"Add to list\" ~ covered-by t1609"
+      },
+      {
+       "key": "t1447",
+       "text": "t1447 link \"Add to registry\" ~ covered-by t1609"
+      },
+      {
+       "key": "^t1449",
+       "text": "--- below the fold ---"
+      },
+      {
+       "key": "t1449",
+       "text": "t1449 h2 \"About this item\""
+      },
+      {
+       "key": "^t1451",
+       "text": "- 1/3"
+      },
+      {
+       "key": "t1451",
+       "text": "t1451 \"Absorbent two-ply sheets that hold up to spills and scrubbing\""
+      },
+      {
+       "key": "^t1452",
+       "text": "- 2/3"
+      },
+      {
+       "key": "t1452",
+       "text": "t1452 \"Roll counts are stated in regular-roll equivalents on the pack\""
+      },
+      {
+       "key": "^t1453",
+       "text": "- 3/3"
+      },
+      {
+       "key": "t1453",
+       "text": "t1453 \"Made with responsibly sourced fibre; the core and wrap are recyclable\""
+      },
+      {
+       "key": "^t1457",
+       "text": "- row 1"
+      },
+      {
+       "key": "t1457",
+       "text": "t1457 \"Brand\" @Brand"
+      },
+      {
+       "key": "t1458",
+       "text": "t1458 \"ValueRidge Essentials\" @\"ValueRidge Essentials\""
+      },
+      {
+       "key": "^t1460",
+       "text": "- row 2"
+      },
+      {
+       "key": "t1460",
+       "text": "t1460 \"Seller\" @Brand"
+      },
+      {
+       "key": "t1461",
+       "text": "t1461 \"ValueRidge\" @\"ValueRidge Essentials\""
+      },
+      {
+       "key": "^t1463",
+       "text": "- row 3"
+      },
+      {
+       "key": "t1463",
+       "text": "t1463 \"Item number\" @Brand"
+      },
+      {
+       "key": "t1464",
+       "text": "t1464 \"418830166\" @\"ValueRidge Essentials\""
+      },
+      {
+       "key": "t1466",
+       "text": "t1466 h2 \"Customer reviews\""
+      },
+      {
+       "key": "t1469",
+       "text": "t1469 \"Does the job\""
+      },
+      {
+       "key": "t1470",
+       "text": "t1470 \"Strong enough for spills and they tear cleanly on the perforation.\""
+      },
+      {
+       "key": "t1472",
+       "text": "t1472 \"Good value\""
+      },
+      {
+       "key": "t1473",
+       "text": "t1473 \"Cheaper per sheet than the name brand and I honestly can't tell the difference.\""
+      },
+      {
+       "key": "t1475",
+       "text": "t1475 \"Picked up same day\""
+      },
+      {
+       "key": "t1476",
+       "text": "t1476 \"Ordered at lunch and it was ready by three. Easy.\""
+      },
+      {
+       "key": "t1477",
+       "text": "t1477 button \"See more reviews\""
+      },
+      {
+       "key": "t1480",
+       "text": "t1480 h2 \"Similar items you might like\""
+      },
+      {
+       "key": "^t1483",
+       "text": "- 1/5"
+      },
+      {
+       "key": "t1483",
+       "text": "t1483 link \"ValueRidge Essentials Select-A-Size Paper Towels, 6 Double Rolls\" /scenarios/bigbox-retail/ip/valueridge-essentials-select-a-size-paper-towels/418830127"
+      },
+      {
+       "key": "t1488",
+       "text": "t1488 \"$8.97\""
+      },
+      {
+       "key": "t1491",
+       "text": "t1491 \"1.2 ¢/sheet\""
+      },
+      {
+       "key": "t1492",
+       "text": "t1492 \"ValueRidge Essentials Select-A-Size Paper Towels, 6 Double Rolls\""
+      },
+      {
+       "key": "t1494",
+       "text": "t1494 \"4.6\""
+      },
+      {
+       "key": "t1496",
+       "text": "t1496 \"4.6 out of 5 Stars. 12,418 reviews\""
+      },
+      {
+       "key": "t1497",
+       "text": "t1497 \"(12,418)\""
+      },
+      {
+       "key": "t1499",
+       "text": "t1499 \"Pickup today\""
+      },
+      {
+       "key": "t1500",
+       "text": "t1500 link \"Options\" same href"
+      },
+      {
+       "key": "^t1502",
+       "text": "- 2/5"
+      },
+      {
+       "key": "t1502",
+       "text": "t1502 link \"Loftwell Ultra Strong Paper Towels, 6 Double Rolls\" /scenarios/bigbox-retail/ip/loftwell-ultra-strong-paper-towels-6-double-rolls/402917554"
+      },
+      {
+       "key": "t1507",
+       "text": "t1507 \"$10.47\""
+      },
+      {
+       "key": "t1510",
+       "text": "t1510 \"1.4 ¢/sheet\""
+      },
+      {
+       "key": "t1511",
+       "text": "t1511 \"Loftwell Ultra Strong Paper Towels, 6 Double Rolls\""
+      },
+      {
+       "key": "t1513",
+       "text": "t1513 \"4.8\""
+      },
+      {
+       "key": "t1515",
+       "text": "t1515 \"4.8 out of 5 Stars. 8,902 reviews\""
+      },
+      {
+       "key": "t1516",
+       "text": "t1516 \"(8,902)\""
+      },
+      {
+       "key": "t1518",
+       "text": "t1518 \"Pickup today\""
+      },
+      {
+       "key": "t1519",
+       "text": "t1519 button \"+ Add\""
+      },
+      {
+       "key": "^t1521",
+       "text": "- 3/5"
+      },
+      {
+       "key": "t1521",
+       "text": "t1521 link \"Softerra Pick-A-Sheet Paper Towels, 8 Triple Rolls\" /scenarios/bigbox-retail/ip/softerra-pick-a-sheet-paper-towels-8-triple-rolls/433201876"
+      },
+      {
+       "key": "t1526",
+       "text": "t1526 \"$19.97\""
+      },
+      {
+       "key": "t1529",
+       "text": "t1529 \"1.3 ¢/sheet\""
+      },
+      {
+       "key": "t1530",
+       "text": "t1530 \"Softerra Pick-A-Sheet Paper Towels, 8 Triple Rolls\""
+      },
+      {
+       "key": "t1532",
+       "text": "t1532 \"4.7\""
+      },
+      {
+       "key": "t1534",
+       "text": "t1534 \"4.7 out of 5 Stars. 3,117 reviews\""
+      },
+      {
+       "key": "t1535",
+       "text": "t1535 \"(3,117)\""
+      },
+      {
+       "key": "t1537",
+       "text": "t1537 \"Pickup today\""
+      },
+      {
+       "key": "t1538",
+       "text": "t1538 button \"+ Add\""
+      },
+      {
+       "key": "^t1540",
+       "text": "- 4/5"
+      },
+      {
+       "key": "t1540",
+       "text": "t1540 link \"Tidemark Paper Towels, 12 Mega Rolls\" /scenarios/bigbox-retail/ip/tidemark-paper-towels-12-mega-rolls/461120983"
+      },
+      {
+       "key": "t1545",
+       "text": "t1545 \"$32.49\""
+      },
+      {
+       "key": "t1548",
+       "text": "t1548 \"$2.71/roll\""
+      },
+      {
+       "key": "t1549",
+       "text": "t1549 \"Tidemark Paper Towels, 12 Mega Rolls\""
+      },
+      {
+       "key": "t1551",
+       "text": "t1551 \"4.5\""
+      },
+      {
+       "key": "t1553",
+       "text": "t1553 \"4.5 out of 5 Stars. 644 reviews\""
+      },
+      {
+       "key": "t1554",
+       "text": "t1554 \"(644)\""
+      },
+      {
+       "key": "t1556",
+       "text": "t1556 \"Shipping, arrives Fri, Sep 25\""
+      },
+      {
+       "key": "t1557",
+       "text": "t1557 button \"+ Add\""
+      },
+      {
+       "key": "^t1559",
+       "text": "- 5/5"
+      },
+      {
+       "key": "t1559",
+       "text": "t1559 link \"Hearthside Kitchen Paper Towels, 2 Rolls\" /scenarios/bigbox-retail/ip/hearthside-kitchen-paper-towels-2-rolls/417553090"
+      },
+      {
+       "key": "t1564",
+       "text": "t1564 \"Now\""
+      },
+      {
+       "key": "t1565",
+       "text": "t1565 \"$2.97\""
+      },
+      {
+       "key": "t1569",
+       "text": "t1569 \"Was\""
+      },
+      {
+       "key": "t1570",
+       "text": "t1570 \"$3.48\""
+      },
+      {
+       "key": "t1571",
+       "text": "t1571 \"$1.49/roll\""
+      },
+      {
+       "key": "t1572",
+       "text": "t1572 \"Hearthside Kitchen Paper Towels, 2 Rolls\""
+      },
+      {
+       "key": "t1574",
+       "text": "t1574 \"4.3\""
+      },
+      {
+       "key": "t1576",
+       "text": "t1576 \"4.3 out of 5 Stars. 1,208 reviews\""
+      },
+      {
+       "key": "t1577",
+       "text": "t1577 \"(1,208)\""
+      },
+      {
+       "key": "t1579",
+       "text": "t1579 \"Pickup today\""
+      },
+      {
+       "key": "t1580",
+       "text": "t1580 button \"+ Add\""
+      },
+      {
+       "key": "^t1582",
+       "text": "--- on screen ---"
+      },
+      {
+       "key": "t1582",
+       "text": "t1582 \"ValueRidge Essentials Paper Towels, 1 Roll · $1.28\""
+      },
+      {
+       "key": "t1583",
+       "text": "t1583 button \"Add to cart\" covered-by t1609"
+      },
+      {
+       "key": "^t1586",
+       "text": "--- below the fold ---"
+      },
+      {
+       "key": "^t1586.2",
+       "text": "[contentinfo]"
+      },
+      {
+       "key": "t1586",
+       "text": "t1586 link \"All Departments\" ~"
+      },
+      {
+       "key": "t1587",
+       "text": "t1587 link \"Store Directory\" ~"
+      },
+      {
+       "key": "t1588",
+       "text": "t1588 link \"Careers\" ~"
+      },
+      {
+       "key": "t1589",
+       "text": "t1589 link \"Our Company\" ~"
+      },
+      {
+       "key": "t1590",
+       "text": "t1590 link \"Sell on ValueRidge\" ~"
+      },
+      {
+       "key": "t1591",
+       "text": "t1591 link \"Help\" ~"
+      },
+      {
+       "key": "t1592",
+       "text": "t1592 link \"Product Recalls\" ~"
+      },
+      {
+       "key": "t1593",
+       "text": "t1593 link \"Accessibility\" ~"
+      },
+      {
+       "key": "t1594",
+       "text": "t1594 link \"Tax Exempt Program\" ~"
+      },
+      {
+       "key": "t1595",
+       "text": "t1595 link \"Get the ValueRidge App\" ~"
+      },
+      {
+       "key": "t1596",
+       "text": "t1596 link \"Privacy choices\" ~"
+      },
+      {
+       "key": "t1597",
+       "text": "t1597 link \"Terms of Use\" ~"
+      },
+      {
+       "key": "t1598",
+       "text": "t1598 link \"Notice at Collection\" ~"
+      },
+      {
+       "key": "t1599",
+       "text": "t1599 \"© 2026 ValueRidge Stores, Inc. · web-2026.38.1\""
+      },
+      {
+       "key": "^t1601",
+       "text": "--- on screen ---"
+      },
+      {
+       "key": "^t1601.2",
+       "text": "[page]"
+      },
+      {
+       "key": "t1601",
+       "text": "t1601 clickable covered-by t1609"
+      },
+      {
+       "key": "t1606",
+       "text": "t1606 \"Chat with us\" covered-by t1609"
+      },
+      {
+       "key": "t1607",
+       "text": "t1607 \"×\" covered-by t1609"
+      },
+      {
+       "key": "t1608",
+       "text": "t1608 layer covers 15"
+      },
+      {
+       "key": "^t1609",
+       "text": "[complementary]"
+      },
+      {
+       "key": "t1609",
+       "text": "t1609 layer covers 28"
+      },
+      {
+       "key": "t1611",
+       "text": "t1611 \"✓ Added to cart\""
+      },
+      {
+       "key": "t1612",
+       "text": "t1612 clickable \"×\""
+      },
+      {
+       "key": "t1613",
+       "text": "t1613 \"ValueRidge Essentials Paper Towels, 1 Roll\""
+      },
+      {
+       "key": "t1614",
+       "text": "t1614 \"Qty 1 · Pickup\""
+      },
+      {
+       "key": "t1615",
+       "text": "t1615 link \"View cart\" same href as t1389"
+      },
+      {
+       "key": "t1616",
+       "text": "t1616 button \"Continue shopping\""
+      },
+      {
+       "key": "t1617",
+       "text": "t1617 h3 \"Customers also bought\""
+      },
+      {
+       "key": "^t1620",
+       "text": "- 1/2"
+      },
+      {
+       "key": "t1620",
+       "text": "t1620 link \"ValueRidge Essentials Select-A-Size Paper Towels, 6 Double Rolls\" same href as t1483"
+      },
+      {
+       "key": "t1625",
+       "text": "t1625 \"$8.97\""
+      },
+      {
+       "key": "t1628",
+       "text": "t1628 \"1.2 ¢/sheet\""
+      },
+      {
+       "key": "t1629",
+       "text": "t1629 \"ValueRidge Essentials Select-A-Size Paper Towels, 6 Double Rolls\""
+      },
+      {
+       "key": "t1631",
+       "text": "t1631 \"4.6\""
+      },
+      {
+       "key": "t1633",
+       "text": "t1633 \"4.6 out of 5 Stars. 12,418 reviews\""
+      },
+      {
+       "key": "t1634",
+       "text": "t1634 \"(12,418)\""
+      },
+      {
+       "key": "t1636",
+       "text": "t1636 \"Pickup today\""
+      },
+      {
+       "key": "t1637",
+       "text": "t1637 link \"Options\" same href"
+      },
+      {
+       "key": "^t1639",
+       "text": "- 2/2"
+      },
+      {
+       "key": "t1639",
+       "text": "t1639 link \"Loftwell Ultra Strong Paper Towels, 6 Double Rolls\" same href as t1502"
+      },
+      {
+       "key": "t1644",
+       "text": "t1644 \"$10.47\""
+      },
+      {
+       "key": "t1647",
+       "text": "t1647 \"1.4 ¢/sheet\""
+      },
+      {
+       "key": "t1648",
+       "text": "t1648 \"Loftwell Ultra Strong Paper Towels, 6 Double Rolls\""
+      },
+      {
+       "key": "t1650",
+       "text": "t1650 \"4.8\""
+      },
+      {
+       "key": "t1652",
+       "text": "t1652 \"4.8 out of 5 Stars. 8,902 reviews\""
+      },
+      {
+       "key": "t1653",
+       "text": "t1653 \"(8,902)\""
+      },
+      {
+       "key": "t1655",
+       "text": "t1655 \"Pickup today\""
+      },
+      {
+       "key": "t1656",
+       "text": "t1656 button \"+ Add\""
+      }
+     ]
+    },
+    "judgeState": {
+     "version": 1,
+     "location": "http://127.0.0.1:52163/scenarios/bigbox-retail/ip/valueridge-essentials-paper-towels-1-roll/418830166",
+     "controls": [],
+     "notices": [],
+     "marks": [
+      {
+       "tag": "div",
+       "heading": "ValueRidge Essentials Paper Towels, 1 Roll",
+       "marked": true
+      }
+     ],
+     "title": "ValueRidge Essentials Paper Towels, 1 Roll - ValueRidge"
+    },
+    "ok": true,
+    "node": "web.output.dom-click",
+    "status": "succeeded",
+    "pageChanged": true,
+    "actedOnCard": "ValueRidge Essentials Paper Towels, 1 Roll",
+    "changed": [
+     "t1603 \"Hi, I'm Val, ValueRidge's virtual assistant.\" gone",
+     "t1604 \"Not sure which pack is the better deal? I can compare sizes, prices and pickup times for you.\" gone",
+     "t1606 \"Chat with us\" appeared",
+     "t1607 \"×\" appeared",
+     "t1611 \"✓ Added to cart\" appeared",
+     "t1613 \"ValueRidge Essentials Paper Towels, 1 Roll\" appeared",
+     "t1614 \"Qty 1 · Pickup\" appeared",
+     "t1617 \"Customers also bought\" appeared",
+     "and 14 more changes"
+    ],
+    "control": "Add to cart",
+    "controlHandle": "t1583",
+    "addable": true
+   }
+  }
+ ],
+ "before": {
+  "schemaVersion": "web-llm-page.v4",
+  "location": "http://127.0.0.1:52163/scenarios/bigbox-retail/",
+  "pageView": {
+   "key": "http://127.0.0.1:52163/scenarios/bigbox-retail",
+   "lines": [
+    {
+     "key": "PAGE",
+     "text": "PAGE \"Save Money. Live Better. - ValueRidge\""
+    },
+    {
+     "key": "URL",
+     "text": "URL ~/   (~ = http://127.0.0.1:52163/scenarios/bigbox-retail)"
+    },
+    {
+     "key": "VIEW",
+     "text": "VIEW 1280x720 at the top · 183 elements with visible words or a control, in page order"
+    },
+    {
+     "key": "COVERING",
+     "text": "COVERING t2 banner close t336 \"×\" · t3 covers 4 close t336 \"×\" · t321 covers 1 close t324 \"×\""
+    },
+    {
+     "key": "ARRIVED",
+     "text": "ARRIVED reload"
+    },
+    {
+     "key": "-",
+     "text": ""
+    },
+    {
+     "key": "^t3",
+     "text": "[banner]"
+    },
+    {
+     "key": "t3",
+     "text": "t3 layer covers 4"
+    },
+    {
+     "key": "t4",
+     "text": "t4 link \"ValueRidge\" ~/"
+    },
+    {
+     "key": "^t7",
+     "text": "[page]"
+    },
+    {
+     "key": "t7",
+     "text": "t7 button \"Pickup or delivery? Carden Falls Supercenter\""
+    },
+    {
+     "key": "t336",
+     "text": "t336 clickable \"×\""
+    },
+    {
+     "key": "t338",
+     "text": "t338 clickable \"Pickup\" marked"
+    },
+    {
+     "key": "t339",
+     "text": "t339 clickable \"Delivery\""
+    },
+    {
+     "key": "t340",
+     "text": "t340 \"Stores near Carden Falls\""
+    },
+    {
+     "key": "^t343",
+     "text": "- 1/4"
+    },
+    {
+     "key": "t343",
+     "text": "t343 \"Carden Falls Supercenter\""
+    },
+    {
+     "key": "t344",
+     "text": "t344 \"1400 Orchard Pkwy, Carden Falls · 2.1 mi\""
+    },
+    {
+     "key": "t345",
+     "text": "t345 \"Open until 11pm\""
+    },
+    {
+     "key": "t346",
+     "text": "t346 \"Your store\""
+    },
+    {
+     "key": "^t348",
+     "text": "- 2/4"
+    },
+    {
+     "key": "t348",
+     "text": "t348 \"Carden Falls Neighborhood Market\""
+    },
+    {
+     "key": "t349",
+     "text": "t349 \"212 W Mill St, Carden Falls · 3.4 mi\""
+    },
+    {
+     "key": "t350",
+     "text": "t350 \"Open until 10pm\""
+    },
+    {
+     "key": "t351",
+     "text": "t351 button \"Set as my store\""
+    },
+    {
+     "key": "^t353",
+     "text": "- 3/4"
+    },
+    {
+     "key": "t353",
+     "text": "t353 \"Millbrook Crossing Supercenter\""
+    },
+    {
+     "key": "t354",
+     "text": "t354 \"88 Ferris Rd, Millbrook · 9.8 mi\""
+    },
+    {
+     "key": "t355",
+     "text": "t355 \"Open 24 hours\""
+    },
+    {
+     "key": "t356",
+     "text": "t356 button \"Set as my store\""
+    },
+    {
+     "key": "^t358",
+     "text": "- 4/4"
+    },
+    {
+     "key": "t358",
+     "text": "t358 \"Millbrook Crossing Neighborhood Market\""
+    },
+    {
+     "key": "t359",
+     "text": "t359 \"17 Canal St, Millbrook · 10.6 mi\""
+    },
+    {
+     "key": "t360",
+     "text": "t360 \"Open until 10pm\""
+    },
+    {
+     "key": "t361",
+     "text": "t361 button \"Set as my store\""
+    },
+    {
+     "key": "^t11",
+     "text": "[search]"
+    },
+    {
+     "key": "t11",
+     "text": "t11 field[search] \"Search\" placeholder \"Search everything at ValueRidge online and in store\" =\"\""
+    },
+    {
+     "key": "t12",
+     "text": "t12 button \"Search\""
+    },
+    {
+     "key": "^t14",
+     "text": "[navigation]"
+    },
+    {
+     "key": "t14",
+     "text": "t14 link \"Reorder My Items\" ~/"
+    },
+    {
+     "key": "t16",
+     "text": "t16 link \"Sign In Account\" ~/"
+    },
+    {
+     "key": "t18",
+     "text": "t18 link \"🛒 1 $3.97\" ~/cart"
+    },
+    {
+     "key": "t23",
+     "text": "t23 link \"Departments\" ~/"
+    },
+    {
+     "key": "t24",
+     "text": "t24 link \"Services\" ~/"
+    },
+    {
+     "key": "t25",
+     "text": "t25 link \"Get it Fast\" ~/ covered-by t3"
+    },
+    {
+     "key": "t26",
+     "text": "t26 link \"Rollbacks & More\" ~/search?q=paper+towels&facet=special_offers%3ARollback covered-by t3"
+    },
+    {
+     "key": "t27",
+     "text": "t27 link \"New Arrivals\" ~/ covered-by t3"
+    },
+    {
+     "key": "t28",
+     "text": "t28 link \"Back to School\" ~/ covered-by t3"
+    },
+    {
+     "key": "t29",
+     "text": "t29 link \"Household Essentials\" ~/"
+    },
+    {
+     "key": "t30",
+     "text": "t30 link \"Pharmacy Delivery\" ~/"
+    },
+    {
+     "key": "t31",
+     "text": "t31 link \"Registry\" ~/"
+    },
+    {
+     "key": "t32",
+     "text": "t32 link \"Weekly Ad\" ~/weekly-ad"
+    },
+    {
+     "key": "^t36",
+     "text": "[main]"
+    },
+    {
+     "key": "t36",
+     "text": "t36 h1 \"Back-to-school lunch packing\""
+    },
+    {
+     "key": "t37",
+     "text": "t37 \"Napkins, wraps and snacks in bulk.\""
+    },
+    {
+     "key": "t38",
+     "text": "t38 link \"Shop now\" ~/search?q=napkins"
+    },
+    {
+     "key": "t45",
+     "text": "t45 h2 \"Pickup today at Carden Falls Supercenter\""
+    },
+    {
+     "key": "t46",
+     "text": "t46 link \"View all\" ~/search?q=paper+towels"
+    },
+    {
+     "key": "^t49",
+     "text": "- 1/8"
+    },
+    {
+     "key": "t49",
+     "text": "t49 link \"Loftwell Ultra Strong Paper Towels, 6 Double Rolls\" ~/ip/loftwell-ultra-strong-paper-towels-6-double-rolls/402917554"
+    },
+    {
+     "key": "t54",
+     "text": "t54 \"$10.47\""
+    },
+    {
+     "key": "t57",
+     "text": "t57 \"1.4 ¢/sheet\""
+    },
+    {
+     "key": "t58",
+     "text": "t58 \"Loftwell Ultra Strong Paper Towels, 6 Double Rolls\""
+    },
+    {
+     "key": "t60",
+     "text": "t60 \"4.8\""
+    },
+    {
+     "key": "^t62",
+     "text": "--- below the fold ---"
+    },
+    {
+     "key": "t62",
+     "text": "t62 \"4.8 out of 5 Stars. 8,902 reviews\""
+    },
+    {
+     "key": "^t63",
+     "text": "--- on screen ---"
+    },
+    {
+     "key": "t63",
+     "text": "t63 \"(8,902)\""
+    },
+    {
+     "key": "^t65",
+     "text": "--- below the fold ---"
+    },
+    {
+     "key": "t65",
+     "text": "t65 \"Pickup today\""
+    },
+    {
+     "key": "t66",
+     "text": "t66 button \"+ Add\""
+    },
+    {
+     "key": "^t68",
+     "text": "--- on screen ---"
+    },
+    {
+     "key": "^t68.2",
+     "text": "- 2/8"
+    },
+    {
+     "key": "t68",
+     "text": "t68 link \"Hearthside Paper Towels, 12 Double Rolls\" ~/ip/hearthside-paper-towels-12-double-rolls/417553117"
+    },
+    {
+     "key": "t73",
+     "text": "t73 \"$17.48\""
+    },
+    {
+     "key": "t76",
+     "text": "t76 \"1.2 ¢/sheet\""
+    },
+    {
+     "key": "t77",
+     "text": "t77 \"Hearthside Paper Towels, 12 Double Rolls\""
+    },
+    {
+     "key": "t79",
+     "text": "t79 \"4.6\""
+    },
+    {
+     "key": "^t81",
+     "text": "--- below the fold ---"
+    },
+    {
+     "key": "t81",
+     "text": "t81 \"4.6 out of 5 Stars. 2,764 reviews\""
+    },
+    {
+     "key": "^t82",
+     "text": "--- on screen ---"
+    },
+    {
+     "key": "t82",
+     "text": "t82 \"(2,764)\""
+    },
+    {
+     "key": "^t84",
+     "text": "--- below the fold ---"
+    },
+    {
+     "key": "t84",
+     "text": "t84 \"Pickup today\""
+    },
+    {
+     "key": "t85",
+     "text": "t85 button \"+ Add\""
+    },
+    {
+     "key": "^t87",
+     "text": "--- on screen ---"
+    },
+    {
+     "key": "^t87.2",
+     "text": "- 3/8"
+    },
+    {
+     "key": "t87",
+     "text": "t87 link \"ValueRidge Everyday Dinner Napkins, 100 Count\" ~/ip/valueridge-everyday-dinner-napkins/418831402"
+    },
+    {
+     "key": "t92",
+     "text": "t92 \"$2.97\""
+    },
+    {
+     "key": "t95",
+     "text": "t95 \"3.0 ¢/each\""
+    },
+    {
+     "key": "t96",
+     "text": "t96 \"ValueRidge Everyday Dinner Napkins, 100 Count\""
+    },
+    {
+     "key": "t98",
+     "text": "t98 \"4.6\""
+    },
+    {
+     "key": "^t100",
+     "text": "--- below the fold ---"
+    },
+    {
+     "key": "t100",
+     "text": "t100 \"4.6 out of 5 Stars. 2,812 reviews\""
+    },
+    {
+     "key": "^t101",
+     "text": "--- on screen ---"
+    },
+    {
+     "key": "t101",
+     "text": "t101 \"(2,812)\""
+    },
+    {
+     "key": "^t103",
+     "text": "--- below the fold ---"
+    },
+    {
+     "key": "t103",
+     "text": "t103 \"Pickup today\""
+    },
+    {
+     "key": "t104",
+     "text": "t104 link \"Options\" same href"
+    },
+    {
+     "key": "^t106",
+     "text": "--- on screen ---"
+    },
+    {
+     "key": "^t106.2",
+     "text": "- 4/8"
+    },
+    {
+     "key": "t106",
+     "text": "t106 link \"ValueRidge Ultra Dish Soap, Lemon Scent, 24 fl oz\" ~/ip/valueridge-ultra-dish-soap-lemon-scent-24-fl-oz/418832007"
+    },
+    {
+     "key": "t111",
+     "text": "t111 \"$3.97\""
+    },
+    {
+     "key": "t114",
+     "text": "t114 \"16.5 ¢/fl oz\""
+    },
+    {
+     "key": "t115",
+     "text": "t115 \"ValueRidge Ultra Dish Soap, Lemon Scent, 24 fl oz\""
+    },
+    {
+     "key": "t117",
+     "text": "t117 \"4.7\""
+    },
+    {
+     "key": "^t119",
+     "text": "--- below the fold ---"
+    },
+    {
+     "key": "t119",
+     "text": "t119 \"4.7 out of 5 Stars. 5,120 reviews\""
+    },
+    {
+     "key": "^t120",
+     "text": "--- on screen ---"
+    },
+    {
+     "key": "t120",
+     "text": "t120 \"(5,120)\""
+    },
+    {
+     "key": "^t122",
+     "text": "--- below the fold ---"
+    },
+    {
+     "key": "t122",
+     "text": "t122 \"Pickup today\""
+    },
+    {
+     "key": "t123",
+     "text": "t123 button \"+ Add\""
+    },
+    {
+     "key": "^t125",
+     "text": "--- on screen ---"
+    },
+    {
+     "key": "^t125.2",
+     "text": "- 5/8"
+    },
+    {
+     "key": "t125",
+     "text": "t125 link \"ValueRidge Essentials Paper Towels Value Pack, 15 Rolls\" ~/ip/valueridge-essentials-paper-towels-value-pack-15-rolls/418830190"
+    },
+    {
+     "key": "t130",
+     "text": "t130 \"$15.88\""
+    },
+    {
+     "key": "t133",
+     "text": "t133 \"$1.06/roll\""
+    },
+    {
+     "key": "t134",
+     "text": "t134 \"ValueRidge Essentials Paper Towels Value Pack, 15 Rolls\""
+    },
+    {
+     "key": "t136",
+     "text": "t136 \"4.7\""
+    },
+    {
+     "key": "^t138",
+     "text": "--- below the fold ---"
+    },
+    {
+     "key": "t138",
+     "text": "t138 \"4.7 out of 5 Stars. 7,733 reviews\""
+    },
+    {
+     "key": "^t139",
+     "text": "--- on screen ---"
+    },
+    {
+     "key": "t139",
+     "text": "t139 \"(7,733)\""
+    },
+    {
+     "key": "^t141",
+     "text": "--- below the fold ---"
+    },
+    {
+     "key": "t141",
+     "text": "t141 \"Pickup today\""
+    },
+    {
+     "key": "t142",
+     "text": "t142 button \"+ Add\""
+    },
+    {
+     "key": "^t144",
+     "text": "--- on screen ---"
+    },
+    {
+     "key": "^t144.2",
+     "text": "- 6/8"
+    },
+    {
+     "key": "t144",
+     "text": "t144 link \"Hearthside Kitchen Paper Towels, 2 Rolls\" ~/ip/hearthside-kitchen-paper-towels-2-rolls/417553090 covered-by t321"
+    },
+    {
+     "key": "t149",
+     "text": "t149 \"Now\""
+    },
+    {
+     "key": "t150",
+     "text": "t150 \"$2.97\""
+    },
+    {
+     "key": "t154",
+     "text": "t154 \"Was\""
+    },
+    {
+     "key": "t155",
+     "text": "t155 \"$3.48\""
+    },
+    {
+     "key": "t156",
+     "text": "t156 \"$1.49/roll\""
+    },
+    {
+     "key": "t157",
+     "text": "t157 \"Hearthside Kitchen Paper Towels, 2 Rolls\""
+    },
+    {
+     "key": "t159",
+     "text": "t159 \"4.3\""
+    },
+    {
+     "key": "^t161",
+     "text": "--- below the fold ---"
+    },
+    {
+     "key": "t161",
+     "text": "t161 \"4.3 out of 5 Stars. 1,208 reviews\""
+    },
+    {
+     "key": "^t162",
+     "text": "--- on screen ---"
+    },
+    {
+     "key": "t162",
+     "text": "t162 \"(1,208)\""
+    },
+    {
+     "key": "^t164",
+     "text": "--- below the fold ---"
+    },
+    {
+     "key": "t164",
+     "text": "t164 \"Pickup today\""
+    },
+    {
+     "key": "t165",
+     "text": "t165 button \"+ Add\""
+    },
+    {
+     "key": "^t167",
+     "text": "- 7/8"
+    },
+    {
+     "key": "t167",
+     "text": "t167 link \"Softerra Paper Towels, 6 Double Rolls\" ~/ip/softerra-paper-towels-6-double-rolls/433201844"
+    },
+    {
+     "key": "t172",
+     "text": "t172 \"Now\""
+    },
+    {
+     "key": "t173",
+     "text": "t173 \"$9.47\""
+    },
+    {
+     "key": "t177",
+     "text": "t177 \"Was\""
+    },
+    {
+     "key": "t178",
+     "text": "t178 \"$11.97\""
+    },
+    {
+     "key": "t179",
+     "text": "t179 \"1.3 ¢/sheet\""
+    },
+    {
+     "key": "t180",
+     "text": "t180 \"Softerra Paper Towels, 6 Double Rolls\""
+    },
+    {
+     "key": "t182",
+     "text": "t182 \"4.5\""
+    },
+    {
+     "key": "t184",
+     "text": "t184 \"4.5 out of 5 Stars. 5,302 reviews\""
+    },
+    {
+     "key": "t185",
+     "text": "t185 \"(5,302)\""
+    },
+    {
+     "key": "t187",
+     "text": "t187 \"Pickup today\""
+    },
+    {
+     "key": "t188",
+     "text": "t188 button \"+ Add\""
+    },
+    {
+     "key": "^t190",
+     "text": "- 8/8"
+    },
+    {
+     "key": "t190",
+     "text": "t190 link \"Softerra Pick-A-Sheet Paper Towels, 12 Triple Rolls\" ~/ip/softerra-pick-a-sheet-paper-towels-12-triple-rolls/433201899"
+    },
+    {
+     "key": "t195",
+     "text": "t195 \"$27.97\""
+    },
+    {
+     "key": "t198",
+     "text": "t198 \"1.2 ¢/sheet\""
+    },
+    {
+     "key": "t199",
+     "text": "t199 \"Softerra Pick-A-Sheet Paper Towels, 12 Triple Rolls\""
+    },
+    {
+     "key": "t201",
+     "text": "t201 \"4.7\""
+    },
+    {
+     "key": "t203",
+     "text": "t203 \"4.7 out of 5 Stars. 4,021 reviews\""
+    },
+    {
+     "key": "t204",
+     "text": "t204 \"(4,021)\""
+    },
+    {
+     "key": "t206",
+     "text": "t206 \"Pickup today\""
+    },
+    {
+     "key": "t207",
+     "text": "t207 button \"+ Add\""
+    },
+    {
+     "key": "t210",
+     "text": "t210 h2 \"Rollbacks\""
+    },
+    {
+     "key": "t211",
+     "text": "t211 link \"View all\" same href as t26"
+    },
+    {
+     "key": "^t214",
+     "text": "- 1/4"
+    },
+    {
+     "key": "t214",
+     "text": "t214 link \"Hearthside Kitchen Paper Towels, 2 Rolls\" same href as t144"
+    },
+    {
+     "key": "t219",
+     "text": "t219 \"Now\""
+    },
+    {
+     "key": "t220",
+     "text": "t220 \"$2.97\""
+    },
+    {
+     "key": "t224",
+     "text": "t224 \"Was\""
+    },
+    {
+     "key": "t225",
+     "text": "t225 \"$3.48\""
+    },
+    {
+     "key": "t226",
+     "text": "t226 \"$1.49/roll\""
+    },
+    {
+     "key": "t227",
+     "text": "t227 \"Hearthside Kitchen Paper Towels, 2 Rolls\""
+    },
+    {
+     "key": "t229",
+     "text": "t229 \"4.3\""
+    },
+    {
+     "key": "t231",
+     "text": "t231 \"4.3 out of 5 Stars. 1,208 reviews\""
+    },
+    {
+     "key": "t232",
+     "text": "t232 \"(1,208)\""
+    },
+    {
+     "key": "t234",
+     "text": "t234 \"Pickup today\""
+    },
+    {
+     "key": "t235",
+     "text": "t235 button \"+ Add\""
+    },
+    {
+     "key": "^t237",
+     "text": "- 2/4"
+    },
+    {
+     "key": "t237",
+     "text": "t237 link \"Softerra Paper Towels, 6 Double Rolls\" same href as t167"
+    },
+    {
+     "key": "t242",
+     "text": "t242 \"Now\""
+    },
+    {
+     "key": "t243",
+     "text": "t243 \"$9.47\""
+    },
+    {
+     "key": "t247",
+     "text": "t247 \"Was\""
+    },
+    {
+     "key": "t248",
+     "text": "t248 \"$11.97\""
+    },
+    {
+     "key": "t249",
+     "text": "t249 \"1.3 ¢/sheet\""
+    },
+    {
+     "key": "t250",
+     "text": "t250 \"Softerra Paper Towels, 6 Double Rolls\""
+    },
+    {
+     "key": "t252",
+     "text": "t252 \"4.5\""
+    },
+    {
+     "key": "t254",
+     "text": "t254 \"4.5 out of 5 Stars. 5,302 reviews\""
+    },
+    {
+     "key": "t255",
+     "text": "t255 \"(5,302)\""
+    },
+    {
+     "key": "t257",
+     "text": "t257 \"Pickup today\""
+    },
+    {
+     "key": "t258",
+     "text": "t258 button \"+ Add\""
+    },
+    {
+     "key": "^t260",
+     "text": "- 3/4"
+    },
+    {
+     "key": "t260",
+     "text": "t260 link \"Loftwell Dinner Napkins, 2-Ply, 250 Count\" ~/ip/loftwell-dinner-napkins-2-ply-250-count/402918013"
+    },
+    {
+     "key": "t265",
+     "text": "t265 \"$7.97\""
+    },
+    {
+     "key": "t268",
+     "text": "t268 \"3.2 ¢/each\""
+    },
+    {
+     "key": "t269",
+     "text": "t269 \"Loftwell Dinner Napkins, 2-Ply, 250 Count\""
+    },
+    {
+     "key": "t271",
+     "text": "t271 \"4.7\""
+    },
+    {
+     "key": "t273",
+     "text": "t273 \"4.7 out of 5 Stars. 1,006 reviews\""
+    },
+    {
+     "key": "t274",
+     "text": "t274 \"(1,006)\""
+    },
+    {
+     "key": "t276",
+     "text": "t276 \"Pickup today\""
+    },
+    {
+     "key": "t277",
+     "text": "t277 button \"+ Add\""
+    },
+    {
+     "key": "^t279",
+     "text": "- 4/4"
+    },
+    {
+     "key": "t279",
+     "text": "t279 link \"Softerra Everyday Napkins, 250 Count\" ~/ip/softerra-everyday-napkins-250-count/433202210"
+    },
+    {
+     "key": "t284",
+     "text": "t284 \"$5.94\""
+    },
+    {
+     "key": "t287",
+     "text": "t287 \"2.4 ¢/each\""
+    },
+    {
+     "key": "t288",
+     "text": "t288 \"Softerra Everyday Napkins, 250 Count\""
+    },
+    {
+     "key": "t290",
+     "text": "t290 \"4.5\""
+    },
+    {
+     "key": "t292",
+     "text": "t292 \"4.5 out of 5 Stars. 734 reviews\""
+    },
+    {
+     "key": "t293",
+     "text": "t293 \"(734)\""
+    },
+    {
+     "key": "t295",
+     "text": "t295 \"Pickup today\""
+    },
+    {
+     "key": "t296",
+     "text": "t296 button \"+ Add\""
+    },
+    {
+     "key": "^t299",
+     "text": "[contentinfo]"
+    },
+    {
+     "key": "t299",
+     "text": "t299 link \"All Departments\" ~/"
+    },
+    {
+     "key": "t300",
+     "text": "t300 link \"Store Directory\" ~/"
+    },
+    {
+     "key": "t301",
+     "text": "t301 link \"Careers\" ~/"
+    },
+    {
+     "key": "t302",
+     "text": "t302 link \"Our Company\" ~/"
+    },
+    {
+     "key": "t303",
+     "text": "t303 link \"Sell on ValueRidge\" ~/"
+    },
+    {
+     "key": "t304",
+     "text": "t304 link \"Help\" ~/"
+    },
+    {
+     "key": "t305",
+     "text": "t305 link \"Product Recalls\" ~/"
+    },
+    {
+     "key": "t306",
+     "text": "t306 link \"Accessibility\" ~/"
+    },
+    {
+     "key": "t307",
+     "text": "t307 link \"Tax Exempt Program\" ~/"
+    },
+    {
+     "key": "t308",
+     "text": "t308 link \"Get the ValueRidge App\" ~/"
+    },
+    {
+     "key": "t309",
+     "text": "t309 link \"Privacy choices\" ~/"
+    },
+    {
+     "key": "t310",
+     "text": "t310 link \"Terms of Use\" ~/"
+    },
+    {
+     "key": "t311",
+     "text": "t311 link \"Notice at Collection\" ~/"
+    },
+    {
+     "key": "t312",
+     "text": "t312 \"© 2026 ValueRidge Stores, Inc. · web-2026.38.1\""
+    },
+    {
+     "key": "^t321",
+     "text": "[page]"
+    },
+    {
+     "key": "t321",
+     "text": "t321 layer covers 1"
+    },
+    {
+     "key": "^t322",
+     "text": "--- on screen ---"
+    },
+    {
+     "key": "t322",
+     "text": "t322 clickable"
+    },
+    {
+     "key": "t323",
+     "text": "t323 \"Chat with us\""
+    },
+    {
+     "key": "t324",
+     "text": "t324 \"×\""
+    }
+   ]
+  },
+  "judgeState": {
+   "version": 1,
+   "location": "http://127.0.0.1:52163/scenarios/bigbox-retail/",
+   "controls": [],
+   "notices": [],
+   "marks": [
+    {
+     "tag": "div",
+     "marked": true
+    }
+   ],
+   "title": "Save Money. Live Better. - ValueRidge"
+  }
+ },
+ "end": {
+  "schemaVersion": "web-llm-page.v4",
+  "location": "http://127.0.0.1:52163/scenarios/bigbox-retail/cart",
+  "pageView": {
+   "key": "http://127.0.0.1:52163/scenarios/bigbox-retail/cart",
+   "lines": [
+    {
+     "key": "PAGE",
+     "text": "PAGE \"Cart - ValueRidge\""
+    },
+    {
+     "key": "URL",
+     "text": "URL ~   (~ = http://127.0.0.1:52163/scenarios/bigbox-retail/cart)"
+    },
+    {
+     "key": "VIEW",
+     "text": "VIEW 1280x720 at the top · 98 elements with visible words or a control, in page order"
+    },
+    {
+     "key": "COVERING",
+     "text": "COVERING t1809 · t1829 covers 1 close t1832 \"×\""
+    },
+    {
+     "key": "-",
+     "text": ""
+    },
+    {
+     "key": "^t1660",
+     "text": "[banner]"
+    },
+    {
+     "key": "t1660",
+     "text": "t1660 link \"ValueRidge\" /scenarios/bigbox-retail/"
+    },
+    {
+     "key": "^t1663",
+     "text": "[page]"
+    },
+    {
+     "key": "t1663",
+     "text": "t1663 button \"Pickup or delivery? Millbrook Crossing Neighborhood Market\""
+    },
+    {
+     "key": "^t1667",
+     "text": "[search]"
+    },
+    {
+     "key": "t1667",
+     "text": "t1667 field[search] \"Search\" placeholder \"Search everything at ValueRidge online and in store\" =\"\""
+    },
+    {
+     "key": "t1668",
+     "text": "t1668 button \"Search\""
+    },
+    {
+     "key": "^t1670",
+     "text": "[navigation]"
+    },
+    {
+     "key": "t1670",
+     "text": "t1670 link \"Reorder My Items\" ~"
+    },
+    {
+     "key": "t1672",
+     "text": "t1672 link \"Sign In Account\" ~"
+    },
+    {
+     "key": "t1674",
+     "text": "t1674 link \"🛒 2 $5.25\" ~"
+    },
+    {
+     "key": "t1679",
+     "text": "t1679 link \"Departments\" ~"
+    },
+    {
+     "key": "t1680",
+     "text": "t1680 link \"Services\" ~"
+    },
+    {
+     "key": "t1681",
+     "text": "t1681 link \"Get it Fast\" ~"
+    },
+    {
+     "key": "t1682",
+     "text": "t1682 link \"Rollbacks & More\" /scenarios/bigbox-retail/search?q=paper+towels&facet=special_offers%3ARollback"
+    },
+    {
+     "key": "t1683",
+     "text": "t1683 link \"New Arrivals\" ~"
+    },
+    {
+     "key": "t1684",
+     "text": "t1684 link \"Back to School\" ~"
+    },
+    {
+     "key": "t1685",
+     "text": "t1685 link \"Household Essentials\" ~"
+    },
+    {
+     "key": "t1686",
+     "text": "t1686 link \"Pharmacy Delivery\" ~"
+    },
+    {
+     "key": "t1687",
+     "text": "t1687 link \"Registry\" ~"
+    },
+    {
+     "key": "t1688",
+     "text": "t1688 link \"Weekly Ad\" /scenarios/bigbox-retail/weekly-ad"
+    },
+    {
+     "key": "^t1690",
+     "text": "[main]"
+    },
+    {
+     "key": "t1690",
+     "text": "t1690 h1 \"Cart (2 items)\""
+    },
+    {
+     "key": "t1695",
+     "text": "t1695 \"Pickup at Millbrook Crossing Neighborhood Market\""
+    },
+    {
+     "key": "t1698",
+     "text": "t1698 link \"ValueRidge Ultra Dish Soap, Lemon Scent, 24 fl oz\" /scenarios/bigbox-retail/ip/valueridge-ultra-dish-soap-lemon-scent-24-fl-oz/418832007?variant=5530601"
+    },
+    {
+     "key": "t1699",
+     "text": "t1699 \"Sold and shipped by ValueRidge\""
+    },
+    {
+     "key": "t1700",
+     "text": "t1700 \"each\""
+    },
+    {
+     "key": "t1701",
+     "text": "t1701 \"$3.97\""
+    },
+    {
+     "key": "t1704",
+     "text": "t1704 select \"Qty\" =\"1\" [1|2|3|4|5|6|7|8|9|10|11|12]"
+    },
+    {
+     "key": "t1705",
+     "text": "t1705 button \"Remove\""
+    },
+    {
+     "key": "t1706",
+     "text": "t1706 button \"Save for later\""
+    },
+    {
+     "key": "t1707",
+     "text": "t1707 \"$3.97\""
+    },
+    {
+     "key": "t1710",
+     "text": "t1710 link \"ValueRidge Essentials Paper Towels, 1 Roll\" /scenarios/bigbox-retail/ip/valueridge-essentials-paper-towels-1-roll/418830166?variant=5510204"
+    },
+    {
+     "key": "t1711",
+     "text": "t1711 \"Sold and shipped by ValueRidge\""
+    },
+    {
+     "key": "t1712",
+     "text": "t1712 \"each\""
+    },
+    {
+     "key": "t1713",
+     "text": "t1713 \"$1.28\""
+    },
+    {
+     "key": "t1716",
+     "text": "t1716 select \"Qty\" =\"1\" [1|2|3|4|5|6|7|8|9|10|11|12]"
+    },
+    {
+     "key": "t1717",
+     "text": "t1717 button \"Remove\""
+    },
+    {
+     "key": "t1718",
+     "text": "t1718 button \"Save for later\""
+    },
+    {
+     "key": "t1719",
+     "text": "t1719 \"$1.28\""
+    },
+    {
+     "key": "^t1722",
+     "text": "[complementary]"
+    },
+    {
+     "key": "t1722",
+     "text": "t1722 \"Subtotal (2 items)\""
+    },
+    {
+     "key": "t1723",
+     "text": "t1723 \"$5.25\""
+    },
+    {
+     "key": "t1725",
+     "text": "t1725 \"Estimated taxes\""
+    },
+    {
+     "key": "t1726",
+     "text": "t1726 \"$0.35\""
+    },
+    {
+     "key": "t1728",
+     "text": "t1728 \"Estimated total\""
+    },
+    {
+     "key": "t1729",
+     "text": "t1729 \"$5.60\""
+    },
+    {
+     "key": "^t1732",
+     "text": "[main]"
+    },
+    {
+     "key": "t1732",
+     "text": "t1732 h2 \"Frequently bought together\""
+    },
+    {
+     "key": "^t1735",
+     "text": "- 1/4"
+    },
+    {
+     "key": "t1735",
+     "text": "t1735 link \"ValueRidge Everyday Dinner Napkins, 100 Count\" /scenarios/bigbox-retail/ip/valueridge-everyday-dinner-napkins/418831402"
+    },
+    {
+     "key": "^t1740",
+     "text": "--- below the fold ---"
+    },
+    {
+     "key": "t1740",
+     "text": "t1740 \"$2.97\""
+    },
+    {
+     "key": "t1743",
+     "text": "t1743 \"3.0 ¢/each\""
+    },
+    {
+     "key": "t1744",
+     "text": "t1744 \"ValueRidge Everyday Dinner Napkins, 100 Count\""
+    },
+    {
+     "key": "t1746",
+     "text": "t1746 \"4.6\""
+    },
+    {
+     "key": "t1748",
+     "text": "t1748 \"4.6 out of 5 Stars. 2,812 reviews\""
+    },
+    {
+     "key": "t1749",
+     "text": "t1749 \"(2,812)\""
+    },
+    {
+     "key": "t1751",
+     "text": "t1751 \"Pickup today\""
+    },
+    {
+     "key": "t1752",
+     "text": "t1752 link \"Options\" same href"
+    },
+    {
+     "key": "^t1754",
+     "text": "--- on screen ---"
+    },
+    {
+     "key": "^t1754.2",
+     "text": "- 2/4"
+    },
+    {
+     "key": "t1754",
+     "text": "t1754 link \"Softerra Everyday Napkins, 250 Count\" /scenarios/bigbox-retail/ip/softerra-everyday-napkins-250-count/433202210"
+    },
+    {
+     "key": "^t1759",
+     "text": "--- below the fold ---"
+    },
+    {
+     "key": "t1759",
+     "text": "t1759 \"$5.94\""
+    },
+    {
+     "key": "t1762",
+     "text": "t1762 \"2.4 ¢/each\""
+    },
+    {
+     "key": "t1763",
+     "text": "t1763 \"Softerra Everyday Napkins, 250 Count\""
+    },
+    {
+     "key": "t1765",
+     "text": "t1765 \"4.5\""
+    },
+    {
+     "key": "t1767",
+     "text": "t1767 \"4.5 out of 5 Stars. 734 reviews\""
+    },
+    {
+     "key": "t1768",
+     "text": "t1768 \"(734)\""
+    },
+    {
+     "key": "t1770",
+     "text": "t1770 \"Pickup today\""
+    },
+    {
+     "key": "t1771",
+     "text": "t1771 button \"+ Add\""
+    },
+    {
+     "key": "^t1773",
+     "text": "--- on screen ---"
+    },
+    {
+     "key": "^t1773.2",
+     "text": "- 3/4"
+    },
+    {
+     "key": "t1773",
+     "text": "t1773 link \"Loftwell Countertop Paper Towel Holder, Bamboo\" /scenarios/bigbox-retail/ip/loftwell-countertop-paper-towel-holder-bamboo/402917655"
+    },
+    {
+     "key": "^t1778",
+     "text": "--- below the fold ---"
+    },
+    {
+     "key": "t1778",
+     "text": "t1778 \"$12.97\""
+    },
+    {
+     "key": "t1781",
+     "text": "t1781 \"Loftwell Countertop Paper Towel Holder, Bamboo\""
+    },
+    {
+     "key": "t1783",
+     "text": "t1783 \"4.6\""
+    },
+    {
+     "key": "t1785",
+     "text": "t1785 \"4.6 out of 5 Stars. 2,409 reviews\""
+    },
+    {
+     "key": "t1786",
+     "text": "t1786 \"(2,409)\""
+    },
+    {
+     "key": "t1788",
+     "text": "t1788 \"Pickup today\""
+    },
+    {
+     "key": "t1789",
+     "text": "t1789 button \"+ Add\""
+    },
+    {
+     "key": "^t1791",
+     "text": "--- on screen ---"
+    },
+    {
+     "key": "^t1791.2",
+     "text": "- 4/4"
+    },
+    {
+     "key": "t1791",
+     "text": "t1791 link \"ValueRidge Ultra Dish Soap, Lemon Scent, 24 fl oz\" /scenarios/bigbox-retail/ip/valueridge-ultra-dish-soap-lemon-scent-24-fl-oz/418832007"
+    },
+    {
+     "key": "^t1796",
+     "text": "--- below the fold ---"
+    },
+    {
+     "key": "t1796",
+     "text": "t1796 \"$3.97\""
+    },
+    {
+     "key": "t1799",
+     "text": "t1799 \"16.5 ¢/fl oz\""
+    },
+    {
+     "key": "t1800",
+     "text": "t1800 \"ValueRidge Ultra Dish Soap, Lemon Scent, 24 fl oz\""
+    },
+    {
+     "key": "t1802",
+     "text": "t1802 \"4.7\""
+    },
+    {
+     "key": "t1804",
+     "text": "t1804 \"4.7 out of 5 Stars. 5,120 reviews\""
+    },
+    {
+     "key": "t1805",
+     "text": "t1805 \"(5,120)\""
+    },
+    {
+     "key": "t1807",
+     "text": "t1807 \"Pickup today\""
+    },
+    {
+     "key": "t1808",
+     "text": "t1808 button \"+ Add\""
+    },
+    {
+     "key": "^t1810",
+     "text": "--- on screen ---"
+    },
+    {
+     "key": "t1810",
+     "text": "t1810 \"Estimated total\""
+    },
+    {
+     "key": "t1811",
+     "text": "t1811 \"$5.60\""
+    },
+    {
+     "key": "t1812",
+     "text": "t1812 button \"Continue to checkout\" covered-by t1829"
+    },
+    {
+     "key": "^t1815",
+     "text": "--- below the fold ---"
+    },
+    {
+     "key": "^t1815.2",
+     "text": "[contentinfo]"
+    },
+    {
+     "key": "t1815",
+     "text": "t1815 link \"All Departments\" ~"
+    },
+    {
+     "key": "t1816",
+     "text": "t1816 link \"Store Directory\" ~"
+    },
+    {
+     "key": "t1817",
+     "text": "t1817 link \"Careers\" ~"
+    },
+    {
+     "key": "t1818",
+     "text": "t1818 link \"Our Company\" ~"
+    },
+    {
+     "key": "t1819",
+     "text": "t1819 link \"Sell on ValueRidge\" ~"
+    },
+    {
+     "key": "t1820",
+     "text": "t1820 link \"Help\" ~"
+    },
+    {
+     "key": "t1821",
+     "text": "t1821 link \"Product Recalls\" ~"
+    },
+    {
+     "key": "t1822",
+     "text": "t1822 link \"Accessibility\" ~"
+    },
+    {
+     "key": "t1823",
+     "text": "t1823 link \"Tax Exempt Program\" ~"
+    },
+    {
+     "key": "t1824",
+     "text": "t1824 link \"Get the ValueRidge App\" ~"
+    },
+    {
+     "key": "t1825",
+     "text": "t1825 link \"Privacy choices\" ~"
+    },
+    {
+     "key": "t1826",
+     "text": "t1826 link \"Terms of Use\" ~"
+    },
+    {
+     "key": "t1827",
+     "text": "t1827 link \"Notice at Collection\" ~"
+    },
+    {
+     "key": "t1828",
+     "text": "t1828 \"© 2026 ValueRidge Stores, Inc. · web-2026.38.1\""
+    },
+    {
+     "key": "^t1829",
+     "text": "[page]"
+    },
+    {
+     "key": "t1829",
+     "text": "t1829 layer covers 1"
+    },
+    {
+     "key": "^t1830",
+     "text": "--- on screen ---"
+    },
+    {
+     "key": "t1830",
+     "text": "t1830 clickable"
+    },
+    {
+     "key": "t1831",
+     "text": "t1831 \"Chat with us\""
+    },
+    {
+     "key": "t1832",
+     "text": "t1832 \"×\""
+    }
+   ]
+  },
+  "judgeState": {
+   "version": 1,
+   "location": "http://127.0.0.1:52163/scenarios/bigbox-retail/cart",
+   "controls": [
+    {
+     "tag": "select",
+     "name": "Qty",
+     "heading": "Cart (2 items)",
+     "within": "ValueRidge Ultra Dish Soap, Lemon Scent, 24 fl oz",
+     "selectedValue": "1"
+    },
+    {
+     "tag": "select",
+     "name": "Qty",
+     "heading": "Cart (2 items)",
+     "within": "ValueRidge Essentials Paper Towels, 1 Roll",
+     "selectedValue": "1"
+    }
+   ],
+   "notices": [],
+   "marks": [],
+   "title": "Cart - ValueRidge"
+  }
+ }
+}
