@@ -119,12 +119,13 @@ describe("the replay judge of run-mwz29d50-c3a32a9c, asked on its own request", 
     expect(JSON.stringify(rest)).toContain("captureOmitted");
   });
 
-  it("leaves the deciding digest's copy and a judge continuing the decider as they were", async () => {
+  it("leaves the deciding digest's copy as it was, and gives a judge marked as continuing the same views", async () => {
     const { sent } = automationStudioFlowLessJudgedSummary(summary(), [], { judgeEvidenceVersion: 1, projectJudgeEvidence: projector });
     expect(sent).not.toHaveProperty("pageViews");
     expect(JSON.stringify(sent)).not.toContain("938 reviews");
+    // A judge marked as continuing carries the same views (t1089): its provider leaves them out only where it really continues.
     const continuing = await judged(true);
-    expect(continuing).not.toHaveProperty("pageViews");
-    expect(JSON.stringify(continuing)).not.toContain("938 reviews");
+    expect(continuing.pageViews).toEqual((await judged(false)).pageViews);
+    expect(Object.keys(continuing).at(-1)).toBe("pageViews");
   });
 });

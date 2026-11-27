@@ -52,7 +52,14 @@
 // replay makes no decision -- reads no decider's conversation, and the trail it is shown leaves the pages out. Live run
 // `run-mwz29d50-c3a32a9c` attempt 3: its replay judge could not see the rating and pickup line the item was chosen by,
 // answered unknown, and a Flow that had worked was repaired. So each form it is sent carries the page views kept beside
-// the summary, last (`../judge-evidence/page-views.ts`). A judge continuing the decider is sent what it was before.
+// the summary, last (`../judge-evidence/page-views.ts`). So does a judge marked as continuing the decider (t1089): its
+// provider may still send it on its own request (no decider held, a continuation past the window, a decider that offered
+// no answer tool), and only the provider knows. One that really continues has them left out of its message there
+// (`../../models/providers/anthropic/continuation.ts`), and reads the pages in the decider's conversation.
+//
+// **Rows that share a label are cited apart from the first ask (t1087, t1089).** The judge's copy gives each such row its
+// handle, and says the citation rule beside them (`../request-rows/summary/with/row-handles.ts`,
+// `../cited-yes/citation-rule.ts`); before, a judge learned the handles only from Core's refusal on a re-ask.
 //
 // **A yes that also advises a change is a yes.** Its `patchNeeded` is about a Flow, and
 // there is none here to change.
@@ -69,7 +76,8 @@ import { automationStudioLlmUnboundedJsonAt } from "../../llm/provider-task/inde
 import { automationStudioRunOverrides } from "../../run-overrides/index.ts";
 import { automationStudioResultVerificationDeadlineMs, automationStudioResultVerificationWithinDeadline } from "../deadline.ts";
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
-import { automationStudioResultRecordsYesRefuted } from "../cited-yes/index.ts";
+import { AUTOMATION_STUDIO_RESULT_CITATION_RULE, automationStudioResultRecordsYesRefuted } from "../cited-yes/index.ts";
+import { automationStudioResultSummaryWithRowHandles } from "../request-rows/index.ts";
 import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES, automationStudioResultVerdict } from "../verdict/index.ts";
 import { automationStudioFlowLessScreenedWords } from "./screened-words.ts";
 import { automationStudioFlowLessJudgedSummary } from "./judged-summary.ts";
@@ -131,7 +139,11 @@ function automationStudioFlowLessJudgeDeadline(deadlineMs: number, heldMs: (() =
 
 export async function automationStudioFlowLessJudge(input: AutomationStudioFlowLessJudgeInput): Promise<AutomationStudioFlowLessJudgement> {
   if (input.deniedEvidenceKeys === undefined) return { verdict: "unsure", reason: "The current evidence privacy declaration is unavailable, so this result remains unconfirmed.", checkedWhat: "Required semantic evidence could not be disclosed under an unknown privacy declaration." };
-  const { read, sent } = automationStudioFlowLessJudgedSummary(input.summary, input.deniedEvidenceKeys, { ...automationStudioJudgeEvidenceCapability(input), projectJudgeEvidence: input.projectJudgeEvidence });
+  const judged = automationStudioFlowLessJudgedSummary(input.summary, input.deniedEvidenceKeys, { ...automationStudioJudgeEvidenceCapability(input), projectJudgeEvidence: input.projectJudgeEvidence });
+  const { read } = judged;
+  // Rows that share a label carry their handles on the judge's copy, with the rule for citing them, from the first ask
+  // on (header, t1087, t1089); the deciding digest reads `judged.sent`, which holds neither.
+  const sent = automationStudioFlowLessWithRowHandles(judged.sent);
   // Today's race leaves a call running behind its deadline, and a call waiting on a locked key would then be paid for with nobody to read it. This deadline stops the call, and gives back what a person was waited for.
   const expiry = new AbortController();
   const signal = input.signal ? AbortSignal.any([input.signal, expiry.signal]) : expiry.signal;
@@ -144,13 +156,19 @@ export async function automationStudioFlowLessJudge(input: AutomationStudioFlowL
   let sentNow: AutomationStudioRunResultSummary = sent;
   // A judge on its own request reads no decider's conversation, so each form carries the pages the result rests on, last
   // (`../judge-evidence/page-views.ts`, t1084): a replay's judge, which no decision precedes, could not otherwise see what
-  // the page showed. A judge continuing the decider reads them there, and its request is as it was.
-  const pageViews = input.continuesDecider === true ? undefined : AutomationStudioJudgePageViews.of(sent);
+  // the page showed. A judge marked as continuing the decider carries them too, because only its provider knows whether it
+  // really continues: one that does leaves them out, reading the pages in the decider's conversation, and one sent on its
+  // own request after all keeps them (`../../models/providers/anthropic/continuation.ts`, t1089).
+  const pageViews = AutomationStudioJudgePageViews.of(judged.sent);
   // The forms of what is sent, whole first, and the one to send: the first that fits the judging model's window by a
   // conservative measure (`../run-trail/window.ts`, t965). A refusal for size steps down one form, and is never read as not judged while one is left.
-  const formsOf = (summary: AutomationStudioRunResultSummary) => [summary, ...automationStudioFlowLessSummaryFitting(summary)].map((each) => AutomationStudioJudgePageViews.shown(each, pageViews));
+  // A continuing judge's form is chosen without the pages it sends only on its own request; the harness steps that request
+  // down by the provider's own measure (`../../llm/harness/sized-request.ts`).
+  const bare = (summary: AutomationStudioRunResultSummary) => [summary, ...automationStudioFlowLessSummaryFitting(summary)];
+  const formsOf = (summary: AutomationStudioRunResultSummary) => bare(summary).map((each) => AutomationStudioJudgePageViews.shown(each, pageViews));
+  const formFor = (summary: AutomationStudioRunResultSummary, shown: readonly AutomationStudioRunResultSummary[]) => automationStudioResultSummaryFormForWindow(input.continuesDecider === true ? bare(summary) : shown, input.tokenLimits, Buffer.byteLength(input.summary.instructions, "utf8"));
   let forms = formsOf(sentNow);
-  let form = automationStudioResultSummaryFormForWindow(forms, input.tokenLimits, Buffer.byteLength(input.summary.instructions, "utf8"));
+  let form = formFor(sentNow, forms);
   // This check's unreadable replies: the note and the request its next ask carries (header, t979).
   const unreadable = automationStudioResultUnreadableAsks({ continuesDecider: input.continuesDecider === true });
   const noted = (shown: AutomationStudioRunResultSummary): AutomationStudioRunResultSummary => (unreadable.said === undefined ? shown : automationStudioResultSummaryWithUnreadableNote(shown, unreadable.said, unreadable.steer));
@@ -203,7 +221,7 @@ export async function automationStudioFlowLessJudge(input: AutomationStudioFlowL
       tried.add(key);
       sentNow = automationStudioFlowLessCitationNotice(sent, got.refuted);
       forms = formsOf(sentNow);
-      form = automationStudioResultSummaryFormForWindow(forms, input.tokenLimits, Buffer.byteLength(input.summary.instructions, "utf8"));
+      form = formFor(sentNow, forms);
     }
   } finally {
     disarm();
@@ -285,15 +303,29 @@ function reading(result: AutomationStudioLlmTaskResult, read: AutomationStudioRu
   return { judgement: { verdict: "unsure", reason: readingWords(verdict.unsureReading) ?? "The check could not tell whether this is what was asked for.", checkedWhat: meantToCheck(summary) } };
 }
 
-/** What a valid citation is, said to the judge again after one Core could not match. Generic: no site, task or product is named. */
-const CITATION_RULE = "A citation names a row by its label (its value in the first stored column, such as a name or title, or its 1-based position among the stored rows), then a stored column, then that row's own value in that column, written as the rows hold it. Cite only cells the stored rows contain, or cite nothing.";
-/** What a yes on rows says of them, said to the judge again after a yes Core could not stand on the rows held (t875). Generic, as above. */
+/**
+ * The judge's copy with each stored row that shares a label given its handle (`../request-rows/summary/with/row-handles.ts`,
+ * t1087), and, where any does, what a valid citation is (`validCitation`, the shared rule of `../cited-yes/citation-rule.ts`),
+ * so the first ask already says how such rows are cited (t1089). `sent` itself where no label is shared. The page views kept
+ * beside `sent` stay kept beside the copy, which holds the same trail.
+ */
+function automationStudioFlowLessWithRowHandles(sent: AutomationStudioRunResultSummary): AutomationStudioRunResultSummary {
+  const handled = automationStudioResultSummaryWithRowHandles(sent);
+  return handled === sent ? sent : ({ ...handled, validCitation: AUTOMATION_STUDIO_RESULT_CITATION_RULE } as unknown as AutomationStudioRunResultSummary);
+}
+
+/** What a yes on rows says of them, said to the judge again after a yes Core could not stand on the rows held (t875). Generic: no site, task or product is named. */
 const RECORDS_RULE = "A yes on a result that holds rows cites in checked each stored row that answers the request, and says in answerRecords whether the request asks for records as its answer (asked) and, where it does, how many records the site shows that answer it (siteShows): the records the request names, counted as the site shows them, never the rows that happen to be stored. Where that count is not the rows held, the rows are not those records: answer no, naming what is missing in defects. A request whose answer is that there are none is asked true, siteShows 0, over no rows, citing none. A yes stands only on what is here: where what was asked cannot be judged from it, answer unknown.";
 
-/** The summary sent again with Core's sentences for each refutation of the last yes and what a valid yes cites (the re-ask of `automationStudioFlowLessJudge`). */
+/**
+ * The summary sent again with Core's sentences for each refutation of the last yes and what a valid yes cites (the re-ask
+ * of `automationStudioFlowLessJudge`): the shared citation rule (`../cited-yes/citation-rule.ts`, t1087), said here unless
+ * the copy already says it beside the rows' handles.
+ */
 function automationStudioFlowLessCitationNotice(sent: AutomationStudioRunResultSummary, refuted: readonly string[]): AutomationStudioRunResultSummary {
   const sentences = refuted.map((sentence) => automationStudioFlowLessScreenedWords(sentence).text ?? WITHHELD_SENTENCE);
-  return { ...sent, citationsNotMatched: { note: "Core could not confirm your last yes on the stored rows: each line of notMatched says why. Judge again on the rows themselves, citing only cells the stored rows hold.", notMatched: sentences, validCitation: CITATION_RULE, onRows: RECORDS_RULE } } as unknown as AutomationStudioRunResultSummary;
+  const said = Object.hasOwn(sent, "validCitation");
+  return { ...sent, citationsNotMatched: { note: "Core could not confirm your last yes on the stored rows: each line of notMatched says why. Judge again on the rows themselves, citing only cells the stored rows hold.", notMatched: sentences, ...(said ? {} : { validCitation: AUTOMATION_STUDIO_RESULT_CITATION_RULE }), onRows: RECORDS_RULE } } as unknown as AutomationStudioRunResultSummary;
 }
 
 /**
