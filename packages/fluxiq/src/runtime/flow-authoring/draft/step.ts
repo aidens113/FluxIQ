@@ -285,6 +285,12 @@ export type AutomationStudioFlowDraftStep = {
    */
   coveredBy?: string;
   /**
+   * Written by the draft when it left this step out because a later paging loop over the same list
+   * replaced the loop it belongs to (`./compose/superseded-loop.ts`, F5). It stays when the model keeps
+   * the step, so the model's word stands and the draft does not take the step out again.
+   */
+  supersededLoop?: true;
+  /**
    * What the call names, in the domain's words, kept when the step was
    * appended: the draft line shows it as `does` (`./entry.ts`).
    *

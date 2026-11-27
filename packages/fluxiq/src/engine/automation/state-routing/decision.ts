@@ -8,6 +8,7 @@ import { chooseAutomationStudioEdge } from "../graph-navigation/index.ts";
 import { automationStudioGraphHostProjectId } from "../host-state/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace, AutomationStudioStateRouteDirection } from "../index.ts";
 import { automationStudioTargetFailureProvesUnacted } from "../target-evidence/index.ts";
+import { AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY, automationStudioNodeExplicitLastingRisk } from "../defensive/index.ts";
 import { automationStudioAbsentStepSkip, automationStudioSkippedStepDoesAct } from "../step-skip/index.ts";
 import { automationStudioStateRouteFactGate, type AutomationStudioStateRouteFactRefusal } from "./checkpoint-facts.ts";
 import { AUTOMATION_STUDIO_STATE_ROUTE_RETURN_LIMIT, automationStudioRunProgressMark, type AutomationStudioStateRouteGuard } from "./progress-guard.ts";
@@ -57,7 +58,7 @@ export type AutomationStudioStateRouteInput = {
   /** Every attempt of the run so far. */
   attempts: readonly AutomationStudioNodeAttemptTrace[];
   /** `inputs` are the run's own values, which no step passed over has to set. */
-  options: Pick<AutomationStudioGraphExecutionOptions, "hostRuntime" | "signal" | "inputs" | "resolveActionEffect" | "classifyLegacyStepAct">;
+  options: Pick<AutomationStudioGraphExecutionOptions, "hostRuntime" | "signal" | "inputs" | "resolveActionEffect" | "classifyLegacyStepAct" | "stepClaimsAct">;
   guard: AutomationStudioStateRouteGuard;
 };
 
@@ -110,7 +111,7 @@ export async function decideAutomationStudioStateRoute(input: AutomationStudioSt
   if (declared) return doesAct(input) ? await declaredAct(input, declared) : { kind: "declared", edge: declared };
   // A step written on the page an act brings about, after that act did not run (`./not-arisen.ts`).
   const notArisen = targetNotFound(input) ? automationStudioStateNotArisenWayOn({ flow: input.flow, node: input.node, attempts: input.attempts }) : undefined;
-  if (notArisen && !doesAct(input)) return { kind: "declared", edge: notArisen, code: AUTOMATION_STUDIO_STATE_NOT_ARISEN_CODE };
+  if (notArisen && !followOnLasts(input)) return { kind: "declared", edge: notArisen, code: AUTOMATION_STUDIO_STATE_NOT_ARISEN_CODE };
   const candidates = input.flow.nodes
     .filter((node) => node.id !== input.node.id)
     .map((node) => ({ node, signatures: automationStudioNodeRouteSignatures(node) }))
@@ -178,6 +179,27 @@ function doesAct(input: AutomationStudioStateRouteInput): boolean {
     return classifier?.call(host, node) ?? input.options.classifyLegacyStepAct?.(node);
   };
   return automationStudioSkippedStepDoesAct(input.node, actionEffect, classifyLegacyStepAct);
+}
+
+/**
+ * Whether the follow-on step passed over as "state never arose" lasts, asked as the run
+ * gate asks it of a press (F2, `run-mwyfc9uf-215bbd84`): from what the step declares, what
+ * the plan claims for it, and what an earlier attempt of it did, never from its verb.
+ * Every web click is floored `commit` so it is not repeated after a lost acknowledgement;
+ * that floor said a drawer's "View cart" lasts, and the rule written for exactly that
+ * step never applied. A press that declares no consequence, claims no act and has done
+ * none is a navigation. Only a floor naming consequences counts; with no trusted floor
+ * the legacy answer (`doesAct`) stands. A lasting act is still never passed over.
+ */
+function followOnLasts(input: AutomationStudioStateRouteInput): boolean {
+  const floor = input.options.resolveActionEffect?.(input.node, input.node.parameterValues ?? {});
+  if (floor === undefined) return doesAct(input);
+  const declared = input.node.metadata?.[AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY];
+  if (Array.isArray(declared) && declared.length > 0) return true;
+  if (floor.permissionConsequences.length > 0) return true;
+  if (automationStudioNodeExplicitLastingRisk(input.node)) return true;
+  if (input.options.stepClaimsAct?.(input.node) === true) return true;
+  return input.attempts.some((attempt) => attempt.nodeId === input.node.id && attempt.status === "succeeded" && !attempt.skipped && attempt.effects.length > 0);
 }
 
 /** Whether the failing attempt says its target is not on the page: `target_not_found`, proven unacted above. */
