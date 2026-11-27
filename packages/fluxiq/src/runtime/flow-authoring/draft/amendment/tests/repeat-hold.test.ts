@@ -98,10 +98,11 @@ describe("routing that would leave an illegal repeat body", () => {
     const amendments: AutomationStudioFlowDraftAmendment[] = [{ step: 3, change: "repeat", while: 3 }, { step: 2, change: "repeat", while: 3 }];
     if (first) amendments.reverse();
     expect(applyAutomationStudioFlowDraftAmendments(steps, amendments)).toEqual({
-      applied: 1, refused: [{ step: 2, reason: "span_holds_routing", repeat: 2, through: 3, routed: 3 }]
+      applied: 0, refused: [{ step: 2, reason: "span_holds_routing", repeat: 2, through: 3, routed: 3 }]
     });
+    // All or none (t1068): the valid half is not applied either.
     expect(steps[1]!.routing).toBeUndefined();
-    expect(steps[2]!.routing).toEqual({ kind: "repeat", through: "d3", while: "d3" });
+    expect(steps[2]!.routing).toBeUndefined();
     assembles(steps);
   });
 
@@ -138,15 +139,15 @@ describe("routing that would leave an illegal repeat body", () => {
     assembles(steps);
   });
 
-  it("preserves the earlier valid rewrite when a later shared-source extension is refused", () => {
+  it("applies neither rewrite when a later shared-source extension is refused (t1068)", () => {
     const steps = [step(1), step(2, "read"), step(3), step(4), step(5)];
     steps[2]!.routing = { kind: "repeat", over: "d2", through: "d3" };
     steps[4]!.routing = { kind: "optional" };
     expect(applyAutomationStudioFlowDraftAmendments(steps, [
       { step: 4, change: "repeat", over: 2 },
       { step: 4, change: "repeat", over: 2, through: 5 }
-    ])).toEqual({ applied: 1, refused: [{ step: 4, reason: "span_holds_routing", repeat: 3, through: 5, routed: 5 }] });
-    expect(steps[3]!.routing).toEqual({ kind: "repeat", over: "d2", through: "d4" });
+    ])).toEqual({ applied: 0, refused: [{ step: 4, reason: "span_holds_routing", repeat: 3, through: 5, routed: 5 }] });
+    expect(steps[3]!.routing).toBeUndefined();
     assembles(steps);
   });
 

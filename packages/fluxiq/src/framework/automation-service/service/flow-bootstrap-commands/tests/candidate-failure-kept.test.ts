@@ -4,10 +4,15 @@
 // were test-run, then twelve refused submissions stopped the build, which told
 // the person "the model's answer could not be used" and that the Flow "has no
 // steps yet", and the Lab recorded `candidate: null`. These drive the actual
-// service. No count of refused submissions ends a build any more (t1056): each
-// refusal is told, loop detection steers, and at the top of its ladder the build's
-// round ends as a stall (`loopSignal`, `../loop-signal.ts`), which is the no
-// progress these name. Each decision costs two cents of the purse besides.
+// service. No count of refused submissions ends a build any more (t1056), and no
+// stall does either (t1063): each refusal is told, loop detection steers, and at
+// the top of its ladder the build retests its latest revision where the trial
+// gate can, and otherwise the model decides how to go on. The purse ends these
+// builds. Each call the provider answers -- the start's reading of the
+// instruction (t976), then each decision -- costs two cents of the $0.25 purse
+// (the run ceiling) unless a test says otherwise, and each judge call $0.0005, so
+// a build that makes no judged trial ends after 12 calls, $0.24: the $0.01 left
+// cannot hold a thirteenth.
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -29,7 +34,14 @@ const refusedSubmission = { kind: "tool_call", callId: "submit-bad", toolId: "co
  */
 const NO_DEFECTS = [{ kind: "act_missing", row: "a deterministic step between Start and End", requestWords: "Create a deterministic Start to End Flow" }];
 
-async function candidateBuild(reply: Reply, verdict: "yes" | "no" = "no") {
+/** A page that never moves: each look finds nothing, on the same page state, so a run of them is a search going nowhere. */
+const lookFindsNothing = async ({ value }: { value: Record<string, unknown> }) => ({ kind: "llm_evidence_tool_execution" as const, evidence: { found: `0 matches for ${String(value.area)}` }, effectApplied: false, stateDigests: { before: "s1", after: "s1" } });
+
+/**
+ * The build, driven through the service. Every call the provider answers -- the start's reading of the instruction
+ * (t976) first, then each decision -- costs `decisionUsd` (two cents unless given); each judge call `JUDGE_USAGE`'s $0.0005.
+ */
+async function candidateBuild(reply: Reply, verdict: "yes" | "no" | "unknown" = "no", options: { decisionUsd?: number; look?: typeof lookFindsNothing } = {}) {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-candidate-kept-"));
   let calls = 0;
   const provider = mockProvider(async (request) => {
@@ -37,11 +49,11 @@ async function candidateBuild(reply: Reply, verdict: "yes" | "no" = "no") {
     calls++;
     const evidence = request.context.evidenceLoop?.evidence ?? [];
     const latest = [...evidence].reverse().find((entry) => entry.toolId === "core.submit_candidate" && (entry.value as { ok?: unknown } | undefined)?.ok === true)?.value as { revision?: number; digest?: string } | undefined;
-    return { response: { kind: "evidence_tool_decision", summary: "Scripted candidate authoring", decision: reply(calls, latest) }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.02 } };
+    return { response: { kind: "evidence_tool_decision", summary: "Scripted candidate authoring", decision: reply(calls, latest) }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: options.decisionUsd ?? 0.02 } };
   });
   const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxEstimatedCostUsd: 0.1 }),
     llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect", inputSchema: { type: "object" }, effect: "observe" }],
-      executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { area: "item" }, effectApplied: false, targetsUnchanged: true }) } });
+      executeTool: options.look ?? (async () => ({ kind: "llm_evidence_tool_execution", evidence: { area: "item" }, effectApplied: false, targetsUnchanged: true })) } });
   const { project, flow } = await blankFixture(service);
   const settled = await service.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true, authoringMode: "candidate" })
     .then((result) => ({ ok: true as const, result }), (error: unknown) => ({ ok: false as const, error }));
@@ -50,7 +62,7 @@ async function candidateBuild(reply: Reply, verdict: "yes" | "no" = "no") {
 }
 
 describe("a candidate build that fails after writing its Flow says what it kept", () => {
-  it("refused submissions in a row end as no progress at the top of loop detection's ladder, keep the latest accepted revision as a draft, and name the candidate and its trial", async () => {
+  it("refused submissions in a row are steered, never ended, until the purse runs out; the latest accepted revision is kept as a draft, naming the candidate and its trial", async () => {
     const build = await candidateBuild((call, latest) => call === 1 ? { kind: "tool_call", callId: "look", toolId: "inspect", input: { area: "item" } }
       : call === 2 ? { kind: "tool_call", callId: "submit", toolId: "core.submit_candidate", input: { summary: "whole flow", plan: plan() } }
       : call === 3 ? { kind: "tool_call", callId: "test", toolId: "core.test_candidate", input: { revision: latest?.revision, digest: latest?.digest } }
@@ -59,17 +71,50 @@ describe("a candidate build that fails after writing its Flow says what it kept"
       if (build.settled.ok) throw new Error(`expected the build to end, got ${build.settled.result.status}`);
       const diagnostic = parseAutomationStudioFlowBootstrapFailureDiagnostic((build.settled.error as { diagnostic?: unknown }).diagnostic);
       if (!diagnostic) throw new Error("the failure carried no diagnostic Core reads back");
-      // No progress, caught by loop detection rather than a count, and not an unusable answer: each refused submission was a readable Flow.
-      expect(diagnostic.code).toBe("flow_bootstrap.evidence_repeat_without_progress");
+      // The purse, never loop detection (t1063): the start's reading, the submission, its trial and 9 refused submissions
+      // are 12 calls at $0.02, and the trial's two judge calls $0.0005 each, $0.241 of $0.25. The $0.009 left cannot hold a call.
+      expect(diagnostic.code).toBe("flow_bootstrap.evidence_iteration_limit");
+      expect(diagnostic.accounting).toMatchObject({ inputTokens: 12 * 10 + 2 * 200, outputTokens: 12 * 5 + 2 * 20, estimatedCostUsd: expect.closeTo(12 * 0.02 + 2 * 0.0005, 6) });
+      const steps = (diagnostic.evidenceLoop as { steps: { toolId: string; resultCode?: string }[] } | undefined)?.steps ?? [];
+      expect(steps.filter((step) => step.toolId === "core.submit_candidate" || step.toolId === "core.test_candidate")).toHaveLength(11);
+      // Steered, then the ladder's top reached and decided by the model, and the build went on past it: the trial was judged
+      // no, so the gate has no retest to run, and what had ended the build here (t1056) is now only a rung.
+      const top = steps.findIndex((step) => step.resultCode === "llm_evidence_loop.loop_change_approach");
+      expect(steps.findIndex((step) => step.resultCode === "llm_evidence_loop.loop_steered")).toBeLessThan(top);
+      expect(top).toBeGreaterThan(0);
+      expect(steps.slice(top + 1).filter((step) => step.toolId === "core.submit_candidate").length).toBeGreaterThan(0);
       const draft = await build.draft();
       expect(draft).toBeDefined();
       expect(diagnostic.candidate).toEqual({ candidateId: draft!.candidateId, draft: "saved", revision: draft!.candidate.revision, digest: draft!.candidate.digest, trialCount: 1,
         trials: [{ revision: draft!.candidate.revision, verdict: "no", trialRunId: expect.any(String), code: expect.any(String) }] });
-      // What the chat says: the real cause, never the stage's words.
+      // What the chat says: the real cause, the budget, never the stage's words.
       const said = automationStudioConversationCallCause("the build", { ok: false, payload: { diagnostic } } as Parameters<typeof automationStudioConversationCallCause>[1]);
-      // The refused submission behind the stall, said in the refusal's words (t378).
-      expect(said).toMatch(/^the build failed: the Flow it wrote was refused [0-9]+ times in a row, the last time because some steps weren't written in a way the Flow can run$/u);
-      expect(said).not.toContain("could not be used");
+      expect(said).toBe("the build failed: it reached its spending limit");
+    } finally { await build.close(); }
+  }, 60_000);
+
+  it("a model that repeats itself after an unsure trial is retested by the trial gate at the ladder's top, and goes on: the purse ends it", async () => {
+    const build = await candidateBuild((call, latest) => call === 1 ? { kind: "tool_call", callId: "look", toolId: "inspect", input: { area: "item" } }
+      : call === 2 ? { kind: "tool_call", callId: "submit", toolId: "core.submit_candidate", input: { summary: "whole flow", plan: plan() } }
+      : call === 3 ? { kind: "tool_call", callId: "test", toolId: "core.test_candidate", input: { revision: latest?.revision, digest: latest?.digest } }
+      : { kind: "tool_call", callId: `look-${call}`, toolId: "inspect", input: { area: `shelf ${call}` } }, "unknown", { decisionUsd: 0.001, look: lookFindsNothing });
+    try {
+      if (build.settled.ok) throw new Error(`expected the build to end, got ${build.settled.result.status}`);
+      const diagnostic = parseAutomationStudioFlowBootstrapFailureDiagnostic((build.settled.error as { diagnostic?: unknown }).diagnostic);
+      if (!diagnostic) throw new Error("the failure carried no diagnostic Core reads back");
+      // The model asked for one trial; the loop ran two more of the same revision itself, each time the run of looks
+      // reached the ladder's top while the gate still had a retest (`candidate/stall-retest.ts`). Three trials is the gate's
+      // most per revision, so after that the ladder's top is decided by the model and the build goes on.
+      expect(diagnostic.candidate).toMatchObject({ draft: "saved", revision: 1, trialCount: 3,
+        trials: [1, 2, 3].map(() => ({ revision: 1, verdict: "unsure", trialRunId: expect.any(String), code: "candidate.trial_unconfirmed" })) });
+      const steps = (diagnostic.evidenceLoop as { steps: { toolId: string; resultCode?: string }[] } | undefined)?.steps ?? [];
+      expect(steps.filter((step) => step.toolId === "core.test_candidate" && step.resultCode === "candidate.trial_unsure")).toHaveLength(3);
+      expect(steps.filter((step) => step.resultCode === "llm_evidence_loop.loop_change_approach").length).toBeGreaterThan(2);
+      // Never a stall: the purse ends it. The start's reading and 232 decisions at $0.001 are 233 calls, and the three
+      // trials' six judge calls $0.0005 each: $0.236 of $0.25, and the $0.014 left cannot hold the next decision beside the
+      // judging the purse keeps back.
+      expect(diagnostic.code).toBe("flow_bootstrap.evidence_iteration_limit");
+      expect(diagnostic.accounting).toMatchObject({ inputTokens: 233 * 10 + 6 * 200, outputTokens: 233 * 5 + 6 * 20, estimatedCostUsd: expect.closeTo(233 * 0.001 + 6 * 0.0005, 6) });
     } finally { await build.close(); }
   }, 60_000);
 
@@ -100,17 +145,20 @@ describe("a candidate build that stops on a refused step names the step", () => 
       if (build.settled.ok) throw new Error(`expected the build to end, got ${build.settled.result.status}`);
       const diagnostic = parseAutomationStudioFlowBootstrapFailureDiagnostic((build.settled.error as { diagnostic?: unknown }).diagnostic);
       if (!diagnostic) throw new Error("the failure carried no diagnostic Core reads back");
-      // The stall at the top of loop detection's ladder ends it (t1056), and names the refused step in the model's own
-      // words, with where its issue is and that issue's code; never the node's key or definition.
-      expect(diagnostic.code).toBe("flow_bootstrap.evidence_repeat_without_progress");
+      // The purse ends it, never loop detection (t1063): the start's reading and 11 refused submissions are 12 calls at
+      // $0.02, $0.24 of $0.25, and the $0.01 left cannot hold a thirteenth. The budget's ending names the refused step its money last went on (t1056), in the
+      // model's own words, with where its issue is and that issue's code; never the node's key or definition.
+      expect(diagnostic.code).toBe("flow_bootstrap.evidence_iteration_limit");
+      expect(diagnostic.accounting).toMatchObject({ inputTokens: 12 * 10, outputTokens: 12 * 5, estimatedCostUsd: expect.closeTo(12 * 0.02, 6) });
       expect(diagnostic.refusedSteps).toEqual([{ step: "keep requests with 5 or more mutual friends", path: "plan.subflows.0.nodes.1.parameters.minimumMutualFriends", code: "bootstrap.unknown_parameter" }]);
       const said = automationStudioConversationCallCause("the build", { ok: false, payload: { diagnostic } } as Parameters<typeof automationStudioConversationCallCause>[1]);
-      expect(said).toMatch(/^the build failed: the Flow it wrote was refused [0-9]+ times in a row, the last time because the step 'keep requests with 5 or more mutual friends' was given a setting it doesn't take, so nothing was tested$/u);
+      expect(said).toBe("the build failed: it reached its spending limit while the Flow it wrote was still being refused, the last time because the step 'keep requests with 5 or more mutual friends' was given a setting it doesn't take");
     } finally { await build.close(); }
   }, 60_000);
 });
 
-describe("why a candidate build's loop stalled", () => {
+// The stall code now serves a project brief's builder, which still stalls; a candidate build never does (t1063, `../../candidate-failure/stall-code.ts`).
+describe("why a builder's loop stalled", () => {
   it("replies of the wrong shape are an unusable answer; refusals of a readable answer are no progress", () => {
     expect(automationStudioCandidateStallCode(["llm_output.invalid_evidence_decision"])).toBe("flow_bootstrap.evidence_unusable_decision");
     expect(automationStudioCandidateStallCode(["llm_evidence_loop.invalid_decision", "llm_output.kind_mismatch"])).toBe("flow_bootstrap.evidence_unusable_decision");

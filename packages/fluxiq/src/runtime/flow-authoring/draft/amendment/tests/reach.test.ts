@@ -28,7 +28,7 @@ function requestsDraft(): AutomationStudioFlowDraftStep[] {
 }
 
 describe("a decision that leaves a step of the Flow with no way to its page", () => {
-  it("refuses a drop of the only steps that bring the page to where a kept step acted, and applies the rest", () => {
+  it("refuses a drop of the only steps that bring the page to where a kept step acted, and applies none of the decision (t1068)", () => {
     const draft = requestsDraft();
     const report = applyAutomationStudioFlowDraftAmendments(draft, [
       { step: 3, change: "drop" },
@@ -37,12 +37,12 @@ describe("a decision that leaves a step of the Flow with no way to its page", ()
     ]);
     // Step 4 is the navigation to the requests page the listing (6) acted on;
     // once it stays, step 3 is the navigation to the friends page step 4 acted on.
-    expect(report.applied).toBe(1);
+    expect(report.applied).toBe(0);
     expect(report.refused).toEqual([
       { step: 4, reason: "strands_a_step", strands: 6 },
       { step: 3, reason: "strands_a_step", strands: 4 }
     ]);
-    expect(draft.map((entry) => entry.disposition)).toEqual(["kept", "kept", "kept", "kept", "dropped", "kept", "kept"]);
+    expect(draft.map((entry) => entry.disposition)).toEqual(["kept", "kept", "kept", "kept", "kept", "kept", "kept"]);
   });
 
   it("applies a drop that leaves every kept step a way to its page", () => {

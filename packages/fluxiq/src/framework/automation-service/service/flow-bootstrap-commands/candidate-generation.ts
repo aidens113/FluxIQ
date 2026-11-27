@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { AutomationStudioFlowBootstrapGenerationError, automationStudioFlowBootstrapRefusedSteps, flowBootstrapEvidenceLoopFailure, flowBootstrapEvidenceUnusableDecisionFailure, flowBootstrapHarnessFailure, sanitizedBootstrapAccounting, type AutomationStudioBootstrapAccounting, type AutomationStudioFlowBootstrapFailureStage } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
-import { automationStudioCandidateStallCode, automationStudioCandidateSubmissionRefusals, automationStudioFlowBootstrapFailureWithCandidate } from "../candidate-failure/index.ts";
+import { automationStudioFlowBootstrapFailureWithCandidate } from "../candidate-failure/index.ts";
 import { runAutomationStudioFlowCandidateAuthoringLoop } from "../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";
 import { automationStudioLlmUnusableDecisionError, type AutomationStudioLlmEvidenceLoopAccounting, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceLoopTrace, type AutomationStudioLlmHarnessInput, type AutomationStudioLlmTaskResult } from "../../../../runtime/llm/index.ts";
 import { automationStudioActivityDecisionReason, automationStudioActivityIssuesOf, automationStudioActivityReasonText, observeAutomationStudioEvidenceLoop } from "../../../../runtime/automation-activity/index.ts";
@@ -10,8 +10,6 @@ import { AutomationStudioCandidateSource as Source } from "../candidate-drafts/i
 import { automationStudioCandidateFingerprint as fingerprint } from "../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";
 import type { AutomationStudioCandidateOriginalSourceBinding, AutomationStudioCandidateTrialPort, AutomationStudioCandidateTrialResult, AutomationStudioCandidateTrialVerdict, AutomationStudioFlowCandidate } from "../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";
 import type { AutomationStudioSiteResetLedger } from "../../../../runtime/flow-authoring/bootstrap/site-reset/index.ts";
-import { automationStudioFlowBootstrapUnusableDecisions } from "./unusable-decisions.ts";
-import { automationStudioFlowBootstrapLoopSignal } from "./loop-signal.ts";
 import { automationStudioFlowBootstrapFailureWithSpend } from "./failure-spend.ts";
 
 /** `core.submit_candidate` (`../../flow-bootstrap/candidate/authoring-loop.ts`). */
@@ -29,20 +27,31 @@ type Decide = AuthoringInput["loop"]["decide"];
  * way, under the candidate id minted before the loop, and the standing verdict
  * is returned for the caller to promote or not. This never promotes.
  *
- * An unusable decision is refused and asked again under the bound the legacy
- * round shares (`./unusable-decisions.ts`, t354); a run of them ends the build
- * as an unusable answer, and every ending carries the build's spend
+ * An unusable decision is refused and asked again, as the legacy round's is
+ * (`./unusable-decisions.ts`, t354), and every ending carries the build's spend
  * (`./failure-spend.ts`).
+ *
+ * **No stall ends a candidate build (t1063).** Its loop is given no
+ * `loopSignal` and no person to ask, as the project supervisor's is
+ * (`../project-build/run.ts`). When loop detection's ladder reaches its top
+ * rung, the loop asks for the build's own move first: a retest of the latest
+ * revision through the trial gate -- its test from the start and its judges --
+ * where the gate can still run one (`../../../../runtime/flow-authoring/bootstrap/candidate/stall-retest.ts`),
+ * and the build goes on with that answer. Otherwise the model is steered and
+ * decides how to go on (`core.loop_decision`). The build ends only on its
+ * result, the purse, the clock or Stop. t1056 had handed it the bootstrap's
+ * `loopSignal`, which ends a round on that rung; a bootstrap then tests,
+ * judges and repairs in a new round, but a candidate build has no rounds, so
+ * the rung ended the build (`flow_bootstrap.evidence_repeat_without_progress`
+ * or `evidence_unusable_decision`) before its result or its purse.
  *
  * A build that fails after the model wrote a valid candidate keeps the latest
  * one it wrote as an unverified draft, as a finished build keeps its own, and
  * its failure names the candidate, that revision and each trial's verdict
  * (`../candidate-failure/`, t362): round 4's no-progress ending said the Flow
- * "has no steps yet" over four accepted revisions and two trials. A build
- * that stopped for no progress also carries what its last submission was
- * refused for, and how often it was then sent again unchanged
- * (`../candidate-failure/submission-refusals.ts`, t378): lanes C and D ended
- * "it kept trying without getting any further" and nothing more.
+ * "has no steps yet" over four accepted revisions and two trials. A budget
+ * that ran out while the latest submissions were refused names the steps they
+ * were refused at (t1056).
  */
 export async function generateAutomationStudioFlowCandidateDraft(input: {
   submission: AuthoringInput["submission"];
@@ -94,9 +103,7 @@ export async function generateAutomationStudioFlowCandidateDraft(input: {
     provider: input.harness.provider.metadata.provider, model: input.harness.provider.metadata.model,
     inputTokens: spent.inputTokens + input.authorityUsage.inputTokens + judged.inputTokens, outputTokens: spent.outputTokens + input.authorityUsage.outputTokens + judged.outputTokens,
     totalTokens: spent.totalTokens + input.authorityUsage.totalTokens + judged.totalTokens, estimatedCostUsd: spent.estimatedCostUsd + input.authorityUsage.estimatedCostUsd + judged.estimatedCostUsd }); };
-  // What the last submission was refused for, carried on a no-progress ending so the chat can say it (`../candidate-failure/submission-refusals.ts`, t378).
-  const submissions = automationStudioCandidateSubmissionRefusals();
-  // ...and the steps it was refused at, in the model's words screened as the chat's are, so the ending names them (`../../flow-bootstrap/generation-failure/refused-steps.ts`, t378).
+  // The steps the latest submission was refused at, in the model's words screened as the chat's are, so a budget's ending names them (`../../flow-bootstrap/generation-failure/refused-steps.ts`, t378).
   let refusedSteps: ReturnType<typeof automationStudioActivityIssuesOf> = [];
   const noteRefusedSteps = (loop: AutomationStudioLlmEvidenceLoopInput): AutomationStudioLlmEvidenceLoopInput => ({ ...loop, executeTool: async (call) => {
     const result = await loop.executeTool.call(loop, call);
@@ -105,18 +112,10 @@ export async function generateAutomationStudioFlowCandidateDraft(input: {
     if (answer?.ok === false) refusedSteps = automationStudioActivityIssuesOf(answer.diagnostics).map((issue) => ({ ...issue, step: automationStudioActivityReasonText(issue.step, STEP_WORDS) }));
     return result;
   } });
-  // A run of unusable decisions ends as an unusable answer, staged and worded as legacy's ("the model's answer could not be used"), with the build's spend;
-  // a run of usable answers refused for one reason ends as no progress (`../candidate-failure/stall-code.ts`), naming the refused submission behind it.
-  const unusableDecisions = automationStudioFlowBootstrapUnusableDecisions({
-    callerEnding: (progress) => input.ending(progress, accounted(progress.accounting)),
-    // Answers that kept being refused for one reason end as no progress, never as an unusable answer (t362, round 4's C6).
-    stalled: (progress) => {
-      const code = automationStudioCandidateStallCode(progress.issueCodes);
-      const refused = code === "flow_bootstrap.evidence_repeat_without_progress" ? submissions.codes(progress) : [];
-      const failure = flowBootstrapEvidenceUnusableDecisionFailure({ ...progress, issueCodes: [...refused, ...progress.issueCodes] }, accounted(progress.accounting), code);
-      const steps = refused.length ? automationStudioFlowBootstrapRefusedSteps.bounded(refusedSteps) : [];
-      return steps.length ? new AutomationStudioFlowBootstrapGenerationError({ ...failure.diagnostic, refusedSteps: steps }) : failure;
-    } });
+  // What makes the loop ask again after a reply it cannot use, or a refused completion, rather than end there. Its `stalled`,
+  // which the option requires, builds the ending of a round a caller ends on loop detection's signal or a person's question;
+  // this build gives neither (header, t1063), so it is never reached, as the project supervisor's is not (`../project-build/run.ts`).
+  const unusableDecisions = { stalled: (progress: Parameters<typeof flowBootstrapEvidenceUnusableDecisionFailure>[0]) => flowBootstrapEvidenceUnusableDecisionFailure(progress, accounted(progress.accounting)) };
   // A budget that ran out while the latest submissions were refused says so: what the money last went on, as a detail of
   // the budget's ending rather than an ending of its own (t1056).
   const withRefusedSteps = (failure: AutomationStudioFlowBootstrapGenerationError): AutomationStudioFlowBootstrapGenerationError => {
@@ -153,9 +152,10 @@ export async function generateAutomationStudioFlowCandidateDraft(input: {
     submission: input.submission, ...(input.trial ? { trial: { candidateId, port: input.trial } } : {}), ...(input.siteReset ? { siteReset: input.siteReset } : {}),
     accepted: (candidate) => { accepted = structuredClone(candidate); },
     // The loop observes its whole input, its own two tools among the calls, so saving and testing the Flow are cards in the chat (t373).
-    observe: (loop) => noteRefusedSteps(submissions.observe(observeAutomationStudioEvidenceLoop(loop))),
-    // The ladder's top rung ends the round, so the build tests what it has and repairs it (t1056, `./loop-signal.ts`).
-    loop: { ...input.loop, ...automationStudioFlowBootstrapLoopSignal(), unusableDecisions, decide: input.wrapDecision(async ({ iteration, tools, evidence, decisionSchema, canComplete, signal }) => {
+    observe: (loop) => noteRefusedSteps(observeAutomationStudioEvidenceLoop(loop)),
+    // No `loopSignal`, and no person to ask: at the ladder's top rung the loop retests the latest revision through the trial gate where it can,
+    // and otherwise steers; the build ends only on its result, the purse, the clock or Stop (header, t1063).
+    loop: { ...input.loop, personReachable: false, unusableDecisions, decide: input.wrapDecision(async ({ iteration, tools, evidence, decisionSchema, canComplete, signal }) => {
       input.beforeDecision();
       input.progress(accounted(observedUsage), "provider_request");
       const decision = await input.runHarness({

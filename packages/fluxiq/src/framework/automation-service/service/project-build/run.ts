@@ -23,9 +23,8 @@ import {
   type AutomationStudioProjectSupervisorKept
 } from "../../../../runtime/project-agents/index.ts";
 import { automationStudioProjectBuildKnownParts } from "../project-parts/index.ts";
-import { automationStudioCandidateStallCode } from "../candidate-failure/index.ts";
 import type { AutomationStudioFlowCandidateDraftRecord } from "../candidate-drafts/index.ts";
-import { automationStudioFlowBootstrapUnusableDecisions, type generateAutomationStudioFlowCandidateDraft } from "../flow-bootstrap-commands/index.ts";
+import type { generateAutomationStudioFlowCandidateDraft } from "../flow-bootstrap-commands/index.ts";
 import { AutomationStudioProjectBuildActsRecord } from "./acts-record.ts";
 import { automationStudioProjectBuildBriefPorts } from "./brief-ports.ts";
 import { AutomationStudioProjectBuildDecisions } from "./decisions.ts";
@@ -275,15 +274,20 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
     trialled: (scope, proposal, verdict) => proposals.trialled(scope, proposal, verdict)
   });
   const sources = automationStudioProjectActiveInstructionSources(project.instructions);
-  const { purse: _purse, signal: _signal, budget: _budget, ...loop } = draft.loop;
+  // The draft's own loop, without what the supervisor is given apart -- and without any `loopSignal`, so no stall ends it (below).
+  const { purse: _purse, signal: _signal, budget: _budget, loopSignal: _loopSignal, ...loop } = draft.loop;
   // The supervisor's decisions carry its own system instructions, never the domain's operating text (`./supervisor-provider.ts`, t569).
   const supervisorProvider = automationStudioProjectBuildSupervisorProvider(draft.harness.provider, binding.domainId);
   const runSupervisorHarness: typeof draft.runHarness = async (request) => await draft.runHarness({ ...request, provider: supervisorProvider });
   const decide = (completionSchema: Parameters<AutomationStudioProjectBuildDecisions["decide"]>[0]["completionSchema"]) => decisions.decide({ runHarness: runSupervisorHarness, wrapDecision: draft.wrapDecision, completionSchema });
-  const unusableDecisions = automationStudioFlowBootstrapUnusableDecisions({
-    callerEnding: (progress) => draft.ending(progress, accounting()),
-    stalled: (progress) => flowBootstrapEvidenceUnusableDecisionFailure(progress, accounting(), automationStudioCandidateStallCode(progress.issueCodes))
-  });
+  // No stall ends the supervisor (t1063). A loop stalls only where its caller ends the round on loop detection's signal
+  // (`loopSignal` answering `end`) or the model asks a person (`runtime/llm/decision-handlers/loop-signal.ts`). The
+  // supervisor's loop is given neither: no `loopSignal` (any in the draft's loop is left out above) and no person to ask.
+  // So a supervisor that repeats itself is steered, and decides how to go on, until its result, the purse, the build's
+  // clock or Stop; a builder's stall comes back to it as that brief's return (`project-agents/dispatch/ending.ts`), and
+  // it can brief again. `unusableDecisions` is still passed because it is what makes the loop ask again after a reply it
+  // cannot use, or a refused completion, rather than end there; its `stalled`, which the option requires, is never reached.
+  const unusableDecisions = { stalled: (progress: Parameters<typeof flowBootstrapEvidenceUnusableDecisionFailure>[0]) => flowBootstrapEvidenceUnusableDecisionFailure(progress, accounting()) };
   // The judged whole run's witnesses are read through Core's own look, where its arrival exists (header, t775 D5).
   const look = AutomationStudioProjectBuildPhaseStart.look({ binding, environment: project.trialEnvironment, ledger: project.ledger, cancellation: project.cancellation });
   let outcome: Awaited<ReturnType<typeof runAutomationStudioProjectSupervisorLoop>>;
@@ -304,13 +308,13 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
         },
         ...(draft.loop.signal ? { signal: draft.loop.signal } : {})
       },
-      loop: { ...loop, unusableDecisions, decide: decide(undefined) },
+      loop: { ...loop, personReachable: false, unusableDecisions, decide: decide(undefined) },
       observe: (observed) => observeAutomationStudioEvidenceLoop({ ...observed, decide: decide(observed.completionSchema) }),
       // The time limit's timers, on the real clock; passed here so a test of this build can hold them (t616, `project-agents/supervisor/supervisor-loop.ts`).
       clock: AUTOMATION_STUDIO_PROJECT_SUPERVISOR_REAL_CLOCK
     });
   } catch (error) {
-    // A stall a guard ended the loop on is thrown on once its ending is recorded (t586): the person reads that ending (header).
+    // A build failure thrown out of the loop (never a stall since t1063: a provider's failure, say) is thrown on once its ending is recorded (t586): the person reads that ending (header).
     if (!(error instanceof AutomationStudioFlowBootstrapGenerationError) || draft.loop.signal?.aborted) throw error;
     throw toldEnding(error, (await records.read(ref))?.record.ending, left, undefined, automationStudioProjectBuildRecordTold({ parts: trials, assembled: false, wholeRuns: wholeRuns(draft), refused: refusedTests.told() }));
   } finally {

@@ -25,7 +25,7 @@ describe("the answer-first guidance", () => {
   // that opens it again and again, the only handle-taking tools it had being looks.
   it("says that looking never acts, and how a control is pressed", () => {
     const words = AUTOMATION_STUDIO_ANSWER_FIRST_GUIDANCE;
-    expect(words).toMatch(/describing a control or searching the page never presses, types into or opens anything/u);
+    expect(words).toMatch(/describing a control never presses, types into or opens anything/u);
     expect(words).toMatch(/run the node that does it with core\.run_node, naming the control by the handle the page printed/u);
     expect(words).toMatch(/press the control that opens it/u);
   });

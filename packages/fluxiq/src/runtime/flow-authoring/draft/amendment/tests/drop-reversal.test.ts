@@ -58,8 +58,8 @@ describe("a drop of one toggle half", () => {
     steps[3]!.acts = ["a1"];
     for (const amendments of [[{ step: 2, change: "drop" as const }, { step: 5, change: "keep" as const }], [{ step: 5, change: "keep" as const }, { step: 2, change: "drop" as const }]]) {
       const each = structuredClone(steps);
-      expect(applyAutomationStudioFlowDraftAmendments(each, amendments)).toEqual({ applied: 1, refused: [{ step: 2, reason: "strands_a_step", strands: 3 }] });
-      expect(each.map((step) => step.disposition)).toEqual(["kept", "kept", "kept", "kept", "kept"]);
+      expect(applyAutomationStudioFlowDraftAmendments(each, amendments)).toEqual({ applied: 0, refused: [{ step: 2, reason: "strands_a_step", strands: 3 }] });
+      expect(each.map((step) => step.disposition)).toEqual(["kept", "kept", "kept", "kept", "taken"]);
       expect(each.map((step) => step.cancels)).toEqual([undefined, undefined, undefined, undefined, undefined]);
       expect(each[3]!.acts).toEqual(["a1"]);
     }
