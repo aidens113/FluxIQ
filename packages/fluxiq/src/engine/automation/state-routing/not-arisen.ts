@@ -18,7 +18,14 @@
 // are on it), one a host answered with the closed word `skipped: "already_done"` among its
 // outputs (a lasting act already done, nothing sent), or a step this rule itself passed
 // over -- what that step would have brought about did not come either, so a chain of
-// follow-on steps is passed one by one, each on the same proof.
+// follow-on steps is passed one by one, each on the same proof. Unless that step went
+// somewhere and the page was brought there (`skipped.reached`, `./route-owed.ts`): then
+// the page it brought about has come, and the step after it is not this case.
+//
+// **Where it went is not dropped (t1083).** The "View cart" this rule was written for is
+// also the move to the cart, which the steps after it were written on. So a step passed
+// over here whose recorded effect moved the page to another route is passed over only
+// once the page is on that route (`./route-owed.ts`, asked by `decision.ts`).
 //
 // **Why an act done, and not any step skipped.** A lasting act brings about a page of its
 // own (a confirmation, a dialog closing onto the next page) that the steps after it were
@@ -83,7 +90,7 @@ function didNotAct(attempt: AutomationStudioNodeAttemptTrace): boolean {
   if (attempt.status !== "succeeded") return false;
   const skipped = attempt.skipped;
   if (skipped?.reason === "already_done") return true;
-  if (skipped?.reason === "target_absent" && skipped.code === AUTOMATION_STUDIO_STATE_NOT_ARISEN_CODE) return true;
+  if (skipped?.reason === "target_absent" && skipped.code === AUTOMATION_STUDIO_STATE_NOT_ARISEN_CODE) return skipped.reached === undefined;
   return !skipped && attempt.effects.length === 0 && attempt.outputs.skipped === AUTOMATION_STUDIO_ALREADY_DONE_OUTPUT;
 }
 

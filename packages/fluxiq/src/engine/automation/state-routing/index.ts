@@ -25,6 +25,8 @@ export { automationStudioRankStateRoutes, type AutomationStudioRankedStateRoute,
 export type { AutomationStudioGuardedStateRoutingRecord, AutomationStudioStateRouteRefusal, AutomationStudioStateRouteRefusalGuard } from "./refusal.ts";
 export { automationStudioRepeatedLastingAct, type AutomationStudioRepeatedLastingAct } from "./repeated-act.ts";
 export { automationStudioStateReopenOpener } from "./reopen.ts";
+// A step passed over as "not arisen" still owes the route its recorded effect went to (t1083).
+export { automationStudioNotArisenRouteOwed } from "./route-owed.ts";
 export { automationStudioOptionalStepNotShown, type AutomationStudioOptionalNotShownReading } from "./optional-not-shown.ts";
 export { automationStudioTargetMeasuredNotShown } from "./target-not-shown.ts";
 export { automationStudioStateRouteOnward, automationStudioStateRouteSpan } from "./route-path.ts";
