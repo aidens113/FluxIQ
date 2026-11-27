@@ -1,3 +1,4 @@
+import { AutomationStudioAttemptActRecord } from "../../../../../../runtime/answer-first/act-record/index.ts";
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -33,6 +34,8 @@ function runOf(parts: Parts | undefined, saved: AutomationStudioFlowCandidateDra
   return {
     steps,
     result,
+    // The attempt's act record: a saved Flow names the acts its calls made by their steps (`../draft-save.ts`, t1075).
+    record: new AutomationStudioAttemptActRecord(),
     usage: { ...zero },
     input: {
       projectId: "project.one", flowId: "flow.one", registry: {}, resolution: {}, size: {}, binding: {}, routing: { signaturesOf: () => undefined },

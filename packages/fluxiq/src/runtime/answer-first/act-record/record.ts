@@ -121,6 +121,17 @@
 // look mechanically instead (`SVC/answer-first/run-acts/run-gate.ts`): `carriedHold` says a call's match stands only by
 // such holds, and where the host says nothing the step brought about is on the page, its `letGo` lets the hold go
 // for this attempt and the press runs. An act declared or claimed, landed or may have, is never let go so.
+//
+// **An act named by the step it became (`calls`, `./call-acts.ts`, t1075, `run-mwynbry2-f3c88dc7`).** Identity across stages is
+// the best reading of parameters, and a saved step may carry parameters its press never had: the assembly wrote
+// `requiresChosen` onto the saved "+ Add", its keys stopped matching the press attempt 1 had landed, and attempt 2's
+// replay pressed it again. Core's own run parameters are now left out of identity (`./identity/target-keys.ts`), and
+// beside that the act is named by its step: each call of the attempt is remembered with the act it made (in memory,
+// by the loop's call id), and when the attempt saves its Flow the act is named `step:<plan key>` for the step its call
+// became (`SVC/answer-first/run-acts/step-stamps.ts`), as a trial's act is. A call id two acts answered to (a fresh round
+// that reused it) names neither. A real run then refuses that step by its name (`carried`), whatever its parameters
+// say, where the step's action is one the act answers to and, where both name a control in words, the same control:
+// a plan key is a position in its Flow, so a later revision whose step there presses something else is not held by it.
 
 import { type AutomationStudioAttemptAct, type AutomationStudioAttemptActClass, readAttemptActClasses } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../core/index.ts";
@@ -142,6 +153,7 @@ import { AutomationStudioAttemptActItems as ActItems } from "./item-names.ts";
 import { automationStudioAttemptActCarriedWords } from "./carried-words.ts";
 import { automationStudioAttemptActControlName } from "./control-name.ts";
 import { automationStudioAttemptActScreenedWords } from "./words.ts";
+import { AutomationStudioAttemptActCalls } from "./call-acts.ts";
 
 /** What a fresh round is told about the record, in words that teach nothing about any site. */
 const MODEL_RULE = "These acts already happened in this task or may have. Never repeat one: count what landed as done and carry on with what is left. Check the page for one that may have landed: if its effect is there, it is done. A first try at it again is refused and says to check, and only a call that reads the page after that lets it go.";
@@ -176,6 +188,8 @@ export class AutomationStudioAttemptActRecord {
   private readonly controls = new WeakMap<AutomationStudioAttemptActEntry, string>();
   /** Rows left out as held done, for `rowsHeldDone`, and which rows a read returned twice, for the words of a refusal. In memory only (header). */
   private readonly leftOut = new RowsLeftOut();
+  /** Which act each call of this attempt made, and naming those acts by the steps their calls became (header, "An act named by the step it became"). In memory only. */
+  readonly calls = new AutomationStudioAttemptActCalls({ entries: () => this.entries, changed: () => void this.changed() });
 
   constructor(options: { seed?: AutomationStudioAttemptActRecordData; persist?: (data: AutomationStudioAttemptActRecordData) => Promise<void>; now?: () => number; asked?: (call: AutomationStudioAttemptActCall) => number | undefined } = {}) {
     const seed = options.seed === undefined ? undefined : parseAutomationStudioAttemptActRecordData(options.seed);
@@ -233,11 +247,13 @@ export class AutomationStudioAttemptActRecord {
     if (known) {
       this.open.set(call, { entry: known, before: structuredClone(known) });
       this.absorb(known, frozen, called, declaredClasses(call), "may_have_landed");
+      this.calls.note(call.callId, known);
     } else {
       const entry = this.newEntry(call, { effectApplied: false, uncertain: true, words: { what: words.what ?? "", where: words.where ?? "" } }, called, frozen, "may_have_landed", true);
       this.readCount(entry, call, called);
       this.entries.push(entry);
       this.open.set(call, { entry });
+      this.calls.note(call.callId, entry);
     }
     if (await this.changed()) return "on_record";
     // Not on the record, so not sent: nothing happened, and the failed write is kept for `flushed`.
@@ -276,6 +292,7 @@ export class AutomationStudioAttemptActRecord {
       this.items.noteAct(known, { actedOn: outcome.actedOn, row: call.row, card: outcome.card });
       this.noteControl(known, call, outcome);
       this.landedAt(outcome.step, known);
+      this.calls.note(call.callId, known);
       this.leftOut.ranOn(known.rows, this.ties);
       void this.changed();
       return this.shown(known);
@@ -285,6 +302,7 @@ export class AutomationStudioAttemptActRecord {
     this.noteControl(entry, call, outcome);
     if (lasting) this.readCount(entry, call, called);
     this.entries.push(entry);
+    this.calls.note(call.callId, entry);
     this.landedAt(outcome.step, entry);
     this.leftOut.ranOn(entry.rows, this.ties);
     void this.changed();
@@ -465,6 +483,8 @@ export class AutomationStudioAttemptActRecord {
       Object.assign(entry, before);
     } else {
       this.entries.splice(this.entries.indexOf(entry), 1);
+      // The entry its begin made is gone, so the call names no act until its answer says which.
+      this.calls.forget(call.callId, entry);
     }
     return true;
   }
@@ -690,7 +710,19 @@ function refusable(entry: AutomationStudioAttemptActEntry): boolean {
 function carriedMatches(entries: readonly AutomationStudioAttemptActEntry[], call: ForRun, identity: Identity): AutomationStudioAttemptActEntry[] {
   const steps = new Set(call.steps ?? []);
   const room = (entry: AutomationStudioAttemptActEntry) => call.counted === true && entry.state === "landed" && hasRoom(entry, identity);
-  return entries.filter((entry) => stands(entry) && !room(entry) && (matches(entry, identity) || (entry.steps ?? []).some((step) => steps.has(step))));
+  return entries.filter((entry) => stands(entry) && !room(entry) && (matches(entry, identity) || ((entry.steps ?? []).some((step) => steps.has(step)) && sameStepAct(entry, identity))));
+}
+
+/**
+ * Whether a step an act is named by is still that act's (header, "An act named by the step it became"): a plan key is a
+ * position in its Flow, so the step's action must be one the act answers to, and where both name a control in words,
+ * the words must agree. An act no call's parameters made (a trial's or a run's ledger, merged with no keys) is named by
+ * its step alone, as it always was: its source named the step of the Flow it proved.
+ */
+function sameStepAct(entry: AutomationStudioAttemptActEntry, identity: Identity): boolean {
+  if (entry.keys.length === 0) return true;
+  if (entry.actions.length > 0 && !entry.actions.includes(identity.actionId)) return false;
+  return !(entry.controls && identity.controls) || identity.controls.some((words) => entry.controls!.includes(words));
 }
 
 /** Whether a refusal rests on this entry only because an earlier attempt's answer said its undeclared press changed something that stays (header, "A held press on a replay"). */

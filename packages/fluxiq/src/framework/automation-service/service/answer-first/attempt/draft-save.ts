@@ -32,6 +32,7 @@ import { automationStudioAnswerFirstResultVersionOf } from "../result-feed/index
 import type { AutomationStudioAnswerFirstStatedToggle } from "../task-memory/index.ts";
 import { automationStudioAnswerFirstAccounting } from "./accounting.ts";
 import { automationStudioAnswerFirstStepsWithResultProcessing } from "../result-processing/index.ts";
+import { automationStudioAnswerFirstRunActStepStamps } from "../run-acts/index.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
 
 export type AutomationStudioAnswerFirstDraftOutcome =
@@ -67,6 +68,9 @@ export async function automationStudioAnswerFirstSaveDraft(run: AutomationStudio
     }
     const stated = statedOf(run, verdict);
     const record = await input.stores.drafts.save(draftRecord(run, verdict.summary, automationStudioAnswerFirstStampedPlan(input, verdict.buildPlan, verdict.locator, run.steps, stated)));
+    // Each act a call made is named by the saved step that call became, so the next run refuses that step by its name whatever its parameters say (`../run-acts/step-stamps.ts`, t1075).
+    // Only once the Flow is saved: a name for a Flow nobody keeps would name a step of another. The ending flushes the record after this.
+    namedBySteps(run, verdict);
     // Its parts go to the library; a failure there is reported by name on the trace and changes nothing here (`../../project-parts/draft-parts.ts`).
     await input.parts?.saveDraft({ projectId: input.projectId, flowId: input.flowId, candidateId: record.candidateId, buildPlan: verdict.buildPlan, instructionIds: input.instructionIds, instructionText: input.instructionText, startLocation: input.startLocation });
     return { kind: "saved", record, stated };
@@ -108,6 +112,19 @@ function savedReads(
     }
   }
   return saved;
+}
+
+/**
+ * The attempt's acts named by the saved steps their calls became (`../run-acts/step-stamps.ts`). A care taken after the
+ * save: one that cannot be worked out costs the saved draft nothing, and is said in the step log; its acts are then known
+ * by their identity alone, as before t1075.
+ */
+function namedBySteps(run: AutomationStudioAnswerFirstAttemptRun, verdict: Extract<Awaited<ReturnType<typeof checkAutomationStudioFlowBootstrapCompletion>>, { ok: true }>): void {
+  try {
+    run.record.calls.stepsOf(automationStudioAnswerFirstRunActStepStamps({ buildPlan: verdict.buildPlan, locator: verdict.locator, steps: run.steps }));
+  } catch (error) {
+    automationStudioLlmStepLogNote(`The saved steps could not name the acts their calls made, so those acts are known by what they were sent alone: ${error instanceof Error ? error.name : "unknown"}`);
+  }
 }
 
 /** What each step checks for: what it was already known to, and what this attempt saw flip. A care taken: one that cannot be worked out costs the draft nothing. */

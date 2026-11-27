@@ -9,7 +9,7 @@
 // (t792).** A press a trial pass made (`trialNodes`, t787) ties only a plan's
 // step (never an exploration call), and only the step written as the trial's
 // node was: the same node and the same parameters, compared whole with Core's
-// own `ensureState` taken off (`trialParameters`). That is how Core already
+// own run parameters taken off (`trialParameters`, `../../run-parameters/`, t1075). That is how Core already
 // knows a step across revisions: a step "as the revision that ran wrote it" is
 // its parameters (`../../result-verification/standing-no/written-conditions.ts`,
 // t666), and a step's label is display words, which Core's same-behaviour rule
@@ -39,9 +39,9 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioExploredToggle } from "./idempotent.ts";
 import { automationStudioToggleSameAcrossStates } from "./state-words.ts";
+import { automationStudioStepWithoutRunParameters } from "../../run-parameters/index.ts";
 
 /** The parameter Core gives a toggle step (`./toggle-idempotent.ts`): never part of what the step is. */
-const ENSURE_STATE = "ensureState";
 
 /** Every recorded press tied to the step or call, without choosing its state. */
 export function automationStudioExploredToggleTie(
@@ -93,16 +93,14 @@ function matchOf(press: AutomationStudioExploredToggle, parameters: JsonObject |
   return automationStudioToggleSameAcrossStates(own(press.trialParameters), own(parameters), press.signature) ? "other_state" : undefined;
 }
 
-/** A step's parameters as its identity: `ensureState` taken off, keys in order (header). */
+/** A step's parameters as its identity: Core's run parameters taken off, keys in order (header). */
 function written(parameters: JsonObject | undefined): string {
   return canonical(own(parameters));
 }
 
-/** A step's parameters without Core's `ensureState` (header). */
+/** A step's parameters without Core's run parameters, the one list every reader takes off (`../../run-parameters/`, t1075). */
 function own(parameters: JsonObject | undefined): JsonObject {
-  if (!parameters) return {};
-  const { [ENSURE_STATE]: _core, ...rest } = parameters;
-  return rest;
+  return automationStudioStepWithoutRunParameters(parameters);
 }
 
 /** A JSON value written with its keys in order, so two of the same value compare equal. */

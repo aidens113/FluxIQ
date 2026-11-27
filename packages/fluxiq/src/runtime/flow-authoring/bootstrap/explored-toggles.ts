@@ -24,7 +24,7 @@
 // answered as a toggle while a trial ran it is recorded from the trial's own
 // attempts (`trial`), under the trial node's id (`trialNodes`) and with the
 // parameters that node ran with (`trialParameters`, read off the trial's graph,
-// Core's `ensureState` taken off), so a later revision of the same step is tied
+// Core's run parameters taken off, `./run-parameters/`), so a later revision of the same step is tied
 // to it though its handle was never pressed while exploring. The step is known
 // by those parameters, never by its key, which is only its place in the script
 // (t792, `./script-statements/toggle-tie.ts`); a trial node the graph does not
@@ -37,6 +37,7 @@ import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../../framework/automation-service/executor/index.ts";
 import type { AutomationStudioExploredToggle } from "./script-statements/index.ts";
 import { automationStudioToggleStateSignature, automationStudioToggleStateValueKey } from "../../../framework/automation-service/toggle-state/index.ts";
+import { automationStudioStepWithoutRunParameters } from "./run-parameters/index.ts";
 
 /** The tool an exploration press is run through (`../llm/node-tools/run-node.ts`). */
 const RUN_NODE_TOOL_ID = "core.run_node";
@@ -46,8 +47,6 @@ const NODE_ID = /^[A-Za-z0-9_.:-]{1,200}$/u;
 const MAX_RECORDS = 256;
 /** The longest trial node's parameters kept as its step's identity, as JSON; longer, the press ties no step. */
 const MAX_PARAMETERS_CHARS = 16_384;
-/** The parameter Core gives a toggle step, never part of the step's identity (header). */
-const ENSURE_STATE = "ensureState";
 
 /** The trial's graph, as far as its nodes' written parameters go: every frame's nodes, by executed id. */
 type TrialGraph = { readonly nodes: readonly { readonly id: string; readonly parameterValues?: JsonObject | undefined }[] };
@@ -118,10 +117,10 @@ export class AutomationStudioExploredToggles {
   }
 }
 
-/** A trial node's parameters as its step's identity (header): a copy, `ensureState` taken off; none for a node the graph did not show, or too long to keep. */
+/** A trial node's parameters as its step's identity (header): a copy, Core's run parameters taken off; none for a node the graph did not show, or too long to keep. */
 function stepParameters(node: TrialGraph["nodes"][number] | undefined): JsonObject | undefined {
   if (!node) return undefined;
-  const { [ENSURE_STATE]: _core, ...rest } = node.parameterValues ?? {};
+  const rest = automationStudioStepWithoutRunParameters(node.parameterValues);
   return JSON.stringify(rest).length > MAX_PARAMETERS_CHARS ? undefined : structuredClone(rest);
 }
 

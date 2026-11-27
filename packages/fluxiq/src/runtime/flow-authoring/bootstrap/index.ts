@@ -42,6 +42,7 @@ export * from "./person-needed.ts";
 export * from "./plan/index.ts";
 export * from "./reachability/index.ts";
 export * from "./review-projection.ts";
+export * from "./run-parameters/index.ts";
 export * from "./screened-control-words.ts";
 export * from "./start-location.ts";
 export * from "./script-examples/index.ts";

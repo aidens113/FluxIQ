@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowDraftStep } from "../../../../../../runtime/flow-authoring/draft/index.ts";
 import { automationStudioAnswerFirstLeftOutSteps } from "../index.ts";
+import { AUTOMATION_STUDIO_STEP_RUN_PARAMETERS } from "../../../../../../runtime/flow-authoring/bootstrap/run-parameters/index.ts";
 
 const step = (position: number, over: Partial<AutomationStudioFlowDraftStep> = {}): AutomationStudioFlowDraftStep => ({
   position, id: `d${position}`, iteration: position, actionId: "press", input: { node: "press", parameters: { target: `t${position}` }, consequences: ["modify_existing"] }, effect: "mutate", effectApplied: true, proposes: true, disposition: "kept", ...over
@@ -24,6 +25,15 @@ describe("the steps left out of a saved Flow", () => {
     expect(automationStudioAnswerFirstLeftOutSteps([dropped(1, { replacedBy: "d9" }), step(2, { id: "d9" })])).toEqual([]);
     expect(automationStudioAnswerFirstLeftOutSteps([dropped(1, { id: "f1" }), step(2, { standsFor: "f1" })])).toEqual([]);
     expect(automationStudioAnswerFirstLeftOutSteps([dropped(1, { acts: ["a1"] }), step(2, { acts: ["a1"] })])).toEqual([]);
+  });
+});
+
+// t1075: a saved step may carry any run parameter Core writes (`requiresChosen` at assembly, not only `ensureState`), and
+// it is still the step that does the dropped one's act: the same one list every identity reader takes off.
+describe("a dropped step the saved Flow still does, whatever run parameter the saved step carries", () => {
+  it.each(Object.values(AUTOMATION_STUDIO_STEP_RUN_PARAMETERS))("%s", (name) => {
+    const saved = step(3, { input: { node: "press", parameters: { target: "t2", [name]: { set: true } }, consequences: ["modify_existing"] } });
+    expect(automationStudioAnswerFirstLeftOutSteps([dropped(2, { input: { node: "press", parameters: { target: "t2" }, consequences: ["modify_existing"] } }), saved])).toEqual([]);
   });
 });
 
