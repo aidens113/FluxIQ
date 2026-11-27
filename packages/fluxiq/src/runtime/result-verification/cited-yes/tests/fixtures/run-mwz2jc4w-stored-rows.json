@@ -1,0 +1,152 @@
+{
+ "0038": [
+  {
+   "datasetId": "result",
+   "columns": [
+    "title",
+    "price",
+    "bids",
+    "postage"
+   ],
+   "recordCount": 10,
+   "truncated": false,
+   "sampleRows": [
+    {
+     "title": "Kestrel 35 Rangefinder Camera",
+     "price": "£64.00",
+     "bids": "11 bids",
+     "postage": "+£4.95 postage"
+    },
+    {
+     "title": "KESTREL 35 45mm f/2.8 Voss-Anastigmat — film tested, new seals",
+     "price": "EUR 109,00",
+     "bids": "6 bids",
+     "postage": "+EUR 14,50 postage"
+    },
+    {
+     "title": "Kestrel 35 Rangefinder Camera",
+     "price": "£41.00",
+     "bids": "4 bids",
+     "postage": "Free postage"
+    },
+    {
+     "title": "Kestrel 35 rangefinder camera body + original leather case",
+     "price": "£96.00",
+     "bids": "4 bids",
+     "postage": "+£6.50 postage"
+    },
+    {
+     "title": "Kestrel 35 — CLA'd 2025, shutter accurate, lovely example",
+     "price": "US $189.00",
+     "bids": "13 bids",
+     "postage": "+US $32.00 postage"
+    },
+    {
+     "title": "Vintage Kestrel 35 35mm film camera, working, light meter dead",
+     "price": "£27.50",
+     "bids": "9 bids",
+     "postage": "+£3.99 postage"
+    },
+    {
+     "title": "Kestrel 35 rangefinder, 45mm f/2.8 lens, film tested",
+     "price": "£78.00",
+     "bids": "3 bids",
+     "postage": "+£5.20 postage"
+    },
+    {
+     "title": "Kestrel 35 camera with flash & manual — refurbished by seller",
+     "price": "£122.00",
+     "bids": "7 bids",
+     "postage": "Free postage"
+    },
+    {
+     "title": "Kestrel 35 Kamera Messsucher 45mm 2.8 — sehr gut",
+     "price": "EUR 169,00",
+     "bids": "12 bids",
+     "postage": "+EUR 19,90 postage"
+    },
+    {
+     "title": "Kestrel 35 rangefinder — collection only, Sheffield",
+     "price": "£35.00",
+     "bids": "2 bids",
+     "postage": "Collection in person"
+    }
+   ]
+  }
+ ],
+ "0087": [
+  {
+   "datasetId": "result",
+   "columns": [
+    "title",
+    "price",
+    "bids",
+    "postage"
+   ],
+   "recordCount": 10,
+   "truncated": false,
+   "sampleRows": [
+    {
+     "title": "Kestrel 35 Rangefinder Camera",
+     "price": "£64.00",
+     "bids": "11 bids",
+     "postage": "+£4.95 postage"
+    },
+    {
+     "title": "KESTREL 35 45mm f/2.8 Voss-Anastigmat — film tested, new seals",
+     "price": "EUR 109,00",
+     "bids": "6 bids",
+     "postage": "+EUR 14,50 postage"
+    },
+    {
+     "title": "Kestrel 35 Rangefinder Camera",
+     "price": "£41.00",
+     "bids": "4 bids",
+     "postage": "Free postage"
+    },
+    {
+     "title": "Kestrel 35 rangefinder camera body + original leather case",
+     "price": "£96.00",
+     "bids": "4 bids",
+     "postage": "+£6.50 postage"
+    },
+    {
+     "title": "Kestrel 35 — CLA'd 2025, shutter accurate, lovely example",
+     "price": "US $189.00",
+     "bids": "13 bids",
+     "postage": "+US $32.00 postage"
+    },
+    {
+     "title": "Vintage Kestrel 35 35mm film camera, working, light meter dead",
+     "price": "£27.50",
+     "bids": "9 bids",
+     "postage": "+£3.99 postage"
+    },
+    {
+     "title": "Kestrel 35 rangefinder, 45mm f/2.8 lens, film tested",
+     "price": "£78.00",
+     "bids": "3 bids",
+     "postage": "+£5.20 postage"
+    },
+    {
+     "title": "Kestrel 35 camera with flash & manual — refurbished by seller",
+     "price": "£122.00",
+     "bids": "7 bids",
+     "postage": "Free postage"
+    },
+    {
+     "title": "Kestrel 35 Kamera Messsucher 45mm 2.8 — sehr gut",
+     "price": "EUR 169,00",
+     "bids": "12 bids",
+     "postage": "+EUR 19,90 postage"
+    },
+    {
+     "title": "Kestrel 35 rangefinder — collection only, Sheffield",
+     "price": "£35.00",
+     "bids": "2 bids",
+     "postage": "Collection in person"
+    }
+   ]
+  }
+ ]
+}
