@@ -59,14 +59,13 @@ describe("an act claimed on a step the Flow can never contain", () => {
     expect(applyAutomationStudioFlowDraftAmendments(steps, [{ step: 2, change: "keep", act: "a1" }]).refused).toEqual([{ step: 2, reason: "did_not_work" }]);
   });
 
-  it("is refused for a look, and the act on a step that worked beside it does not land (all or none, t1068)", () => {
+  it("is refused for a look, and the act on a step that worked beside it does not land (per step, t1069)", () => {
     const steps = run34();
     steps[2]!.disposition = "taken";
     const result = applyAutomationStudioFlowDraftAmendments(steps, [{ step: 1, change: "keep", act: "a1" }, { step: 3, change: "keep", act: "a1" }]);
     expect(result.refused).toEqual([{ step: 1, reason: "not_a_kept_step" }]);
-    expect(result.applied).toBe(0);
-    expect(steps[2]).toMatchObject({ disposition: "taken" });
-    expect(steps[2]?.acts).toBeUndefined();
+    expect(result.applied).toBe(1);
+    expect(steps[2]).toMatchObject({ disposition: "kept", acts: ["a1"] });
     expect(steps[0]?.acts).toBeUndefined();
   });
 });

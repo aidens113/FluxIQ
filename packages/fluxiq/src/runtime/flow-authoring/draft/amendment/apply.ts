@@ -100,15 +100,25 @@ export function applyAutomationStudioFlowDraftAmendments(
   amendments: readonly AutomationStudioFlowDraftAmendment[],
   options: AmendmentOptions = {}
 ): AmendmentReport {
-  const before = steps.map((step) => ({ step, copy: snapshot(step) }));
-  const report = applyEach(steps, amendments, options);
-  // All or none (t1068): a refused edit leaves the whole decision unapplied, each refusal still naming its edit and why.
-  if (!report.refused.some((entry) => !NOT_BLOCKING.has(entry.reason))) return report;
-  for (const { step, copy } of before) {
-    for (const key of Object.keys(step)) delete (step as Record<string, unknown>)[key];
-    Object.assign(step, copy);
+  // Atomic per step (t1069): a step a blocking refusal strikes has none of its edits applied, and the decision is applied again
+  // without them, from the draft as found, so a struck edit leaves no trace on any step (an opener, a reversal, a claim) and the
+  // end-of-decision checks see the true final state. Each struck edit's refusals are still told.
+  const found = steps.map((step) => ({ step, copy: snapshot(step) }));
+  const skip = new Set<number>();
+  const told = new Map<number, AutomationStudioFlowDraftAmendmentRefusal[]>();
+  for (;;) {
+    const run = applyEach(steps, amendments, options, skip);
+    const fresh = [...run.struck.keys()].filter((number) => !skip.has(number));
+    if (!fresh.length) return { ...run.report, refused: [...[...told.values()].flat(), ...run.report.refused] };
+    for (const number of fresh) {
+      skip.add(number);
+      told.set(number, run.struck.get(number)!);
+    }
+    for (const { step, copy } of found) {
+      for (const key of Object.keys(step)) delete (step as Record<string, unknown>)[key];
+      Object.assign(step, copy);
+    }
   }
-  return { applied: 0, refused: report.refused };
 }
 
 /** Refusals that stop nothing: the edit changed nothing, or one part of it was told and the rest applied. */
@@ -132,8 +142,9 @@ type AmendmentReport = { applied: number; refused: AutomationStudioFlowDraftAmen
 function applyEach(
   steps: AutomationStudioFlowDraftStep[],
   amendments: readonly AutomationStudioFlowDraftAmendment[],
-  options: AmendmentOptions
-): AmendmentReport {
+  options: AmendmentOptions,
+  skip: ReadonlySet<number>
+): { report: AmendmentReport; struck: Map<number, AutomationStudioFlowDraftAmendmentRefusal[]> } {
   let applied = 0;
   const refused: AutomationStudioFlowDraftAmendmentRefusal[] = [];
   const claims: { act: string; from: AutomationStudioFlowDraftStep; to: AutomationStudioFlowDraftStep }[] = [];
@@ -153,12 +164,20 @@ function applyEach(
   let reversalAfterCheck = false;
   // Whether this is the model's ruling, which makes the steps it names the model's (`./edits/`), or Core's own withdrawal.
   const modelsWord = options.withdrawsReplacedAttempt !== true;
+  // Atomic per step (t1069): each step as the decision found it, the edits applied on it, and the steps a blocking refusal struck.
+  const appliedOn = new Map<AutomationStudioFlowDraftStep, number>();
+  const refusedOn = new Map<AutomationStudioFlowDraftStep, AutomationStudioFlowDraftAmendmentRefusal[]>();
+  const struck = new Set<AutomationStudioFlowDraftStep>();
   for (const amendment of amendments) {
+    if (skip.has(amendment.step)) continue;
+    const appliedBefore = applied;
+    const refusedBefore = refused.length;
     const step = shown.step(amendment.step);
     if (!step) {
       refused.push({ step: amendment.step, reason: "no_such_step" });
       continue;
     }
+    try {
     // A `keep` of a step the framework left out puts it in the Flow (`./edits/`).
     const putsIn = amendment.change === "keep" && automationStudioFlowDraftStepLeftOut(step);
     // The attempt a rerun replaced: told which step to change instead (`./replaced-attempt.ts`).
@@ -385,6 +404,11 @@ function applyEach(
     // The model has ruled on whether the step is in the Flow: its word stands from now on (`../step.ts`, `drafted`).
     if (modelsWord) delete step.drafted;
     applied += 1;
+    } finally {
+      appliedOn.set(step, (appliedOn.get(step) ?? 0) + applied - appliedBefore);
+      refusedOn.set(step, [...(refusedOn.get(step) ?? []), ...refused.slice(refusedBefore)]);
+      if (refused.slice(refusedBefore).some((entry) => !NOT_BLOCKING.has(entry.reason))) struck.add(step);
+    }
   }
   // A repeat this decision wrote that cannot run where its steps stand is taken back and refused.
   const settled = automationStudioFlowDraftSettleWrittenRepeats(steps, written, shown);
@@ -410,6 +434,15 @@ function applyEach(
   const spans = automationStudioFlowDraftSettleSpanRouting(steps, routedNow, shown);
   applied -= spans.takenBack;
   refused.push(...spans.refused);
+  // A repeat the guards above took back from a step this decision also edited in another way strikes that step: its edits stand or fall together (t1069).
+  // A step with one edit only is already as the guard left it, and edits on other steps stand.
+  const guardRefused = [...settled.refused, ...holds.refused, ...spans.refused];
+  for (const entry of guardRefused) {
+    const step = shown.step(entry.step);
+    if (!step || struck.has(step) || (appliedOn.get(step) ?? 0) < 2) continue;
+    struck.add(step);
+    refusedOn.set(step, [...(refusedOn.get(step) ?? []), ...guardRefused.filter((each) => each.step === entry.step)]);
+  }
   // A kept half whose partner really left the Flow -- dropped, and not put back
   // by the strand check -- would flip the control the wrong way (live run
   // `run-mux6n7m4-8273e7a0`, rule b). Run only once the check is done, so a drop
@@ -421,7 +454,13 @@ function applyEach(
   // loop that presses it until the list ends, which stopped every replay).
   automationStudioFlowDraftSettleLoopCovered(steps);
   const moved = movedActs(claims);
-  return { applied, refused, ...(moved.length ? { moved } : {}), ...(reach.unreached.length ? { unreached: reach.unreached } : {}) };
+  const struckNumbers = new Map<number, AutomationStudioFlowDraftAmendmentRefusal[]>();
+  for (const amendment of amendments) {
+    const step = skip.has(amendment.step) ? undefined : shown.step(amendment.step);
+    // The step's refusals are told once, under the number its amendments name it by.
+    if (step && struck.has(step) && !struckNumbers.has(amendment.step)) struckNumbers.set(amendment.step, refusedOn.get(step) ?? []);
+  }
+  return { report: { applied, refused, ...(moved.length ? { moved } : {}), ...(reach.unreached.length ? { unreached: reach.unreached } : {}) }, struck: struckNumbers };
 }
 
 /**
