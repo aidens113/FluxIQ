@@ -13,6 +13,11 @@
 //   attempt number within its own run (`engine/automation/records/capture.ts`), so a Flow's own paging loop, whose
 //   iterations are different attempts, stays separate pages, and the same Flow run again on the same page makes the
 //   same keys, so the same spots.
+// - **A read by the model of a page a saved Flow's run read** (t1074) is that run's page again: where one record batch
+//   of the step was read on that page of that list, and the list has not moved since, a call or a pass there takes the
+//   batch's spot. Bigbox run run-mwynbry2-f3c88dc7 re-ran the read step twice on the cart its saved Flow had read
+//   (0051, 0068); each came back as a page beside the batch's, so the stale quantity stayed in the answer (judge 0059).
+//   Two batches of the step on one page (a Flow's own in-place paging loop) are two pages, and a read there takes neither.
 import type { AutomationStudioAnswerFirstResultRead } from "../result/index.ts";
 
 export type AutomationStudioAnswerFirstReadPlaces = {
@@ -24,16 +29,29 @@ export type AutomationStudioAnswerFirstReadPlaces = {
 
 export function automationStudioAnswerFirstReadPlaces(): AutomationStudioAnswerFirstReadPlaces {
   const moves = new Map<string, number>();
+  /** Each step's record-batch spots by the page and list they read, and how often that list had moved: the run's pages a call may read again. */
+  const runs = new Map<string, Set<string>>();
+  const at = (stepId: string, read: AutomationStudioAnswerFirstResultRead): string | undefined => {
+    if (read.where === undefined) return undefined;
+    const listKey = read.version.listKey ?? "";
+    return JSON.stringify([stepId, listKey, read.where, moves.get(listKey) ?? 0]);
+  };
   return {
     moved(listKey) {
       const key = listKey ?? "";
       moves.set(key, (moves.get(key) ?? 0) + 1);
     },
     spotted(read, stepId, run) {
-      if (run !== undefined) return { ...read, spot: JSON.stringify([stepId, run]) };
-      if (read.where === undefined) return read;
-      const listKey = read.version.listKey ?? "";
-      return { ...read, spot: JSON.stringify([stepId, listKey, read.where, moves.get(listKey) ?? 0]) };
+      const key = at(stepId, read);
+      if (run !== undefined) {
+        const spot = JSON.stringify([stepId, run]);
+        if (key !== undefined) runs.set(key, new Set([...(runs.get(key) ?? []), spot]));
+        return { ...read, spot };
+      }
+      if (key === undefined) return read;
+      // The one page a saved Flow's run read here, read again (header, t1074).
+      const ran = runs.get(key);
+      return { ...read, spot: ran?.size === 1 ? [...ran][0]! : key };
     },
   };
 }

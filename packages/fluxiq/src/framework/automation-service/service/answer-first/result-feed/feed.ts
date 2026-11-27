@@ -64,6 +64,7 @@ import type { AutomationStudioAnswerFirstProcessingDeclaration } from "../result
 import { automationStudioAnswerFirstDataStage } from "./stage.ts";
 import { automationStudioAnswerFirstMergedProcessing } from "./merged-processing.ts";
 import { automationStudioAnswerFirstKeptKeyRows } from "./kept-key-rows.ts";
+import { automationStudioAnswerFirstRenamedRow } from "./asked-view.ts";
 import { automationStudioAnswerFirstResultSchema } from "./schema.ts";
 import type { AutomationStudioAnswerFirstResultReadiness } from "./readiness.ts";
 import { automationStudioAnswerFirstResultSourceState } from "./source-state.ts";
@@ -129,6 +130,8 @@ export type AutomationStudioAnswerFirstResultFeed = {
   /** Canonical saved configuration, retaining only explicit input value bindings. */
   storedProcessing(): JsonObject | undefined;
   amendProcessing(process: JsonValue, why: string | undefined): { ok: true; changed: boolean } | { ok: false; reason: string };
+  /** Where the rows hold the request's columns, said to the model (`./column-names.ts`, t1074); absent where nothing needs saying. */
+  columnNames(): string | undefined;
 };
 
 const EMPTY: AutomationStudioAnswerFirstRowsSummary = { totalRows: 0, truncated: false, columns: [], rows: [] };
@@ -240,9 +243,12 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
           const own = schemas.get(page.source);
           const captured = own === undefined ? undefined : automationStudioRecordCapturedFields(own);
           return page.kept.map((values) => ({ values, nodeId: step.id, batchKey: page.source, ...(captured === undefined ? {} : { captured }) }));
-        })), columns, askedColumns: port.ledger().contract.sure ? port.ledger().contract.columns : undefined, own: processes.get(output.id) });
-        // Each kept row with the values the processing read on it, beside the asked columns (`./kept-key-rows.ts`, t1072).
-        const keptRows = evaluated.processing && evaluated.summary ? automationStudioAnswerFirstKeptKeyRows(evaluated.summary.rows, evaluated.processing, evaluated.summary.columns.map((column) => column.id), reference) : undefined;
+        })), columns, askedColumns: port.ledger().contract.sure ? port.ledger().contract.columns : undefined, own: processes.get(output.id), renamed: renamedOf(group) });
+        // Each kept row with the values the processing read on it, beside the asked columns (`./kept-key-rows.ts`, t1072),
+        // read from the stored rows and shown under the answer's names (`./asked-view.ts`, t1074).
+        const renames = evaluated.renames ?? new Map<string, { id: string; label: string }>();
+        const storedColumns = evaluated.summary?.columns.map((column) => [...renames].find(([, to]) => to.id === column.id)?.[0] ?? column.id);
+        const keptRows = evaluated.processing && evaluated.storedRows && storedColumns ? automationStudioAnswerFirstKeptKeyRows(evaluated.storedRows, evaluated.processing, storedColumns, reference)?.map((row) => automationStudioAnswerFirstRenamedRow(row, renames)) : undefined;
         if (evaluated.processing && evaluated.account) account = { declared: evaluated.processing, account: evaluated.account, ...(keptRows ? { keptRows } : {}) };
         return evaluated.summary ? { datasetId, totalRows: evaluated.summary.rows.length, truncated: sources.some((source) => truncated.has(source)), ...evaluated.summary } : EMPTY;
       }
@@ -310,6 +316,7 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
     port: { ...port, header: (answerRows, answerColumns) => (answerColumns === undefined ? answerHeader(answerRows) : port.header(answerRows, answerColumns)) },
     idOf,
     processingDeclaration: stage.declaration,
+    columnNames: () => stage.naming()?.text,
     sourceUnavailable(reason, originalEvidence) {
       const current = baseEvidence();
       const original = readAutomationStudioAnswerFirstResultEvidence(originalEvidence ?? current);
@@ -362,7 +369,9 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
     },
     amendProcessing(process, why) {
       const schema = retainedSchema();
-      return stage.amend(process, why, schema.ok ? schema.schema : undefined);
+      const group = port.outputGroup();
+      const naming = { rows: group.flatMap((step) => step.pages).flatMap((page) => page.kept), asked: port.ledger().contract.sure ? port.ledger().contract.columns : undefined, renamed: renamedOf(group) };
+      return stage.amend(process, why, schema.ok ? schema.schema : undefined, naming);
     },
     setProcessing(declared) {
       held = declared;
@@ -529,6 +538,16 @@ function declaredProcess(input: JsonObject): unknown {
  * The answer's rows as the declared processing shapes them (header), or as they are, and what the processing did. A
  * declaration naming its `columns` shows those, in its order, where they are the answer's; else the answer's columns.
  */
+/**
+ * Each old key the output steps' reads renamed, to the column it is now (t1074): a read's `fields` map a column to the
+ * key it is read from, so a declaration written over the keys an earlier read held still binds (`./column-names.ts`).
+ */
+function renamedOf(group: readonly { reads: { fields: JsonObject } }[]): Record<string, string> {
+  const renamed: Record<string, string> = {};
+  for (const step of group) for (const [column, key] of Object.entries(step.reads.fields)) if (typeof key === "string" && key !== column) renamed[key] = column;
+  return renamed;
+}
+
 function processed(rows: readonly JsonObject[], columns: readonly string[], declared: unknown, retainedSchema: AutomationStudioRecordSchema | undefined, now: number): { rows: JsonObject[]; columns: { id: string; label: string }[]; account?: ProcessedAccount; refusal?: string } {
   const schema = retainedSchema ?? automationStudioAnswerFirstReadSchema(rows);
   const parsed = schema ? parseAutomationStudioRecordProcessing(declared, schema) : undefined;

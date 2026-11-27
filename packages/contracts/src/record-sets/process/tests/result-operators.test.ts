@@ -1,5 +1,5 @@
 // The operators t970 adds to a record output's `process`: a filter over a
-// column the answer leaves out, `anyOf` groups, `compare` between two columns
+// column the answer leaves out, `anyOf` alternatives (t1074), `compare` between two columns
 // of a row, and `derive`d columns -- parsed, applied, accounted, and stable when
 // the collected rows are processed again.
 import { describe, expect, it } from "vitest";
@@ -66,16 +66,22 @@ describe("a filter over a column the answer leaves out", () => {
 });
 
 describe("anyOf", () => {
-  it("keeps a row when any condition of each group holds, across columns", () => {
-    const result = processOf({ anyOf: [[{ field: "badge", is: "present" }, { field: "price", lessThan: 50 }]] });
+  it("keeps a row when every condition of any one group holds, across columns (t1074)", () => {
+    const result = processOf({ anyOf: [[{ field: "badge", is: "present" }], [{ field: "price", lessThan: 50 }]] });
     expect(titles(result)).toEqual(["Garden chair", "Garden table", "Bird bath"]);
     expect(result.account.filters).toEqual([
       { kind: "any_of", fields: ["badge", "price"], condition: "any of (badge is present; price lessThan 50)", rejected: 2, alone: 2, leftOutOnlyByThis: [{ field: "title", label: "Patio heater" }, { field: "title", label: "Hammock" }] }
     ]);
   });
 
-  it("holds together with where: every where condition and every group", () => {
-    const result = processOf({ where: [{ field: "title", contains: "garden" }], anyOf: [[{ field: "badge", is: "present" }, { field: "price", atMost: 40 }]] });
+  it("reads the conditions of one group together: a group holds only when each does (t1074)", () => {
+    const result = processOf({ anyOf: [[{ field: "badge", is: "present" }, { field: "price", lessThan: 50 }]] });
+    expect(result.account.filters?.[0]?.condition).toBe("any of (badge is present and price lessThan 50)");
+    expect(titles(result)).toEqual(["Bird bath"]);
+  });
+
+  it("holds together with where: every where condition and one of the groups", () => {
+    const result = processOf({ where: [{ field: "title", contains: "garden" }], anyOf: [[{ field: "badge", is: "present" }], [{ field: "price", atMost: 40 }]] });
     expect(titles(result)).toEqual(["Garden chair", "Garden table"]);
   });
 

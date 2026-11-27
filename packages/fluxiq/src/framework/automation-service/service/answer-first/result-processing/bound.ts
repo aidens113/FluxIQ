@@ -1,9 +1,10 @@
-import { stampAutomationStudioRecordProcessing, type AutomationStudioRecordProcessingBinding, type AutomationStudioRecordSchema, type AutomationStudioRecordSortType } from "@fluxiq/contracts/automation";
+import { stampAutomationStudioRecordProcessing, type AutomationStudioRecordProcessingAliases, type AutomationStudioRecordProcessingBinding, type AutomationStudioRecordSchema, type AutomationStudioRecordSortType } from "@fluxiq/contracts/automation";
 import type { AutomationStudioAnswerFirstProcessingDeclaration } from "./declaration.ts";
 
 /** Bind only actual schema evidence, stamp framework provenance, and make typed sorting deterministic where metadata supplies the type. */
-export function automationStudioAnswerFirstBoundProcessing(raw: unknown, schema: AutomationStudioRecordSchema, declaration: AutomationStudioAnswerFirstProcessingDeclaration): AutomationStudioRecordProcessingBinding {
-  const bound = stampAutomationStudioRecordProcessing(raw, schema, declaration);
+export function automationStudioAnswerFirstBoundProcessing(raw: unknown, schema: AutomationStudioRecordSchema, declaration: AutomationStudioAnswerFirstProcessingDeclaration, aliases?: AutomationStudioRecordProcessingAliases): AutomationStudioRecordProcessingBinding {
+  // `aliases`: the other names the framework knows for stored fields (`../result-feed/column-names.ts`, t1074).
+  const bound = stampAutomationStudioRecordProcessing(raw, schema, declaration, aliases);
   if (!bound.ok || !bound.processing.sort) return bound;
   const sort = bound.processing.sort.map((key) => {
     if (key.as !== undefined && key.as !== "auto") return key;

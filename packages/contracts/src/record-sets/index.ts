@@ -2,7 +2,9 @@
 // the run dataset summary and page, the Data window's project table and table
 // run summaries, their parsers, the stored schema, row validation, and CSV
 // encoding, and the processing that turns a dataset's collected rows into its
-// answer (`process/`). `is-plain-record.ts` is internal and not re-exported.
+// answer (`process/`), with where the rows hold the columns a request names
+// (`asked-columns/`). `is-plain-record.ts` is internal and not re-exported.
+export * from "./asked-columns/index.ts";
 export * from "./dataset-run-summary.ts";
 export * from "./dataset.ts";
 export * from "./encode-csv.ts";
