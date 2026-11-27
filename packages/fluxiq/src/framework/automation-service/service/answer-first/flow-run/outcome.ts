@@ -53,5 +53,5 @@ export type AutomationStudioAnswerFirstFlowRunOutcome =
     /** Every step of the Flow, by position. A step left out of the plan is absent. */
     steps: AutomationStudioAnswerFirstFlowRunStep[];
     /** Where it stopped, whenever it did not reach the end. */
-    failing?: { position: number; label?: string; happened: string; code?: string };
+    failing?: { position: number; label?: string; happened: string; code?: string; pageNow?: { page?: string } };
   };

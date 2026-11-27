@@ -29,6 +29,7 @@ import { automationStudioUnresolvedFailedAttempt } from "../../../../../runtime/
 import type { AutomationStudioFlowBuildPlan, AutomationStudioFlowBootstrapIssueLocator } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import { automationStudioZeroPassLoopBodies } from "../../../../../engine/automation/graph-navigation/index.ts";
+import { AUTOMATION_STUDIO_RECORDED_EFFECT_UNSEEN_FAILURE } from "../../../../../engine/automation/node-execution/index.ts";
 import { AUTOMATION_STUDIO_STATE_NOT_ARISEN_CODE, type AutomationStudioGraphExecutionTrace, type AutomationStudioNodeAttemptTrace } from "../../../executor/index.ts";
 import { automationStudioTrialExecutedSteps, automationStudioTrialFailureHappened } from "../../candidate-trial/index.ts";
 import type { AutomationStudioAnswerFirstFlowRunWatch } from "./dispatch-watch.ts";
@@ -62,7 +63,8 @@ const SAID = Object.freeze({
   elsewhere: "The page was already at another step, so the run went on from there.",
   notFinished: "The run did not reach the end of the Flow.",
   notStarted: "The saved Flow could not be started, so nothing was done.",
-  emptyRepeat: "The list this step repeats over had nothing left, so the repeat ran no pass and there was nothing to do."
+  emptyRepeat: "The list this step repeats over had nothing left, so the repeat ran no pass and there was nothing to do.",
+  lateEffect: "What this step brings was not on the page when the check looked, and was there when the run stopped, so the run went on from the next step."
 });
 
 /** Why nothing ran, by the runner's code (`runAutomationStudioDetachedCandidate`). Every other code reads as `notStarted`. */
@@ -82,6 +84,10 @@ export type AutomationStudioAnswerFirstFlowRunEnded = {
   graph?: AutomationStudioFlowArtifact | undefined;
   /** A step raised a question the run's port would not put to anyone (`./person-check-port.ts`): it stopped for an answer, as a run with no port does. */
   askedNobody?: boolean | undefined;
+  /** The step whose unseen effect was on the page when the run stopped, and the run went on past it (`./stop-observed.ts`, t1088). */
+  resumedPast?: string | undefined;
+  /** The page as it was read when the run stopped on an unseen effect that was still not there (`./stop-observed.ts`): `page` is its site, where it has one. */
+  pageNow?: { page?: string } | undefined;
 };
 
 type Input = {
@@ -102,6 +108,7 @@ export function automationStudioAnswerFirstFlowRunStepsRan(input: Input): Ran {
     position: place.position,
     ...(place.label ? { label: place.label } : {}),
     ...ranOf(attempts.filter((entry) => entry.attempt.nodeId === place.nodeId).map((entry) => entry.attempt), place, watch),
+    ...(ended.resumedPast !== undefined && place.nodeId === ended.resumedPast ? { happened: SAID.lateEffect } : {}),
     ...deviationsOf(raw, place.nodeId)
   }));
   if (ended.reachedEnd) return { kind: "ran", reachedEnd: true, steps: steps.map((step, index) => emptyRepeatBody(step, placed[index]!, input.saved, steps, emptyLoopBodies(ended))) };
@@ -266,7 +273,7 @@ function failingOf(input: Input, placed: readonly Placed[], steps: readonly Auto
   const happened = bound ?? (failed ? attemptSaid(failed) : traceSaid(trace, ended.code, ended.askedNobody === true));
   // A Flow with no written step does not assemble, so `placed` holds at least one.
   const at = place ?? placed[0]!;
-  return { position: at.position, ...(at.label ? { label: at.label } : {}), happened, ...(code ? { code } : {}) };
+  return { position: at.position, ...(at.label ? { label: at.label } : {}), happened, ...(code ? { code } : {}), ...(ended.pageNow && failed?.failure?.code === AUTOMATION_STUDIO_RECORDED_EFFECT_UNSEEN_FAILURE.code ? { pageNow: ended.pageNow } : {}) };
 }
 
 function attemptSaid(attempt: AutomationStudioNodeAttemptTrace): string {
