@@ -81,9 +81,9 @@ describe("anyOf", () => {
 
   it("refuses an empty group, an empty list and a condition the conditions' parser refuses", () => {
     for (const anyOf of [[], [[]], [[{ field: "price", lessThan: "soon" }]], "badge"]) {
-      expect(parseAutomationStudioRecordProcessing({ anyOf }, SCHEMA)).toEqual({ ok: false, issues: ["record_output.process_invalid_any_of"] });
+      expect(parseAutomationStudioRecordProcessing({ anyOf }, SCHEMA)).toMatchObject({ ok: false, issues: ["record_output.process_invalid_any_of"] });
     }
-    expect(parseAutomationStudioRecordProcessing({ anyOf: [[{ field: "missing", is: "present" }]] }, SCHEMA)).toEqual({ ok: false, issues: ["record_output.process_unknown_field"] });
+    expect(parseAutomationStudioRecordProcessing({ anyOf: [[{ field: "missing", is: "present" }]] }, SCHEMA)).toMatchObject({ ok: false, issues: ["record_output.process_unknown_field"] });
   });
 });
 
@@ -102,9 +102,9 @@ describe("compare", () => {
 
   it("refuses a comparison naming nothing, a column with itself, or a bad kind", () => {
     for (const compare of [[{ field: "price" }], [{ field: "price", lessThan: "price" }], [{ field: "price", lessThan: 5 }], [{ field: "price", lessThan: "was", as: "text" }], []]) {
-      expect(parseAutomationStudioRecordProcessing({ compare }, SCHEMA)).toEqual({ ok: false, issues: ["record_output.process_invalid_compare"] });
+      expect(parseAutomationStudioRecordProcessing({ compare }, SCHEMA)).toMatchObject({ ok: false, issues: ["record_output.process_invalid_compare"] });
     }
-    expect(parseAutomationStudioRecordProcessing({ compare: [{ field: "price", lessThan: "nowhere" }] }, SCHEMA)).toEqual({ ok: false, issues: ["record_output.process_unknown_field"] });
+    expect(parseAutomationStudioRecordProcessing({ compare: [{ field: "price", lessThan: "nowhere" }] }, SCHEMA)).toMatchObject({ ok: false, issues: ["record_output.process_unknown_field"] });
   });
 });
 
@@ -133,14 +133,14 @@ describe("derive", () => {
 
   it("refuses a derived id the schema has, a repeated id, a bad pattern, a derived source, or a derived column shown", () => {
     const invalid = { ok: false, issues: ["record_output.process_invalid_derive"] };
-    expect(parseAutomationStudioRecordProcessing({ derive: [{ id: "price", from: "title" }] }, SCHEMA)).toEqual(invalid);
-    expect(parseAutomationStudioRecordProcessing({ derive: [{ id: "a", from: "title" }, { id: "a", from: "price" }] }, SCHEMA)).toEqual(invalid);
-    expect(parseAutomationStudioRecordProcessing({ derive: [{ id: "a", from: "title", pattern: "(" }] }, SCHEMA)).toEqual(invalid);
-    expect(parseAutomationStudioRecordProcessing({ derive: [{ id: "a", from: "title", as: "money" }] }, SCHEMA)).toEqual(invalid);
-    expect(parseAutomationStudioRecordProcessing({ derive: [{ id: "a b", from: "title" }] }, SCHEMA)).toEqual(invalid);
-    expect(parseAutomationStudioRecordProcessing({ derive: [{ id: "a", from: "title" }, { id: "b", from: "a" }] }, SCHEMA)).toEqual({ ok: false, issues: ["record_output.process_unknown_field"] });
-    expect(parseAutomationStudioRecordProcessing({ derive: [{ id: "a", from: "note" }] }, SCHEMA)).toEqual({ ok: false, issues: ["record_output.process_excluded_field"] });
-    expect(parseAutomationStudioRecordProcessing({ derive: [{ id: "a", from: "title" }], columns: ["title", "a"] }, SCHEMA)).toEqual({ ok: false, issues: ["record_output.process_derived_column_shown"] });
+    expect(parseAutomationStudioRecordProcessing({ derive: [{ id: "price", from: "title" }] }, SCHEMA)).toMatchObject(invalid);
+    expect(parseAutomationStudioRecordProcessing({ derive: [{ id: "a", from: "title" }, { id: "a", from: "price" }] }, SCHEMA)).toMatchObject(invalid);
+    expect(parseAutomationStudioRecordProcessing({ derive: [{ id: "a", from: "title", pattern: "(" }] }, SCHEMA)).toMatchObject(invalid);
+    expect(parseAutomationStudioRecordProcessing({ derive: [{ id: "a", from: "title", as: "money" }] }, SCHEMA)).toMatchObject(invalid);
+    expect(parseAutomationStudioRecordProcessing({ derive: [{ id: "a b", from: "title" }] }, SCHEMA)).toMatchObject(invalid);
+    expect(parseAutomationStudioRecordProcessing({ derive: [{ id: "a", from: "title" }, { id: "b", from: "a" }] }, SCHEMA)).toMatchObject({ ok: false, issues: ["record_output.process_unknown_field"] });
+    expect(parseAutomationStudioRecordProcessing({ derive: [{ id: "a", from: "note" }] }, SCHEMA)).toMatchObject({ ok: false, issues: ["record_output.process_excluded_field"] });
+    expect(parseAutomationStudioRecordProcessing({ derive: [{ id: "a", from: "title" }], columns: ["title", "a"] }, SCHEMA)).toMatchObject({ ok: false, issues: ["record_output.process_derived_column_shown"] });
   });
 
   it("keeps a canonical declaration: text and number defaults dropped", () => {

@@ -1,4 +1,4 @@
-import { processAutomationStudioRecordRows, type AutomationStudioRecordCollectedRow, type AutomationStudioRecordProcessing, type AutomationStudioRecordProcessingAccount, type AutomationStudioRecordSchema } from "@fluxiq/contracts/automation";
+import { automationStudioRecordProcessingRefusalText, processAutomationStudioRecordRows, type AutomationStudioRecordCollectedRow, type AutomationStudioRecordProcessing, type AutomationStudioRecordProcessingAccount, type AutomationStudioRecordSchema } from "@fluxiq/contracts/automation";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioAnswerFirstBoundProcessing, automationStudioAnswerFirstProcessingInputs, type AutomationStudioAnswerFirstProcessingDeclaration } from "../result-processing/index.ts";
 import { stableJson } from "../../stable-json.ts";
@@ -65,7 +65,8 @@ export function automationStudioAnswerFirstDataStage(initial: AutomationStudioAn
       if (!Number.isSafeInteger(referenceTimeMs) || (referenceTimeMs as number) < 0) return missing("answer_first.processing_reference_missing", "The original processing reference time is unavailable. Recover the validated original attempt reference or collect fresh evidence in a new logical attempt; the current clock cannot reinterpret old relative dates.");
       if (!input.schema) return missing("answer_first.processing_schema_missing", input.schemaIssues?.join(" ") ?? "No full retained schema is available for the result's contributing pages. Capture the required source fields.");
       const parsed = bind(input.schema, input.askedColumns, input.own);
-      if (!parsed.ok) return missing("answer_first.processing_binding_missing", `${parsed.issues.join(", ")}${parsed.unresolved.length ? `. Required fields: ${parsed.unresolved.map((entry) => `${entry.field} (${entry.reason})`).join(", ")}` : ""}. Bind the written references to actual retained fields; do not drop a requested condition.`);
+      // Each refused part and unbound reference says why (t1070, `automationStudioRecordProcessingRefusalText`).
+      if (!parsed.ok) return missing("answer_first.processing_binding_missing", `${automationStudioRecordProcessingRefusalText(parsed, input.schema)} Bind the written references to actual retained fields; do not drop a requested condition.`);
       const process = parsed.processing;
       bound = process;
       const evaluated = processAutomationStudioRecordRows({ rows: input.rows, schema: input.schema, process, now: referenceTimeMs as number, mode: "automatic" });
@@ -101,7 +102,8 @@ export function automationStudioAnswerFirstDataStage(initial: AutomationStudioAn
       const values = automationStudioAnswerFirstProcessingInputs(process, inputs);
       if (!values.ok) return { ok: false, reason: values.issues.join(" ") };
       const parsed = automationStudioAnswerFirstBoundProcessing(values.resolved, schema, next);
-      if (!parsed.ok) return { ok: false, reason: `${parsed.issues.join(", ")}. ${parsed.unresolved.map((field) => `${field.field}: ${field.reason}`).join("; ")}` };
+      // Run run-mwyg0x66-4d561a42 was refused here fourteen times with only the code (t1070): each part now says why.
+      if (!parsed.ok) return { ok: false, reason: automationStudioRecordProcessingRefusalText(parsed, schema) };
       const currentValues = declaration.task === null || declaration.task.process === undefined ? undefined : automationStudioAnswerFirstProcessingInputs(declaration.task.process, inputs);
       const current = currentValues?.ok ? automationStudioAnswerFirstBoundProcessing(currentValues.resolved, schema, declaration) : undefined;
       const withoutStamp = (value: AutomationStudioRecordProcessing) => {

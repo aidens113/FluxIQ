@@ -18,20 +18,30 @@
 // says what the bounds already say and is dropped, as `not: false` is -- the
 // downstream domain's canonical condition, which carries none, is the same
 // condition to the key.
+//
+// **A refused condition says why (t1070).** Run `run-mwyg0x66-4d561a42` was
+// refused `record_output.process_invalid_condition` fourteen times and told
+// nothing else, so it could not change what was wrong.
+// `readAutomationStudioRecordCondition` reads a condition as the parser does,
+// and for one that cannot run gives every rule it broke: the operator it is
+// about and why, quoting keys and Core's own rules, never a bound, a text or a
+// pattern. The parser is that reading less the reasons, so the two cannot
+// disagree.
 
 import { isPlainRecord } from "../is-plain-record.ts";
 import { readAutomationStudioRecordConditionDateBound } from "./date-bound.ts";
 import { readAutomationStudioRecordConditionWithin } from "./date-within.ts";
-import { automationStudioRecordConditionPattern } from "./condition/index.ts";
+import { readAutomationStudioRecordConditionPattern } from "./condition/index.ts";
 import {
   AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS,
   AUTOMATION_STUDIO_RECORD_CONDITION_PRESENCES,
   AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS,
-  AUTOMATION_STUDIO_RECORD_CONDITION_TYPES
+  AUTOMATION_STUDIO_RECORD_CONDITION_TYPES,
+  AUTOMATION_STUDIO_RECORD_CONDITION_WITHIN_UNITS
 } from "./processing-vocabulary.ts";
-import type { AutomationStudioRecordCondition, AutomationStudioRecordConditionValue } from "./types.ts";
+import type { AutomationStudioRecordCondition } from "./types.ts";
 
-const CONDITION_KEYS: ReadonlySet<string> = new Set([
+const CONDITION_KEYS: readonly string[] = [
   "field",
   "is",
   ...AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS,
@@ -40,18 +50,44 @@ const CONDITION_KEYS: ReadonlySet<string> = new Set([
   "equals",
   ...AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS,
   "not"
-]);
+];
+const KEYS: ReadonlySet<string> = new Set(CONDITION_KEYS);
 const PRESENCES: ReadonlySet<unknown> = new Set(AUTOMATION_STUDIO_RECORD_CONDITION_PRESENCES);
 const TYPES: ReadonlySet<unknown> = new Set(AUTOMATION_STUDIO_RECORD_CONDITION_TYPES);
+/** A key a sentence may name: identifier characters only. */
+const NAMEABLE = /^[A-Za-z0-9_.$@-]{1,64}$/u;
+
+const DATE_TEXT = "written as text, so it is a date bound, and it names no one date. Write a number bound as a number; a date bound as one date with its year, as 2026-10-01 or 1 October 2026, or as today, yesterday, now or <n> minutes, hours, days or weeks ago.";
+
+/** One rule a condition broke: the operator it is about, where one, and why. */
+export type AutomationStudioRecordConditionRefusalReason = { operator?: string; reason: string };
+
+/** A condition read: the condition as fresh objects, or the field it names (where it names one) and every rule it broke. */
+export type AutomationStudioRecordConditionReading =
+  | { ok: true; condition: AutomationStudioRecordCondition }
+  | { ok: false; field?: string; reasons: AutomationStudioRecordConditionRefusalReason[] };
 
 /** The condition as fresh objects, or `null` for one that cannot run. The field id is checked against the schema by the caller. */
 export function parseAutomationStudioRecordCondition(value: unknown): AutomationStudioRecordCondition | null {
-  if (!isPlainRecord(value) || !Object.keys(value).every((key) => CONDITION_KEYS.has(key))) return null;
-  if (typeof value.field !== "string") return null;
-  const condition: AutomationStudioRecordCondition = { field: value.field };
+  const read = readAutomationStudioRecordCondition(value);
+  return read.ok ? read.condition : null;
+}
+
+/** The condition read as the parser reads it, with every rule a refused one broke (header). */
+export function readAutomationStudioRecordCondition(value: unknown): AutomationStudioRecordConditionReading {
+  if (!isPlainRecord(value)) return { ok: false, reasons: [{ reason: "not an object; a condition is {field, then what it compares}." }] };
+  const reasons: AutomationStudioRecordConditionRefusalReason[] = [];
+  const refuse = (reason: string, operator?: string): void => {
+    reasons.push(operator === undefined ? { reason } : { operator, reason });
+  };
+  const unknown = Object.keys(value).filter((key) => !KEYS.has(key));
+  if (unknown.length) refuse(`takes no key ${named(unknown)}; a condition takes ${CONDITION_KEYS.join(", ")}.`);
+  const field = typeof value.field === "string" ? value.field : undefined;
+  if (field === undefined) refuse("names no field: field is the id of a column the rows hold, as text.");
+  const condition: AutomationStudioRecordCondition = { field: field ?? "" };
   if (value.is !== undefined) {
-    if (!PRESENCES.has(value.is)) return null;
-    condition.is = value.is as NonNullable<AutomationStudioRecordCondition["is"]>;
+    if (!PRESENCES.has(value.is)) refuse(`must be ${AUTOMATION_STUDIO_RECORD_CONDITION_PRESENCES.join(" or ")}.`, "is");
+    else condition.is = value.is as NonNullable<AutomationStudioRecordCondition["is"]>;
   }
   let compares = false;
   const kinds = new Set<"number" | "date">();
@@ -59,58 +95,93 @@ export function parseAutomationStudioRecordCondition(value: unknown): Automation
     const bound = value[key];
     if (bound === undefined) continue;
     if (typeof bound === "string") {
-      if (readAutomationStudioRecordConditionDateBound(bound) === undefined) return null;
+      if (readAutomationStudioRecordConditionDateBound(bound) === undefined) {
+        refuse(DATE_TEXT, key);
+        continue;
+      }
       kinds.add("date");
     } else if (typeof bound === "number" && Number.isFinite(bound)) kinds.add("number");
-    else return null;
+    else {
+      refuse("must be a finite number, or a date written as text.", key);
+      continue;
+    }
     condition[key] = bound;
     compares = true;
   }
   if (value.within !== undefined) {
-    if (typeof value.within !== "string" || readAutomationStudioRecordConditionWithin(value.within) === undefined) return null;
-    condition.within = value.within;
-    kinds.add("date");
-    compares = true;
+    if (typeof value.within !== "string" || readAutomationStudioRecordConditionWithin(value.within) === undefined) {
+      refuse(`must be text naming one whole number of one unit, as "<n> ${AUTOMATION_STUDIO_RECORD_CONDITION_WITHIN_UNITS.join("|")}".`, "within");
+    } else {
+      condition.within = value.within;
+      kinds.add("date");
+      compares = true;
+    }
   }
   // One kind of bound, and `as` naming that kind (header, t790).
-  if (kinds.size > 1) return null;
-  if (value.as !== undefined && (!TYPES.has(value.as) || !kinds.has(value.as as "number" | "date"))) return null;
+  if (kinds.size > 1) refuse("mixes number and date bounds; one condition's bounds are all numbers or all dates.");
+  if (value.as !== undefined) {
+    if (!TYPES.has(value.as)) refuse(`must be ${AUTOMATION_STUDIO_RECORD_CONDITION_TYPES.join(" or ")}.`, "as");
+    else if (!kinds.has(value.as as "number" | "date")) {
+      refuse(`says ${String(value.as)}, and ${kinds.size ? `the condition's bounds are ${[...kinds].join(" and ")}s` : "the condition has no bound"}; as names the kind its bounds are, and may be left out.`, "as");
+    }
+  }
   if (value.equals !== undefined) {
-    const equals = oneOrMany(value.equals, isComparedValue);
-    if (equals === null) return null;
-    condition.equals = equals;
-    compares = true;
+    const equals = oneOrMany(value.equals, comparedRefusal);
+    if (!equals.ok) refuse(equals.reason, "equals");
+    else {
+      condition.equals = equals.value;
+      compares = true;
+    }
   }
   for (const key of AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS) {
     if (value[key] === undefined) continue;
-    const texts = oneOrMany(value[key], key === "matches" ? isPattern : isText);
-    if (texts === null) return null;
-    condition[key] = texts;
-    compares = true;
+    const texts = oneOrMany<string>(value[key], key === "matches" ? patternRefusal : textRefusal);
+    if (!texts.ok) refuse(texts.reason, key);
+    else {
+      condition[key] = texts.value;
+      compares = true;
+    }
   }
   if (value.not !== undefined) {
-    if (typeof value.not !== "boolean") return null;
-    if (value.not) condition.not = true;
+    if (typeof value.not !== "boolean") refuse("must be true or false.", "not");
+    else if (value.not) condition.not = true;
   }
-  if (condition.is === "absent" && compares) return null;
-  return condition;
+  if (condition.is === "absent" && compares) refuse("is absent beside a comparison, and a missing value fails every comparison: keep one or the other.", "is");
+  if (reasons.length) return field === undefined ? { ok: false, reasons } : { ok: false, field, reasons };
+  return { ok: true, condition };
 }
 
-/** One accepted value, or a non-empty list of them, copied; `null` when any entry is refused. */
-function oneOrMany<T>(value: unknown, accepts: (entry: unknown) => entry is T): T | T[] | null {
-  if (!Array.isArray(value)) return accepts(value) ? value : null;
-  if (value.length === 0 || !value.every(accepts)) return null;
-  return [...(value as T[])];
+/** One accepted value, or a non-empty list of them, copied; else why, naming the list entry where it is one. */
+function oneOrMany<T extends string | number>(value: unknown, refusal: (entry: unknown) => string | undefined): { ok: true; value: T | T[] } | { ok: false; reason: string } {
+  if (!Array.isArray(value)) {
+    const reason = refusal(value);
+    return reason === undefined ? { ok: true, value: value as T } : { ok: false, reason };
+  }
+  if (value.length === 0) return { ok: false, reason: "an empty list; a list holds at least one entry, and holds when any one does." };
+  for (const [index, entry] of value.entries()) {
+    const reason = refusal(entry);
+    if (reason !== undefined) return { ok: false, reason: `entry ${index + 1} of the list: ${reason}` };
+  }
+  return { ok: true, value: [...(value as T[])] };
 }
 
-function isText(entry: unknown): entry is string {
-  return typeof entry === "string" && entry.trim() !== "";
+function textRefusal(entry: unknown): string | undefined {
+  return typeof entry === "string" && entry.trim() !== "" ? undefined : "must be nonblank text, or a nonempty list of nonblank texts.";
 }
 
-function isPattern(entry: unknown): entry is string {
-  return isText(entry) && automationStudioRecordConditionPattern(entry) !== undefined;
+function patternRefusal(entry: unknown): string | undefined {
+  if (typeof entry !== "string" || entry.trim() === "") return "must be a nonblank JavaScript regular expression, or a nonempty list of them.";
+  const read = readAutomationStudioRecordConditionPattern(entry);
+  return read.ok ? undefined : read.reason;
 }
 
-function isComparedValue(entry: unknown): entry is AutomationStudioRecordConditionValue {
-  return (typeof entry === "number" && Number.isFinite(entry)) || isText(entry);
+function comparedRefusal(entry: unknown): string | undefined {
+  return (typeof entry === "number" && Number.isFinite(entry)) || (typeof entry === "string" && entry.trim() !== "") ? undefined : "must be nonblank text, a finite number, or a nonempty list of them.";
+}
+
+/** Keys a sentence may name, each quoted; one that is not an identifier is counted, never quoted. */
+function named(keys: readonly string[]): string {
+  const shown = keys.filter((key) => NAMEABLE.test(key)).map((key) => JSON.stringify(key));
+  const unnamed = keys.length - shown.length;
+  return [...shown, ...(unnamed ? [`${unnamed} key${unnamed === 1 ? "" : "s"} that ${unnamed === 1 ? "is" : "are"} not an identifier`] : [])].join(", ");
 }
