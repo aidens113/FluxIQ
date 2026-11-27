@@ -1,74 +1,78 @@
-// The page views a judge asked on its own request is shown: the end view, and the before view where a lasting act ran,
-// as the page text the decider read (t1067).
+// The page views a judge asked on its own request is shown: the pages the result rests on, as the page text the model
+// read (t1067, t1084).
 //
-// **Why.** The judge's projection (`./summary.ts`) shows each view as the domain's semantic state, with the page itself
-// deliberately left out (`captureOmitted`): a stored finding never holds a raw capture, and the deciding digest compares
-// completions by what the judge is shown (t1036), which a page read afresh would make differ by a scroll line. A judge
-// that continues the decider's conversation reads the page there. A judge asked on its own request after an unreadable
-// reply (`../unreadable-asks/`, t979) had nothing in its place: `run-mwy3btww-31d32e0d`'s seven standalone judges saw no
-// page at all, and asked for what the page showed.
+// **Why.** The judge's projection (`./summary.ts`) shows each view and each trail entry as the domain's semantic state,
+// with the page itself deliberately left out (`captureOmitted`): a stored finding never holds a raw capture, and the
+// deciding digest compares completions by what the judge is shown (t1036), which a page read afresh would make differ by
+// a scroll line. A judge that continues the decider's conversation reads the pages there. A judge asked on its own
+// request has nothing in their place unless it is given them here: `run-mwy3btww-31d32e0d`'s seven standalone re-asks saw
+// no page at all (t1067), and `run-mwz29d50-c3a32a9c`'s replay judges, which continue no decider because a replay makes
+// no decision, could not see the rating and pickup line the item was chosen by, answered unknown, and a Flow that had
+// worked was repaired (t1084).
 //
-// **What.** Each view's page, found by its shape alone (`../../llm/view-channel/view-of.ts`: a page key and keyed lines,
-// whatever member the domain puts it under), as the text the model would read whole: its lines' texts joined by "\n".
-// The end view first, then the before view where a lasting act ran, then the after witness where it is not the end view
-// again. Core never reads a line's text.
+// **What, in order.** Each page as the text the model would read whole: its lines' texts joined by "\n".
+// 1. The end view (`endView`), and the after witness where it is another page.
+// 2. The before view (`witnesses.before`), where a lasting act ran.
+// 3. The page each lasting act was pressed on, this attempt's acts then carried acts, newest first, where the trail holds
+//    it, and then the page each step landed on, newest first (`./trail-pages.ts`). Each is named `trail.<n>`, the trail
+//    entry that holds it.
+// A page whose text an earlier one already showed is not shown again. Core never reads a line's text: texts are compared
+// for equality and measured by length.
 //
 // **Within the page budget.** Page data in one request stays within the page budget, as every decider request's does
 // (`../../llm/view-channel/budget.ts`; user, 2026-11-25: "ensure there is a data limit on pages"). The views share it in
 // the order above, each whole while it fits; a view that does not fit what is left shows the lines that do, whole and in
 // page order, and says how many lines it left out. Nothing is cut silently.
 //
-// **Shown only where the decider's page is not.** The views are kept beside the judge's summary, never in it (`keep`,
-// `of`), and an ask after an unreadable reply, which is always asked on its own request, puts them in
-// (`../unreadable-asks/note.ts`). So the deciding digest and a continuing judge's request are as they were. They are
-// kept beside the summary's trail too, which a copy of the summary (a re-ask's notice) still holds.
+// **Beside the summary, never in it.** The views are kept beside the judge's summary (`keep`, `of`), so the deciding
+// digest and a continuing judge's first request are as they were. Every judge asked on its own request carries them,
+// put last by `shown`: the Flow-less judge that continues no decider (`../flow-less/judge.ts`), the Flow judge, which never
+// does (`../verify.ts`), and any ask after an unreadable reply (`../unreadable-asks/note.ts`).
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
-import { AUTOMATION_STUDIO_LLM_PAGE_BUDGET_CHARS, automationStudioLlmPageViewOf, type AutomationStudioLlmPageView } from "../../llm/view-channel/index.ts";
+import { AUTOMATION_STUDIO_LLM_PAGE_BUDGET_CHARS, type AutomationStudioLlmPageView } from "../../llm/view-channel/index.ts";
+import type { AutomationStudioResultTrailShownStep } from "../contracts/index.ts";
 import { automationStudioResultEvidenceScreen } from "../result-evidence/index.ts";
+import { automationStudioJudgePageOf } from "./page-of.ts";
+import { automationStudioJudgeTrailPages } from "./trail-pages.ts";
 
 /** What the views are told under: Core's words, generic. */
-const NOTE = "The page text of each view named here, as the model working on the target read it: one line per element, in page order. It is evidence, as the rows and the trail are. Where a view says linesNotShown, that many of its lines did not fit this request's page budget and are not shown.";
-/** How deep a view's members are searched for its page: the view, its wrapper (`view`), and a reading held inside a note. */
-const MOST_DEPTH = 3;
+const NOTE = "The page text of each view named here, as the model working on the target read it: one line per element, in page order. endView is the page the work ended on; witnesses.before the page before its first lasting act; trail.<n> the page trail entry n answered with: the page a lasting act was pressed on, or a page a step landed on. It is evidence, as the rows and the trail are. Where a view says linesNotShown, that many of its lines did not fit this request's page budget and are not shown.";
 
 export class AutomationStudioJudgePageViews {
   private static readonly kept = new WeakMap<object, JsonObject>();
 
   /**
-   * The page views of `views` (the summary's `endView` and `witnesses`, as held), within the page budget and screened as
-   * every value the judge is sent is (header); `undefined` where no view holds a page. `before`: a lasting act ran, so
-   * the before view is one the judge needs.
+   * The page views of `views` (the summary's `endView`, `witnesses` and the trail's entries, as held), within the page
+   * budget and screened as every value the judge is sent is (header); `undefined` where none holds a page. `before`: a
+   * lasting act ran, so the before view is one the judge needs.
    */
-  static read(views: { endView?: JsonValue | undefined; witnesses?: JsonValue | undefined }, before: boolean, deniedKeys: readonly string[], budgetChars: number = AUTOMATION_STUDIO_LLM_PAGE_BUDGET_CHARS): JsonObject | undefined {
+  static read(views: { endView?: JsonValue | undefined; witnesses?: JsonValue | undefined; trail?: readonly AutomationStudioResultTrailShownStep[] | undefined }, before: boolean, deniedKeys: readonly string[], budgetChars: number = AUTOMATION_STUDIO_LLM_PAGE_BUDGET_CHARS): JsonObject | undefined {
     const witnesses = object(views.witnesses);
-    const named: [string, JsonValue | undefined][] = [["endView", views.endView], ...(before ? [["witnesses.before", witnesses?.before] as [string, JsonValue | undefined]] : []), ["witnesses.after", witnesses?.after]];
+    const named: [string, AutomationStudioLlmPageView | undefined][] = [
+      ["endView", automationStudioJudgePageOf(views.endView)],
+      ["witnesses.after", automationStudioJudgePageOf(witnesses?.after)],
+      ...(before ? [["witnesses.before", automationStudioJudgePageOf(witnesses?.before)] as [string, AutomationStudioLlmPageView | undefined]] : []),
+      ...automationStudioJudgeTrailPages(views.trail).map((each) => [each.name, each.page] as [string, AutomationStudioLlmPageView])
+    ];
     let left = budgetChars;
     const shown: JsonObject = {};
-    const texts: string[] = [];
-    for (const [name, view] of named) {
-      const page = pageOf(view);
+    const texts = new Set<string>();
+    for (const [name, page] of named) {
       if (page === undefined) continue;
       const lines = page.lines.map((line) => line.text);
       const whole = lines.join("\n");
-      if (texts.includes(whole)) continue;
-      texts.push(whole);
-      let fit = 0;
-      let size = 0;
-      for (const line of lines) {
-        const added = (fit ? 1 : 0) + line.length;
-        if (size + added > left) break;
-        size += added;
-        fit += 1;
-      }
-      left -= size;
-      shown[name] = { text: lines.slice(0, fit).join("\n"), ...(fit < lines.length ? { linesNotShown: lines.length - fit } : {}) };
+      if (texts.has(whole)) continue;
+      texts.add(whole);
+      const fit = fitting(lines, left);
+      left -= fit.size;
+      shown[name] = { text: lines.slice(0, fit.lines).join("\n"), ...(fit.lines < lines.length ? { linesNotShown: lines.length - fit.lines } : {}) };
     }
     if (!Object.keys(shown).length) return undefined;
     const screened = automationStudioResultEvidenceScreen({ note: NOTE, ...shown }, deniedKeys);
     return screened.withheld ? { ...screened.value, withheld: true } : screened.value;
   }
 
-  /** Keep `views` beside `summary`, and beside its trail (header). */
+  /** Keep `views` beside `summary`, and beside its trail, which a copy of the summary (a re-ask's notice) still holds. */
   static keep(summary: object, views: JsonObject | undefined): void {
     if (views === undefined) return;
     this.kept.set(summary, views);
@@ -81,22 +85,31 @@ export class AutomationStudioJudgePageViews {
     const trail = trailOf(summary);
     return this.kept.get(summary) ?? (trail === undefined ? undefined : this.kept.get(trail));
   }
+
+  /**
+   * `summary` as a judge on its own request is sent it: `views` last, as `pageViews`, in place of any it held, and kept
+   * beside the copy (header). `summary` itself where there are none.
+   */
+  static shown<TSummary extends object>(summary: TSummary, views: JsonObject | undefined): TSummary {
+    if (views === undefined) return summary;
+    const { pageViews: _earlier, ...rest } = summary as TSummary & { pageViews?: unknown };
+    const sent = { ...rest, pageViews: views } as unknown as TSummary;
+    this.keep(sent, views);
+    return sent;
+  }
 }
 
-/** The page a view holds, found by its shape among its members (header). */
-function pageOf(value: JsonValue | undefined): AutomationStudioLlmPageView | undefined {
-  let level: JsonValue[] = value === undefined ? [] : [value];
-  for (let depth = 0; depth <= MOST_DEPTH && level.length; depth += 1) {
-    const next: JsonValue[] = [];
-    for (const each of level) {
-      const page = automationStudioLlmPageViewOf(each);
-      if (page !== undefined) return page;
-      const held = object(each);
-      if (held) next.push(...Object.values(held).filter((member) => object(member) !== undefined));
-    }
-    level = next;
+/** How many of `lines` fit `left` characters whole, in order, and their size joined by "\n". */
+function fitting(lines: readonly string[], left: number): { lines: number; size: number } {
+  let fit = 0;
+  let size = 0;
+  for (const line of lines) {
+    const added = (fit ? 1 : 0) + line.length;
+    if (size + added > left) break;
+    size += added;
+    fit += 1;
   }
-  return undefined;
+  return { lines: fit, size };
 }
 
 function trailOf(summary: object): object | undefined {

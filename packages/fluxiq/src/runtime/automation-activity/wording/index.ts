@@ -10,6 +10,7 @@ export { automationStudioActivityDraftEditCard } from "./draft-edit-card.ts";
 export { automationStudioActivityEndedReason } from "./ended-reason.ts";
 export { automationStudioActivityFailureCodeWords } from "./failure-code-words.ts";
 export { automationStudioActivityHumanLabel } from "../../activity/text/index.ts";
+export { automationStudioActivityPageName } from "./page-name.ts";
 export { automationStudioActivityIssueWords, type AutomationStudioActivityIssue } from "./issue-words.ts";
 export { automationStudioActivityIssuesOf } from "./issues-of.ts";
 export { AUTOMATION_STUDIO_ACTIVITY_NOTHING_LEFT, automationStudioActivityLeftTold, type AutomationStudioActivityLeftAct } from "./left-told.ts";

@@ -1523,6 +1523,36 @@ floored `commit` so that it is not repeated after a lost acknowledgement, and th
 floor alone no longer makes a navigation last. A lasting act is still never passed
 over.
 
+**Passing it over keeps where it went** (`state-routing/route-owed.ts`, t1083,
+live run `run-mwz29d50-c3a32a9c`). That "View cart" is also the move to the cart,
+which the steps after it were written on: passed over alone, the cart read ran on
+the product page. So when the step recorded an effect, Core asks the host's
+`reachRouteEffect` (`runtime/automation-host/contracts/route-reach.ts`) with it
+before passing the step over. Core reads no address: the effect is the host's and
+opaque, and the host answers in one closed word.
+
+- `stays`: the effect moved to no other route (a drawer's Close, a cover's
+  dismiss), so the step is passed over exactly as before. A host without the
+  method, and a step with no recorded effect, read the same way.
+- `already_there`, `pressed`, `went`: the page is on the route, already, by a
+  control the page shows that goes there, or by going to the recorded destination.
+  The step is passed over, and its attempt carries `skipped.reached` with that
+  word, so a reader (the run detail, a replay's record) tells a routed step from
+  one passed over as saved. The chat says how the page got there. A step passed
+  over this way ends a chain of steps passed over as never arisen, because the
+  page it brings about has come.
+- `unreached`, a throw, or any other answer: the step is not passed over. State
+  routing's other cases and the ladder take it, and a `none` record's reason says
+  first that the page could not be brought to where the step went.
+
+Reaching a route is a move, never a lasting act, so the run gate's already-done
+and double-add guards stand. How a route is reached is the host's: a web host,
+for one, reads it from the effect (the path shape, and the destination it signs
+beside it, an address without its query and never in the step's identity), goes
+on where the page already is, presses a visible link to the same route (a banner
+or navigation link before one in the page body, one in a dialog or covering panel
+last), or goes to the destination, and checks that the page arrived.
+
 A routed attempt reads `status: "succeeded"`, `route: "state_routed"` and
 `skipped: { reason: "state_routed", code, toNodeId, direction }`, with no
 `failure`, `fault` or `message`; the chat says which step was passed over and

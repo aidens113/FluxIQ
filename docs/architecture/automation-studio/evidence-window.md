@@ -288,6 +288,34 @@ typed state bears on the specific act, without claiming task success. No such
 domain coverage API is part of this change, and the gap remains repairable through
 the existing unsure/continue path rather than adding a task ending.
 
+**Page views for a judge asked on its own request (t1067, t1084).** The semantic
+projection leaves every page out (`captureOmitted`). A judge that continues the
+decider's conversation reads the pages there; a judge asked on its own request
+reads none unless it is given them. That is every replay's judge, since a replay
+makes no decision: in `run-mwz29d50-c3a32a9c` the replay judge never saw the
+product page's rating or pickup line, answered unknown, and a Flow that had
+worked was repaired. So `judge-evidence/page-views.ts` keeps, beside the judge's
+summary and never in it, the pages the result rests on, whatever the run did:
+
+1. the end view (and the after witness where it is another page);
+2. the before view, where a lasting act ran;
+3. the page each lasting act was pressed on, this attempt's acts then carried
+   acts, newest first: the page the act's own trail entry answered with, then
+   the nearest earlier page (for an act that moved away, or a replay step passed
+   over as already done) (`judge-evidence/trail-pages.ts`);
+4. the page each trail entry landed on, newest first.
+
+A page whose text was already shown is skipped. The views share
+`AUTOMATION_STUDIO_LLM_PAGE_BUDGET_CHARS` in that order, whole lines only, a
+view that does not fit saying `linesNotShown`, and are screened under the
+denied keys. Pages are found by shape (a key and keyed lines); Core never reads
+a line's text. Carried acts' pages come from their trail entries, which Core
+holds in memory only (`answer-first/witnesses/carried-evidence.ts`): after a
+restart a carried act has no page here. The Flow-less judge that continues no
+decider and the Flow judge (`verify.ts`, which never does) send them last on
+every ask; an ask after an unreadable reply keeps them just before its note.
+The deciding digest and a continuing judge's first request are unchanged.
+
 Stored semantic summaries are read as semantic findings, not projected a second
 time. Unknown/malformed new formats cannot route to legacy raw rendering. A
 semantic evidence gap holds a model yes under existing unsure/repair handling;

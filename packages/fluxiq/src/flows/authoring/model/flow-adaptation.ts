@@ -409,8 +409,11 @@ export type AutomationStudioFlowRunActionAttemptRecord = {
    * run; the row is named when the step runs per row.
    */
   skipped?:
-    /** `notDone`: the step does a lasting act, and the page did not show its effect, so the act was not done (r4b F4, `step-skip/act-not-done.ts`). */
-    | { reason: "target_absent"; code: string; notDone?: true }
+    /**
+     * `notDone`: the step does a lasting act, and the page did not show its effect, so the act was not done (r4b F4, `step-skip/act-not-done.ts`).
+     * `reached`: how the page was brought to the route a step passed over as never arisen went to (t1083, `executor/state-routing/route-owed.ts`).
+     */
+    | { reason: "target_absent"; code: string; notDone?: true; reached?: "already_there" | "pressed" | "went" }
     | { reason: "state_routed"; code: string; toNodeId: string; direction: "forward" | "backward" }
     | { reason: "already_done"; code: string; attemptId: string; row?: string }
     | { reason: "already_in_state"; code: string; row?: string };

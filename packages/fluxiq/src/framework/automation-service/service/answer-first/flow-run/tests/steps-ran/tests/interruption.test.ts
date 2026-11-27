@@ -6,12 +6,12 @@
 // instead of standing on its record. The banner's absence is the accepted run's own page; a lasting
 // act really left undone still sends the replay to the judge.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioNodeAttemptTrace } from "../../../../../../engine/automation/index.ts";
-import type { AutomationStudioFlowBuildPlan, AutomationStudioFlowBootstrapIssueLocator } from "../../../../../../runtime/flow-authoring/bootstrap/index.ts";
-import type { AutomationStudioFlowDraftStep } from "../../../../../../runtime/flow-authoring/draft/index.ts";
-import { automationStudioAnswerFirstReplayStands } from "../../completion/index.ts";
-import { savedStep } from "../../tests/fake-library-engine.ts";
-import { automationStudioAnswerFirstFlowRunStepsRan } from "../steps-ran.ts";
+import type { AutomationStudioNodeAttemptTrace } from "../../../../../../../../engine/automation/index.ts";
+import type { AutomationStudioFlowBuildPlan, AutomationStudioFlowBootstrapIssueLocator } from "../../../../../../../../runtime/flow-authoring/bootstrap/index.ts";
+import type { AutomationStudioFlowDraftStep } from "../../../../../../../../runtime/flow-authoring/draft/index.ts";
+import { automationStudioAnswerFirstReplayStands } from "../../../../completion/index.ts";
+import { savedStep } from "../../../../tests/fake-library-engine.ts";
+import { automationStudioAnswerFirstFlowRunStepsRan } from "../../../steps-ran.ts";
 
 const KEYS = ["s1", "s2", "s3"];
 const plan = { plan: { subflows: [{ key: "primary", nodes: KEYS.map((key) => ({ key, definitionId: "library.step" })) }] } } as unknown as AutomationStudioFlowBuildPlan;
