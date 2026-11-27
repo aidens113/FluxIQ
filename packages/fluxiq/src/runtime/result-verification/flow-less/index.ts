@@ -18,3 +18,5 @@ export { automationStudioFlowLessSummaryFitting } from "./window-fitting.ts";
 export type { AutomationStudioFlowLessFound, AutomationStudioFlowLessJudgeInput, AutomationStudioFlowLessJudgement, AutomationStudioFlowLessSummary } from "./types.ts";
 // What a no found wrong, for the model that goes on after it (t1011).
 export { automationStudioFlowLessJudgedNoFound } from "./judged-no-found.ts";
+// Whether a no names a contradiction, read from the reply's shape; one that names none is unknown (t1072).
+export { automationStudioFlowLessNoNamesContradiction } from "./named-contradiction.ts";
