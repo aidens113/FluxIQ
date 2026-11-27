@@ -165,6 +165,27 @@ describe("a judge continuing a decider sent as tools", () => {
     expect(await failureOf(provider.runTask(judge()))).toMatchObject({ code: "llm.provider_output_invalid", reply: { case: "tool_call_missing" } });
   });
 
+  // t1065: the purse holds each call at the provider's measure. A continuation was measured as the judge's own request,
+  // a fraction of the decider's conversation it sends; each in-conversation ask is larger again.
+  it("measures what it sends: the continuation, then each ask in the conversation, without changing what is held (t1065)", async () => {
+    const { provider, sent } = adapter([() => toolUseStreamReply([decisionCall(DECISION)]), () => streamReply("The shelf lists it."), () => toolUseStreamReply([{ name: "core_check_answer", input: VERDICT }])]);
+    await provider.runTask(decider());
+    const own = automationStudioAnthropicRequest(judge(), "claude-haiku-5-5").estimatedInputTokens;
+    const continuing = provider.measureInput!(judge()).estimatedInputTokens;
+    expect(continuing).toBeGreaterThan(own);
+    expect(provider.measureInput!(judge()).estimatedInputTokens).toBe(continuing);
+    expect(await failureOf(provider.runTask(judge()))).toMatchObject({ reply: { case: "tool_call_missing" } });
+    // Measuring held nothing back: the call still went as the continuation.
+    expect(sent[1]!.messages).toHaveLength(2);
+    const again = { ...judge(), metadata: { ...judge().metadata, judgeAnswersInConversation: true } };
+    const asking = provider.measureInput!(again).estimatedInputTokens;
+    expect(asking).toBeGreaterThan(continuing);
+    expect(provider.measureInput!(again).estimatedInputTokens).toBe(asking);
+    await provider.runTask(again);
+    expect(sent[2]!.messages).toHaveLength(4);
+    expect(Math.abs(asking - (Buffer.byteLength(JSON.stringify({ tools: sent[2]!.tools, tool_choice: sent[2]!.tool_choice, system: sent[2]!.system, messages: sent[2]!.messages, output_config: sent[2]!.output_config }), "utf8") / 3))).toBeLessThan(40);
+  });
+
   it("refuses a decision that calls the check's answer tool, by name (t1065)", async () => {
     const { provider } = adapter([() => toolUseStreamReply([{ name: "core_check_answer", input: VERDICT }])]);
     expect(await failureOf(provider.runTask(decider()))).toMatchObject({ code: "llm.provider_output_invalid", reply: { case: "tool_call_check_only" } });

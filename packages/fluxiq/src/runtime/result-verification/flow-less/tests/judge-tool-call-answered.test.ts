@@ -17,7 +17,8 @@ import { automationStudioLlmModelLadder, automationStudioLlmRoleRoutedResolution
 import { createAutomationStudioAnthropicProvider } from "../../../llm/anthropic/index.ts";
 import { decisionCall, decisionRequest, streamReply, toolUseStreamReply, useFixtureModel } from "../../../llm/anthropic/tests/fixtures.ts";
 import { automationStudioFlowLessJudge } from "../judge.ts";
-import type { AutomationStudioFlowLessSummary } from "../types.ts";
+import type { AutomationStudioFlowLessJudgeInput, AutomationStudioFlowLessSummary } from "../types.ts";
+import { AutomationStudioLlmBuildPurse, automationStudioLlmBuildPurseScope } from "../../../llm/build-purse/index.ts";
 
 const MODEL = "claude-sonnet-5-5";
 const ANSWER_TOOL = "core_check_answer";
@@ -37,14 +38,19 @@ const summary = (): AutomationStudioFlowLessSummary => ({
 type Block = { type: string; text?: string; id?: string; name?: string; input?: unknown; tool_use_id?: string; is_error?: boolean; content?: unknown; cache_control?: unknown };
 type Wire = { model: string; tools?: Array<{ name: string }>; tool_choice?: unknown; system: unknown; thinking?: unknown; output_config?: unknown; messages: { role: string; content: string | Block[] }[] };
 
-/** Runs one attempt's decision, then its Flow-less judge continuing it, over `replies`; what was sent and what the step log says. */
-async function judged(replies: ReadonlyArray<() => Response>) {
+/**
+ * Runs one attempt's decision, then its Flow-less judge continuing it, over `replies` (a list, or one reply for every
+ * call after the decider's); what was sent and what the step log says. `extra` is more of the judge's input; `purse`,
+ * where given, is the caller's purse every call is held on and charged to.
+ */
+async function judged(replies: ReadonlyArray<() => Response> | ((at: number) => Response), extra: Partial<AutomationStudioFlowLessJudgeInput> = {}, purse?: AutomationStudioLlmBuildPurse) {
   const directory = mkdtempSync(join(tmpdir(), "t1065-step-log-"));
   process.env.FLUXIQ_LLM_STEP_LOG_DIR = directory;
   try {
     const sent: Wire[] = [];
     const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
       sent.push(JSON.parse(String(init.body)) as Wire);
+      if (typeof replies === "function") return sent.length === 1 ? decided() : replies(sent.length - 1);
       const reply = replies[sent.length - 1];
       if (!reply) throw new Error(`no reply scripted for call ${sent.length}`);
       return reply();
@@ -56,13 +62,14 @@ async function judged(replies: ReadonlyArray<() => Response>) {
     const decider = decisionRequest();
     decider.deniedEvidenceKeys = [];
     decider.context.evidenceLoop!.evidence = ["call.1", "call.2", "call.3"].map((callId, at) => ({ callId, toolId: "core.run_node", value: { ok: true, page: `Shelf ${at + 1}: Emma, Persuasion, Sanditon.` } }));
-    const judgement = await runWithAutomationStudioLlmModelLadder(automationStudioLlmModelLadder(), async () => {
+    const attempt = () => runWithAutomationStudioLlmModelLadder(automationStudioLlmModelLadder(), async () => {
       await provider.runTask(decider);
       return await automationStudioFlowLessJudge({
         summary: summary(), provider, run: runAutomationStudioLlmHarness, projectId: "project-1", flowId: "flow-1", deniedEvidenceKeys: ["selector"],
-        continuesDecider: true, tokenLimits: { maxInputTokens: 900_000, maxOutputTokens: 8_000, maxTotalTokens: 1_000_000 }
+        continuesDecider: true, tokenLimits: { maxInputTokens: 900_000, maxOutputTokens: 8_000, maxTotalTokens: 1_000_000 }, ...extra
       });
     });
+    const judgement = purse ? await automationStudioLlmBuildPurseScope(purse, attempt) : await attempt();
     const folders = readdirSync(directory).sort();
     const continuations = folders.filter((folder) => folder.endsWith("-judge")).map((folder) => (JSON.parse(readFileSync(join(directory, folder, "meta.json"), "utf8")) as { continuation?: unknown }).continuation);
     const notes = folders.filter((folder) => folder.endsWith("-note")).map((folder) => (JSON.parse(readFileSync(join(directory, folder, "meta.json"), "utf8")) as { line: string }).line);
@@ -172,5 +179,36 @@ describe("a continuing judge whose answer tool input does not fit", () => {
     const [result, ask] = sent[2]!.messages[3]!.content as Block[];
     expect(result).toMatchObject({ type: "tool_result", is_error: true, content: "This answer could not be read, so it was not taken: see below." });
     expect(ask!.text).toContain("it was JSON, but it did not fit the answer asked for: response.diagnosis");
+  });
+});
+
+// The lead's check on t1065: a judge that never answers readably must still end, as any other call does, with no count
+// of asks. Each ask in the conversation is a priced call on the purse, held at the size it is sent at (the adapter
+// measures the continuation and its answered turns, not the judge's own request), and the check's deadline holds as before.
+describe("a continuing judge that never answers readably", () => {
+  /** Prose with no call, every time, at a price that is real: 10,000 input tokens a call. */
+  const prose = () => streamReply(REASONING, "end_turn", { input_tokens: 10_000, output_tokens: 300, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 0 } });
+
+  it("ends on the purse, not judged and saying so, every ask after the first in its conversation and held at its sent size", async () => {
+    const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.5 });
+    const { judgement, sent, continuations } = await judged(() => prose(), {}, purse);
+    expect(judgement).toMatchObject({ verdict: "not_judged", refusedByPurse: true });
+    const asks = sent.length - 1;
+    expect(asks).toBeGreaterThan(2);
+    expect(asks).toBeLessThan(40);
+    expect(continuations[0]).toEqual({ used: true, reason: "continues_the_decider" });
+    expect(continuations.slice(1).every((each) => (each as { reason: string }).reason === "answers_its_reply_in_the_conversation")).toBe(true);
+    // Each ask is the one before it with the reply and the answer to it appended: the conversation grows by two turns an ask.
+    expect(sent.at(-1)!.messages).toHaveLength(2 + 2 * (asks - 1));
+    expect(purse.pendingUsd()).toBe(0);
+    expect(purse.spentUsd()).toBeGreaterThan(0);
+  });
+
+  it("ends at the check's deadline, not judged for time, where its calls cost next to nothing", async () => {
+    const cheap = () => streamReply(REASONING);
+    const { judgement, sent } = await judged(() => cheap(), { deadlineMs: 1_500 });
+    expect(judgement).toMatchObject({ verdict: "not_judged", unanswered: true });
+    expect((judgement as { reason?: string }).reason).toContain("ran out of time");
+    expect(sent.length).toBeGreaterThan(3);
   });
 });

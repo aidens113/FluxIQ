@@ -162,8 +162,8 @@ describe("a Flow-less judge's check whose reply could not be read", () => {
 // format only to share its cache; the judge's own grammar is native (`../../../models/providers/anthropic/schema.ts`,
 // `jsonText: false`, `../../../llm/anthropic/tests/native-judge-schema.test.ts`). So after its first unreadable reply it
 // is asked standalone, in its own format, on the same model; every later retry stays on that model. The decider here is
-// sent in the JSON-text transport (`decisionTools: false`); a judge after a decider sent as tools answers in plain text
-// (D12, t1038: `../../../llm/anthropic/tests/native-decision.test.ts`).
+// sent in the JSON-text transport (`decisionTools: false`); a judge after a decider sent as tools answers by the check's
+// answer tool and stays in its conversation (t1065: `./judge-tool-call-answered.test.ts`).
 describe("a judge continuing the decider's conversation whose reply could not be read", () => {
   /** One Messages reply as JSON, the model's answer its text. */
   const reply = (text: string, model: string): Response => new Response(JSON.stringify({ id: "msg_t979", type: "message", role: "assistant", model, content: [{ type: "text", text }], stop_reason: "end_turn", usage: { input_tokens: 100, output_tokens: 30, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } }), { status: 200, headers: { "content-type": "application/json" } });

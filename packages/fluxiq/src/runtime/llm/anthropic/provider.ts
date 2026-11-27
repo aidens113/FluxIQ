@@ -36,12 +36,16 @@ export function createAutomationStudioAnthropicProvider(options: AutomationStudi
   if (!Number.isInteger(maxResponseBytes) || maxResponseBytes <= 0 || maxResponseBytes > AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_RESPONSE_BYTES) throw new AutomationStudioLlmProviderError("llm.provider_response_limit_invalid", "Anthropic response-byte limit is invalid.");
   // The latest decider request of each Flow this model served, for a judge that continues it (`continued`, t965).
   const deciders = new Map<string, AutomationStudioAnthropicDeciderPrefix>();
-  // A continuing judge's request whose reply called a tool, by its attempt, for the ask that answers that call (t1065).
+  // A continuing judge's request whose reply was not read, by its attempt, for the ask that answers it (t1065).
   const judges = new Map<string, AutomationStudioAnthropicJudgeOpenTurn>();
   return {
     metadata: { provider: "anthropic", model },
+    // The request `runTask` would send, measured without changing what is held (`peek`): for a judge continuing its
+    // decider, that is the decider's whole conversation and any turns answered in it, not the judge's own request. The
+    // harness prices the purse's hold on this measure, so each ask, the in-conversation re-asks included, is held at the
+    // size it is sent at (t1065: a continuation was held at its standalone size, a fraction of what it sends).
     measureInput: (request) => {
-      const { estimatedInputTokens, estimatedInputBytes } = automationStudioAnthropicRequest(request, model, { decisionTools });
+      const { estimatedInputTokens, estimatedInputBytes } = continued(request, automationStudioAnthropicRequest(request, model, { decisionTools }), model, deciders, judges, true);
       return { estimatedInputTokens, estimatedInputBytes };
     },
     // Cache writes can cost more than a cold input; hold the all-write case,
@@ -106,9 +110,11 @@ const DECIDERS_HELD = 8;
 type JudgeTurn = { key: string; wire: Record<string, unknown>; answerTool: boolean };
 type Prepared = AutomationStudioAnthropicPreparedRequest & { continuation?: { used: boolean; reason: string }; judgeTurn?: JudgeTurn };
 
-function continued(request: AutomationStudioLlmTaskRequest, prepared: AutomationStudioAnthropicPreparedRequest, model: AutomationStudioAnthropicModel, deciders: Map<string, AutomationStudioAnthropicDeciderPrefix>, judges: Map<string, AutomationStudioAnthropicJudgeOpenTurn>): Prepared {
+/** `peek`: what would be sent, for its measure, with nothing held, dropped or recorded (t1065). */
+function continued(request: AutomationStudioLlmTaskRequest, prepared: AutomationStudioAnthropicPreparedRequest, model: AutomationStudioAnthropicModel, deciders: Map<string, AutomationStudioAnthropicDeciderPrefix>, judges: Map<string, AutomationStudioAnthropicJudgeOpenTurn>, peek = false): Prepared {
   const key = automationStudioLlmAttemptKey() ?? (typeof request.metadata?.attemptKey === "string" ? request.metadata.attemptKey : undefined);
   if (request.context.evidenceLoop) {
+    if (peek) return prepared;
     const prefix = key !== undefined && (prepared.format.jsonText || prepared.decisionTools) ? automationStudioAnthropicDeciderPrefix(JSON.parse(prepared.body) as Record<string, unknown>) : undefined;
     if (key !== undefined) {
       judges.delete(key);
@@ -120,7 +126,7 @@ function continued(request: AutomationStudioLlmTaskRequest, prepared: Automation
   if (request.taskKind !== "loop_verification") return prepared;
   // A held reply is for the one ask after it; any judge call ends it, and a reply that is again not read holds it again.
   const open = key === undefined ? undefined : judges.get(key);
-  if (key !== undefined) judges.delete(key);
+  if (key !== undefined && !peek) judges.delete(key);
   const own = (reason: string): Prepared => ({ ...prepared, continuation: { used: false, reason } });
   if (request.metadata?.continuesDecider !== true) return own("no_decision_in_this_attempt");
   if (key === undefined) return own("no_attempt_key");
@@ -138,7 +144,9 @@ function continued(request: AutomationStudioLlmTaskRequest, prepared: Automation
   const body = JSON.stringify(wire);
   const estimatedInputBytes = Buffer.byteLength(JSON.stringify({ tools: wire.tools, tool_choice: wire.tool_choice, system: wire.system, messages: wire.messages, output_config: wire.output_config }), "utf8");
   const estimatedInputTokens = estimateAutomationStudioLlmTokensFromUtf8Bytes(estimatedInputBytes) + 16;
-  if (estimatedInputTokens + request.tokenLimits.maxOutputTokens > AUTOMATION_STUDIO_ANTHROPIC_MODEL_LIMITS[model].contextTokens) return own("continuation_past_the_window");
+  // Past the model's window, or the judge's own limits the harness holds this measure to, it is the judge's own request.
+  const limits = request.tokenLimits;
+  if (estimatedInputTokens + limits.maxOutputTokens > AUTOMATION_STUDIO_ANTHROPIC_MODEL_LIMITS[model].contextTokens || estimatedInputTokens > limits.maxInputTokens || estimatedInputTokens + limits.maxOutputTokens > limits.maxTotalTokens) return own("continuation_past_the_window");
   // The judge answers in the decider's transport: in `result_json` after a JSON-text decider, by the answer tool after one sent as tools.
   return {
     body, format: { schema: prepared.format.schema, jsonText: prefix.afterTools !== true }, estimatedInputBytes, estimatedInputTokens,
