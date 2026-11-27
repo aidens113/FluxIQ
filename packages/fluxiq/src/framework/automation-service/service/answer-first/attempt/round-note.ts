@@ -20,7 +20,9 @@ const DECLINED = "A person said no to a lasting act in the saved Flow, so it did
 const NOT_ASSEMBLED = "The saved steps could not be made into a Flow on this site as it stands, so they did not run. They are your draft: fix what no longer fits.";
 const WHY_NOT = "What stopped the saved steps being made into a Flow, with the step each is at. Fix each one in the draft.";
 const WHOLE_NOT_ACCEPTED = "The saved Flow ran from its start to its end, and that was not accepted as the result yet.";
-const THE_PAGE = "The page is where it left it. Fix that step, then run forward. Running a saved step again only checks it when it acts lastingly, and does nothing: if it has to change, write the changed step as a new step, drop the old one, and then run forward.";
+const RUN_FORWARD = "Running a saved step again only checks it when it acts lastingly, and does nothing: if it has to change, write the changed step as a new step, drop the old one, and then run forward.";
+const THE_PAGE = `The page is where it left it. Fix that step, then run forward. ${RUN_FORWARD}`;
+const PAGE_AS_READ = "The page was read again as the run stopped, and it does not show what this step brought";
 const STARTED_OVER = "Your latest read of this list replaced what an earlier read of it held, so the rows kept are that read's alone. To add to the list instead, read it again with writeMode append under the same datasetId.";
 const FEWER = "The latest read held fewer rows than an earlier one. The rows kept are the latest read's: read again if the earlier count was right.";
 const EARLIER_ACTS = "The acts marked carried were done by an earlier attempt at this same request. Asking in the same words is not asking for them again: do not press them again. Check on the page that they stand, and answer with what stands.";
@@ -71,7 +73,10 @@ function flowRunTold(run: AutomationStudioAnswerFirstAttemptRun): JsonObject | u
   if (outcome.kind === "outside_scope") return { happened: outcome.said };
   const steps = outcome.steps.map((step) => ({ position: step.position, ran: step.ran, ...(step.happened ? { happened: step.happened } : {}) }));
   if (!outcome.failing) return { steps, happened: WHOLE_NOT_ACCEPTED };
-  return { steps, stoppedAt: outcome.failing.position, happened: `${outcome.failing.happened} ${THE_PAGE}` };
+  const { failing } = outcome;
+  // A stop on an unseen effect is told the page as it was read at handoff, never as the step left it (`../flow-run/stop-observed.ts`).
+  const told = failing.pageNow ? `${PAGE_AS_READ}${failing.pageNow.page ? `; it shows ${failing.pageNow.page}` : ""}. Look at it as it is now, fix that step, then run forward. ${RUN_FORWARD}` : THE_PAGE;
+  return { steps, stoppedAt: failing.position, happened: `${failing.happened} ${told}` };
 }
 
 /**
