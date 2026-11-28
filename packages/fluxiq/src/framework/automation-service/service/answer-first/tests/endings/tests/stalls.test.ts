@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult, AutomationStudioLlmTaskRequest } from "../../../../../../../runtime/llm/index.ts";
 import { AutomationStudioLlmProviderError } from "../../../../../../../runtime/models/failures/index.ts";
+import { automationStudioActivityHub } from "../../../../../../../runtime/activity/index.ts";
 import { complete, fakeLibrary, LOOK_TOOL, READ_LOANS, RENEW_CARD, runNode, scriptedAttempt, toolCall } from "../../fake-library.ts";
 import { decisions, expectPresses, expectReached, judgedNo, keptAttempt, noWaiting } from "../support.ts";
 
@@ -136,6 +137,46 @@ describe("a round that cannot go on is not an ending", () => {
     // That silence itself costs nothing is held by the Stop during such a wait, whose spend is exactly zero (`./person.test.ts`).
   });
 
+  // t1100: the panel's replay (2026-11-28) read every 400 as silence, waiting 5, 10, 20 and 40 seconds and asking the
+  // identical request again each time, with "The model service is not answering" in the chat.
+  it("a request the provider refused is said once in its words, never waited on and never asked again", async () => {
+    const waits: number[] = [];
+    const said: string[] = [];
+    const message = "tools.8.custom: For 'object' type, 'additionalProperties' must be explicitly set to false";
+    let refused = 0;
+    const stop = automationStudioActivityHub.subscribe((event) => { said.push(`${event.label ?? ""} | ${JSON.stringify(event.detail ?? null)}`); });
+    try {
+      const attempt = scriptedAttempt({
+        taskProcessing: null,
+        instruction: "Renew the card on my library account.",
+        permittedConsequences: ["modify_existing"],
+        before: noWaiting(waits),
+        wrapProvider: (provider) => ({
+          ...provider,
+          runTask: async (request, execution) => {
+            if (request.taskKind === "evidence_tool_decision" && request.metadata?.source !== "instructionAuthority" && refusedAfter.length === 1) {
+              refused += 1;
+              throw new AutomationStudioLlmProviderError("llm.provider_http_error", "Anthropic refused the request.", false, 400, undefined, undefined, { status: 400, contentType: "application/json", bodyBytes: 160, error: { code: null, type: "invalid_request_error", param: null, message }, withheld: [], request: null });
+            }
+            if (request.taskKind === "evidence_tool_decision" && request.metadata?.source !== "instructionAuthority") refusedAfter.push(request);
+            return await provider.runTask(request, execution);
+          }
+        }),
+        script: [runNode("card", RENEW_CARD, {}, ["modify_existing"], { add: true }), complete("Renewed.")]
+      }, cleanups);
+      await expect(attempt).rejects.toBeDefined();
+    } finally {
+      stop();
+    }
+    expect(refused).toBe(1);
+    expect(waits).toEqual([]);
+    expect(said.filter((line) => line.includes("Waiting for the model service") || line.includes("not answering"))).toEqual([]);
+    // Said once, as the build's ending, in t1093's words.
+    const told = said.filter((line) => /the model provider refused the request/iu.test(line));
+    expect(told, told.join(" || ")).toHaveLength(1);
+    expect(told[0]).toContain(`Build failed: the model provider refused the request: ${message}`);
+  });
+
   it("a task with a failing step, a judge's no, a stall and provider errors all in one still reaches its result", async () => {
     const waits: number[] = [];
     const library = fakeLibrary();
@@ -193,4 +234,5 @@ describe("a round that cannot go on is not an ending", () => {
 
 /** The requests answered so far in the test that is running: reset by nothing, read by count from its own start. */
 const spent: AutomationStudioLlmTaskRequest[] = [];
+const refusedAfter: AutomationStudioLlmTaskRequest[] = [];
 afterEach(() => { spent.length = 0; });

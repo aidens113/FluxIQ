@@ -112,6 +112,11 @@ async function rounds(run: AutomationStudioAnswerFirstAttemptRun, asking: Automa
     }
     // A refusal with nothing spent has nothing new to keep, and the row from the opening is taken back if it becomes a setup step.
     if (!refused || purse.spentCalls() > 0) await automationStudioAnswerFirstKeep(run);
+    // A request the provider refused, which Core could not change into one it takes: never waited on and never asked
+    // again, since the identical request would be refused identically (`../../../../../runtime/answer-first/keep-going/refused-request.ts`, t1100).
+    // What was done is kept above; the refusal goes out as the round threw it, and the build's ending says it once,
+    // "Build failed: the model provider refused the request: <its message>", so nothing here says it a second time.
+    if (next.kind === "refused") throw end.kind === "thrown" ? end.error : new Error(next.why);
     if (next.kind === "backoff") {
       automationStudioAnswerFirstSay("Waiting for the model service", next.say);
       run.backoffs += 1;

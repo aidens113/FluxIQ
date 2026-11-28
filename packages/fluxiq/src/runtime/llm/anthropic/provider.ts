@@ -6,7 +6,7 @@ import { validateAutomationStudioLlmTaskRequest } from "../provider-task/index.t
 import type { AutomationStudioLlmSecretReference } from "../deepseek/index.ts";
 import { automationStudioAnthropicMessage, automationStudioAnthropicPaidFailure } from "./messages.ts";
 import { automationStudioAnthropicRequest, type AutomationStudioAnthropicPreparedRequest } from "./request.ts";
-import { AUTOMATION_STUDIO_ANTHROPIC_JUDGE_ANSWER_TOOL, automationStudioAnthropicAnswerNullsAbsent, automationStudioAnthropicDemoteStrictTool, automationStudioAnthropicRefusedForGrammar, automationStudioAnthropicDeciderPrefix, automationStudioAnthropicJudgeCallAnswered, automationStudioAnthropicJudgeContinuation, automationStudioAnthropicReadReply, type AutomationStudioAnthropicDeciderPrefix, type AutomationStudioAnthropicJudgeOpenTurn, type AutomationStudioAnthropicToolCall } from "../../models/providers/anthropic/index.ts";
+import { AUTOMATION_STUDIO_ANTHROPIC_JUDGE_ANSWER_TOOL, automationStudioAnthropicAnswerNullsAbsent, automationStudioAnthropicDemoteStrictTool, automationStudioAnthropicRefusedForGrammar, automationStudioAnthropicStrictToolNamedByRefusal, automationStudioAnthropicDeciderPrefix, automationStudioAnthropicJudgeCallAnswered, automationStudioAnthropicJudgeContinuation, automationStudioAnthropicReadReply, type AutomationStudioAnthropicDeciderPrefix, type AutomationStudioAnthropicJudgeOpenTurn, type AutomationStudioAnthropicToolCall } from "../../models/providers/anthropic/index.ts";
 import { automationStudioLlmDecisionFromToolCall, automationStudioLlmTaskMessages, automationStudioLlmTaskOutputSchema, type AutomationStudioLlmDecisionTools } from "../provider-task/index.ts";
 import { automationStudioLlmAttemptKey } from "../role-routing/index.ts";
 import { estimateAutomationStudioAnthropicCostUsd } from "./pricing.ts";
@@ -77,8 +77,9 @@ export function createAutomationStudioAnthropicProvider(options: AutomationStudi
           });
         } catch (error) {
           if (judgeTurn && arrived) held(judges, judgeTurn.key, { wire: judgeTurn.wire, reply: arrived });
-          // Refused for the strict tools' compiled grammar: one strict tool is demoted for this offer and the request is
-          // built and sent again (`../../models/providers/anthropic/strict-fit/`, t1093). Each pass removes one strict
+          // Refused for the strict tools' compiled grammar (t1093), or for one strict tool's schema, named by its place
+          // (t1100): one strict tool -- the named one, where the refusal names one -- is demoted for this offer and the
+          // request is built and sent again (`../../models/providers/anthropic/strict-fit/`). Each pass removes one strict
           // tool, so this ends by itself; with none left, the refusal stands and says why.
           if (strictToolDemoted(error, prepared)) continue;
           throw error;
@@ -183,16 +184,20 @@ function held<T>(map: Map<string, T>, key: string, value: T): void {
 }
 
 /**
- * Whether `error` is the platform refusing `prepared` for its strict tools' compiled grammar, and one strict tool was
- * then demoted for its offer, so the request is to be built and sent again (t1093). False for every other failure, for
- * a request that offered no decision tools (a judge continuing a decider sends the decider's accepted tools), and where
- * the refused request held no strict tool left to demote.
+ * Whether `error` is the platform refusing `prepared` for its strict tools -- their compiled grammar (t1093), or one
+ * strict tool's schema, which the refusal names by its place (`tools.N`, t1100) -- and one strict tool was then demoted
+ * for its offer, so the request is to be built and sent again. A named tool is the one demoted. False for every other
+ * failure, for a request that offered no decision tools (a judge continuing a decider sends the decider's accepted
+ * tools), and where the refused request held no strict tool left to demote, or the tool named was not sent strict.
  */
 function strictToolDemoted(error: unknown, prepared: AutomationStudioAnthropicPreparedRequest): boolean {
   if (!(error instanceof AutomationStudioLlmProviderError) || !prepared.strictOffer) return false;
-  if (!automationStudioAnthropicRefusedForGrammar(error.status, error.refusal?.error)) return false;
   const sent = (JSON.parse(prepared.body) as { tools?: unknown }).tools;
-  return Array.isArray(sent) && automationStudioAnthropicDemoteStrictTool(prepared.strictOffer, sent as Array<Record<string, unknown>>) !== undefined;
+  if (!Array.isArray(sent)) return false;
+  const tools = sent as Array<Record<string, unknown>>;
+  const named = automationStudioAnthropicStrictToolNamedByRefusal(error.status, error.refusal?.error, tools);
+  if (named === undefined && !automationStudioAnthropicRefusedForGrammar(error.status, error.refusal?.error)) return false;
+  return automationStudioAnthropicDemoteStrictTool(prepared.strictOffer, tools, named) !== undefined;
 }
 
 /** `sized`: refuse the request here if it exceeds the window; a judge marked as continuing is refused after the adapter decides (`runTask`, t1089). */

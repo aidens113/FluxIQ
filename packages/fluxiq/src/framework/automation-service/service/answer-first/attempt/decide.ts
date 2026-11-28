@@ -77,16 +77,22 @@ export function automationStudioAnswerFirstDecide(run: AutomationStudioAnswerFir
       }
       const codes = decision.diagnostics.filter((diagnostic) => diagnostic.severity === "error").map((diagnostic) => diagnostic.code);
       if (codes.includes(BALANCE_CODE)) throw new AutomationStudioLlmProviderError(BALANCE_CODE, "The model service says the account has no balance left.");
-      const silent = automationStudioLlmProviderUnanswered(codes) ? await waitedOut(run, codes, signal) : false;
+      const silent = automationStudioLlmProviderUnanswered(codes) ? await waitedOut(run, decision, codes, signal) : false;
       if (!silent) throw automationStudioLlmUnusableDecisionError(decision) ?? flowBootstrapHarnessFailure(decision);
     }
   });
 }
 
-/** The wait the table gives this silence, taken. False where the table says it is not one to wait for. */
-async function waitedOut(run: AutomationStudioAnswerFirstAttemptRun, codes: readonly string[], signal: AbortSignal | undefined): Promise<boolean> {
+/**
+ * The wait the table gives this silence, taken. False where the table says it is not one to wait for: a request the
+ * provider refused (a 4xx) is no silence, and is thrown as the refusal it is (t1100). The table is handed the status the
+ * provider answered with and its refusal; only a server error whose status went unrecorded is taken for a 5xx.
+ */
+async function waitedOut(run: AutomationStudioAnswerFirstAttemptRun, decision: AutomationStudioLlmTaskResult, codes: readonly string[], signal: AbortSignal | undefined): Promise<boolean> {
   const code = codes[0] as AutomationStudioLlmProviderErrorCode;
-  const error = new AutomationStudioLlmProviderError(code, "The model service gave no answer.", false, code === SERVER_ERROR_CODE ? 503 : undefined);
+  const recorded = decision.diagnostics.find((diagnostic) => diagnostic.severity === "error" && diagnostic.code === code)?.metadata?.providerStatus;
+  const status = typeof recorded === "number" ? recorded : code === SERVER_ERROR_CODE ? 503 : undefined;
+  const error = new AutomationStudioLlmProviderError(code, "The model service gave no answer.", false, status, undefined, undefined, decision.providerRefusal);
   const next = automationStudioAnswerFirstNext({ end: { kind: "thrown", error }, aborted: false, purseRefused: false, achieved: false, backoffs: run.backoffs });
   if (next.kind !== "backoff") return false;
   automationStudioAnswerFirstSay("Waiting for the model service", next.say);
