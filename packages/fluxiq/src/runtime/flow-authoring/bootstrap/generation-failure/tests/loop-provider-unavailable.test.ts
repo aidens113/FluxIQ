@@ -43,6 +43,15 @@ describe("a loop the model provider stopped answering", () => {
     expect(flowBootstrapLoopProviderUnavailableEnding(silent("llm.provider_timeout", { summary: false })).message).toMatch(/^The build stopped because the AI model provider did not answer: 3 requests in a row got no answer -- it did not answer\./u);
   });
 
+  // t1093: a provider that answered every request with a server error was reached, so it is never "could not be reached".
+  it("says a run of server errors as that, never as a provider that could not be reached or did not answer", () => {
+    for (const summary of [true, false]) {
+      const message = flowBootstrapLoopProviderUnavailableEnding(silent("llm.provider_http_error", { summary })).message;
+      expect(message).toMatch(/^The build stopped because the AI model provider answered with a server error: 3 requests in a row got an error back instead of an answer\. Nothing was built/u);
+      expect(message).not.toMatch(/could not be reached|did not answer/u);
+    }
+  });
+
   // A8 canary `run-mv8zw5l2-98064abf` recorded `providerResponse: "received"` over three timeouts and nothing else (t619).
   it("says no reply was received when every call failed before one arrived, and received once one had", () => {
     const none = flowBootstrapEvidenceLoopFailure(silent("llm.provider_timeout"));

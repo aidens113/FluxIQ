@@ -1,4 +1,5 @@
 import { automationStudioActivityFailureCodeWords, automationStudioActivityReasonText } from "../wording/index.ts";
+import { automationStudioLlmProviderRefusalWords, parseAutomationStudioLlmProviderRefusal } from "../../models/failures/index.ts";
 
 // A builder's return, said to the person (t649).
 //
@@ -39,6 +40,8 @@ const NOT_STARTED: ReadonlyArray<readonly [RegExp, string]> = [
 /** The dispatcher's opening for a builder its loop stopped, with the failure's code in brackets. */
 const BUILDER_FAILED = /^The builder failed: Flow Bootstrap generation failed \(([^()\s]+)\)\.?\s*/u;
 /** The dispatcher's opening for the builder's own ending. */
+/** "The builder failed: " and the first sentence of what threw, for a provider failure thrown as it stood (t1093). */
+const BUILDER_FAILED_FIRST_SENTENCE = /^The builder failed: [^.!?]*[.!?]?\s*/u;
 const BUILDER_ENDED = /^The builder ended this brief (blocked|partial):\s*/u;
 
 /** How the brief a part waited on came back, said of that part. */
@@ -68,8 +71,12 @@ const MAX_OWN_WORDS = 200;
 /**
  * `returned`'s reason in a person's words. `nameOf` says a subflow by its key
  * as the plan names it. Never empty, never a code, a call, a key or an id.
+ * `providerRefusal` is the builder failure's provider refusal record, which the
+ * return carries for the person's card alone (`../../project-agents/contracts/builder-return.ts`):
+ * a builder the provider refused is then said with the provider's own sentence
+ * (t1093), read back through the record's bounds.
  */
-export function automationStudioProjectReturnWords(returned: { outcome: "done" | "partial" | "blocked"; reason: string }, nameOf: (subflowKey: string) => string): string {
+export function automationStudioProjectReturnWords(returned: { outcome: "done" | "partial" | "blocked"; reason: string; providerRefusal?: unknown }, nameOf: (subflowKey: string) => string): string {
   const text = returned.reason.replace(/\s+/gu, " ").trim();
   const named = (key: string): string => {
     const name = nameOf(key);
@@ -81,9 +88,13 @@ export function automationStudioProjectReturnWords(returned: { outcome: "done" |
   if (absent) return `It starts after ${named(absent[1]!)}, which hasn't passed its test yet, so it was never started.`;
   const unstarted = NOT_STARTED.find(([pattern]) => pattern.test(text));
   if (unstarted) return unstarted[1];
+  const providerRefusal = parseAutomationStudioLlmProviderRefusal(returned.providerRefusal);
   const failed = BUILDER_FAILED.exec(text);
-  const opening = failed ? `The builder couldn't finish: ${automationStudioActivityFailureCodeWords(failed[1]!) ?? "it stopped before this part was built"}.` : undefined;
-  const rest = failed ? text.slice(failed[0].length) : text;
+  // A builder whose provider failure was thrown as it stood, not as a build failure, still reads as the refusal it was.
+  const refusedAsIs = !failed && providerRefusal ? BUILDER_FAILED_FIRST_SENTENCE.exec(text) : null;
+  const opening = failed ? `The builder couldn't finish: ${automationStudioActivityFailureCodeWords(failed[1]!, providerRefusal) ?? "it stopped before this part was built"}.`
+    : refusedAsIs ? `The builder couldn't finish: ${automationStudioLlmProviderRefusalWords(providerRefusal) ?? "it stopped before this part was built"}.` : undefined;
+  const rest = failed ? text.slice(failed[0].length) : refusedAsIs ? text.slice(refusedAsIs[0].length) : text;
   const ended = BUILDER_ENDED.exec(rest);
   const body = ended ? rest.slice(ended[0].length) : rest;
   // Each sentence that names no code, call, key or brief id, then screened as any reason the model gives is.

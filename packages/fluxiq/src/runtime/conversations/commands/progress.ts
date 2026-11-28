@@ -11,6 +11,7 @@ import { automationStudioActivityFailureCodeWords, automationStudioActivityReaso
 import { automationStudioCandidateRefusalCodes } from "../../../framework/automation-service/service/candidate-failure/index.ts";
 import { automationStudioProjectBuildReasonUnrepeated } from "../../../framework/automation-service/service/project-build-ending/index.ts";
 import type { AutomationStudioConversationCommandCallResult, AutomationStudioConversationCommandOutcome } from "./command.ts";
+import { automationStudioLlmProviderRefusalWords, parseAutomationStudioLlmProviderRefusal } from "../../models/failures/index.ts";
 
 /** What the outcome carries however it ends: the ids made, and whose words an instruction it saved were. */
 type Ids = Pick<AutomationStudioConversationCommandOutcome, "flowId" | "runId" | "adaptationId" | "instructionFrom">;
@@ -88,10 +89,14 @@ export function automationStudioConversationCallCause(what: string, response: Au
   const ending = diagnostic?.ending?.message;
   if (typeof ending === "string" && ending.trim()) return `${what} could not finish. ${ending.trim().replace(/\.$/u, "")}`;
   const code = typeof diagnostic?.code === "string" ? diagnostic.code : codesIn(response.error ?? "")[0];
+  const refusal = parseAutomationStudioLlmProviderRefusal(diagnostic?.accounting?.providerRefusal);
   const meant = (code && NO_PROGRESS.test(code) ? refusedWords(diagnostic) ?? neverSubmittedWords(diagnostic) : undefined)
     ?? (code && ITERATION_LIMIT.test(code) ? exhaustedWords(diagnostic?.evidenceLoop?.exhausted, diagnostic?.refusedSteps) : undefined)
     ?? supervisorEndingWords(diagnostic)
-    ?? (code ? automationStudioActivityFailureCodeWords(code) : undefined)
+    // A request the provider refused is said with its own sentence (t1093), read back through the record's own bounds.
+    ?? (code ? automationStudioActivityFailureCodeWords(code, refusal) : undefined)
+    ?? automationStudioLlmProviderRefusalWords(refusal)
+    ?? (typeof diagnostic?.accounting?.providerStatus === "number" ? ANSWERED_WITH_AN_ERROR : undefined)
     ?? (typeof diagnostic?.stage === "string" && Object.hasOwn(STAGE_WORDS, diagnostic.stage) ? STAGE_WORDS[diagnostic.stage] : undefined);
   const said = meant ?? (automationStudioConversationPlainCause(response.error ?? "") || (code ? "something went wrong inside FluxIQ" : "no reason was given"));
   return `${what} failed: ${said}`;
@@ -115,6 +120,8 @@ type Diagnostic = {
   candidate?: { revision?: unknown; trialCount?: unknown };
   refusedSteps?: unknown;
   endedBecause?: unknown;
+  /** The call's accounting: the provider's status and, where it refused the request, its refusal record (t1093). */
+  accounting?: { providerStatus?: unknown; providerRefusal?: unknown };
 };
 
 /** A candidate build that stopped for no progress: what its last refused submission was refused for says why (`refusedWords`). */
@@ -287,6 +294,12 @@ function lowerFirst(sentence: string): string {
   return /\p{Lu}/u.test(word.slice(1)) ? sentence : `${sentence.charAt(0).toLowerCase()}${sentence.slice(1)}`;
 }
 
+
+/**
+ * A provider that answered with an unsuccessful status and no record of what it said: it was reached, so the
+ * provider-request stage's "could not be reached" is not said of it (t1093).
+ */
+const ANSWERED_WITH_AN_ERROR = "the model provider answered the request with an error";
 
 /** What each stage of a build means when it is where the build failed, for a code with no words of its own. */
 const STAGE_WORDS: Readonly<Record<string, string>> = Object.freeze({

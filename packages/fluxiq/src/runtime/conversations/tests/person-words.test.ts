@@ -79,7 +79,9 @@ async function chat(answers: unknown[]) {
 describe("a build's instruction is the person's own words", () => {
   beforeEach(async () => {
     rootDir = await mkdtemp(path.join(os.tmpdir(), "automation-studio-person-words-test-"));
-    vi.stubEnv("FLUXIQ_AUTHORING_MODE", "");
+    // These read the build Core starts in project mode, the default until 2026-11-27 (t1093); answer-first's own
+    // create-here keeps the person's words too (`../commands/tests/answer-first-create-here.test.ts`).
+    vi.stubEnv("FLUXIQ_AUTHORING_MODE", "project");
   });
 
   afterEach(async () => {

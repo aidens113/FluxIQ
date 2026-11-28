@@ -2,10 +2,10 @@
 // the dispatcher keeps the last trial the brief's port answered beside the latest proposal Core accepted, and holds a
 // throw to the same check a returned loop is held to. A throw with no such yes keeps the return it always had.
 import { describe, expect, it } from "vitest";
-import type { JsonObject } from "../../../../core/index.ts";
-import type { AutomationStudioSubflowTrialResult } from "../../../flow-authoring/bootstrap/subflow-candidate/index.ts";
-import type { AutomationStudioProjectBuilderPorts } from "../index.ts";
-import { gardenBrief, gardenBuild, proposalFor, type BuilderScript } from "./dispatch-fixture.ts";
+import type { JsonObject } from "../../../../../../core/index.ts";
+import type { AutomationStudioSubflowTrialResult } from "../../../../../flow-authoring/bootstrap/subflow-candidate/index.ts";
+import type { AutomationStudioProjectBuilderPorts } from "../../../index.ts";
+import { gardenBrief, gardenBuild, proposalFor, type BuilderScript } from "../../dispatch-fixture.ts";
 
 type Verdict = AutomationStudioSubflowTrialResult["verdict"];
 

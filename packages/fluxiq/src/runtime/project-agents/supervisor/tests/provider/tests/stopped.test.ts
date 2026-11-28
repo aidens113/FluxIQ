@@ -6,11 +6,11 @@
 // loop a guard stopped still resets first. Run on the build of
 // `./supervisor-fixture.ts` with its real lasting-act ledger.
 import { describe, expect, it } from "vitest";
-import { AutomationStudioLlmBuildPurse } from "../../../llm/build-purse/index.ts";
-import { AutomationStudioLlmUnusableDecisionError } from "../../../llm/index.ts";
-import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../index.ts";
-import { BUILD, planInput, project, subflow, taskSpecInput } from "./supervisor-fixture.ts";
-import { FIND, HOLD, brief, call, dispatch, supervise, type Step } from "./supervisor-script.ts";
+import { AutomationStudioLlmBuildPurse } from "../../../../../llm/build-purse/index.ts";
+import { AutomationStudioLlmUnusableDecisionError } from "../../../../../llm/index.ts";
+import { AUTOMATION_STUDIO_PROJECT_SUPERVISOR_TOOL_IDS as IDS } from "../../../index.ts";
+import { BUILD, planInput, project, subflow, taskSpecInput } from "../../supervisor-fixture.ts";
+import { FIND, HOLD, brief, call, dispatch, supervise, type Step } from "../../supervisor-script.ts";
 
 const TWO_PART = planInput([subflow("find_titles", ["p1"], { inputs: ["author"], outputs: ["titles"] }), subflow("place_hold", ["p2"], { inputs: ["titles"], outputs: ["shelf"] })], taskSpecInput([["p1", FIND, []], ["p2", HOLD, ["create_new"]]]));
 /** Both builds; the second leaves one lasting act on the target. */
