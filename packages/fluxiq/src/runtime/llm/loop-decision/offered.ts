@@ -11,5 +11,5 @@ import { AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID } from "./tool-id.ts";
 export function automationStudioLlmLoopDecisionOffered(input: AutomationStudioLlmEvidenceLoopInput): AutomationStudioLlmEvidenceLoopInput {
   if (!Array.isArray(input.tools) || input.tools.length === 0) return input;
   if (input.tools.some((tool) => tool?.toolId === AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID)) return input;
-  return { ...input, tools: [...input.tools, automationStudioLlmLoopDecisionTool()] };
+  return { ...input, tools: [...input.tools, automationStudioLlmLoopDecisionTool(input.completionSchema)] };
 }

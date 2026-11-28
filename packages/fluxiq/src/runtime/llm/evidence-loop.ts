@@ -762,28 +762,23 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
     const toolRequestSignature = admitted.signature!;
     // `tool-admission.ts` shares the offering/repeat facts with each batch member.
     const triedHere = admitted.triedHere ?? (rerunning || admitted.answered ? undefined : automationStudioLlmEvidenceLoopCheck(handling, decision)); // The repeat guard first; then the ladder, for a call that would run (`./decision-handlers/loop-check.ts`).
-    if (triedHere) {
-      const next = automationStudioLlmEvidenceHandleRefusedRepeat(handling, iteration, decision, triedHere);
+    // A look asked again for the first time is run once more, to see whether
+    // the page is as its answer left it; every other repeat is answered from
+    // memory, with no capture (`decision-handlers/answer-check.ts`).
+    const check: AutomationStudioLlmEvidenceAnswerCheckOutcome | undefined = triedHere || !admitted.answered ? undefined : admitted.withheld ? { kind: "answer" } : automationStudioLlmEvidenceAnswerCheck(handling, { answeredByCallId: admitted.by!, requestSignature: toolRequestSignature });
+    if (triedHere || check?.kind === "answer") {
+      const handled = triedHere ? automationStudioLlmEvidenceHandleRefusedRepeat(handling, iteration, decision, triedHere) : automationStudioLlmEvidenceHandleAnsweredRequest(handling, iteration, decision, admitted.code!, admitted.by!, toolRequestSignature);
+      // Unrun, a call is still loop detection's (t1096): the near repeat it made is steered, else the ladder's next rung may be due, as after a call that ran (a refusal checked its own).
+      const steer = handled.kind === "continue" ? handling.loops.steerOwed() : undefined;
+      if (steer) automationStudioLlmEvidenceLoopCaught(handling, iteration, steer);
+      const next = !triedHere && handled.kind === "continue" && !steer ? handling.loopOverdue(iteration) ?? handled : handled;
       if (next.kind === "stalled") { if (input.propagateDecisionErrors) throw next.error; return { kind: "complete", result: failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting) }; }
       if (next.kind === "end") return { kind: "complete", result: next.result };
       const recovered = next.kind === "recover" ? await recover(iteration, next.call) : undefined;
       if (recovered) return { kind: "complete", result: recovered };
       return { kind: "continue" };
     }
-    if (admitted.answered) {
-      const code = admitted.code!;
-      const by = admitted.by!;
-      // A look asked again for the first time is run once more, to see whether
-      // the page is as its answer left it; every other repeat is answered from
-      // memory, with no capture (`decision-handlers/answer-check.ts`).
-      const check: AutomationStudioLlmEvidenceAnswerCheckOutcome = admitted.withheld ? { kind: "answer" } : automationStudioLlmEvidenceAnswerCheck(handling, { answeredByCallId: by, requestSignature: toolRequestSignature });
-      if (check.kind === "answer") {
-        const next = automationStudioLlmEvidenceHandleAnsweredRequest(handling, iteration, decision, code, by, toolRequestSignature);
-        if (next.kind === "end") return { kind: "complete", result: next.result };
-        return { kind: "continue" };
-      }
-      verifying = check;
-    }
+    if (check) verifying = check;
     // A call id the model already used names a different request here, so the
     // loop gives it one of its own rather than ending: the ids are the model's
     // bookkeeping, and the evidence only needs them to be distinct.

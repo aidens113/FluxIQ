@@ -118,12 +118,10 @@ describe("a node the model runs is described by running it", () => {
 
   it("names a refused first run's node on its result, and points a later refusal at the definition", async () => {
     const { memory, run } = wrapped({ ok: false, code: "node_failed" });
-    expect(await run({ node: AND, parameters: { selector: "#go" }, consequences: [] })).toEqual({
-      ok: false, code: "node_failed", describedNodes: [AND], undeclaredParameters: ["selector"]
-    });
+    expect(await run({ node: AND, parameters: { emptyBehavior: "true" }, consequences: [] })).toEqual({ ok: false, code: "node_failed", describedNodes: [AND] });
     expect(memory.ids()).toEqual([AND]);
-    expect(await run({ node: AND, parameters: { selector: "#go" }, consequences: [] })).toEqual({
-      ok: false, code: "node_failed", definition: `${AND} is under describedNodes, earlier in this request`, undeclaredParameters: ["selector"]
+    expect(await run({ node: AND, parameters: { emptyBehavior: "true" }, consequences: [] })).toEqual({
+      ok: false, code: "node_failed", definition: `${AND} is under describedNodes, earlier in this request`
     });
   });
 

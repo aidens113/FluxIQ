@@ -5,6 +5,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { automationStudioActionPermissionDenied, type AutomationStudioActionPermissionCheck } from "../../../action-permission-requests/index.ts";
+import { runAutomationStudioLlmEvidenceLoop } from "../../evidence-loop.ts";
 import { automationStudioLlmEvidenceValidTools } from "../../evidence-loop-decision.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../evidence-loop/index.ts";
 import { AUTOMATION_STUDIO_LLM_FULL_PAGE_DESCRIPTION, AUTOMATION_STUDIO_LLM_FULL_PAGE_TOOL_ID, automationStudioLlmPageChannelBinding } from "../index.ts";
@@ -75,5 +76,45 @@ describe("the page channel binding", () => {
     const bound = automationStudioLlmPageChannelBinding(given, { member: "pageView", fullPage: async () => undefined }, context);
     expect(await bound.executeTool({ callId: "c1", toolId: "web.act", value: {} })).toEqual({ ok: true });
     expect(given.executeTool).toHaveBeenCalledOnce();
+  });
+
+  it("answers a capture it could not take as a refusal that says what is true, and the identical retry captures", async () => {
+    const view = { key: "~/", lines: [{ key: "t1", text: "t1 a" }] };
+    const fullPage = vi.fn()
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(view as unknown as JsonObject);
+    const bound = automationStudioLlmPageChannelBinding(loop(), { member: "pageView", fullPage }, context);
+    const none = await bound.executeTool({ callId: "c1", toolId: AUTOMATION_STUDIO_LLM_FULL_PAGE_TOOL_ID, value: {} }) as AutomationStudioLlmEvidenceToolExecutionResult;
+    expect(none.evidence).toMatchObject({ ok: false, code: "core.full_page.unavailable" });
+    expect(JSON.stringify(none.evidence)).toContain("No page is held");
+    expect(JSON.stringify(none.evidence)).not.toContain("still current");
+    const seen = automationStudioLlmPageChannelBinding({ tools: [act], executeTool: vi.fn(async (_input: Call): Promise<JsonValue> => ({ ok: true, pageView: { key: "~/shop", lines: [] } })) }, { member: "pageView", fullPage: async () => undefined }, context);
+    await seen.executeTool({ callId: "c0", toolId: "web.act", value: {} });
+    const named = await seen.executeTool({ callId: "c1", toolId: AUTOMATION_STUDIO_LLM_FULL_PAGE_TOOL_ID, value: {} }) as AutomationStudioLlmEvidenceToolExecutionResult;
+    expect(JSON.stringify(named.evidence)).toContain("~/shop");
+  });
+
+  it("runs the identical capture again after an unavailable one, rather than answering it from memory", async () => {
+    const view = { key: "~/", lines: [{ key: "t1", text: "t1 a" }] };
+    const fullPage = vi.fn()
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(view as unknown as JsonObject);
+    const bound = automationStudioLlmPageChannelBinding(loop(), { member: "pageView", fullPage }, context);
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "call.1", toolId: AUTOMATION_STUDIO_LLM_FULL_PAGE_TOOL_ID, input: {} })
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "call.2", toolId: AUTOMATION_STUDIO_LLM_FULL_PAGE_TOOL_ID, input: {} })
+      .mockResolvedValueOnce({ kind: "complete", result: { done: true } });
+    const executed: string[] = [];
+    const result = await runAutomationStudioLlmEvidenceLoop({
+      tools: bound.tools, decide, completionSchema: { type: "object" }, pageChannel: bound.pageChannel,
+      executeTool: async (input) => {
+        executed.push(input.toolId);
+        return await bound.executeTool(input);
+      },
+      budget: { maxTotalTokens: 50_000, maxTokensPerDecision: 5_000 }
+    });
+    expect(result).toMatchObject({ ok: true });
+    expect(fullPage).toHaveBeenCalledTimes(2);
+    expect(executed).toEqual([AUTOMATION_STUDIO_LLM_FULL_PAGE_TOOL_ID, AUTOMATION_STUDIO_LLM_FULL_PAGE_TOOL_ID]);
   });
 });

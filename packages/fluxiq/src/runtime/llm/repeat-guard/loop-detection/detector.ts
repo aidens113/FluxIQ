@@ -13,7 +13,9 @@
 //
 // - A near repeat is one call, free text out (`./meaningful-input.ts`) and the
 //   wait bounds its node declares as timing out (`../timing-free.ts`, R6), on one
-//   page, that twice came to nothing. The repeat guard's own lifts stay lifts: a
+//   page, that twice came to nothing, whether it ran, was refused unrun or was
+//   answered from memory (t1096: asks answered from memory never reached this
+//   rule, and twelve of them went by untold). The repeat guard's own lifts stay lifts: a
 //   call whose exact form the guard stopped refusing -- a handle since shown, a
 //   precondition since met -- starts again from nothing here (`holds`).
 // - A cycle is the last block of calls equal to the block before it, up to four
@@ -107,8 +109,8 @@ export type AutomationStudioLlmLoopDetector = {
   actRepeats(toolId: string, input: JsonObject, context: string | undefined, targetWords: () => string | undefined): AutomationStudioLlmLoopFinding | undefined;
   /** A call ran. `guarded` says the repeat guard now holds an outcome for its exact form. Answers the pattern that now stands, or nothing. */
   ran(call: AutomationStudioLlmLoopCall, guarded?: boolean): { finding?: AutomationStudioLlmLoopFinding; progressed: boolean };
-  /** A call was refused unrun, or answered from memory (`answered`, which is a look asked again and goes when looks go): one more without progress. */
-  unrun(toolId: string, input: JsonObject, context: string | undefined, state: string | undefined, answered?: boolean): void;
+  /** A call was refused unrun, or answered from memory (`answered`, which is a look asked again and goes when looks go): one more without progress. Answers the near repeat it now makes, or nothing. */
+  unrun(toolId: string, input: JsonObject, context: string | undefined, state: string | undefined, answered?: boolean): AutomationStudioLlmLoopFinding | undefined;
   /** Whether this edit, on this draft, already led where it leads: refused before it runs once the ladder is refusing. */
   amendmentRepeats(key: string, draftBefore: string | undefined): AutomationStudioLlmLoopFinding | undefined;
   /** An `amend_draft` decision settled. */
@@ -391,10 +393,15 @@ export function automationStudioLlmLoopDetector(options: {
     unrun(toolId, input, context, state, answered) {
       const key = callKey(toolId, input, context);
       const page = state ?? last;
-      if (page === undefined && context === undefined) return;
+      if (page === undefined && context === undefined) return undefined;
       counted(key, page, toolId);
       const earlier = near.get(at(key, page));
-      near.set(at(key, page), { runs: (earlier?.runs ?? 0) + 1, toolId, look: earlier?.look ?? answered === true, answer: earlier?.answer, guarded: earlier?.guarded ?? [], callId: earlier?.callId });
+      const entry: NearEntry = { runs: (earlier?.runs ?? 0) + 1, toolId, look: earlier?.look ?? answered === true, answer: earlier?.answer, guarded: earlier?.guarded ?? [], callId: earlier?.callId };
+      near.set(at(key, page), entry);
+      // Unrun, it is the same call on the same page again all the same: a near repeat from the run it reaches it at, as from `ran` (t1096).
+      if (entry.runs < AUTOMATION_STUDIO_LLM_LOOP_NEAR_REPEAT_AT) return undefined;
+      record.caught(key, "near_repeat");
+      return nearFinding(entry);
     },
     amendmentRepeats(key, draftBefore) {
       const asked = automationStudioLlmLoopDigest([key, draftBefore ?? ""]);
