@@ -379,7 +379,7 @@ export function buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools: Automa
   // were 468 characters a tool on every decision (t235). Every call still takes
   // them. A bare `place` carries no pattern either -- it is said only where the
   // person named a route, and the parse below holds every call to the ids.
-  const explainedAt = Math.max(0, tools.findIndex((tool) => tool.effect === "mutate" || tool.perCallEffect === true));
+  const explainedAt = Math.max(0, tools.findIndex((tool) => automationStudioLlmToolCallBecomesStep(tool) && (tool.effect === "mutate" || tool.perCallEffect === true)));
   return {
     oneOf: [
       ...(allowComplete ? [{
@@ -400,11 +400,23 @@ export function buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools: Automa
           toolId: { const: tool.toolId }, input: structuredClone(tool.inputSchema),
           // Offered where the framework drafts the Flow: naming the act a step does, or its place on
           // the route, costs no decision of its own (`../flow-authoring/draft/step.ts`).
-          ...(authoring ? (index === explainedAt ? AUTHORING_CALL_PROPERTIES : AUTHORING_CALL_PROPERTIES_BARE) : {})
+          ...(authoring && automationStudioLlmToolCallBecomesStep(tool) ? (index === explainedAt ? AUTHORING_CALL_PROPERTIES : AUTHORING_CALL_PROPERTIES_BARE) : {})
         }
       }))
     ]
   };
+}
+
+/**
+ * Whether a call of this tool can become a step of the Flow, which is the only
+ * call that has an act, a place or an add to name. Core's own tools (the loop
+ * decision, the full page, the result processing, a run of a saved Flow, a
+ * describe) answer the loop and are never steps, so a call of one is not offered
+ * what it would only have to ignore; `core.run_node` and every tool a domain
+ * declares are steps (`../evidence-loop.ts`, `draftRecord`).
+ */
+function automationStudioLlmToolCallBecomesStep(tool: { toolId: string }): boolean {
+  return tool.toolId === RUN_NODE_TOOL_ID || !tool.toolId.startsWith("core.");
 }
 
 /**

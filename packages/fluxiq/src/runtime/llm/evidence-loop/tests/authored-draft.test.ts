@@ -249,7 +249,7 @@ describe("authoring properties in the decision schema", () => {
 
   it("explains add and act on the first call that can act, and offers them bare on every other", () => {
     const shown = variants([look("web.find_on_page"), look("web.describe_element"), library, look("core.describe_nodes")]);
-    for (const variant of shown) {
+    for (const variant of shown.filter((candidate) => candidate.toolId !== "core.describe_nodes")) { // A core tool is never a step (`loop-decision/tests/tool-schema.test.ts`).
       const add = variant.properties.add as JsonObject;
       const act = variant.properties.act as JsonObject;
       expect(add.type).toBe("boolean");

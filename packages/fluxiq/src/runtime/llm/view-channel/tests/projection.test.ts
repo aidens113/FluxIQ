@@ -132,7 +132,7 @@ describe("the page channel", () => {
     expect(JSON.stringify(project(log))).toBe(JSON.stringify(project(structuredClone(log))));
     expect(log).toEqual(frozen);
     const plain = { callId: "x", toolId: "web.read", value: { ok: true } };
-    expect(project([plain])).toEqual({ history: [plain] });
+    expect(project([plain])).toEqual({ history: [plain], split: new Map() });
   });
 
   it("leaves a record without a page view as it came, and delivers a view whose keys repeat whole without comparing the next one with it", () => {
@@ -244,5 +244,25 @@ describe("the page budget per request (D6)", () => {
       const after = JSON.stringify(project(log.slice(0, count + 1), small).history.slice(0, count));
       expect(after, `appending record ${count + 1}`).toBe(before);
     }
+  });
+
+  it("delivers a split full capture with the visible page first and the extra lines after, each in page order, so part 1 holds the pager", () => {
+    const visible = Array.from({ length: 30 }, (_, i) => ({ key: `v${i}`, text: `v${i} button "Visible ${i}"` }));
+    const extras = Array.from({ length: 120 }, (_, i) => ({ key: `e${i}`, text: `e${i} attributes: class="hidden thing ${i}"`, extra: true as const }));
+    const view: AutomationStudioLlmPageLine[] = [...extras.slice(0, 60), ...visible.slice(0, 15), ...extras.slice(60), ...visible.slice(15)];
+    const records: Entry[] = [
+      result("c1", "~/", lines("PAGE \"Home\"")),
+      { callId: "c2", toolId: AUTOMATION_STUDIO_LLM_FULL_PAGE_TOOL_ID, value: { pageView: { key: "~/", lines: view } } }
+    ];
+    const { window, split } = project(records, { member: "pageView", budgetChars: 1_500 });
+    const first = heldOf(window, "~/")!.find((delivery) => delivery.call === "c2")!;
+    const text = first.whole as string;
+    expect(text.split("\n").slice(0, 30).map((line) => line.split(" ")[0])).toEqual(visible.map((line) => line.key));
+    expect(text.split("\n").slice(30).every((line) => line.includes(" attributes: "))).toBe(true);
+    expect(first.part).toMatch(/^1 of /u);
+    expect(split.get("c2")!.parts).toBeGreaterThan(1);
+    expect(split.get("c2")!.shown).toEqual([1]);
+    const part2 = project([...records, { callId: "c3", toolId: AUTOMATION_STUDIO_LLM_FULL_PAGE_TOOL_ID, value: { part: 2 } }], { member: "pageView", budgetChars: 1_500 });
+    expect(part2.split.get("c2")!.shown).toEqual([1, 2]);
   });
 });

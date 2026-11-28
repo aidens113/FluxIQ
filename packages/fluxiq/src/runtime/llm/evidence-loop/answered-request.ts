@@ -57,6 +57,8 @@ export type AutomationStudioLlmEvidenceAnsweredRequestRepeat = {
   answeredAt?: number;
   lastActionBefore?: { callId: string; iteration: number };
   pageUnchanged?: true;
+  /** The answered request was a whole-page capture delivered in parts: how many parts there are, and which have been shown. */
+  splitPage?: { parts: number; shown: readonly number[] };
 };
 
 /** The note that follows the moved result: which request, which entry answers
@@ -73,7 +75,7 @@ export function automationStudioLlmEvidenceAnsweredRequestNote(input: {
   /** A discovery-only loop's own submit and test tools, which its words name; the candidate's when absent (t537). */
   finishing?: { submit: string; test: string } | undefined;
 } & AutomationStudioLlmEvidenceAnsweredRequestRepeat): JsonObject {
-  const { timesAsked, askedAt, answeredAt, lastActionBefore, pageUnchanged } = input;
+  const { timesAsked, askedAt, answeredAt, lastActionBefore, pageUnchanged, splitPage } = input;
   return {
     ok: false,
     code: input.code,
@@ -86,7 +88,7 @@ export function automationStudioLlmEvidenceAnsweredRequestNote(input: {
     ...(pageUnchanged ? { pageUnchanged } : {}),
     stepsWithoutProgress: input.stepsWithoutProgress,
     ...(input.discoveryOnly && input.candidate ? { candidate: { ...input.candidate } } : {}),
-    instruction: instruction(input)
+    instruction: `${instruction(input)}${splitPage ? partsNotShown(splitPage) : ""}`
   };
 }
 
@@ -125,6 +127,13 @@ function instruction(input: { code: AutomationStudioLlmEvidenceAnsweredRequestCo
     : "No action has changed anything since it was answered.";
   const checked = input.pageUnchanged ? " Core checked the page just now: it is unchanged." : "";
   return `${since}${checked} ${ANSWERED_REQUEST[input.code]}${askedAgain(input.timesAsked, "it will get this same answer")}`;
+}
+
+/** What a split whole-page capture still holds: the parts not yet shown, and how to ask for one. */
+function partsNotShown(split: { parts: number; shown: readonly number[] }): string {
+  const missing = Array.from({ length: split.parts }, (_, index) => index + 1).filter((part) => !split.shown.includes(part));
+  if (!missing.length) return "";
+  return ` That whole page was delivered in ${split.parts} parts and ${missing.length === 1 ? `part ${missing[0]} is` : `parts ${missing.join(", ")} are`} not yet shown: call core.full_page with part N (one of those) to read one.`;
 }
 
 /** From the second ask on: which ask this is, and what asking again gets. */

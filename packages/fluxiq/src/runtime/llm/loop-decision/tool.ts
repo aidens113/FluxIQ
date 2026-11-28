@@ -2,6 +2,7 @@
 // what that decision must carry. It observes nothing and changes nothing on the site, so it is
 // never a step of the Flow.
 
+import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceTool } from "../evidence-loop/index.ts";
 import { AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID, AUTOMATION_STUDIO_LLM_LOOP_DECISIONS } from "./tool-id.ts";
 
@@ -11,7 +12,12 @@ const DESCRIPTION = [
 ].join(" ");
 
 /** A fresh copy each time, so no loop can change what the next one offers. */
-export function automationStudioLlmLoopDecisionTool(): AutomationStudioLlmEvidenceTool {
+/**
+ * `resultSchema` is the schema of the result a completion carries, which a `finish_with_best` result is checked against as
+ * the attempt's result; given, `result` is that schema rather than an open object, so the tool's input is as closed as the
+ * completion's own and a provider may take it as strict (t1096). Omitted, `result` stays an open object.
+ */
+export function automationStudioLlmLoopDecisionTool(resultSchema?: JsonObject): AutomationStudioLlmEvidenceTool {
   return {
     toolId: AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID,
     description: DESCRIPTION,
@@ -22,7 +28,7 @@ export function automationStudioLlmLoopDecisionTool(): AutomationStudioLlmEviden
         why: { type: "string", maxLength: 500 },
         approach: { type: "string", maxLength: 500 },
         question: { type: "string", maxLength: 500 },
-        result: { type: "object" }
+        result: resultSchema ? structuredClone(resultSchema) : { type: "object" }
       },
       required: ["decision"],
       additionalProperties: false

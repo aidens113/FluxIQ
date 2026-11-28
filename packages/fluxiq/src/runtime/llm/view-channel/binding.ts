@@ -55,12 +55,19 @@ export function automationStudioLlmPageChannelBinding<L extends PageLoop>(
   const fullPage = declared.fullPage?.bind(declared);
   if (!fullPage || !loop.tools.length || loop.tools.some((tool) => tool.toolId === AUTOMATION_STUDIO_LLM_FULL_PAGE_TOOL_ID)) return { ...loop, pageChannel };
   const executeTool = loop.executeTool.bind(loop);
+  /** The newest page key any result of this binding carried: the page the window holds last. */
+  let newestKey: string | undefined;
   return {
     ...loop,
     pageChannel,
     tools: [...loop.tools, automationStudioLlmFullPageTool()],
     async executeTool(input: Parameters<L["executeTool"]>[0]) {
-      if (input.toolId !== AUTOMATION_STUDIO_LLM_FULL_PAGE_TOOL_ID) return await executeTool(input);
+      if (input.toolId !== AUTOMATION_STUDIO_LLM_FULL_PAGE_TOOL_ID) {
+        const answered = await executeTool(input);
+        const carried = automationStudioLlmPageViewOf(pageMember(answered, declared.member));
+        if (carried) newestKey = carried.key;
+        return answered;
+      }
       const part = input.value.part;
       if (part !== undefined) {
         return { kind: "llm_evidence_tool_execution", evidence: { part: typeof part === "number" ? part : 0 }, effectApplied: false, resultCode: "core.full_page.part" } satisfies AutomationStudioLlmEvidenceToolExecutionResult;
@@ -74,9 +81,20 @@ export function automationStudioLlmPageChannelBinding<L extends PageLoop>(
       });
       const view = captured === undefined ? undefined : automationStudioLlmPageViewOf(captured) ?? automationStudioLlmPageViewOf(captured[declared.member]);
       if (!view) {
-        return { kind: "llm_evidence_tool_execution", evidence: { unavailable: "The whole page could not be captured just now; the page each result carries is still current." }, effectApplied: false, resultCode: "core.full_page.unavailable" } satisfies AutomationStudioLlmEvidenceToolExecutionResult;
+        // A refusal, not an answer (`ok: false`): the loop then asks the same capture again rather than answering it from memory (`../repeat-policy.ts`).
+        const held = newestKey === undefined ? "No page is held in this run's window yet." : `The newest page the window holds is ${newestKey}, as the last result that carried a page left it; it may have changed since.`;
+        return { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "core.full_page.unavailable", message: `The whole page could not be captured just now, so nothing was captured. ${held} Ask ${AUTOMATION_STUDIO_LLM_FULL_PAGE_TOOL_ID} again, or act and read the page from the next result.` }, effectApplied: false, resultCode: "core.full_page.unavailable" } satisfies AutomationStudioLlmEvidenceToolExecutionResult;
       }
+      newestKey = view.key;
       return { kind: "llm_evidence_tool_execution", evidence: { [declared.member]: view }, effectApplied: false, resultCode: "core.full_page.captured" } satisfies AutomationStudioLlmEvidenceToolExecutionResult;
     }
   };
+}
+
+/** The page member of a tool's answer, whether it is a plain result or an execution result holding one as evidence. */
+function pageMember(answered: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult, member: string): JsonValue | undefined {
+  const value = typeof answered === "object" && answered !== null && !Array.isArray(answered) && (answered as { kind?: unknown }).kind === "llm_evidence_tool_execution"
+    ? (answered as AutomationStudioLlmEvidenceToolExecutionResult).evidence
+    : answered;
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as JsonObject)[member] : undefined;
 }
