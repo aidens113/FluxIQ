@@ -82,12 +82,18 @@ export function registerPanelAssistantEndpoints(dependencies: PanelAssistantApiD
     threads = new PanelAssistantThreads({ rootDir: path.join(path.dirname(projectsRoot), "panel-assistant"), ...(signals === undefined ? {} : { signals }) });
     return threads;
   };
-  const projects = projectConversationsOf(service.conversations);
+  // Read on first use, as `threads` is: registering the endpoints touches no service member (the Flow Bootstrap
+  // readiness route is registered beside these with a service that forbids every other read).
+  const projectThreads = (projectId: string): PanelAssistantProjectThreads => {
+    const projects = projectConversationsOf(service.conversations);
+    if (!projects) throw new Error("The assistant cannot work in a project's conversation on this panel.");
+    return new PanelAssistantProjectThreads(projectId, projects, panelThreads());
+  };
   const assistant = new PanelAssistant<ProgramApiActor>({
     programs: panelAssistantPrograms(registry),
     threads: panelThreads,
     // A project's thread is written through the project's own conversations; the calls its cards wait on stay in the person's panel database.
-    ...(projects ? { projectThreads: (projectId: string) => new PanelAssistantProjectThreads(projectId, projects, panelThreads()) } : {})
+    projectThreads
   });
   rememberPanelAssistant(registry, assistant);
   /** `resource` is what the endpoint changes or reads: the caller's own user unless it says otherwise. */
@@ -128,6 +134,7 @@ export function registerPanelAssistantEndpoints(dependencies: PanelAssistantApiD
   register(PANEL_ASSISTANT_PROJECT_ENDPOINTS.workInProjectThread, "programs.write", "authoring", "A project's chat hands a message to the panel's tools by itself; a person never asks for this.", async (actor, payload, scope) => {
     const projectId = text(payload.projectId, "projectId");
     const conversationId = text(payload.conversationId, "conversationId");
+    const projects = projectConversationsOf(service.conversations);
     if (!projects) throw new Error("The assistant cannot work in a project's conversation on this panel.");
     const said = await personTurnBefore(projects, projectId, conversationId, text(payload.answerTurnId, "answerTurnId"));
     const outcome = await assistant.workInProject(actor, scope, { projectId, conversationId, words: said.text, onScreen: panelAssistantOnScreenOf(said.attachment) });
