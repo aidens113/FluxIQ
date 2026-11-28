@@ -64,13 +64,11 @@ test("a thread is called by Core's title, else a noun for its subject, and an id
   assert.deepEqual(nouns, ["New chat", "This Flow", "This Flow build", "This run"]);
 });
 
-test("the heading is Core's title, else the project's name with the noun, else all projects", () => {
-  assert.equal(conversationDisplayTitle(null), "All projects");
-  assert.equal(conversationDisplayTitle(null, "Company website"), "Company website");
-  assert.equal(conversationDisplayTitle(null, "   "), "All projects");
-  assert.equal(conversationDisplayTitle(summary("a", { title: "Nightly run" }), "Company website"), "Nightly run");
-  assert.equal(conversationDisplayTitle(summary("a", { subject: { kind: "project" } }), "Company website"), "Company website");
-  assert.equal(conversationDisplayTitle(summary("a", { subject: { kind: "run" } }), "Company website"), "This run · Company website");
+test("the heading is Core's title, else the noun for the thread, else New chat, and never a project's name", () => {
+  assert.equal(conversationDisplayTitle(null), "New chat");
+  assert.equal(conversationDisplayTitle(null, "   "), "New chat");
+  assert.equal(conversationDisplayTitle(summary("a", { title: "Nightly run" })), "Nightly run");
+  assert.equal(conversationDisplayTitle(summary("a", { subject: { kind: "project" } })), "New chat");
   assert.equal(conversationDisplayTitle(summary("a", { subject: { kind: "run" } })), "This run");
 });
 
@@ -102,10 +100,9 @@ test("the default date is readable words, not an id or a raw number", () => {
   assert.notEqual(first!.label, second!.label);
 });
 
-test("the assistant's own thread is never named for a project, and a host may name the chat that has no thread yet", () => {
-  assert.equal(conversationDisplayTitle(summary("a", { subject: { kind: "panel" } }), "Company website"), "FluxIQ assistant");
-  assert.equal(conversationDisplayTitle(summary("a", { subject: { kind: "panel" }, title: "Invoices" }), "Company website"), "Invoices");
-  assert.equal(conversationDisplayTitle(null, null, "New chat"), "New chat");
-  assert.equal(conversationDisplayTitle(null, "Company website", "New chat"), "Company website");
-  assert.equal(conversationDisplayTitle(null, "  ", "  "), "All projects");
+test("the assistant's own thread keeps its name, and a host may name the chat that has no thread yet", () => {
+  assert.equal(conversationDisplayTitle(summary("a", { subject: { kind: "panel" } })), "FluxIQ assistant");
+  assert.equal(conversationDisplayTitle(summary("a", { subject: { kind: "panel" }, title: "Invoices" })), "Invoices");
+  assert.equal(conversationDisplayTitle(null, "Ask FluxIQ"), "Ask FluxIQ");
+  assert.equal(conversationDisplayTitle(null, "  "), "New chat");
 });

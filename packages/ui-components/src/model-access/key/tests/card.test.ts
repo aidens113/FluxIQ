@@ -228,19 +228,34 @@ test("Paste it again replaces the saved key by its id, with the key field alone"
   });
 });
 
-test("where the client cannot write yet the form shows, Save says to add it in FluxIQ, and the host's open action is offered", async () => {
+test("where the client cannot write there is no form: the state, a line to the FluxIQ panel, and one Open in FluxIQ panel action", async () => {
   await withFakeDocument(async () => {
-    const { value, calls } = port({ kind: "no-key" }, { canWrite: false });
+    const { value, calls } = port({ kind: "no-key" }, { canWrite: false, keyId: "k9" });
+    const { root, actions } = mount(value, "full");
+    await settle();
+    assert.equal(one(root, "model-key-badge").textContent, "No key");
+    assert.equal(one(root, "model-key-panel-note").hidden, false);
+    assert.equal(one(root, "model-key-panel-note").textContent, "Add or change your AI key in the FluxIQ panel.");
+    const action = one(root, "model-key-action");
+    assert.equal(action.textContent, "Open in FluxIQ panel");
+    action.dispatch("click");
+    assert.deepEqual(actions, ["open-fluxiq"]);
+    assert.equal(root.byClass("model-key-form").length, 0, "no form");
+    assert.equal(one(root, "model-key-add-another").hidden, true);
+    assert.equal(one(root, "model-key-remove-link").hidden, true);
+    assert.deepEqual(calls.saved, []);
+  });
+});
+
+test("a key that is not accepted offers Open in FluxIQ panel, not Replace key, when the client cannot write", async () => {
+  await withFakeDocument(async () => {
+    const { value } = port({ kind: "not-accepted", provider: "Anthropic", keyName: "Work key" }, { canWrite: false, keyId: "k9" });
     const { root, actions } = mount(value);
     await settle();
+    assert.equal(one(root, "model-key-action").textContent, "Open in FluxIQ panel");
     one(root, "model-key-action").dispatch("click");
-    field(root, "key").value = "abc";
-    one(root, "model-key-save").dispatch("click");
-    await settle();
-    assert.equal(one(root, "model-key-problem").textContent, "Add it in FluxIQ for now.");
-    assert.deepEqual(calls.saved, [], "nothing is sent");
-    one(root, "model-key-open").dispatch("click");
     assert.deepEqual(actions, ["open-fluxiq"]);
+    assert.equal(root.byClass("model-key-form").length, 0);
   });
 });
 
@@ -385,5 +400,22 @@ test("a pushed state is drawn at once with no read; null reads again; destroy un
     assert.equal(unsubscribed, 1);
     push!({ kind: "ready", provider: "Anthropic", keyName: "Work key" });
     assert.equal(heard.at(-1)?.kind, "no-key", "a destroyed card hears nothing");
+  });
+});
+
+test("Change model is the same panel action when the client cannot write, and Try now stays", async () => {
+  await withFakeDocument(async () => {
+    const { value } = port({ kind: "ready", provider: "Anthropic", keyName: "Work key" }, { canWrite: false });
+    const { root, actions } = mount(value);
+    await settle();
+    assert.equal(one(root, "model-key-action").textContent, "Open in FluxIQ panel");
+    one(root, "model-key-action").dispatch("click");
+    assert.deepEqual(actions, ["open-fluxiq"]);
+  });
+  await withFakeDocument(async () => {
+    const { value } = port({ kind: "unreachable", provider: "Anthropic" }, { canWrite: false });
+    const { root } = mount(value);
+    await settle();
+    assert.equal(one(root, "model-key-action").textContent, "Try now");
   });
 });

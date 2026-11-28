@@ -75,18 +75,20 @@ instructions or invalid supporting evidence and can open the correct editor.
   `metadata.sourceId`.
 - `client.state_update` and `client.snapshot` become `observation`
   timeline entries.
-- `client.start_recording` is accepted only when the approving operator has an
-  active Automation Studio project context. Context is isolated by operator
-  and can be overridden for a specific client. The web runtime publishes that
-  context while a project is open — on load, on a project or flow change, on
-  focus, and on every visibility change, never on a timer — and clears it when
-  the page closes. If no matching project is open, the gateway sends
-  `server.error` with `recording.project_required` and the web panel surfaces a
-  modal instead of silently dropping the client request. The same code answers a
-  context older than `AUTOMATION_STUDIO_CONTEXT_LEASE_MS`, which bounds a Studio
-  page that vanished without clearing its context rather than expiring the
-  operator's decision; `activeProjectId` in the refusal metadata separates a
-  lapsed context from no project at all.
+- `client.start_recording` is accepted only when the approving operator has a
+  current Automation Studio project. Context is isolated by operator and can be
+  overridden for a specific client. Since t1095 it is the person's lasting
+  current project ("One current project per person", above): the panel writes it
+  on every switch and adopts it on load, and a paired client may set it for
+  itself; it no longer expires (`AUTOMATION_STUDIO_CONTEXT_LEASE_MS`, a
+  five-minute staleness guard for a Studio page that vanished, is gone, since
+  the value no longer says that a page is open). With no current project the
+  gateway sends `server.error` with `recording.project_required` and the web
+  panel surfaces a modal instead of silently dropping the client request; a
+  start naming another project than the current one is refused with
+  `recording.project_context_mismatch`. `activeProjectId` in the refusal
+  metadata names the current project, or is null when there is none
+  (`resolveClientRecordingProject`, `apps/web/src/lib/automation-studio-context.ts`).
 - `server.execute_action` waits for `client.action_result`; resolved action
   results are appended as `action` timeline entries when a client recording is
   active. A result may carry a structured `failure` record. The runtime
@@ -366,31 +368,28 @@ refused. `PUT /api/programs/automation-studio/state-assets/<projectId>/<sha256>`
 accepts it for a recording's screenshots, and stores nothing in a project
 outside that domain. The program route, `/api/programs/<programId>/<endpoint>`, accepts it on exactly
 these endpoints, which are what the extension's panel needs to talk to FluxIQ,
-stop a run, and use its automation and recording controls:
+stop a run, and use its automation and recording controls.
+
+**Configuration stays in the panel (t1095).** Keys, settings and making or
+managing projects live in the panel for every client (user, 2026-11-27); a
+client shows the work and keeps its chat. So no token makes a project
+(`create-project`), renames or deletes a thread (`rename-conversation`,
+`delete-conversation`), or writes any key, the person's own model key included
+(`save-model-key`, `replace-model-key`, `remove-model-key`, allowed t928 to
+t1095). Each is refused with 403 "This endpoint is not available to a paired
+client." before any handler runs, and a client opens the panel for it. Under
+`service`, `FluxIQBrowserSession` refuses the key writes as well. A client
+reads what it shows: the projects it may use, whether a model key opens, and
+its person's own starting humanness. The endpoints:
 
 - Automation Studio: `list-conversations`, `open-conversation`,
-  `get-conversation`, `append-turn`, `answer-ask`
-- Automation Studio, the chat's thread list: `rename-conversation` and
-  `delete-conversation` (`programs.write`, `authoring`, no PIN, as deleting a
-  Flow is; narrowed to `projectId`, `conversationId` and, for a rename,
-  `title`). A rename answers `{ conversation }`, the record `get-conversation`
-  answers, with the title trimmed and at most 200 characters
-  (`conversation_title_required`, `conversation_title_too_long`). A delete
-  answers `{ deleted: true, conversationId }` and removes the thread, its turns,
-  its asks and the mutation records that kept their words in one transaction;
-  it is refused with `conversation_run_active` while a run still uses the
-  thread: one parked on its ask, work the chat started from it that is still
-  running in this process, a task attempt it holds that is still working or
-  waiting, or an unended run that is its subject (or of its Flow). Both are
-  decided by IAM on the thread's project; a thread the caller may not change is
-  `conversation_not_found`, exactly as a missing one. Without `projectId` the
-  thread is looked for in the domain's projects the caller may change, each
-  decided by IAM (`conversation_ambiguous` when two hold it); under the
-  `service` profile such a call needs workspace-wide access, so a client names
-  the project from the thread's record. `open-conversation` takes `fresh: true`
-  for a New chat: a new open thread for the subject rather than the open one
-  continued, and `list-conversations` with no `projectId` lists every thread the
-  caller may see across the domain's projects
+  `get-conversation`, `append-turn`, `answer-ask`. `open-conversation` takes
+  `fresh: true` for a New chat: a new open thread for the subject rather than
+  the open one continued, and `list-conversations` with no `projectId` lists
+  every thread the caller may see across the domain's projects
+- Automation Studio, the project switcher: `projects` (`programs.read`,
+  `read`), narrowed to an empty body and projected to each project's `id`,
+  `name` and `updatedAt`, never its owner
 - Automation Studio: `list-runtime-sessions`, `cancel-runtime-session`,
   `cancel-flow-bootstrap`
 - Automation Studio, Take over and Hand back: `pause-runtime-session` and
@@ -426,6 +425,15 @@ stop a run, and use its automation and recording controls:
 - Automation Studio, recording controls: `get-recording-capture-policy`
   (`programs.read`, `read`; not narrowed or projected, below)
 - Secret Keys: `snapshot`, projected (below)
+- Identity Access: `get-my-preferences` (`programs.read`, `read`; t1095), the
+  approving person's own starting humanness, so a client starts a task at the
+  pace the person chose in the panel. Narrowed to an empty body: any field,
+  the person's own id included, is refused with 403 ("A paired client's read
+  of its person's preferences may not carry <field>.") before the handler
+  runs, and the person is always the session's. Projected to exactly
+  `{ startingHumanness: number | null }`. `update-my-preferences` stays the
+  panel's. Under `service` it is allowed by `FluxIQBrowserSession`'s
+  `SessionOwnPreferencesRead` on the person's own user alone
 
 **The recording-capture policy is Core's (t728).** What a recording may capture
 is defined once in `@fluxiq/contracts/automation`
@@ -460,10 +468,36 @@ project a recording started under; it moves, and is not restored from the
 trust record on reconnect. With none open in the panel, a paired browser works
 in that person's own latest project in its domain, chosen by the owner the registry
 recorded and never another person's (`programs/automation-studio/api/person-project.ts`,
-read by the bearer snapshot, which makes nothing). A browser with no project at all asks
-`POST /api/client-gateway/first-project`, which makes a first one through the registry,
-so `studio:CreateProject` is checked and the owner recorded; a refusal leaves it with none.
-The extension follows the project the person has
+read by the bearer snapshot, which makes nothing). A browser or a panel chat with no project
+at all asks `POST /api/client-gateway/first-project` (paired clients and the panel alike,
+t1095), which makes a first one through the registry, so `studio:CreateProject` is checked
+and the owner recorded; a refusal leaves it with none. The panel on a page with no domain
+passes `unscoped`, so `person-project.ts` reads the panel's own unscoped project list; a
+paired client with no domain still gets none.
+
+**One current project per person (t1095).** The panel and every paired client of a person
+read and write one current project and Flow: the per-person slot behind
+`POST /api/client-gateway/automation-studio-context` (body
+`{ "activeProjectId": string | null, "activeFlowId"?: string | null }`, `?domainId=` when the
+page is scoped). A paired client may now call it and writes that same slot, keyed by the
+person, never by client; it must not name a `clientId` (400: "A paired client sets the
+person's current project for itself, so it names no clientId."), and its domain comes from
+its own binding. A client bound to one project (its session has `projectId`) may set only
+that project, with or without a Flow; any other project, or a clear, is refused with 403:
+"This browser was connected for one project only, so it cannot switch to another. Switch
+projects in the FluxIQ panel, or connect the browser again without choosing a project." IAM
+decides each write on the project, or on the Flow when one is named, as before. Success
+answers the caller's workspace presentation (`payload.automationStudio` holds
+`activeProjectId`, `activeFlowId`, `updatedAt`, `contextCount` and readiness; a paired client
+gets the restricted view with no host paths). `GET /api/client-gateway/snapshot` reads the
+slot back as `webRuntime.automationStudio.activeProjectId / activeFlowId / activeProjectName`
+for the panel and paired clients alike; a bound client's snapshot still shows only its bound
+project. The panel restores the address's `?project=`, then Core's current project, then
+its own last choice; it writes every switch to Core. After each committed write
+`GET /api/panel/changes` sends a `context` event (`{ "version" }`, naming nothing) to
+that person's own streams only, panel and paired client alike, so each reads
+the snapshot again and follows the other's switch without a timer
+(`apps/web/src/app/api/panel/changes/topics/context.ts`). The extension follows the project the person has
 open in the web panel and names a project explicitly when the person picks one
 in its panel. Core has no per-person project either: every project belongs to
 a domain, and any person whose role holds an endpoint's permission reaches it.
@@ -570,24 +604,18 @@ Keys' `snapshot` answers kind/provider/enabled, safe availability and ownership
 metadata, with no unlock ticket or key
 name, id, description, metadata or value.
 
-A token may also write its person's own model key (t928, t950): Secret Keys'
-`save-model-key` (`{ provider: "anthropic" | "deepseek", value, name? }`),
-`replace-model-key` (`{ value }`) and `remove-model-key` (`{}`). They are
-`authoring`: they ask for no password, PIN, authenticator code or confirmation,
-and each is decided on the caller's own user (`endpointResource.selfUser()`),
-never the workspace or a key the body names, so IAM alone decides. Under
-`local` and `self-hosted` the token must hold `secrets.manage`. Under `service`
-a token's call is decided by its person's policies narrowed by
-`FluxIQBrowserSession`, not by the permissions of its person's legacy identity
-role: `FluxIQUserAccess` grants the three on the person's own user
-(`OwnModelKey`) and the session policy keeps them for the session's own person,
-so a member's browser saves its member's own key. A save from a token never
-takes an empty workspace's assistant key there, since `FluxIQBrowserSession`
-refuses `set-assistant-model`. The endpoint allowlist still keeps every other
-key endpoint (create, rotate, reveal, the default and the assistant's choice,
-offering) away from a token. Each body is rebuilt from those fields alone, and
-each answer is exactly `{ modelAccess }`, rebuilt by the contract reader and
-without the key's id. Each write runs the free provider check BEFORE the value
+The person's own model key is written in the panel (t1095; a token could from
+t928 to t1095): Secret Keys' `save-model-key` (`{ provider: "anthropic" |
+"deepseek", value, name? }`), `replace-model-key` (`{ value }`) and
+`remove-model-key` (`{}`). They are `authoring`: they ask for no password, PIN,
+authenticator code or confirmation, and each is decided on the caller's own
+user (`endpointResource.selfUser()`), never the workspace or a key the body
+names, so IAM alone decides. A token is refused all three at the route, and no
+paired actor carries `secrets.manage` (`PAIRED_CLIENT_ENDPOINT_PERMISSIONS`
+names none); under `service`, `FluxIQBrowserSession` no longer allows them
+either, while it keeps model access (`secrets:Snapshot`, `secrets:UseKey`), so a
+connected client still reads readiness and its person's key is still used for
+its calls. Each write runs the free provider check BEFORE the value
 is stored (t950; so do the panel's `create-key` and `rotate-key`). A key the
 provider refuses, or whose account has no credit, is never stored. The answer is
 a refusal whose code is that outcome (`provider_refused` or `no_credit`), the
@@ -1012,9 +1040,19 @@ Extension/client connection flow:
 4. The extension sends `client.hello` with the client type, name, capabilities,
    and any saved trusted-client credential.
 5. If FluxIQ replies with `server.pairing_required`, the global web-panel shell
-   shows a modal with Approve and Reject controls. The modal displays the same
+   shows a modal with Confirm and Decline controls. The modal displays the same
    reference code sent to the client so the user can verify the right client is
-   being approved.
+   being approved. Each code lives `pairingTtlMs` (5 minutes by default). A code
+   that lapses while its client still waits on the same socket is renewed there
+   (t1095): the gateway mints a fresh code and sends `server.pairing_required`
+   again, with no `credential`, so the message may arrive more than once on one
+   socket and the client shows the newest code. The modal treats a renewed code
+   from the same client (`requestedBySessionId`) as the same request and updates
+   it in place, silently; it does not drop a request on its own clock, since the
+   gateway renews or drops it. Closing the modal (X or Escape) answers nothing:
+   the request waits in a non-modal "<client> wants to connect · Review" bar
+   until it is confirmed, declined or ends, and Review reopens it. Decline is
+   the only refusal.
 6. If the user approves, FluxIQ pairs the waiting socket directly.
 7. Replace the saved token with every token returned by
    `server.session_ready`; reconnect consumes and rotates it. The persisted
@@ -1112,7 +1150,15 @@ also tells the chat when a thread or a project's live activity changed
   event bus (a session ready or ended), and the pairing registry, which signals
   a challenge created and challenges lapsing. The registry waits for the
   earliest waiting challenge's expiry, so a lapse is signalled when it happens,
-  not when something next reads. Changes in one synchronous turn are one signal
+  not when something next reads. It then hands the lapsed challenges to the
+  lifecycle (`renewLapsedPairings`, t1095), which gives each session still
+  connected, still `pairing_required` and still holding the lapsed code a fresh
+  code on its socket (`server.pairing_required` again) and audits
+  `pairing.renewed` (`pairing.renewal_failed` when the send fails); over the
+  pending caps it is refused and closed as a new hello would be. A declined,
+  paired or disconnected session is not renewed. The renewal runs in the turn
+  of the lapse, so a reader hears the lapse and the new request as one change.
+  Changes in one synchronous turn are one signal
   (an approval readies its session in the same turn), and a session under a
   channel scope is never signalled. `version` counts signals since the gateway
   started.
@@ -1120,7 +1166,10 @@ also tells the chat when a thread or a project's live activity changed
   streams Server-Sent Events, on Node, dynamic,
   `cache-control: private, no-store, no-transform` and `x-accel-buffering: no`,
   with a comment line after 25 s of silence. Its gateway topic sends
-  `event: gateway`, `data: {"version"}`. The topic is included only for a
+  `event: gateway`, `data: {"version"}`. The opening comment waits until the
+  gateway topic has read its first view (`PanelChangeSink.opensAfter`, t1095),
+  so the browser's read on opening is never older than the view later changes
+  are compared with; a change found meanwhile follows the opening. The topic is included only for a
   caller the snapshot route would serve (`gateway:Snapshot`, panel and
   paired-client callers, decided when the stream opens), and that decision is
   taken again before every look at the caller's view, so a caller who lost it
@@ -1155,8 +1204,13 @@ also tells the chat when a thread or a project's live activity changed
   overlapping reads and never losing one.
   While the stream is down readers show that (`reconnecting`, or `closed` when
   the browser gave up) instead of reading on an interval; a closed stream opens
-  again when the tab is shown, the network returns, or a reader refreshes. The
-  pairing countdown's one-second tick is local and reads nothing.
+  again when the tab is shown, the network returns, the person signs in again
+  in place (Restore session dispatches `SESSION_RESTORED_EVENT`,
+  `features/panel-changes/session-restored-event.ts`, t1095), or a reader
+  refreshes. The global pairing prompt shows a non-modal "Not live" bar
+  whenever the stream is closed, even with no request on screen; its button
+  is Reconnect (`refresh`), or Sign in again when the snapshot read was
+  refused. The pairing countdown's one-second tick is local and reads nothing.
 
 ## How a paired client hears its chats change
 

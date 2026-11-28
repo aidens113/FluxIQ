@@ -12,7 +12,7 @@ export function createProjectsPort(
   source: SharedSource<ProjectsReading>,
   make: (name: string) => Promise<ProjectChoice>,
   changed: () => void
-): ProjectsPort {
+): Required<ProjectsPort> {
   return {
     list: () =>
       new Promise((resolve, reject) => {

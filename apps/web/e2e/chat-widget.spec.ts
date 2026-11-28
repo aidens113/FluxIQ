@@ -1,7 +1,12 @@
-// The panel's docked Assistant in a real browser, as a person uses it, against the isolated fixture root and the
-// panel threads `e2e/support/seed-chat-threads.mjs` wrote there (see e2e/README.md, "Chat widget"). No model call is
+// The panel's docked chat in a real browser, as a person uses it, against the isolated fixture root and the
+// threads `e2e/support/seed-chat-threads.mjs` wrote there (see e2e/README.md, "Chat widget"). No model call is
 // made: the one typed send is answered by the fixture host's scripted assistant (the server runs with
 // FLUXIQ_E2E_SCRIPTED_ASSISTANT=1), which spends nothing.
+//
+// Since t1095 the dock is called "Chat", and every new chat belongs to a project: it lists the open project's chats
+// (every project's with none open), then the person's earlier chats from before that, which have no project
+// ("No project · <title>") and still open and continue where they live. The seed holds three earlier chats and the
+// small project's two, so the list holds five, four of them waiting on the person.
 //
 // The old spec drove a floating window with a launcher over the Studio workspace and a chat per project. The panel
 // replaced that with an Assistant column docked beside every page (a round button on a phone) over one chat of the
@@ -48,7 +53,7 @@ const composer = (page: Page) => dock(page).getByRole("textbox", { name: "Messag
 
 /** On a wide screen the dock is beside the page already; on a narrow one the round button opens it. */
 async function openChat(page: Page): Promise<void> {
-  const button = page.getByRole("button", { name: "Open the assistant" });
+  const button = page.getByRole("button", { name: "Open the chat" });
   if (await button.isVisible().catch(() => false)) await button.click();
   await expect(dock(page)).toBeVisible();
 }
@@ -72,12 +77,12 @@ async function shot(page: Page, name: string, testInfo: { project: { name: strin
   await page.screenshot({ path: path.join(webRoot, "test-results", `chat-${testInfo.project.name}-${name}.png`), animations: "disabled" });
 }
 
-test("D1: the Assistant is on the Home screen with no project, on screen, and stays there while the page scrolls", async ({ page }, info) => {
+test("D1: the chat is on the Home screen with no project, on screen, and stays there while the page scrolls", async ({ page }, info) => {
   // The landing screen is Home, in the shell; the old program directory ("Programs") is gone.
   await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeVisible({ timeout: SLOW });
   await openChat(page);
   await expect(page.getByRole("combobox", { name: "Project" })).toHaveValue("");
-  await expect(dock(page).getByText("Assistant", { exact: true })).toBeVisible();
+  await expect(dock(page).getByText("Chat", { exact: true })).toBeVisible();
   // It lists the person's chats once the read lands, which is where "waiting on you" shows (D2).
   await showThreadList(page);
   await expect(rows(page).first()).toBeVisible({ timeout: SLOW });
@@ -91,7 +96,7 @@ test("D1: the Assistant is on the Home screen with no project, on screen, and st
   await shot(page, "landing-dock", info);
 });
 
-test("V8: on Home, with every project open, the Assistant lists the person's threads and reads one with no id on screen", async ({ page }, info) => {
+test("V8: on Home, with no project open, the chat lists every chat and reads an earlier one with no id on screen", async ({ page }, info) => {
   await openChat(page);
   await showThreadList(page);
   await pickThread(page, seeded.threads.planning);
@@ -101,27 +106,28 @@ test("V8: on Home, with every project open, the Assistant lists the person's thr
   await expect(dock(page)).not.toContainText(seeded.threads.planning);
 });
 
-test("D2, D3, V1, V2, V7, T3, U2, U6: the Assistant's list and a thread's turns", async ({ page }, info) => {
+test("D2, D3, V1, V2, V7, T3, U2, U6: the chat's list and a thread's turns", async ({ page }, info) => {
   await page.goto("/flows", { waitUntil: "domcontentloaded" });
   await openChat(page);
   // D2, D3: the chats waiting on the person say so on their rows, with no need to open one. (The window's launcher badge is
   // gone with the window; the rows carry it now.)
   await showThreadList(page);
 
-  // V7, V1, V2: a conversation list, not a select; "Waiting on you" on the two chats holding a card; no id on screen.
+  // V7, V1, V2: a conversation list, not a select; "Waiting on you" on the four chats holding a question (two earlier
+  // chats' cards, the small project's choice and its open question); no id on screen.
   expect(await dock(page).locator("select").count()).toBe(0);
-  await expect(rows(page)).toHaveCount(3);
-  await expect(dock(page).locator(".chat-thread-waiting:visible")).toHaveCount(2);
-  await expect(dock(page).locator(".chat-thread-row[data-waiting='true']")).toHaveCount(2);
+  await expect(rows(page)).toHaveCount(5);
+  await expect(dock(page).locator(".chat-thread-waiting:visible")).toHaveCount(4);
+  await expect(dock(page).locator(".chat-thread-row[data-waiting='true']")).toHaveCount(4);
   await expect(dock(page)).not.toContainText(seeded.projectId);
   for (const id of Object.values(seeded.threads)) await expect(dock(page)).not.toContainText(id);
   // Search keeps the chats with every word typed.
   const search = dock(page).locator(".chat-thread-search");
   await search.fill("planning");
   await expect(rows(page)).toHaveCount(1);
-  await expect(rows(page).first()).toContainText("Planning notes");
+  await expect(rows(page).first()).toContainText("No project · Planning notes");
   await search.fill("");
-  await expect(rows(page)).toHaveCount(3);
+  await expect(rows(page)).toHaveCount(5);
 
   await pickThread(page, seeded.threads.planning);
   await expect(dock(page).getByText("Anything else you want changed?")).toBeVisible({ timeout: SLOW });
@@ -183,7 +189,7 @@ test("A1, A3, A4, A6: the permission ask settles on one press, with no PIN", asy
 });
 
 test("A1, A3, A4: a card whose consequence is destructive settles on one press, with no PIN", async ({ page }, info) => {
-  // The old spec answered a choice ask whose options were destructive. The Assistant raises Allow cards only (its answer
+  // The old spec answered a choice ask whose options were destructive. The panel's tools raise Allow cards only (their answer
   // endpoint takes Allow or Don't), so the destructive consequence is carried by an Allow card here.
   await openChat(page);
   await pickThread(page, seeded.threads.destructive);
@@ -197,16 +203,17 @@ test("A1, A3, A4: a card whose consequence is destructive settles on one press, 
   await expect(chat.getByRole("button", { name: "Don't allow" })).toBeHidden();
 });
 
-/** The person opens the small project in the top bar, so its threads join their own in the dock's list. */
+/** The person opens the small project in the top bar, so the dock lists its chats, then the earlier ones. */
 async function openSmallProject(page: Page): Promise<void> {
   await page.getByRole("combobox", { name: "Project" }).selectOption(seeded.projectId);
 }
 
-test("the dock lists the open project's threads beside the person's own, and only its own with no project open", async ({ page }) => {
+test("the dock lists every project's chats with no project open, the open project's once one is, and the earlier ones always", async ({ page }) => {
   await openChat(page);
   await showThreadList(page);
   await expect(threadRow(page, seeded.threads.permission)).toBeVisible({ timeout: SLOW });
-  await expect(threadRow(page, seeded.projectThreads.choice)).toHaveCount(0);
+  await expect(threadRow(page, seeded.projectThreads.choice)).toBeVisible({ timeout: SLOW });
+  await expect(threadRow(page, seeded.threads.permission)).toContainText("No project · ");
   await openSmallProject(page);
   // Opening a project is a new owner of the chat: it opens on the project's latest thread with the list put away, so a
   // narrow dock's drawer is opened again, as a person would, before its rows can be seen.
@@ -311,8 +318,9 @@ test("the composer takes words while a thread's first read is on its way, and a 
 });
 
 test("V4: a person with no chats is welcomed, and the model-key line goes to Keys in this tab", async ({ page }, info) => {
-  // The fixture person has chats, so the panel's two reads are answered empty here: no chat, and no enabled key.
+  // The fixture person has chats, so the panel's reads are answered empty here: no chat of a project, no earlier chat, and no enabled key.
   await page.route("**/list-panel-threads*", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, payload: { conversations: [] } }) }));
+  await page.route("**/list-conversations*", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, payload: { conversations: [] } }) }));
   await page.route("**/api/programs/secret-keys/**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, payload: { keys: [] } }) }));
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await openChat(page);
@@ -329,11 +337,11 @@ test("V4: a person with no chats is welcomed, and the model-key line goes to Key
   expect(page.context().pages()).toHaveLength(pages);
 });
 
-test("on a phone the Assistant opens from its round button and closes again", async ({ page }, info) => {
+test("on a phone the chat opens from its round button and closes again", async ({ page }, info) => {
   // The window's launcher and its Escape are gone; on a narrow screen the dock is a sheet behind this button.
   await page.setViewportSize({ width: 390, height: 700 });
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  const open = page.getByRole("button", { name: "Open the assistant" });
+  const open = page.getByRole("button", { name: "Open the chat" });
   await expect(open).toBeVisible({ timeout: SLOW });
   await expect(dock(page)).toBeHidden();
   await open.click();
@@ -342,23 +350,23 @@ test("on a phone the Assistant opens from its round button and closes again", as
   await expect(open).toBeHidden();
   await showThreadList(page);
   await shot(page, "phone-open", info);
-  await dock(page).getByRole("button", { name: "Close the assistant" }).click();
+  await dock(page).getByRole("button", { name: "Close the chat" }).click();
   await expect(dock(page)).toBeHidden();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
-test("the chat alone: the old chat page lands on the panel with the Assistant open", async ({ page }, info) => {
+test("the chat alone: the old chat page lands on the panel with the chat open", async ({ page }, info) => {
   // `/programs/automation-studio/chat` redirects to `/?chat=open` (next.config.ts), so the chat is the dock, not a page.
   await page.goto(`/programs/automation-studio/chat?projectId=${seeded.projectId}`, { waitUntil: "domcontentloaded" });
   await expect(page).toHaveURL(/\/\?(.*&)?chat=open/u, { timeout: SLOW });
   await expect(dock(page)).toBeVisible({ timeout: SLOW });
   await showThreadList(page);
-  await expect(rows(page)).toHaveCount(3, { timeout: SLOW });
+  await expect(rows(page)).toHaveCount(5, { timeout: SLOW });
   await expect(dock(page)).not.toContainText(seeded.projectId);
   await shot(page, "chat-alone", info);
 });
 
-// A panel thread belongs to no project and a turn's reference to a proposal (`flow.<id>:adaptation.<id>`) does not name
+// An earlier chat belongs to no project and a turn's reference to a proposal (`flow.<id>:adaptation.<id>`) does not name
 // one, so the dock reads it in the project the person has open (`get-panel-thread-attachment`). The test opens the small
 // project, which holds the seeded proposal, as a person would from the top bar.
 test("U5: a reference to a real proposal is resolved by Core and drawn in words, with no id on screen", async ({ page }, info) => {
@@ -376,4 +384,17 @@ test("U5: a reference to a real proposal is resolved by Core and drawn in words,
   await diff.screenshot({ path: path.join(webRoot, "test-results", `chat-${info.project.name}-graph-diff-table.png`) });
 
   await expect(dock(page)).not.toContainText("could not be read here");
+});
+
+test("a new chat with no project open is made in the person's own project, which the top bar then opens (t1095)", async ({ page }, info) => {
+  await openChat(page);
+  const project = page.getByRole("combobox", { name: "Project" });
+  await expect(project).toHaveValue("");
+  await showThreadList(page);
+  await dock(page).getByRole("button", { name: "New chat" }).click();
+  // Core's first-project names the person's latest own project, or makes their first one: either way, a project.
+  await expect(project).not.toHaveValue("", { timeout: SLOW });
+  const firstProject = await page.request.post("/api/client-gateway/first-project", { data: {} });
+  expect((await firstProject.json()).payload.projectId).toBe(await project.inputValue());
+  await shot(page, "new-chat-in-person-project", info);
 });

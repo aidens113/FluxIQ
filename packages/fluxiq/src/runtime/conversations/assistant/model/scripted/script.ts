@@ -10,7 +10,7 @@ import type { JsonValue } from "../../../../../core/index.ts";
  * told, say). After the last decision, or when no scenario fits, it replies.
  */
 export type PanelAssistantScript = {
-  scenarios: ReadonlyArray<{ when: string; turns: readonly JsonValue[] }>;
+  scenarios: ReadonlyArray<{ when: string; turns: readonly JsonValue[]; chat?: string }>;
   /** What it says after the last decision of a scenario. Default "Done." */
   after?: string;
   /** What it says when no scenario fits. Default "Nothing is scripted for that." */

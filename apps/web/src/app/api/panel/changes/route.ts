@@ -6,7 +6,7 @@ import { GatewaySnapshotRefusal, snapshotCaller } from "../../client-gateway/sna
 import { callerGatewayView } from "../../client-gateway/snapshot/caller-view";
 import { panelChangeReads } from "./caller-reads";
 import { PanelChangeStream } from "./panel-change-stream";
-import { activityChangeTopic, conversationChangeTopic, gatewayChangeTopic, modelAccessChangeTopic, panelModelAccessSource, type PanelChangeTopic } from "./topics";
+import { activityChangeTopic, conversationChangeTopic, gatewayChangeTopic, modelAccessChangeTopic, panelContextChanges, panelModelAccessSource, type PanelChangeTopic } from "./topics";
 
 // The panel's one push channel: each page holds one stream, and it tells the
 // page when something it shows is worth reading again, so nothing in the
@@ -30,6 +30,9 @@ import { activityChangeTopic, conversationChangeTopic, gatewayChangeTopic, model
 //   comes from the workspace's own runtime (`programs.modelAccessChanges`), never a
 //   module-level hub: the panel server bundles Core more than once, so a hub
 //   imported here is not the object the runtime signals.
+// - `context`: the person's current project or open Flow changed (t1095): the panel or one of their clients
+//   set it; read `GET /api/client-gateway/snapshot` again. Heard by the person's own streams only, panel and
+//   paired client alike, as the snapshot that carries it serves them.
 //
 // Authorized for the stream as a watch over the conversations the caller may
 // read (`studio:ListConversations` on the workspace, the filtered list a
@@ -74,6 +77,8 @@ export async function GET(request: Request) {
         return (await callerGatewayView(selected, request.url)).snapshot;
       };
       topics.push(gatewayChangeTopic(gateway.changes, view));
+      // The person's current project and Flow, one value the panel and their clients share: read the snapshot again.
+      topics.push(panelContextChanges.topic({ workspaceId: selected.workspaceId, userId: caller.binding.userId }));
     }
     if (caller.channel === "panel") {
       const reads = panelChangeReads({ owner: selected, caller, domainId: programDomainScope(request.url).domainId });

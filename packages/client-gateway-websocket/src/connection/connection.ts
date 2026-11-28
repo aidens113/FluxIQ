@@ -323,7 +323,11 @@ export class FluxIQClientGatewayConnection {
 
   private onHelloToken(record: SocketRecord, carried: boolean): void {
     record.tokenInHello = carried;
-    if (!this.superseded(record)) this.setState(carried ? "connecting" : "pairing");
+    if (this.superseded(record)) return;
+    // A code belongs to the socket whose gateway named it: a new hello starts
+    // a new request, so the previous socket's code is never shown as this one's.
+    this.pairingReferenceCode = undefined;
+    this.setState(carried ? "connecting" : "pairing");
   }
 
   private onOpen(record: SocketRecord): void {

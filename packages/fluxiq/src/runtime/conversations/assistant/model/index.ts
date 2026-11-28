@@ -5,5 +5,6 @@ export * from "./conversation-model.ts";
 export * from "./key-model-source.ts";
 export * from "./fixture-host-constants.ts";
 export * from "./fixture-host-model-source.ts";
+export * from "./chat-model-binding.ts";
 export * from "./is-fixture-host.ts";
 export * from "./scripted/index.ts";

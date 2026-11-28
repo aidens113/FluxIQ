@@ -1,9 +1,11 @@
-// The chosen project survives a reload: restored from `?project=` (which wins) or from what this browser
-// remembered, remembered again when it changes, and dropped without an error when the panel does not know it.
+// The person's current project is one value in Core (t1095, I5). On load the panel adopts it: `?project=`
+// wins, then Core's, then what this browser remembered (only the fallback when Core holds none or cannot be
+// read). Every switch is written to Core, and so is a Flow a page opens. An unknown project is dropped
+// without an error.
 
 import React from "react";
 import { act, create } from "react-test-renderer";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -12,6 +14,8 @@ const shared = vi.hoisted(() => ({
 }));
 vi.mock("../../top-bar/use-project-choices", () => ({ useProjectChoices: () => shared.reading }));
 
+import type { PanelChangeListener, PanelChangesPort } from "../../../panel-changes";
+import type { CoreContextPort, CoreContextValue } from "../core-context";
 import { PanelContextProvider } from "../PanelContextProvider";
 import { PROJECT_STORAGE_KEY } from "../project-storage";
 import { usePanelContext } from "../use-panel-context";
@@ -38,24 +42,60 @@ function browser(search: string): void {
   (globalThis as { window?: unknown }).window = { location: { search }, localStorage };
 }
 
-async function mount(): Promise<{ read(): PanelContextValue; unmount(): Promise<void> }> {
+/** The page's change stream, which a test drives: `tell` sends every reader one change. */
+function fakeChanges() {
+  const listeners = new Set<PanelChangeListener>();
+  const port: PanelChangesPort = {
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    status: () => "live",
+    reopen: () => undefined
+  };
+  return { port, tell: (call: (listener: PanelChangeListener) => void) => act(async () => { for (const listener of [...listeners]) call(listener); }) };
+}
+
+/** Core's value: undefined is a Core that could not be read. `pending` holds the read until released. */
+function fakeCore(value: CoreContextValue | undefined, options: { pending?: boolean } = {}) {
+  const writes: CoreContextValue[] = [];
+  let release: () => void = () => undefined;
+  const gate = options.pending ? new Promise<void>((resolve) => { release = resolve; }) : Promise.resolve();
+  const port: CoreContextPort = {
+    read: async () => {
+      await gate;
+      return current === undefined ? { ok: false, reason: "FluxIQ's current project could not be read." } : { ok: true, value: current };
+    },
+    write: async (next) => {
+      writes.push(next);
+      return { ok: true };
+    }
+  };
+  let current = value;
+  return { port, writes, release: () => act(async () => release()), set: (next: CoreContextValue) => { current = next; } };
+}
+
+async function mount(core: CoreContextPort = fakeCore(undefined).port, changes: PanelChangesPort = fakeChanges().port): Promise<{ read(): PanelContextValue; unmount(): Promise<void> }> {
   let value!: PanelContextValue;
   function Probe() {
     value = usePanelContext();
     return null;
   }
   let renderer!: ReturnType<typeof create>;
-  await act(async () => { renderer = create(<PanelContextProvider><Probe /></PanelContextProvider>); });
+  await act(async () => { renderer = create(<PanelContextProvider core={core} changes={changes}><Probe /></PanelContextProvider>); });
   return { read: () => value, unmount: () => act(async () => renderer.unmount()) };
 }
 
 beforeEach(() => {
+  vi.spyOn(console, "warn").mockImplementation(() => undefined);
   store.clear();
   refuse = false;
   shared.reading = { projects: [{ id: "project.one", name: "One" }, { id: "project.two", name: "Two" }], failed: false, loaded: true };
 });
 
-describe("the chosen project across a reload", () => {
+afterEach(() => vi.restoreAllMocks());
+
+describe("the chosen project across a reload, when Core cannot be read", () => {
   it("starts with no project when nothing names one, and does not wipe what was remembered", async () => {
     browser("");
     store.set(PROJECT_STORAGE_KEY, "project.one");
@@ -112,13 +152,102 @@ describe("the chosen project across a reload", () => {
 
   it("works when the browser refuses storage", async () => {
     refuse = true;
-    const warned = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const warned = vi.mocked(console.warn);
+    warned.mockClear();
     browser("?project=project.two");
     const panel = await mount();
     expect(panel.read().context.projectId).toBe("project.two");
     await act(async () => panel.read().dispatch({ type: "project", projectId: undefined }));
     expect(panel.read().context.projectId).toBeUndefined();
-    expect(warned).toHaveBeenCalled();
-    warned.mockRestore();
+    expect(warned.mock.calls.some(([reason]) => String(reason).includes("does not let FluxIQ keep"))).toBe(true);
+  });
+
+  it("falls back to the remembered project and still tells Core about it", async () => {
+    browser("");
+    store.set(PROJECT_STORAGE_KEY, "project.two");
+    const core = fakeCore(undefined);
+    const panel = await mount(core.port);
+    expect(panel.read().context.projectId).toBe("project.two");
+    expect(core.writes).toEqual([{ projectId: "project.two", flowId: undefined }]);
+  });
+});
+
+describe("the person's one current project, shared through Core", () => {
+  it("adopts Core's project on load, ahead of what this browser remembered, without writing it back", async () => {
+    browser("");
+    store.set(PROJECT_STORAGE_KEY, "project.one");
+    const core = fakeCore({ projectId: "project.two", flowId: "flow.a" });
+    const panel = await mount(core.port);
+    expect(panel.read().context.projectId).toBe("project.two");
+    expect(core.writes).toEqual([]);
+    expect(store.get(PROJECT_STORAGE_KEY)).toBe("project.two");
+  });
+
+  it("writes the context on every switch, and the remembered project when Core held none", async () => {
+    browser("");
+    store.set(PROJECT_STORAGE_KEY, "project.one");
+    const core = fakeCore({ projectId: undefined, flowId: undefined });
+    const panel = await mount(core.port);
+    expect(core.writes).toEqual([{ projectId: "project.one", flowId: undefined }]);
+    await act(async () => panel.read().dispatch({ type: "project", projectId: "project.two" }));
+    await act(async () => panel.read().dispatch({ type: "project", projectId: undefined }));
+    expect(core.writes).toEqual([
+      { projectId: "project.one", flowId: undefined },
+      { projectId: "project.two", flowId: undefined },
+      { projectId: undefined, flowId: undefined }
+    ]);
+  });
+
+  it("writes the Flow a page opens, and nothing when the page that had it closes", async () => {
+    browser("");
+    const core = fakeCore({ projectId: "project.one", flowId: undefined });
+    const panel = await mount(core.port);
+    await act(async () => panel.read().dispatch({ type: "publish", page: "flows", selection: { flowId: "flow.a" } }));
+    await act(async () => panel.read().dispatch({ type: "publish", page: "runs" }));
+    await act(async () => panel.read().dispatch({ type: "publish", page: "flows", selection: { flowId: "flow.a" } }));
+    expect(core.writes).toEqual([{ projectId: "project.one", flowId: "flow.a" }]);
+  });
+
+  it("opens the project the address names and makes it the current one in Core", async () => {
+    browser("?project=project.one");
+    const core = fakeCore({ projectId: "project.two", flowId: undefined });
+    const panel = await mount(core.port);
+    expect(panel.read().context.projectId).toBe("project.one");
+    expect(core.writes).toEqual([{ projectId: "project.one", flowId: undefined }]);
+  });
+
+  it("never overrides a project chosen before Core answered", async () => {
+    browser("");
+    const core = fakeCore({ projectId: "project.two", flowId: undefined }, { pending: true });
+    const panel = await mount(core.port);
+    await act(async () => panel.read().dispatch({ type: "project", projectId: "project.one" }));
+    await core.release();
+    expect(panel.read().context.projectId).toBe("project.one");
+    expect(core.writes).toEqual([{ projectId: "project.one", flowId: undefined }]);
+  });
+
+  it("follows a client's switch the moment the change stream says so, without writing it back", async () => {
+    browser("");
+    const core = fakeCore({ projectId: "project.one", flowId: undefined });
+    const changes = fakeChanges();
+    const panel = await mount(core.port, changes.port);
+    expect(panel.read().context.projectId).toBe("project.one");
+    core.set({ projectId: "project.two", flowId: "flow.b" });
+    await changes.tell((listener) => listener.context?.());
+    expect(panel.read().context.projectId).toBe("project.two");
+    expect(core.writes).toEqual([]);
+    // A stream that opens again reads too, since a switch may have come while it was down.
+    core.set({ projectId: "project.one", flowId: undefined });
+    await changes.tell((listener) => listener.opened?.());
+    expect(panel.read().context.projectId).toBe("project.one");
+    expect(core.writes).toEqual([]);
+  });
+
+  it("drops Core's project when the panel cannot see it, without clearing it in Core", async () => {
+    browser("");
+    const core = fakeCore({ projectId: "project.elsewhere", flowId: undefined });
+    const panel = await mount(core.port);
+    expect(panel.read().context.projectId).toBeUndefined();
+    expect(core.writes).toEqual([]);
   });
 });

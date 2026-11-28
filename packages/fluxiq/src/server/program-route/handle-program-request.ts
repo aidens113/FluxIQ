@@ -171,7 +171,7 @@ async function authenticatePairedClient(request: ProgramRouteRequest, fluxiq: Fl
   const notAvailable = "This endpoint is not available to a paired client.";
   if (!isPairedClientEndpoint(programId, endpoint)) return refuse(403, notAvailable);
   const classification = fluxiq.programs.api.endpoints().find((entry) => entry.programId === programId && entry.endpoint === endpoint)?.classification;
-  // Named, because a `program-gated` endpoint is reachable by token only where it is the person's own model key (`PAIRED_CLIENT_IAM_DECIDED_ENDPOINTS`).
+  // Named, because a `program-gated` endpoint is reachable by token only where `PAIRED_CLIENT_IAM_DECIDED_ENDPOINTS` names it (none since t1095).
   if (!isPairedClientClassification(classification, programId, endpoint)) return refuse(403, notAvailable);
   if (guard) {
     const refusal = await checkAuthorityGuard(guard);

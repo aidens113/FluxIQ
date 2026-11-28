@@ -160,7 +160,11 @@ export class ClientGatewayService {
     const sessions = new ClientGatewaySessionRegistry(config.now, config.sessionRetention);
     const changes = new ClientGatewayChangeFeed({ audit, events, sessions });
     // The per-address pairing cap reads the requesting session's peer address, which never leaves the gateway.
-    const pairings = new ClientGatewayPairingRegistry(config, (sessionId) => sessions.get(sessionId)?.peer?.address ?? null, { changed: (kind) => changes.signal(kind) });
+    // A code that lapses while its client still waits is renewed on the same socket (lifecycle.renewLapsedPairings); the registry is only read once the constructor has finished.
+    const pairings = new ClientGatewayPairingRegistry(config, (sessionId) => sessions.get(sessionId)?.peer?.address ?? null, {
+      changed: (kind) => changes.signal(kind),
+      lapsed: (challenges) => this.lifecycle.renewLapsedPairings(challenges)
+    });
     const trustedClients = new ClientGatewayTrustedClientRegistry(config);
     // Routes what the gateway sends and receives into the traces of the episodes that claim it; inert without `options.trace`.
     const trace = new ClientGatewayTraceTap({ source: options.trace, clientIdOf: (sessionId) => sessions.get(sessionId)?.clientId, sessionViewOf: (sessionId) => sessions.get(sessionId) });

@@ -13,7 +13,9 @@
 //                   vocabulary and what is on screen, so Core runs what a person
 //                   asked for and not only stores it). With no thread yet,
 //                   `open-conversation` first (Core continues the subject's open
-//                   thread when there is one), then the same
+//                   thread when there is one), then the same. With no project
+//                   open, the person's own project (`personProject`), which
+//                   the host then hears of once the message is sent
 //   answer          `answer-ask` (`answer-ask.ts`)
 //   newThread, renameThread, deleteThread   the thread list's controls (`thread-changes.ts`)
 
@@ -25,12 +27,13 @@ import { chatFailure } from "./chat-failure";
 import { chatResult } from "./chat-result";
 import type { ProgramChatTransportOptions } from "./options";
 import { projectFor } from "./project-for";
+import { projectToStart } from "./project-to-start";
 import { createThreadChanges } from "./thread-changes";
 
 const NO_MESSAGE = "There is no message to send.";
 const OPENED_NOTHING = "FluxIQ opened a conversation but did not say which one.";
 
-export function createConversationPort(api: ProgramCommandTransport, options: Pick<ProgramChatTransportOptions, "projectId" | "onScreen">): ChatConversationPort {
+export function createConversationPort(api: ProgramCommandTransport, options: Pick<ProgramChatTransportOptions, "projectId" | "onScreen" | "personProject">): ChatConversationPort {
   return {
     async listThreads(query) {
       const project = projectFor(query.projectId, options);
@@ -61,10 +64,11 @@ export function createConversationPort(api: ProgramCommandTransport, options: Pi
     },
 
     async send(message) {
-      const project = projectFor(message.projectId, options);
-      if (!project.ok) return project.failure;
       const text = message.text.trim();
       if (!text) return { ok: false, code: "invalid_request", sentence: NO_MESSAGE };
+      // Only a message that starts a chat may start it in the person's project; one into a thread is the thread's.
+      const project = message.conversationId?.trim() ? projectFor(message.projectId, options) : await projectToStart(message.projectId, options);
+      if (!project.ok) return project.failure;
 
       let conversationId = message.conversationId?.trim() || undefined;
       let opened: unknown;
@@ -97,6 +101,7 @@ export function createConversationPort(api: ProgramCommandTransport, options: Pi
         return { ok: false, code: "failed", sentence, detail: sentence };
       }
       commitConversationChanged({ projectId: project.projectId, conversationId });
+      if ("found" in project && project.found) options.personProject?.found?.(project.projectId);
       return {
         ok: true,
         value: {

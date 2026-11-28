@@ -22,6 +22,6 @@ export type ModelKeysPort = {
   check?(keyId: string): Promise<ModelKeysResult>;
   /** Hears the key change as the host is told of it: a state is drawn at once, `null` means "changed, read again". Returns the unsubscribe. Absent: the card only reads when asked. */
   subscribe?(listener: (state: ModelAccessState | null) => void): () => void;
-  /** False where the client cannot yet write a key: the form shows, and Save sends the person to FluxIQ. */
+  /** False where the client only shows the key (the extension): no form, and the one action sends the person to the FluxIQ panel. */
   readonly canWrite: boolean;
 };

@@ -16,3 +16,12 @@ export const PANEL_ASSISTANT_ENDPOINTS = Object.freeze({
   getAllowance: "get-panel-assistant-allowance",
   setAllowance: "set-panel-assistant-allowance"
 } as const);
+
+/**
+ * The panel assistant's endpoint on a project, not on the person's own chats: a project's chat in the panel
+ * hands a message to the assistant, which works in that project's thread. Decided on the project, so IAM's
+ * project rules grant it, never the own-chat statement.
+ */
+export const PANEL_ASSISTANT_PROJECT_ENDPOINTS = Object.freeze({
+  workInProjectThread: "work-in-project-thread"
+} as const);

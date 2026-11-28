@@ -1,31 +1,28 @@
-// The docked Assistant's conversation when a project is open: the person's own
-// panel threads and that project's threads in one list, each call going to the
-// port the thread belongs to.
+// The panel's docked chat: project chats, with the person's earlier chats beside them.
 //
-// With no project open, the latest chat and a first message are the person's own, so the assistant works
-// before any project exists.
+// Every new chat belongs to a project (t1095): a first message or New chat goes to the project port, which
+// starts it in the open project or, with none open, in the person's own project (`personProject`). The
+// panel and every client read that project's conversation store, so the extension shows the same chat.
 //
-// Origin is what each list read said (a record from `list-panel-threads` is a
-// panel thread, one from `list-conversations` is the project's), else the
-// record's project (`panel` is the reserved panel project). A thread the lists
-// have not named yet goes to the panel port, as before the project's threads
-// were listed; a new chat is the person's own.
+// Before that, the dock kept chats of its own with no project (panel threads, `list-panel-threads`). They
+// stay where they live: listed after the project's chats, named "No project · <title>", and read,
+// continued, answered, renamed and deleted on the panel assistant's endpoints. Nothing new is made there.
 //
-// The shared conversation list has no groups, so a project's thread is told
-// apart by its name ("<project> · <title>"): the person's own chats first in
-// the read, then the project's. A rename strips that prefix again so it is
-// never stored in Core.
+// Origin is what each list read said (a record from `list-panel-threads` is a panel thread, one from
+// `list-conversations` is a project's), else the record's project: the reserved `panel` names a panel
+// thread, anything else (or nothing, for a chat not started yet) a project's.
 
 import type { ChatConversationPort, ChatResult } from "@fluxiq/ui-components";
 
 const PANEL_PROJECT = "panel";
-const SEPARATOR = " · ";
+const EARLIER = "No project · ";
 const UNTITLED = "Chat";
 
 export type ComposedConversationOptions = {
+  /** The person's earlier chats with no project, on the panel assistant's endpoints. */
   panel: ChatConversationPort;
   project: ChatConversationPort;
-  /** The project the person has open, or undefined when none is; its name labels its threads. */
+  /** The project the person has open, or undefined when none is. */
   openProject(): { projectId: string; name?: string | undefined } | undefined;
 };
 
@@ -33,67 +30,70 @@ type Origin = "panel" | "project";
 
 export function createComposedConversationPort(options: ComposedConversationOptions): ChatConversationPort {
   const origins = new Map<string, Origin>();
-  const prefixes = new Map<string, string>();
 
   const originOf = (conversationId: string | undefined, projectId: string | undefined): Origin => {
     const known = conversationId === undefined ? undefined : origins.get(conversationId);
     if (known) return known;
-    const project = projectId?.trim();
-    return project && project !== PANEL_PROJECT ? "project" : "panel";
+    return projectId?.trim() === PANEL_PROJECT ? "panel" : "project";
   };
   const portFor = (origin: Origin): ChatConversationPort => (origin === "panel" ? options.panel : options.project);
 
-  const port: ChatConversationPort = {
-    // With no project open the latest chat is the person's own: the project port has nowhere to read.
-    listThreads: (query) => portFor(query.subjectKind === "panel" || (query.projectId === undefined && !options.openProject()) ? "panel" : "project").listThreads(query),
+  return {
+    listThreads: (query) => portFor(query.subjectKind === "panel" ? "panel" : "project").listThreads(query),
 
+    // The open project's chats (every project's with none open), then the person's earlier ones.
     async listAllThreads(query) {
-      const own = await options.panel.listAllThreads!(query);
       const open = options.openProject();
-      if (!own.ok || !open) {
-        if (own.ok) remember(own, "panel");
-        return own;
-      }
-      const theirs = await options.project.listAllThreads!({ projectId: open.projectId, limit: query.limit });
+      const theirs = await options.project.listAllThreads!({ ...query, ...(open ? { projectId: open.projectId } : {}) });
       if (!theirs.ok) return theirs;
-      const group = open.name?.trim() || "This project";
-      return { ok: true, value: { conversations: [...remember(own, "panel"), ...remember(theirs, "project", group)] } };
+      const own = await options.panel.listAllThreads!(query);
+      if (!own.ok) return own;
+      return { ok: true, value: { conversations: [...remember(theirs, "project"), ...remember(own, "panel")] } };
     },
 
     readThread: (query) => portFor(originOf(query.conversationId, query.projectId)).readThread(query),
 
-    send: (message) => portFor(originOf(message.conversationId, message.projectId)).send(message),
+    // A new chat is never started in the reserved `panel` id: it starts in the open project, else the person's.
+    send: (message) => {
+      if (message.conversationId?.trim()) return portFor(originOf(message.conversationId, message.projectId)).send(message);
+      return options.project.send({ ...message, projectId: realProject(message.projectId) });
+    },
 
     answer: (answer) => portFor(originOf(answer.turn?.conversationId, answer.projectId)).answer(answer),
 
-    newThread: (request) => options.panel.newThread!(request),
+    newThread: (request) => {
+      const { projectId, ...rest } = request;
+      const real = realProject(projectId);
+      return options.project.newThread!({ ...rest, ...(real === undefined ? {} : { projectId: real }) });
+    },
 
     renameThread(request) {
       const origin = originOf(request.conversationId, request.projectId);
-      const prefix = prefixes.get(request.conversationId);
-      const title = prefix && request.title.startsWith(prefix) ? request.title.slice(prefix.length) : request.title;
+      const title = origin === "panel" && request.title.startsWith(EARLIER) ? request.title.slice(EARLIER.length) : request.title;
       return portFor(origin).renameThread!({ ...request, title });
     },
 
     deleteThread: (request) => portFor(originOf(request.conversationId, request.projectId)).deleteThread!(request)
   };
-  return port;
 
-  /** Notes where each listed thread came from and, for a project's, words its name; returns the records. */
-  function remember(result: ChatResult<{ conversations?: unknown }>, origin: Origin, group?: string): unknown[] {
+  /** Notes where each listed thread came from and, for an earlier one, says it has no project; returns the records. */
+  function remember(result: ChatResult<{ conversations?: unknown }>, origin: Origin): unknown[] {
     const records = result.ok && Array.isArray(result.value.conversations) ? result.value.conversations as unknown[] : [];
     return records.map((record) => {
       const id = idOf(record);
       if (id === undefined) return record;
       origins.set(id, origin);
-      if (group === undefined) return record;
-      const prefix = `${group}${SEPARATOR}`;
-      prefixes.set(id, prefix);
+      if (origin === "project") return record;
       const title = (record as { title?: unknown }).title;
       const own = typeof title === "string" && title.trim() ? title.trim() : UNTITLED;
-      return { ...(record as object), title: `${prefix}${own}` };
+      return { ...(record as object), title: `${EARLIER}${own}` };
     });
   }
+}
+
+function realProject(projectId: string | undefined): string | undefined {
+  const id = projectId?.trim();
+  return id && id !== PANEL_PROJECT ? id : undefined;
 }
 
 function idOf(record: unknown): string | undefined {

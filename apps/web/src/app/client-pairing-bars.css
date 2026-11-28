@@ -1,0 +1,11 @@
+/* What waits outside the pairing dialog, on any page: a request the person closed the dialog on (Review), and a tab no longer hearing changes (Not live). Under any dialog, over the page. */
+.client-pairing-bars {
+  position: fixed;
+  right: var(--space-lg);
+  bottom: var(--space-lg);
+  z-index: var(--layer-dropdown);
+  display: grid;
+  gap: var(--space-sm);
+  width: min(380px, calc(100vw - var(--space-xxl)));
+  box-shadow: var(--shadow-sm);
+}

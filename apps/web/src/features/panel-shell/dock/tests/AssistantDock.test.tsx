@@ -1,4 +1,5 @@
-// The dock gives the chat the open project's name, so a project thread reads "<name> · <title>".
+// The docked chat: one name ("Chat"), the open project for the chat, and a chat started with no project
+// open (in the person's project, Core's first-project) opening that project in the panel.
 
 import React from "react";
 import { act, create } from "react-test-renderer";
@@ -10,7 +11,8 @@ import { openProjectName } from "../open-project-name";
 const shared = vi.hoisted(() => ({
   projectId: undefined as string | undefined,
   projects: [{ id: "project.one", name: "Company website" }],
-  chatProps: [] as Array<Record<string, unknown>>
+  chatProps: [] as Array<Record<string, unknown>>,
+  dispatched: [] as unknown[]
 }));
 
 vi.mock("../../../chat-widget", () => ({
@@ -21,7 +23,7 @@ vi.mock("../../../chat-widget", () => ({
 }));
 vi.mock("../../top-bar", () => ({ useProjectChoices: () => ({ projects: shared.projects, failed: false }) }));
 vi.mock("../../context", () => ({
-  usePanelContext: () => ({ context: { page: "flows", projectId: shared.projectId }, read: () => ({ page: "flows" }), dispatch: () => undefined }),
+  usePanelContext: () => ({ context: { page: "flows", projectId: shared.projectId }, read: () => ({ page: "flows", projectId: shared.projectId }), dispatch: (action: unknown) => shared.dispatched.push(action) }),
   onScreenFromContext: () => ({})
 }));
 
@@ -47,7 +49,27 @@ function pressAsk(renderer: ReturnType<typeof create>) {
   renderer.root.findByProps({ className: "panel-dock-button" }).props.onClick();
 }
 
-describe("the assistant dock", () => {
+describe("the docked chat", () => {
+  it("is called the chat everywhere, never the assistant or Ask", async () => {
+    const renderer = await render(undefined, "");
+    expect(renderer.root.findByType("aside").props["aria-label"]).toBe("Chat");
+    const opener = renderer.root.findByProps({ className: "panel-dock-button" });
+    expect([opener.props["aria-label"], opener.props.children]).toEqual(["Open the chat", "Chat"]);
+    expect(JSON.stringify(renderer.toJSON())).not.toMatch(/Assistant|assistant|"Ask"/u);
+  });
+
+  it("with no project open, opens the project a chat was just started in, and leaves an open one alone", async () => {
+    shared.dispatched.length = 0;
+    const none = await lastChatProps(undefined);
+    expect(none.panel).toBeDefined();
+    (none.onProjectFound as (id: string) => void)("project.mine");
+    expect(shared.dispatched).toEqual([{ type: "project", projectId: "project.mine" }]);
+    shared.dispatched.length = 0;
+    const opened = await lastChatProps("project.one");
+    (opened.onProjectFound as (id: string) => void)("project.mine");
+    expect(shared.dispatched).toEqual([]);
+  });
+
   it("passes the open project's name to the chat", async () => {
     const props = await lastChatProps("project.one");
     expect(props.projectId).toBe("project.one");

@@ -6,6 +6,7 @@ import { SessionReauthentication } from "..";
 import RootLayout from "../../layout";
 import { useProgramApi } from "../../../features/programs/program-api";
 import { hasPendingProgramAuthentication, requestProgramAuthentication, resolveProgramAuthentication } from "../../../features/programs/program-auth-recovery";
+import { SESSION_RESTORED_EVENT } from "../../../features/panel-changes";
 
 const auth = vi.hoisted(() => ({ current: vi.fn() }));
 vi.mock("../../../lib/auth", () => ({ currentFluxIQUser: auth.current }));
@@ -94,6 +95,25 @@ describe("authenticated root session recovery", () => {
     expect(renderer!.root.findByProps({ "aria-label": "Workspace draft" }).props.value).toBe("newer unsaved work");
     expect(browser.location.href).toBe("/security");
     expect(hasPendingProgramAuthentication()).toBe(false);
+  });
+
+  // t1095 RC3: the page's change stream was refused while the session had
+  // lapsed; restoring it in place must say so, so the stream opens again.
+  it("re-auth reopens live updates: a restored session is announced, a failed one is not", async () => {
+    const restoredEvents: string[] = [];
+    browser.addEventListener(SESSION_RESTORED_EVENT, (event) => restoredEvents.push(event.type));
+    let accept = false;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => (url === "/api/auth/login"
+      ? (accept ? response(200, { ok: true }) : response(401, { ok: false, error: "Wrong password" }))
+      : response(401, { ok: false, error: "Expired" }))));
+    await mount();
+    await act(async () => { void requestProgramAuthentication(); });
+    await credentials();
+    await act(async () => { await renderer!.root.findByType("form").props.onSubmit({ preventDefault() {} }); });
+    expect(restoredEvents).toEqual([]);
+    accept = true;
+    await act(async () => { await renderer!.root.findByType("form").props.onSubmit({ preventDefault() {} }); });
+    expect(restoredEvents).toEqual([SESSION_RESTORED_EVENT]);
   });
 
   it("does not treat the temporary credential as a restored session and reloads onto the setup form", async () => {

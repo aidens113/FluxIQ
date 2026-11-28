@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 const shared = vi.hoisted(() => ({
   replaced: [] as string[],
   dispatched: [] as unknown[],
-  widget: undefined as undefined | { requestedConversationId?: string; onSelectedConversationChange?(id: string): void }
+  widget: undefined as undefined | { projectId?: string | null; requestedConversationId?: string; panel?: unknown; onSelectedConversationChange?(id: string): void; onProjectFound?(id: string): void }
 }));
 
 vi.mock("next/link", () => ({ default: (props: { href: string; children?: React.ReactNode }) => React.createElement("a", { href: props.href }, props.children) }));
@@ -20,6 +20,7 @@ vi.mock("../../chat-widget", () => ({
 }));
 vi.mock("../../panel-shell", () => ({
   PublishPanelPage: () => null,
+  onScreenFromContext: () => ({ page: "chats" }),
   usePanelContext: () => ({ context: { page: "chats" }, dispatch: (action: unknown) => { shared.dispatched.push(action); }, read: () => ({}) })
 }));
 
@@ -52,9 +53,21 @@ describe("a chat as a full page", () => {
     expect(shared.dispatched).toEqual([{ type: "project", projectId: "p1" }]);
   });
 
-  it("changes nothing when the address has no project", async () => {
+  it("opens /chats/<conversationId>?project=<projectId> on that conversation, in that project (the address a client opens)", async () => {
+    await mount({ conversationId: "conversation.9", projectId: "project.7" });
+    expect(shared.widget).toMatchObject({ projectId: "project.7", requestedConversationId: "conversation.9" });
+    expect(shared.widget?.panel).toBeUndefined();
+    expect(shared.dispatched).toEqual([{ type: "project", projectId: "project.7" }]);
+  });
+
+  it("opens an earlier chat with no project where it lives, never on a made-up project", async () => {
     const renderer = await mount({ conversationId: "c" });
     expect(shared.dispatched).toEqual([]);
-    expect(JSON.stringify(renderer.toJSON())).toContain("has no project");
+    expect(shared.widget).toMatchObject({ projectId: null, requestedConversationId: "c" });
+    expect(shared.widget?.panel).toBeDefined();
+    expect(JSON.stringify(renderer.toJSON())).toContain("before every chat belonged to a project");
+    expect(JSON.stringify(renderer.toJSON())).not.toContain("panel");
+    act(() => shared.widget?.onProjectFound?.("project.mine"));
+    expect(shared.dispatched).toEqual([{ type: "project", projectId: "project.mine" }]);
   });
 });

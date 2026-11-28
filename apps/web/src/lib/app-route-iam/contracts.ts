@@ -102,9 +102,12 @@ export const APP_ROUTE_IAM_CONTRACTS: readonly AppRouteIamContract[] = Object.fr
   { path: "/api/keys", method: "POST", action: "iam:EnrollApiKey", callers: { panel: "none" }, resource: selfUser },
   { path: "/api/keys", method: "DELETE", action: "iam:RevokeApiKey", callers: { panel: "none" }, resource: selfUser },
   { path: "/api/client-gateway/approve-pairing", method: "POST", action: "gateway:ApprovePairing", callers: { panel: "runtime.control" }, resource: selfUser },
-  { path: "/api/client-gateway/first-project", method: "POST", action: "gateway:CreateFirstProject", callers: { "paired-client": "none" }, resource: workspace },
+  // Every chat belongs to a project: the panel's chat with none open asks here too (t1095), as a browser's does.
+  { path: "/api/client-gateway/first-project", method: "POST", action: "gateway:CreateFirstProject", callers: { panel: "none", "paired-client": "none" }, resource: workspace },
   { path: "/api/client-gateway/dismiss-pairing", method: "POST", action: "gateway:DismissPairing", callers: { panel: "runtime.control" }, resource: workspace },
-  { path: "/api/client-gateway/automation-studio-context", method: "POST", action: "gateway:SetAutomationStudioContext", callers: { panel: "runtime.control" }, resource: studioContext },
+  // The person's current project and Flow, one value the panel and every client share (t1095): a paired
+  // client sets it for itself, decided on the project it opens like any read of that project.
+  { path: "/api/client-gateway/automation-studio-context", method: "POST", action: "gateway:SetAutomationStudioContext", callers: { panel: "runtime.control", "paired-client": "none" }, resource: studioContext },
   { path: "/api/client-gateway/snapshot", method: "GET", action: "gateway:Snapshot", callers: { panel: "none", "paired-client": "none" }, resource: workspace },
   { path: "/api/client-gateway/trace-artifacts/[sha256]", method: "PUT", action: "gateway:PutTraceArtifact", callers: { "paired-client": "none" }, resource: pairedBrowser },
   framework("GET", "/api/framework/setup", "ops:InspectFrameworkSetup", "programs.read"),

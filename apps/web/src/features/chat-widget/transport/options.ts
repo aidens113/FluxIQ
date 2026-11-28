@@ -4,6 +4,7 @@ import type { PanelModelKeysPort } from "../../model-keys";
 import type { PanelConversationOptions } from "./panel-conversation-port";
 import type { PanelChangesPort } from "../../panel-changes";
 import type { ActivityTimers } from "../activity";
+import type { PersonProject } from "./person-project";
 
 /** What `createProgramChatTransport` needs besides the Studio's own transport. */
 export type ProgramChatTransportOptions = {
@@ -14,6 +15,11 @@ export type ProgramChatTransportOptions = {
    * no thread is chosen, and then nothing project-scoped is read.
    */
   projectId(): string | undefined;
+  /**
+   * Where a chat starts when no project is open: the person's own project (Core's first-project). Absent,
+   * a chat with no project cannot start, and says so.
+   */
+  personProject?: PersonProject;
   /**
    * The Secret Keys program's transport, for whether a model key is enabled.
    * Absent, the chat has no `models` port and never claims a key is missing.
@@ -30,6 +36,10 @@ export type ProgramChatTransportOptions = {
   activityTimers?: ActivityTimers;
   /** The page's change stream, which says when a thread or the activity is worth reading again; the shared one when absent. */
   changes?: PanelChangesPort;
-  /** Present: this chat is the panel-wide thread, and its conversation goes to the panel assistant's endpoints. */
+  /**
+   * Present: the chat is the panel's docked chat. Its chats are project chats; the person's earlier chats
+   * from before every chat had a project (panel threads) are listed beside them and still open and
+   * continue on the panel assistant's endpoints, but no new one is made there.
+   */
   panel?: PanelConversationOptions;
 };

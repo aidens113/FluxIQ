@@ -8,6 +8,14 @@ describe("the places", () => {
     expect(PANEL_NAV_ITEMS.map((item) => item.page)).toEqual([...PANEL_PAGES]);
   });
 
+  it("say what each place holds now: keys are in Settings, not Security, and chats are one kind", () => {
+    const hint = (page: string) => PANEL_NAV_ITEMS.find((item) => item.page === page)?.hint ?? "";
+    expect(hint("security")).not.toMatch(/key/iu);
+    expect(hint("settings")).toMatch(/AI keys/u);
+    expect(hint("chats")).toBe("Every chat, in every project");
+    expect(PANEL_NAV_ITEMS.map((item) => item.hint).join(" ")).not.toMatch(/assistant|conversation/iu);
+  });
+
   it("find the item a path belongs to", () => {
     expect(navItemForPath("/")?.page).toBe("home");
     expect(navItemForPath("/flows")?.page).toBe("flows");

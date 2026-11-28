@@ -1,8 +1,11 @@
 // The panel-wide assistant: one chat docked on every page, able to do what the
 // person can through the program API, powered by the key they chose (U5, U7).
 //
-// It answers `panel` threads only, kept per person outside every project
-// (`./store/`). A message is stored, then worked on in the background, one
+// It answers the person's own `panel` threads, kept per person outside every
+// project (`./store/`), and, since every chat belongs to a project (t1095), a
+// project's thread when the panel's chat there hands a message to it
+// (`workInProject`, `answerInProject`): the same loop, tools, Allow cards and
+// allowance, writing into the project's conversation that every client reads. A message is stored, then worked on in the background, one
 // message at a time per thread, and every step lands in the thread as it
 // happens, which the dock reads as it reads any thread. Long work a tool starts
 // (a run, a build) is followed in the activity feed, not waited on.
@@ -16,7 +19,7 @@ import type { AutomationStudioConversationAttachmentAnswer } from "../conversati
 import { automationStudioConversationIdOrRefuse, automationStudioConversationTitleOrRefuse } from "../inputs.ts";
 import type { AutomationStudioConversationTurn } from "../turn.ts";
 import { PANEL_ASSISTANT_DEFAULT_ALLOWANCE_USD, panelAssistantAllowanceOrRefuse } from "./allowance.ts";
-import { panelAssistantAttachmentPayload, panelAssistantAttachmentProjects, type PanelAssistantProjectAttachments } from "./attachments/index.ts";
+import { panelAssistantAttachmentPayload, type PanelAssistantProjectAttachments } from "./attachments/index.ts";
 import { panelAssistantContextOf } from "./context/index.ts";
 import {
   PANEL_ASSISTANT_WORDS,
@@ -29,7 +32,7 @@ import {
   type PanelAssistantTurnOutcome,
   type PanelAssistantTurnState
 } from "./loop/index.ts";
-import type { PanelAssistantThreads } from "./store/index.ts";
+import type { PanelAssistantThreadStore, PanelAssistantThreads } from "./store/index.ts";
 import { PanelAssistantThreadUse } from "./thread-use.ts";
 import type { PanelAssistantActor, PanelAssistantContext, PanelAssistantConversation, PanelAssistantModelSource, PanelAssistantPrograms, PanelAssistantScope, PanelAssistantSettings, PanelAssistantThread } from "./types.ts";
 
@@ -44,6 +47,7 @@ export type PanelAssistantAnswered = { ask: AutomationStudioConversationAsk; wor
 
 export class PanelAssistant<TActor extends PanelAssistantActor = PanelAssistantActor> {
   private readonly threadsOf: () => PanelAssistantThreads;
+  private readonly projectThreads: ((projectId: string) => PanelAssistantThreadStore) | undefined;
   private readonly programs: PanelAssistantPrograms<TActor>;
   private modelSource: PanelAssistantModelSource | null = null;
   private settings: PanelAssistantSettings | null = null;
@@ -51,10 +55,14 @@ export class PanelAssistant<TActor extends PanelAssistantActor = PanelAssistantA
   private readonly use = new PanelAssistantThreadUse();
   private readonly stopping = new AbortController();
 
-  /** `threads` is read on first use, so registering the endpoints touches nothing. */
-  constructor(options: { threads: () => PanelAssistantThreads; programs: PanelAssistantPrograms<TActor> }) {
+  /**
+   * `threads` is read on first use, so registering the endpoints touches nothing. `projectThreads` is where a
+   * project's thread is written (`./store/project-threads.ts`); absent, the assistant works in panel threads only.
+   */
+  constructor(options: { threads: () => PanelAssistantThreads; programs: PanelAssistantPrograms<TActor>; projectThreads?: (projectId: string) => PanelAssistantThreadStore }) {
     this.threadsOf = options.threads;
     this.programs = options.programs;
+    this.projectThreads = options.projectThreads;
   }
 
   /** The model each message asks. Null unbinds it; a message then says the assistant has no model. */
@@ -117,7 +125,7 @@ export class PanelAssistant<TActor extends PanelAssistantActor = PanelAssistantA
       }
       const turn = await threads.append(actor.userId, { conversationId: conversation.conversationId, author: "person", text, actorId: actor.userId });
       const context = panelAssistantContextOf(input.onScreen);
-      const working = this.queued(actor, conversation.conversationId, () => this.work(actor, scope, conversation.conversationId, text, context), release);
+      const working = this.queued(actor, this.key(actor, conversation.conversationId), threads, conversation.conversationId, () => this.work(actor, scope, conversation.conversationId, text, context, threads), release);
       return { conversation, turn, working };
     } catch (error) {
       release?.();
@@ -150,11 +158,47 @@ export class PanelAssistant<TActor extends PanelAssistantActor = PanelAssistantA
         release();
         return { ask, working: Promise.resolve<PanelAssistantTurnOutcome>({ ending: "replied", spentUsd: 0, clientActions: [] }) };
       }
-      return { ask, working: this.queued(actor, ask.conversationId, () => this.answered(actor, scope, ask, input.kind), release) };
+      return { ask, working: this.queued(actor, this.key(actor, ask.conversationId), threads, ask.conversationId, () => this.answered(actor, scope, ask, input.kind, threads), release) };
     } catch (error) {
       release();
       throw error;
     }
+  }
+
+  /**
+   * Works on a message the person wrote in a project's thread, which that thread's chat handed over. The
+   * caller reads the person's words, and the page and selection they wrote it on, from their stored turn.
+   * Nothing is appended for the person (their turn is already there); every step lands in the project's thread.
+   */
+  workInProject(actor: TActor, scope: PanelAssistantScope, input: { projectId: string; conversationId: string; words: string; onScreen?: unknown }): Promise<PanelAssistantTurnOutcome> {
+    const threads = this.inProject(input.projectId);
+    const conversationId = automationStudioConversationIdOrRefuse(input.conversationId, "conversation");
+    const words = input.words.trim();
+    if (!words) throw new Error("There is no message to work on.");
+    const context: PanelAssistantContext = { ...panelAssistantContextOf(input.onScreen), projectId: input.projectId };
+    return this.queued(actor, this.projectKey(actor, input.projectId, conversationId), threads, conversationId, () => this.work(actor, scope, conversationId, words, context, threads), undefined);
+  }
+
+  /**
+   * The person's answer to a card the assistant raised in a project's thread. Only the person whose message
+   * raised it holds its call, so anyone else is refused before the ask is settled; otherwise exactly as
+   * `answer`.
+   */
+  async answerInProject(actor: TActor, scope: PanelAssistantScope, input: { projectId: string; askId: string; kind: "grant" | "deny" }): Promise<PanelAssistantAnswered> {
+    const threads = this.inProject(input.projectId);
+    const pending = await threads.getAsk(actor.userId, input.askId);
+    if (!pending) throw new Error("That question does not exist.");
+    const waiting = pending.status === "pending";
+    if (waiting && !(await threads.hasWaitingCall(actor.userId, input.askId))) throw new Error("Only the person whose message raised this question can answer it.");
+    const ask = await threads.answer(actor.userId, { askId: input.askId, kind: input.kind, actorId: actor.userId });
+    // The same answer again (a double click, a retried request) replays the first and starts nothing.
+    if (!waiting) return { ask, working: Promise.resolve<PanelAssistantTurnOutcome>({ ending: "replied", spentUsd: 0, clientActions: [] }) };
+    return { ask, working: this.queued(actor, this.projectKey(actor, input.projectId, ask.conversationId), threads, ask.conversationId, () => this.answered(actor, scope, ask, input.kind, threads), undefined) };
+  }
+
+  /** Whether `askId` in a project's thread is one of the assistant's cards still waiting on this person. */
+  isCardInProject(actor: TActor, input: { projectId: string; askId: string }): Promise<boolean> {
+    return this.inProject(input.projectId).hasWaitingCall(actor.userId, input.askId);
   }
 
   /** Gives one of the person's threads their own name. The name is checked before the thread is looked for. */
@@ -201,11 +245,10 @@ export class PanelAssistant<TActor extends PanelAssistantActor = PanelAssistantA
     await this.threadsOf().close();
   }
 
-  private async answered(actor: TActor, scope: PanelAssistantScope, ask: AutomationStudioConversationAsk, kind: "grant" | "deny"): Promise<PanelAssistantTurnOutcome> {
-    const threads = this.threadsOf();
+  private async answered(actor: TActor, scope: PanelAssistantScope, ask: AutomationStudioConversationAsk, kind: "grant" | "deny", threads: PanelAssistantThreadStore): Promise<PanelAssistantTurnOutcome> {
     // Taken either way, so a card answered Don't can never be run by a later press.
     const call = await threads.takeWaitingCall(actor.userId, ask.askId);
-    const state = await this.state(actor, scope, ask.conversationId, call?.context ?? {}, call?.words ?? "");
+    const state = await this.state(actor, scope, ask.conversationId, call?.context ?? {}, call?.words ?? "", threads);
     if (kind === "deny") {
       if (call) await state.post(PANEL_ASSISTANT_WORDS.declined);
       return { ending: "replied", spentUsd: 0, clientActions: [] };
@@ -225,8 +268,8 @@ export class PanelAssistant<TActor extends PanelAssistantActor = PanelAssistantA
     return this.continueWith(state);
   }
 
-  private async work(actor: TActor, scope: PanelAssistantScope, conversationId: string, words: string, context: PanelAssistantContext): Promise<PanelAssistantTurnOutcome> {
-    return this.continueWith(await this.state(actor, scope, conversationId, context, words));
+  private async work(actor: TActor, scope: PanelAssistantScope, conversationId: string, words: string, context: PanelAssistantContext, threads: PanelAssistantThreadStore): Promise<PanelAssistantTurnOutcome> {
+    return this.continueWith(await this.state(actor, scope, conversationId, context, words, threads));
   }
 
   private async continueWith(state: PanelAssistantTurnState<TActor>): Promise<PanelAssistantTurnOutcome> {
@@ -238,8 +281,7 @@ export class PanelAssistant<TActor extends PanelAssistantActor = PanelAssistantA
     return runPanelAssistantTurn(state, { model: choice.model, signal: this.stopping.signal });
   }
 
-  private async state(actor: TActor, scope: PanelAssistantScope, conversationId: string, context: PanelAssistantContext, words: string): Promise<PanelAssistantTurnState<TActor>> {
-    const threads = this.threadsOf();
+  private async state(actor: TActor, scope: PanelAssistantScope, conversationId: string, context: PanelAssistantContext, words: string, threads: PanelAssistantThreadStore): Promise<PanelAssistantTurnState<TActor>> {
     const { allowanceUsd } = await this.allowance();
     return {
       programs: this.programs,
@@ -254,7 +296,7 @@ export class PanelAssistant<TActor extends PanelAssistantActor = PanelAssistantA
       entries: [],
       clientActions: [],
       post: async (text, attachment) => {
-        await threads.append(actor.userId, { conversationId, author: "automation", text, attachment: attachment ? panelAssistantAttachmentProjects.stored(attachment) : null });
+        await threads.append(actor.userId, { conversationId, author: "automation", text, attachment: attachment ? threads.storedAttachment(attachment) : null });
       }
     };
   }
@@ -264,19 +306,29 @@ export class PanelAssistant<TActor extends PanelAssistantActor = PanelAssistantA
     return `${actor.userId}\u0000${conversationId}`;
   }
 
+  /** One person's work in one project's thread, queued apart from their panel threads. */
+  private projectKey(actor: TActor, projectId: string, conversationId: string): string {
+    return `${actor.userId}\u0000project\u0000${projectId}\u0000${conversationId}`;
+  }
+
+  /** Where a project's thread is written, or a refusal on a panel that cannot write one. */
+  private inProject(projectId: string): PanelAssistantThreadStore {
+    if (!this.projectThreads) throw new Error("The assistant cannot work in a project's conversation on this panel.");
+    return this.projectThreads(automationStudioConversationIdOrRefuse(projectId, "project"));
+  }
+
   /**
    * Runs `work` after the thread's earlier work, and never rejects: a failure
    * is said in the thread in plain words, so a message never ends in silence.
    * `release` lets the thread go once the work has ended (`./thread-use.ts`).
    */
-  private queued(actor: TActor, conversationId: string, work: () => Promise<PanelAssistantTurnOutcome>, release: (() => void) | undefined): Promise<PanelAssistantTurnOutcome> {
-    const key = this.key(actor, conversationId);
+  private queued(actor: TActor, key: string, threads: PanelAssistantThreadStore, conversationId: string, work: () => Promise<PanelAssistantTurnOutcome>, release: (() => void) | undefined): Promise<PanelAssistantTurnOutcome> {
     const before = this.queues.get(key) ?? Promise.resolve();
     const run = before.then(work, work).catch(async (error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
       console.warn(`The panel assistant's work on a message failed (${error instanceof Error ? error.name : "non_error"}).`);
       try {
-        await this.threadsOf().append(actor.userId, { conversationId, author: "automation", text: `Something went wrong while I worked on that: ${message}` });
+        await threads.append(actor.userId, { conversationId, author: "automation", text: `Something went wrong while I worked on that: ${message}` });
       } catch (reportError) {
         console.warn(`The panel assistant could not say so in the thread (${reportError instanceof Error ? reportError.name : "non_error"}).`);
       }

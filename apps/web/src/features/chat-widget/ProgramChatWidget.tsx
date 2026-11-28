@@ -20,10 +20,13 @@ import { ChatWidget } from "./ChatWidget";
 import { createPanelOpenControl } from "./navigation";
 import { panelChatOptions } from "./options";
 import { ReauthorizeDialog } from "./ReauthorizeDialog";
-import { createProgramChatTransport, type PanelConversationOptions } from "./transport";
+import { askFirstProject, createProgramChatTransport, type PanelConversationOptions } from "./transport";
+
+/** The project id an earlier chat with no project reads back with (Core's panel threads). */
+const EARLIER_CHAT_PROJECT = "panel";
 
 export type ProgramChatWidgetProps = {
-  /** The project the panel has open; null on the landing screen, where the chat spans every project. */
+  /** The project the panel has open; null when none is, and the chat then lists every project's chats. */
   projectId: string | null;
   projectName?: string | null;
   automation?: { flowId: string; name: string };
@@ -35,8 +38,14 @@ export type ProgramChatWidgetProps = {
   onSelectedConversationChange?(conversationId: string): void;
   /** The thread to open on, when it is still listed. */
   requestedConversationId?: string;
-  /** Present: the chat is the panel-wide assistant thread, not a project's. Read when the chat is made. */
+  /**
+   * Present: the chat is the panel's docked chat. With no project open it starts in the person's own project
+   * (Core's first-project), and the person's earlier chats with no project are listed beside the project's.
+   * Read when the chat is made.
+   */
   panel?: PanelConversationOptions;
+  /** Hears the project a chat with none open was just started in, so the panel can open it. */
+  onProjectFound?(projectId: string): void;
   /** Puts the chat in a window over the panel. Absent: the chat fills its container. */
   windowed?: { ariaLabel: string; escapeBlocked(): boolean };
 };
@@ -60,8 +69,16 @@ export function ProgramChatWidget(props: ProgramChatWidgetProps) {
     secretKeys,
     modelKeys,
     onScreen: () => latest.current.onScreen ?? {},
-    // The panel-wide assistant talks to the panel's own endpoints; whether this chat is that one is fixed when it is made.
-    // The open project's threads join the person's own in the list, so choices and questions raised in them are answered here.
+    // Whether this is the docked chat is fixed when it is made. With no project open its first message or
+    // New chat starts in the person's own project; the panel is told after the chat's own answer has landed,
+    // since opening the project there gives the chat a new owner.
+    ...(latest.current.panel ? { personProject: {
+      find: askFirstProject,
+      found: (projectId: string) => {
+        shown.current = projectId;
+        setTimeout(() => latest.current.onProjectFound?.(projectId), 0);
+      }
+    } } : {}),
     ...(latest.current.panel ? { panel: {
       onScreen: () => latest.current.panel?.onScreen() ?? {},
       openProject: () => {
@@ -74,7 +91,7 @@ export function ProgramChatWidget(props: ProgramChatWidgetProps) {
   // The chat reads its options once, when it is made; a later change of the requested thread is not a new chat.
   const requestedConversationId = useRef(props.requestedConversationId).current;
   const options = useMemo(() => panelChatOptions({
-    assistant: latest.current.panel !== undefined,
+    personProject: latest.current.panel !== undefined,
     asks: createPanelAskPort(setRequest),
     attachments: createPanelAttachmentPort({
       read: readAttachment(studio, latest.current.panel ? { panel: { openProjectId: () => latest.current.projectId ?? undefined } } : {}),
@@ -99,7 +116,8 @@ export function ProgramChatWidget(props: ProgramChatWidgetProps) {
         options={options}
         {...(props.windowed ? { windowed: props.windowed } : {})}
         onTarget={(target) => {
-          shown.current = target.projectId;
+          // An earlier chat with no project reads back as the reserved `panel`, which names no project to start in.
+          shown.current = target.projectId === EARLIER_CHAT_PROJECT ? undefined : target.projectId;
           // Another thread may be another project's: its live activity is read now, not on the next change.
           transport.activity.followProject();
         }}

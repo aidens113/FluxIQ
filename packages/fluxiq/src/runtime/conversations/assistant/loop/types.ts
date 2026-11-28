@@ -2,7 +2,7 @@
 // spent, what the model has been told so far, and how a step reaches the thread.
 
 import type { AutomationStudioConversationAttachment } from "../../turn.ts";
-import type { PanelAssistantThreads } from "../store/index.ts";
+import type { PanelAssistantThreadStore } from "../store/index.ts";
 import type { PanelAssistantActor, PanelAssistantClientAction, PanelAssistantContext, PanelAssistantModelTurn, PanelAssistantPrograms, PanelAssistantScope } from "../types.ts";
 import type { PanelAssistantLoopWatch } from "./loop-watch.ts";
 import type { PanelAssistantPurse } from "./purse.ts";
@@ -40,7 +40,8 @@ export type PanelAssistantTurnAttachment = AutomationStudioConversationAttachmen
 /** One message's work in flight. */
 export type PanelAssistantTurnState<TActor extends PanelAssistantActor> = {
   programs: PanelAssistantPrograms<TActor>;
-  threads: PanelAssistantThreads;
+  /** Where the thread is: the person's own panel thread or a project's (`../store/thread-store.ts`). */
+  threads: PanelAssistantThreadStore;
   actor: TActor;
   scope: PanelAssistantScope;
   conversationId: string;

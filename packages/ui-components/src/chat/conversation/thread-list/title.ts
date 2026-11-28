@@ -1,18 +1,13 @@
-import { conversationSubjectFallbackLabel, conversationSubjectLabel } from "./labels.ts";
+import { conversationSubjectLabel } from "./labels.ts";
 import type { ChatThreadSummary } from "./summary.ts";
 
 /**
- * The name at the top of the chat. Core's title first; a thread about the
- * project, or no thread yet, takes the project's name; a thread about a run or
- * a Flow Core did not title reads as that noun in the project ("This run ·
- * Company website"). With neither a thread nor a project, it spans them all.
+ * The name at the top of the chat: the conversation's own. Core's title first; a thread Core did not title reads
+ * as the noun for what it is about ("New chat", "This run", "This Flow"); with no thread yet, `emptyTitle` (a host
+ * whose chat has its own name), else "New chat". Never the project's name: the project has its own switcher, and
+ * the name here is not a control.
  */
-export function conversationDisplayTitle(thread: ChatThreadSummary | null, projectName?: string | null, emptyTitle?: string): string {
-  const project = projectName?.trim() || null;
-  if (!thread) return project ?? (emptyTitle?.trim() || "All projects");
-  const label = conversationSubjectLabel(thread);
-  if (label !== conversationSubjectFallbackLabel(thread)) return label;
-  // The assistant's own thread belongs to no project, so no project is added to its name.
-  if (!project || thread.subject.kind === "panel") return label;
-  return thread.subject.kind === "project" ? project : `${label} · ${project}`;
+export function conversationDisplayTitle(thread: ChatThreadSummary | null, emptyTitle?: string): string {
+  if (!thread) return emptyTitle?.trim() || "New chat";
+  return conversationSubjectLabel(thread);
 }

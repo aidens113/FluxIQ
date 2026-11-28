@@ -6,3 +6,6 @@ export { createComposedConversationPort, type ComposedConversationOptions } from
 export { createPanelConversationPort, type PanelConversationOptions } from "./panel-conversation-port";
 export { createThreadChanges } from "./thread-changes";
 export { notifyKeysOnFailedSend } from "./notify-keys-on-failed-send";
+export { askFirstProject } from "./ask-first-project";
+export type { PersonProject } from "./person-project";
+export { PANEL_ON_SCREEN_ATTACHMENT, withOnScreen } from "./with-on-screen";

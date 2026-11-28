@@ -45,19 +45,16 @@ describe("global program web route", () => {
 });
 
 describe("a paired client on the program route", () => {
-  it("allowlists exactly the conversation, run and Simple Mode endpoints, the secret-keys snapshot and the person's own model key", () => {
+  it("allowlists exactly the conversation, run and Simple Mode endpoints, the secret-keys snapshot and the person's own preferences read", () => {
     expect(PAIRED_CLIENT_ENDPOINTS).toEqual({
       "automation-studio": [
         "get-runtime-build-identity",
         "projects",
-        "create-project",
         "list-conversations",
         "open-conversation",
         "get-conversation",
         "append-turn",
         "answer-ask",
-        "rename-conversation",
-        "delete-conversation",
         "list-runtime-sessions",
         "cancel-runtime-session",
         "cancel-flow-bootstrap",
@@ -90,11 +87,13 @@ describe("a paired client on the program route", () => {
         "save-project-part",
         "run-project-part",
       ],
-      "secret-keys": ["snapshot", "save-model-key", "replace-model-key", "remove-model-key"],
+      "secret-keys": ["snapshot"],
+      "identity-access": ["get-my-preferences"],
     });
     expect(Object.isFrozen(PAIRED_CLIENT_ENDPOINTS)).toBe(true);
     expect(Object.isFrozen(PAIRED_CLIENT_ENDPOINTS["automation-studio"])).toBe(true);
     expect(Object.isFrozen(PAIRED_CLIENT_ENDPOINTS["secret-keys"])).toBe(true);
+    expect(Object.isFrozen(PAIRED_CLIENT_ENDPOINTS["identity-access"])).toBe(true);
     expect(isPairedClientEndpoint("automation-studio", "append-turn")).toBe(true);
     expect(isPairedClientEndpoint("automation-studio", "run-runtime-session")).toBe(true);
     expect(isPairedClientEndpoint("secret-keys", "snapshot")).toBe(true);
@@ -104,9 +103,11 @@ describe("a paired client on the program route", () => {
     expect(isPairedClientEndpoint("automation-studio", "get-runtime-run-control")).toBe(true);
     // What a recording may capture and whether direct requests are allowed: Core's policy, read before capture (t728).
     expect(isPairedClientEndpoint("automation-studio", "get-recording-capture-policy")).toBe(true);
-    // The extension's project switcher: listing and making a project, never renaming or deleting one.
+    // The extension's project switcher lists projects; making, renaming and deleting one are the panel's (t1095).
     expect(isPairedClientEndpoint("automation-studio", "projects")).toBe(true);
-    expect(isPairedClientEndpoint("automation-studio", "create-project")).toBe(true);
+    expect(isPairedClientEndpoint("automation-studio", "create-project")).toBe(false);
+    expect(isPairedClientEndpoint("automation-studio", "rename-conversation")).toBe(false);
+    expect(isPairedClientEndpoint("automation-studio", "delete-conversation")).toBe(false);
     expect(isPairedClientEndpoint("automation-studio", "update-project")).toBe(false);
     expect(isPairedClientEndpoint("automation-studio", "delete-project")).toBe(false);
     expect(isPairedClientEndpoint("automation-studio", "create-project-category")).toBe(false);
@@ -115,11 +116,14 @@ describe("a paired client on the program route", () => {
     expect(isPairedClientEndpoint("automation-studio", "review-flow-adaptation")).toBe(false);
     expect(isPairedClientEndpoint("automation-studio", "issue-llm-execution-grant")).toBe(false);
     expect(isPairedClientEndpoint("secret-keys", "reveal-key")).toBe(false);
-    // The person's own model key, and no other key write (t928).
-    for (const endpoint of ["save-model-key", "replace-model-key", "remove-model-key"]) expect(isPairedClientEndpoint("secret-keys", endpoint), endpoint).toBe(true);
-    for (const endpoint of ["create-key", "update-key", "rotate-key", "delete-key", "set-default-key", "set-assistant-model", "offer-key", "get-assistant-model"]) {
+    // No key write at all, the person's own model key included (t1095; it was allowed from t928).
+    for (const endpoint of ["save-model-key", "replace-model-key", "remove-model-key", "create-key", "update-key", "rotate-key", "delete-key", "set-default-key", "set-assistant-model", "offer-key", "get-assistant-model"]) {
       expect(isPairedClientEndpoint("secret-keys", endpoint), endpoint).toBe(false);
     }
+    // The person's own preferences: read, never changed (t1095).
+    expect(isPairedClientEndpoint("identity-access", " Get-My-Preferences ")).toBe(true);
+    expect(isPairedClientEndpoint("identity-access", "update-my-preferences")).toBe(false);
+    expect(isPairedClientEndpoint("identity-access", "snapshot")).toBe(false);
     expect(isPairedClientEndpoint("identity-access", "append-turn")).toBe(false);
   });
 
@@ -132,12 +136,8 @@ describe("a paired client on the program route", () => {
     expect(isPairedClientClassification(undefined)).toBe(false);
   });
 
-  it("reaches a program-gated endpoint only where it is the person's own model key, which IAM alone decides (t928)", () => {
-    for (const endpoint of ["save-model-key", "replace-model-key", "remove-model-key", " Save-Model-Key "]) {
-      expect(isPairedClientClassification("program-gated", "secret-keys", endpoint), endpoint).toBe(true);
-    }
-    // Other program-gated endpoints run a credential check of their own, or are not the person's own key.
-    for (const endpoint of ["reveal-key", "create-key", "delete-key", "set-default-key", "set-assistant-model", "offer-key"]) {
+  it("reaches no program-gated endpoint, the person's own model-key writes included since t1095", () => {
+    for (const endpoint of ["save-model-key", "replace-model-key", "remove-model-key", " Save-Model-Key ", "reveal-key", "create-key", "delete-key", "set-default-key", "set-assistant-model", "offer-key"]) {
       expect(isPairedClientClassification("program-gated", "secret-keys", endpoint), endpoint).toBe(false);
     }
     // Named by program and endpoint together, and only for program-gated: never destructive, never unknown.
@@ -171,18 +171,8 @@ describe("a paired client on the program route", () => {
       expect(narrowPairedClientRequest("automation-studio", "projects", { projectId: "p", domainId: "other", includeOwners: true })).toEqual({ ok: true, payload: {} });
     });
 
-    it("makes a project from its name alone, ignoring a description, category, domain, PIN or session", () => {
-      const narrow = (payload: unknown) => narrowPairedClientRequest("automation-studio", " Create-Project ", payload);
-      expect(narrow({ name: "Shop" })).toEqual({ ok: true, payload: { name: "Shop" } });
-      expect(narrow({ name: "Shop", description: "d", categoryId: "c", domainId: "other", authorizationPin: "1234", authSessionId: "s", projectId: "p" })).toEqual({ ok: true, payload: { name: "Shop" } });
-      for (const payload of [undefined, {}, { name: 7 }, ["Shop"]]) {
-        expect(narrow(payload)).toEqual({ ok: false, errorCode: "authorization.forbidden", error: "A paired client's new project must carry its name as a string." });
-      }
-    });
-
-    it("targets no project, so neither is refused for the session's current one", () => {
+    it("targets no project when listing, so it is not refused for the session's current one", () => {
       expect(pairedClientProjectTarget("automation-studio", {}, "project.gone", "projects")).toEqual({ ok: true, projectId: null });
-      expect(pairedClientProjectTarget("automation-studio", { projectId: "project.other" }, "project.gone", "create-project")).toEqual({ ok: true, projectId: null });
       // Every other endpoint still reaches the body's project, or the session's.
       expect(pairedClientProjectTarget("automation-studio", {}, "project.current", "list-conversations")).toEqual({ ok: true, projectId: "project.current" });
       expect(pairedClientProjectTarget("automation-studio", { projectId: "project.named" }, "project.current", "list-conversations")).toEqual({ ok: true, projectId: "project.named" });
@@ -208,13 +198,6 @@ describe("a paired client on the program route", () => {
       expect(projectPairedClientResponse("automation-studio", "projects", { ok: true, payload: {} })).toEqual({ ok: true, payload: { projects: [] } });
       expect(projectPairedClientResponse("automation-studio", "projects", { ok: false, error: "No.", errorCode: "authorization.forbidden", payload: { projects: [{ id: "x", name: "y", ownerUserId: "user.alice" }] } }))
         .toEqual({ ok: false, error: "No.", errorCode: "authorization.forbidden" });
-    });
-
-    it("answers a made project with its id, name and last change alone", () => {
-      const answer = projectPairedClientResponse("automation-studio", "create-project", { ok: true, payload: { project: { id: "p.9", name: "New", description: "", domainId: "web", categoryId: null, ownerUserId: "user.alice", createdAt: 5, updatedAt: 5 } } });
-      expect(answer).toEqual({ ok: true, payload: { project: { id: "p.9", name: "New", updatedAt: 5 } } });
-      expect(projectPairedClientResponse("automation-studio", "create-project", { ok: true, payload: {} })).toEqual({ ok: true, payload: { project: null } });
-      expect(projectPairedClientResponse("automation-studio", "create-project", { ok: false, error: "Project name is required." })).toEqual({ ok: false, error: "Project name is required." });
     });
   });
 
@@ -403,18 +386,27 @@ describe("a paired client on the program route", () => {
     });
   });
 
-  it("renames or deletes a conversation by project, thread and name only", () => {
-    const rename = (payload: unknown) => narrowPairedClientRequest("automation-studio", "rename-conversation", payload);
-    const remove = (payload: unknown) => narrowPairedClientRequest("automation-studio", "delete-conversation", payload);
-    expect(rename({ projectId: "p", conversationId: "conversation.1", title: "Loans" })).toEqual({ ok: true, payload: { projectId: "p", conversationId: "conversation.1", title: "Loans" } });
-    expect(rename({ conversationId: "conversation.1", title: "Loans" })).toMatchObject({ ok: true });
-    expect(remove({ projectId: "p", conversationId: "conversation.1" })).toEqual({ ok: true, payload: { projectId: "p", conversationId: "conversation.1" } });
-    expect(rename({ projectId: "p", conversationId: "c", title: "x", subjectId: "s" })).toEqual({ ok: false, errorCode: "authorization.forbidden", error: "A paired client's change to a conversation may not carry subjectId." });
-    expect(remove({ projectId: "p", conversationId: "c", title: "x" })).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
-    expect(remove({ projectId: "p", conversationId: "c", authSessionId: "s" })).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
-    expect(remove(undefined)).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
-    expect(isPairedClientEndpoint("automation-studio", "rename-conversation")).toBe(true);
-    expect(isPairedClientEndpoint("automation-studio", "delete-conversation")).toBe(true);
+  it("reads the person's own preferences with an empty body only, never naming a person (t1095)", () => {
+    const narrow = (payload: unknown) => narrowPairedClientRequest("identity-access", " Get-My-Preferences ", payload);
+    expect(narrow(undefined)).toEqual({ ok: true, payload: {} });
+    expect(narrow(null)).toEqual({ ok: true, payload: {} });
+    expect(narrow({})).toEqual({ ok: true, payload: {} });
+    expect(narrow({ userId: "user.other" })).toEqual({ ok: false, errorCode: "authorization.forbidden", error: "A paired client's read of its person's preferences may not carry userId." });
+    for (const payload of [{ id: "user.self" }, { startingHumanness: 40 }, { authSessionId: "s" }, { user: { id: "x" } }]) {
+      expect(narrow(payload), JSON.stringify(payload)).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
+    }
+    for (const payload of ["user.other", ["user.other"], 7]) {
+      expect(narrow(payload), JSON.stringify(payload)).toEqual({ ok: false, errorCode: "authorization.forbidden", error: "A paired client's read of its person's preferences carries no body." });
+    }
+  });
+
+  it("answers the person's own preferences with startingHumanness alone, rebuilt (t1095)", () => {
+    const project = (response: Parameters<typeof projectPairedClientResponse>[2]) => projectPairedClientResponse("identity-access", "get-my-preferences", response);
+    expect(project({ ok: true, payload: { startingHumanness: 40, userId: "user.self", other: "x" } })).toEqual({ ok: true, payload: { startingHumanness: 40 } });
+    expect(project({ ok: true, payload: { startingHumanness: null } })).toEqual({ ok: true, payload: { startingHumanness: null } });
+    expect(project({ ok: true, payload: { startingHumanness: "40" } })).toEqual({ ok: true, payload: { startingHumanness: null } });
+    expect(project({ ok: true })).toEqual({ ok: true, payload: { startingHumanness: null } });
+    expect(project({ ok: false, error: "No.", errorCode: "authorization.forbidden", payload: { startingHumanness: 9 } })).toEqual({ ok: false, error: "No.", errorCode: "authorization.forbidden" });
   });
 
   it("runs only a saved Flow by id, never with inputs, an inline Flow or a side-effect authorization, and with no LLM unless it names the repair intent", () => {
@@ -518,29 +510,6 @@ describe("a paired client on the program route", () => {
     const payload = { projectId: "p", flowId: "f", inputs: { a: 1 } };
     expect(narrowPairedClientRequest("automation-studio", "list-flow-runs", payload)).toEqual({ ok: true, payload });
     expect(narrowPairedClientRequest("secret-keys", "snapshot", undefined)).toEqual({ ok: true, payload: undefined });
-  });
-
-  it("hands a model-key write only the fields its handler reads, ignoring an older client's credential fields (t928)", () => {
-    const sent = { provider: "anthropic", value: "dummy-value", name: "Mine", authorizationPassword: "pw", authorizationPin: "1234", keyId: "secret:other", scope: "global" };
-    expect(narrowPairedClientRequest("secret-keys", "save-model-key", sent)).toEqual({ ok: true, payload: { provider: "anthropic", value: "dummy-value", name: "Mine" } });
-    expect(narrowPairedClientRequest("secret-keys", " Replace-Model-Key ", sent)).toEqual({ ok: true, payload: { value: "dummy-value" } });
-    expect(narrowPairedClientRequest("secret-keys", "remove-model-key", sent)).toEqual({ ok: true, payload: {} });
-    // A missing or malformed field goes on as sent, for the handler to refuse in its own words.
-    expect(narrowPairedClientRequest("secret-keys", "save-model-key", { provider: 7 })).toEqual({ ok: true, payload: { provider: 7 } });
-    for (const payload of [undefined, null, "text", ["value"]]) expect(narrowPairedClientRequest("secret-keys", "replace-model-key", payload)).toEqual({ ok: true, payload: {} });
-  });
-
-  it("answers a model-key write with the person's model access alone, without the key's id (t928)", () => {
-    const modelAccess = { status: "ready", message: "Your chats use your Anthropic key.", key: { id: "secret:1", name: "Claude", provider: "anthropic", model: "claude-sonnet-4-5", value: "must-not-leak" }, lastCall: null };
-    for (const endpoint of ["save-model-key", "replace-model-key", "remove-model-key"]) {
-      const projected = projectPairedClientResponse("secret-keys", endpoint, { ok: true, payload: { modelAccess, id: "secret:1", keys: [{ id: "secret:1" }] } });
-      expect(projected, endpoint).toEqual({ ok: true, payload: { modelAccess: { status: "ready", message: modelAccess.message, key: { name: "Claude", provider: "anthropic", model: "claude-sonnet-4-5" }, lastCall: null } } });
-      expect(JSON.stringify(projected)).not.toMatch(/secret:1|must-not-leak/);
-    }
-    // One that does not read is left out, never shown as ready; a refusal keeps its sentence and code alone.
-    expect(projectPairedClientResponse("secret-keys", "remove-model-key", { ok: true, payload: { modelAccess: { status: "ready", message: "x", key: null, lastCall: null } } })).toEqual({ ok: true, payload: {} });
-    expect(projectPairedClientResponse("secret-keys", "save-model-key", { ok: true })).toEqual({ ok: true, payload: {} });
-    expect(projectPairedClientResponse("secret-keys", "replace-model-key", { ok: false, error: "No key.", errorCode: "authorization.forbidden", payload: { id: "secret:1" } })).toEqual({ ok: false, error: "No key.", errorCode: "authorization.forbidden" });
   });
 
   it("keeps readiness unknown when the snapshot supplied no list", () => {

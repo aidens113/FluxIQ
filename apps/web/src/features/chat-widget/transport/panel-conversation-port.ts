@@ -3,6 +3,9 @@
 // `answer-panel-ask`, and `open-panel-thread`, `rename-panel-thread` and `delete-panel-thread` for the list's controls). Only the transport's panel branch uses it; project
 // threads keep `conversation-port.ts` and its endpoints.
 //
+// Since every chat belongs to a project (t1095) it serves only the person's earlier chats, which
+// still open and continue here; the dock makes no new one (`composed-conversation-port.ts`).
+//
 // A panel thread belongs to no project, so no request names one. Every send
 // carries what the person has open (`onScreen.page` and `onScreen.selection`),
 // asked at the send so it is what is on screen then. Core runs the work in the

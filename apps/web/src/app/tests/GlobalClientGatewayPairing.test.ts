@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { closedPairingNotice, liveUpdatesNotice, pairingExpiryLabel, pairingSnapshot, pairingSnapshotsEqual, pendingPairingRequests, vanishedPairingNotice, type ClientPairingRequest } from "../GlobalClientGatewayPairing";
+import { closedPairingNotice, liveUpdatesNotice, pairingExpiryLabel, pairingRequestKey, pairingSnapshot, pairingSnapshotsEqual, pairingStillWaiting, pendingPairingRequests, vanishedPairingNotice, type ClientPairingRequest } from "../GlobalClientGatewayPairing";
 
 const nowMs = 1_000_000;
 const request = (overrides: Partial<ClientPairingRequest> = {}): ClientPairingRequest => ({
@@ -11,15 +11,31 @@ const request = (overrides: Partial<ClientPairingRequest> = {}): ClientPairingRe
 });
 
 describe("Global client pairing dismissal", () => {
-  it("keeps only active, requested, non-dismissed pairings in stable order", () => {
+  it("keeps only requested, unapproved pairings not answered here, in stable order", () => {
     const pairings = [
       request(),
-      request({ pairingCode: "expired", expiresAt: nowMs - 1 }),
+      { pairingCode: "unrequested", expiresAt: nowMs + 30_000 },
       request({ pairingCode: "consumed", consumedAt: nowMs }),
-      request({ pairingCode: "dismissed" }),
+      request({ pairingCode: "resolved" }),
       request({ pairingCode: "pair-2", requestedBySessionId: "session-2" })
     ];
-    expect(pendingPairingRequests(pairings, nowMs, ["dismissed"]).map((item) => item.pairingCode)).toEqual(["pair-1", "pair-2"]);
+    expect(pendingPairingRequests(pairings, ["resolved"]).map((item) => item.pairingCode)).toEqual(["pair-1", "pair-2"]);
+  });
+
+  // t1095 RC1: the gateway renews a lapsed code while its client waits. The
+  // tab's own clock must not close the request in the moment before the
+  // renewed code arrives; the gateway drops what has really ended.
+  it("leaves a request past its expiry to the gateway, which renews or drops it", () => {
+    expect(pendingPairingRequests([request({ expiresAt: nowMs - 1 })], []).map((item) => item.pairingCode)).toEqual(["pair-1"]);
+  });
+
+  it("treats a renewed code from the same client as the same request", () => {
+    const shown = request();
+    const renewed = request({ pairingCode: "pair-renewed" });
+    expect(pairingRequestKey(renewed)).toBe(pairingRequestKey(shown));
+    expect(pairingStillWaiting(shown, [renewed])).toBe(true);
+    expect(pairingStillWaiting(shown, [request({ pairingCode: "other", requestedBySessionId: "session-2" })])).toBe(false);
+    expect(pairingStillWaiting(shown, [])).toBe(false);
   });
 
   it("formats a live expiry countdown without negative values", () => {
@@ -66,7 +82,7 @@ describe("Global client pairing dismissal", () => {
 
   it("shows a closed approval's notice even once no request is pending", () => {
     const source = readFileSync(new URL("../GlobalClientGatewayPairing.tsx", import.meta.url), "utf8");
-    expect(source).toContain("if (!pendingPairing) return closedNotice ?");
+    expect(source).toMatch(/if \(!pendingPairing\) return \([\s\S]*?\{closedNotice \? \(/u);
   });
   // t707 P2: a request the person was reading that disappears without their
   // approve or dismiss must not just vanish; the panel says why, honestly.
@@ -84,9 +100,10 @@ describe("Global client pairing dismissal", () => {
     expect(approvedElsewhere.message).not.toContain("nothing was paired");
   });
 
-  it("raises the vanished notice only for requests this operator did not resolve", () => {
+  it("raises the vanished notice only for requests this operator did not resolve and that are not still waiting", () => {
     const source = readFileSync(new URL("../GlobalClientGatewayPairing.tsx", import.meta.url), "utf8");
-    expect(source).toContain("if (dismissedCodes.includes(shown.pairingCode)) return;");
+    expect(source).toContain("if (resolvedCodes.includes(shown.pairingCode)) return;");
+    expect(source).toContain("if (pairingStillWaiting(shown, pending)) return;");
     expect(source).toContain("setClosedNotice(vanishedPairingNotice(shown, snapshot.pairings ?? [], Date.now()));");
   });
 

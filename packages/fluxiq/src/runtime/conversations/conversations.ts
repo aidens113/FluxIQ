@@ -368,6 +368,11 @@ export class AutomationStudioConversations {
     return this.withStore(input.projectId, (store) => store.getTurn(input.conversationId, input.turnId));
   }
 
+  /** The thread's last `count` turns, oldest first: what the panel assistant reads a project thread back as (`assistant/store/project-threads.ts`). */
+  recentTurns(input: { projectId: string; conversationId: string; count: number }): Promise<AutomationStudioConversationTurn[]> {
+    return this.withStore(input.projectId, (store) => store.recentTurns(input.conversationId, input.count));
+  }
+
   /** Connects the model a person's message is read with. Null disconnects it. */
   bindModel(model: AutomationStudioConversationModel | null): this {
     this.model = model;

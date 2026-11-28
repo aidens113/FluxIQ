@@ -10,6 +10,7 @@ import type { ChatAttachment, ChatAttachmentContext, ChatAttachmentPort, ChatRes
 import { CONVERSATION_PANEL_CAPABILITY_ATTACHMENT, CONVERSATION_PANEL_RESULT_ATTACHMENT } from "../../automation-studio/conversation";
 import { drawFlowGraphDiff } from "./flow-graph-diff";
 import { attachmentLabel } from "./labels";
+import { PANEL_ON_SCREEN_ATTACHMENT } from "../transport";
 
 export type PanelAttachmentDeps = {
   read(context: ChatAttachmentContext): Promise<ChatResult<unknown>>;
@@ -22,7 +23,8 @@ export type PanelAttachmentDeps = {
 export function createPanelAttachmentPort(deps: PanelAttachmentDeps): ChatAttachmentPort {
   return {
     isRecord: (attachment) => attachment.kind === CONVERSATION_PANEL_RESULT_ATTACHMENT,
-    isHidden: (attachment) => attachment.kind === CONVERSATION_PANEL_CAPABILITY_ATTACHMENT,
+    // A message's page and selection (`panel.on-screen`) is context for the panel's tools, never something to draw.
+    isHidden: (attachment) => attachment.kind === CONVERSATION_PANEL_CAPABILITY_ATTACHMENT || attachment.kind === PANEL_ON_SCREEN_ATTACHMENT,
     label: attachmentLabel,
     drawer: (kind) => (kind === "flow-graph-diff" ? drawFlowGraphDiff : null),
     read: deps.read,

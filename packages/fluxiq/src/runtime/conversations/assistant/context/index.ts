@@ -3,3 +3,4 @@
 export * from "./panel-context.ts";
 export * from "./context-line.ts";
 export * from "./context-args.ts";
+export * from "./on-screen-attachment.ts";

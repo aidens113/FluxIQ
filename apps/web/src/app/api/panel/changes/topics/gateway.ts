@@ -16,7 +16,9 @@ function fingerprintOf(view: unknown): string {
  * it, recomputes it on every gateway signal, and reports a change only when the
  * fingerprint differs, so a signal for a pairing or client the caller cannot
  * see produces nothing. It reads the view once per burst of signals, one read
- * at a time. A view that cannot be read fails the stream.
+ * at a time. A view that cannot be read fails the stream. The stream opens only
+ * once the first view is read (`opensAfter`), so the browser's read on opening
+ * is never older than the fingerprint changes are compared with.
  */
 export function gatewayChangeTopic(changes: ClientGatewayChangesPort, view: () => Promise<unknown>): PanelChangeTopic {
   return {
@@ -25,6 +27,8 @@ export function gatewayChangeTopic(changes: ClientGatewayChangesPort, view: () =
       let recomputing = false;
       let dirty = true;
       let stopped = false;
+      let baselined: () => void = () => undefined;
+      sink.opensAfter(new Promise<void>((resolve) => { baselined = resolve; }));
       const recompute = async (): Promise<void> => {
         if (recomputing) return;
         recomputing = true;
@@ -41,6 +45,8 @@ export function gatewayChangeTopic(changes: ClientGatewayChangesPort, view: () =
           if (!stopped) sink.fail(error);
         } finally {
           recomputing = false;
+          // The first view is read, failed or no longer wanted: the stream may open (or has failed or ended).
+          baselined();
         }
       };
       // Subscribed before the first view is read, so a change during that read is compared against it.

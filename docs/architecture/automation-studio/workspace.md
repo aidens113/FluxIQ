@@ -833,7 +833,7 @@ It imports no Node built-in and no browser-extension API, and the structure audi
 
 Two clients mount it today:
 
-- **Core's panel** (`apps/web/src/features/chat-widget/`): a thin React host that builds a `ChatTransport` over the real Automation Studio endpoints (`createProgramChatTransport`) and an activity port, and renders as the assistant dock on every panel page. The old chat-only route `/programs/automation-studio/chat` was deleted.
+- **Core's panel** (`apps/web/src/features/chat-widget/`): a thin React host that builds a `ChatTransport` over the real Automation Studio endpoints (`createProgramChatTransport`) and an activity port, and renders as the docked chat ("Chat") on every panel page. The old chat-only route `/programs/automation-studio/chat` was deleted.
 - **The web extension** (`panel/chat` in the downstream repository): an adapter that supplies the extension's transport and host bindings. The downstream repository's extension-client document describes that adapter.
 
 The widget is not part of `fluxiq`, and `fluxiq` does not import it.
@@ -855,10 +855,12 @@ the panel's transport reads a thread or the activity on a timer; the adaptive
   hub. A read, or a write the store refused, signals nothing. Live activity is
   the activity hub's own subscription (`runtime/activity/hub.ts`).
 - **The stream.** `GET /api/panel/changes` is the page's one push connection.
-  It carries three topics: `gateway` (read the gateway snapshot again; see the
+  It carries these topics: `gateway` (read the gateway snapshot again; see the
   client gateway architecture), `conversation` (`{ conversationId, version }`:
-  read that thread again) and `activity` (`{ projectId, version }`: read that
-  project's live activity again). `version` is a per-stream sequence from 1
+  read that thread again), `activity` (`{ projectId, version }`: read that
+  project's live activity again), `model-access` (read the Secret Keys snapshot
+  again) and `context` (read the client snapshot again: the person's current
+  project or open Flow changed; see "The person's current project" below). `version` is a per-stream sequence from 1
   with no gaps, never Core's own count. An event carries no content, only an id
   the caller may already read; the browser reads through the existing
   IAM-checked endpoints. Repeats are coalesced until sent.
@@ -905,9 +907,69 @@ the panel's transport reads a thread or the activity on a timer; the adaptive
   names and tells nothing when its socket reconnects, so it keeps the 10 s
   beat.
 
-### The assistant dock's threads
+### Every chat belongs to a project
 
-The dock talks in panel threads: the panel assistant's own chats, one database per person outside every project (`runtime/conversations/assistant/store/`). Its endpoints are `automation-studio/<name>` (`programs/automation-studio/api/panel-assistant/`). Each declares `endpointResource.selfUser()`, except the two allowance endpoints, which change one value for the whole workspace and so declare `endpointResource.workspace()`, as the assistant's model setting does. Each takes the user from the signed-in actor and never from the payload, refuses a paired client (the extension keeps its own threads), and is hidden from the assistant's tools:
+Since t1095 there is one kind of chat. A chat the person starts in the panel's dock is a project conversation, in the
+project's own conversation store, which the panel's `/chats` and every client (the extension included) read, so the panel
+and the extension show the same chat.
+
+- **Which project.** The dock works in the project the top bar has open. With none open, a first message or New chat
+  starts in the person's own project, exactly as a paired browser's chat does: `POST /api/client-gateway/first-project`
+  answers their latest own project, or makes their first one ("My automations"); the panel asks in the domain its page is
+  scoped to, or unscoped (`automationStudioPersonProject`'s `unscoped`). The panel then opens that project, which also
+  makes it the person's current one (below). The dock's transport is `chat-widget/transport/`
+  (`composed-conversation-port.ts`, `project-to-start.ts`, `ask-first-project.ts`).
+- **The list.** The open project's chats (every project's with none open), then the person's earlier chats from before
+  this, which belong to no project and are titled "No project · <title>". An earlier chat still opens, continues, answers
+  its cards, renames and deletes where it lives, on the panel assistant's endpoints below, and in `/chats` it links to
+  `/chats/<conversationId>` with no project; nothing new is made there. `/chats/<conversationId>?project=<projectId>`
+  opens a project's chat, which is how "Open in FluxIQ panel" from a client lands on the same conversation.
+- **The panel's own tools in a project chat.** A project chat's reading of a message chooses among Core's own commands
+  and the panel's capabilities. A panel caller's vocabulary is also offered Core's `panel.assistant` command ("Anything
+  else in the FluxIQ panel", `runtime/conversations/commands/panel-assistant/`), never a paired client's. Chosen, it
+  hands the message to the panel assistant through `automation-studio/work-in-project-thread`
+  (`{ projectId, conversationId, answerTurnId }` answering `{ ending, spentUsd }`, `PANEL_ASSISTANT_PROJECT_ENDPOINTS`),
+  decided on the project and refused to a paired client. That endpoint reads the person's stored turn for their words and
+  page, and runs the assistant's own loop, tools, Allow cards and per-message allowance into the project's thread
+  (`PanelAssistant.workInProject`, `runtime/conversations/assistant/store/project-threads.ts`), with the thread's own
+  project as its context. The command runs as background command work, so a delete of the thread is refused while it
+  runs, and its last line says how the work ended.
+- **Its cards.** Every card the assistant raises is `ask.assistant.<uuid>`. In a project thread it is answered through the
+  project's own `answer-ask`, which hands it to the assistant (`answerInProject`): exactly the call the card kept runs,
+  once, and only for the person whose message raised it, since that call is kept in their own panel database; anyone
+  else is refused before the ask is settled. A paired client is refused with "This question was asked by the FluxIQ
+  panel's tools. Answer it in the FluxIQ panel." A step's navigation, or a reference into another project, is read through
+  `get-conversation-attachment` as a panel thread's would be, each project decided by IAM and its domain.
+- **The page a message was written on.** The dock keeps what the person had open with each message as a person-turn
+  attachment, `panel.on-screen`: base64url JSON of the chat's `onScreen` (page, selection, `flowId`, `runId`), within
+  the 1000-character reference limit (a longer selection keeps its page and named ids and leaves out its step and node
+  lists). It is written by `chat-widget/transport/with-on-screen.ts`, read strictly through `panelAssistantContextOf`
+  (`runtime/conversations/assistant/context/on-screen-attachment.ts`), and hidden by the panel's attachment port. The
+  work on a message, and an Allow pressed later, is judged by what was selected when it was said.
+- **On the e2e fixture host** (its marker and `FLUXIQ_E2E_SCRIPTED_ASSISTANT`), the project chat's reading is replayed
+  from the scripted assistant's script (`runtime/conversations/assistant/model/chat-model-binding.ts`): a scenario's
+  message is handed to `panel.assistant`, or to the capability its `chat` names.
+
+### The person's current project
+
+The person's current project and open Flow are one value, per person, kept by the panel's host and shared by the panel
+and every client: `POST /api/client-gateway/automation-studio-context` sets it (the panel, and a paired client for
+itself; the route is described in the client gateway architecture), and the client snapshot reads it back.
+
+- **The panel** (`features/panel-shell/context/`): on load it adopts `?project=` from the address, else Core's value, else
+  what the browser remembered, which is only the fallback when Core holds none or cannot be read. A project the person
+  picked before Core answered stands. Every switch is written to Core, and so is a Flow a page opens; leaving a Flow's
+  page writes nothing, so a client's open Flow is not cleared. A project Core holds that the panel cannot see is dropped
+  locally and kept in Core.
+- **Following.** A committed write signals the person's own streams (`context`, `app/api/panel/changes/topics/context.ts`,
+  one registry on `globalThis` so the writing route and the stream route reach the same listeners). The panel reads Core
+  again on `context`, and whenever its stream opens again, and follows without writing back.
+- **Recordings** a paired client starts go into this value whatever its age (`resolveClientRecordingProject`); the
+  five-minute lease it once carried was a staleness guard for a value only an open Studio page wrote, and is gone.
+
+### The panel assistant's endpoints
+
+Earlier chats are panel threads: the panel assistant's own chats, one database per person outside every project (`runtime/conversations/assistant/store/`). Its endpoints are `automation-studio/<name>` (`programs/automation-studio/api/panel-assistant/`). Each declares `endpointResource.selfUser()`, except the two allowance endpoints, which change one value for the whole workspace and so declare `endpointResource.workspace()`, as the assistant's model setting does. Each takes the user from the signed-in actor and never from the payload, refuses a paired client (the extension keeps its own threads), and is hidden from the assistant's tools:
 
 | Endpoint | Body | Answer |
 | --- | --- | --- |

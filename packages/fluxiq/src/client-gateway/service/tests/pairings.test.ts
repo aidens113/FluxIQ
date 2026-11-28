@@ -161,4 +161,29 @@ describe("ClientGatewayPairingRegistry changes", () => {
     expect(registry.size()).toBe(1);
     expect(timers.live()).toEqual([]);
   });
+
+  it("pruneExpired reports which sessions' requests expired, after the lapse is signalled and they are gone", () => {
+    let now = 0;
+    const heard: string[] = [];
+    const registry: ClientGatewayPairingRegistry = new ClientGatewayPairingRegistry(resolveClientGatewayConfig({ now: () => now }), () => null, {
+      changed: (kind) => heard.push(kind),
+      lapsed: (challenges) => {
+        heard.push(`lapsed ${challenges.map((challenge) => challenge.requestedBySessionId).join(",")}`);
+        expect(challenges.every((challenge) => registry.get(challenge.pairingCode) === undefined)).toBe(true);
+      },
+      startExpiryTimer: manualTimers().start
+    });
+    registry.create({ requestedBySessionId: "s1", ttlMs: 1_000 });
+    registry.create({ requestedBySessionId: "s2", ttlMs: 1_000 });
+    const consumed = registry.create({ requestedBySessionId: "s3", ttlMs: 1_000 });
+    consumed.consumedAt = 500;
+    registry.create({ requestedBySessionId: "s4", ttlMs: 5_000 });
+    heard.length = 0;
+
+    now = 1_001;
+    registry.pruneExpired();
+    registry.pruneExpired();
+
+    expect(heard).toEqual(["pairing.expired", "lapsed s1,s2"]);
+  });
 });

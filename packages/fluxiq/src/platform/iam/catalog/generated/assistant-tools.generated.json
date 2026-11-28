@@ -4881,6 +4881,12 @@
       "reason": "Part of moving a project off its old storage format, which a migration tool does and a person does not ask for in words."
     },
     {
+      "name": "automation-studio__work-in-project-thread",
+      "programId": "automation-studio",
+      "endpoint": "work-in-project-thread",
+      "reason": "A project's chat hands a message to the panel's tools by itself; a person never asks for this."
+    },
+    {
       "name": "background-tasks__control",
       "programId": "background-tasks",
       "endpoint": "control",

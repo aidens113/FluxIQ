@@ -5,11 +5,13 @@
 //   rows          one button per project, the current one marked
 //                 (`aria-current`); ArrowDown from the search box enters
 //                 them, ArrowUp and ArrowDown move, Home and End jump
-//   New project   shows an inline name field; Enter or Create makes the
+//   New project   only when `port.create` exists (the FluxIQ panel); shows an inline name field; Enter or Create makes the
 //                 project through `port.create` and selects it, Escape
 //                 cancels the field
 //   All projects  "All projects in FluxIQ", only when the host gives
-//                 `onOpenAll`
+//                 `onOpenAll`; without `port.create` it reads "Add or manage
+//                 projects in the FluxIQ panel", and with no project the button
+//                 says "No project yet" (FluxIQ makes one on the first message)
 //
 // Focus stays in the sheet while it is open (Tab wraps), Escape closes it and
 // gives focus back to the button, and so does a press outside. Reads and writes
@@ -70,7 +72,8 @@ export function createProjectSwitcher(options: ProjectSwitcherOptions): ProjectS
   const rows = createElement("ul", { className: "project-switcher-rows", attrs: { role: "list", "aria-label": "Projects" } });
   const none = createElement("p", { className: "project-switcher-none", hidden: true, attrs: { role: "status" } });
   const retry = createElement("button", { className: "project-switcher-retry", text: "Try again", hidden: true, attrs: { type: "button" } });
-  const newButton = createElement("button", { className: "project-switcher-new", attrs: { type: "button", "aria-expanded": "false" } }, [lucideIcon("plus", 14), "New project"]);
+  const canCreate = options.port.create !== undefined;
+  const newButton = createElement("button", { className: "project-switcher-new", hidden: !canCreate, attrs: { type: "button", "aria-expanded": "false" } }, [lucideIcon("plus", 14), "New project"]);
   const nameInput = createElement("input", {
     className: "project-switcher-name-input",
     attrs: { type: "text", placeholder: "Project name", "aria-label": "Project name", autocomplete: "off", maxlength: "120" }
@@ -78,7 +81,7 @@ export function createProjectSwitcher(options: ProjectSwitcherOptions): ProjectS
   const createButton = createElement("button", { className: "project-switcher-create", text: "Create", attrs: { type: "button" } });
   const cancelButton = createElement("button", { className: "project-switcher-cancel", text: "Cancel", attrs: { type: "button" } });
   const naming = createElement("div", { className: "project-switcher-naming", hidden: true, attrs: { role: "group", "aria-label": "New project" } }, [nameInput, createButton, cancelButton]);
-  const allButton = createElement("button", { className: "project-switcher-all", hidden: options.onOpenAll === undefined, attrs: { type: "button" } }, [lucideIcon("globe", 14), "All projects in FluxIQ"]);
+  const allButton = createElement("button", { className: "project-switcher-all", hidden: options.onOpenAll === undefined, attrs: { type: "button" } }, [lucideIcon("globe", 14), canCreate ? "All projects in FluxIQ" : "Add or manage projects in the FluxIQ panel"]);
   const sheet = createElement("div", { id: sheetId, className: "project-switcher-sheet", hidden: true, attrs: { role: "dialog", "aria-modal": "true", "aria-label": "Projects" } }, [
     createElement("div", { className: "project-switcher-tools" }, [search]),
     notice,
@@ -142,9 +145,10 @@ export function createProjectSwitcher(options: ProjectSwitcherOptions): ProjectS
   }
 
   function draw(): void {
-    const label = current?.name ?? "Choose a project";
+    const empty = canCreate ? "Choose a project" : "No project yet";
+    const label = current?.name ?? empty;
     if (name.textContent !== label) name.textContent = label;
-    button.setAttribute("aria-label", current === null ? "Choose a project" : `Project ${current.name}, change project`);
+    button.setAttribute("aria-label", current === null ? empty : `Project ${current.name}, change project`);
     button.setAttribute("aria-expanded", String(isOpen));
     sheet.hidden = !isOpen;
     const query = search.value.trim();
@@ -164,7 +168,7 @@ export function createProjectSwitcher(options: ProjectSwitcherOptions): ProjectS
       choose.disabled = busy;
       return item;
     }));
-    const words = failed ?? (!loaded ? "Loading projects…" : projects.length === 0 ? "No projects yet." : visible.length === 0 ? `No projects match “${query}”.` : "");
+    const words = failed ?? (!loaded ? "Loading projects…" : projects.length === 0 ? (canCreate ? "No projects yet." : "FluxIQ makes one when you send your first message.") : visible.length === 0 ? `No projects match “${query}”.` : "");
     if (none.textContent !== words) none.textContent = words;
     none.hidden = words === "";
     retry.hidden = failed === undefined;
@@ -174,6 +178,7 @@ export function createProjectSwitcher(options: ProjectSwitcherOptions): ProjectS
     createButton.disabled = busy;
     nameInput.disabled = busy;
     newButton.disabled = busy;
+    newButton.hidden = !canCreate || !naming.hidden;
   }
 
   async function refresh(): Promise<void> {
@@ -197,7 +202,7 @@ export function createProjectSwitcher(options: ProjectSwitcherOptions): ProjectS
 
   function setNaming(on: boolean): void {
     naming.hidden = !on;
-    newButton.hidden = on;
+    newButton.hidden = on || !canCreate;
     newButton.setAttribute("aria-expanded", String(on));
     if (on) nameInput.focus();
     else {
@@ -207,8 +212,9 @@ export function createProjectSwitcher(options: ProjectSwitcherOptions): ProjectS
   }
 
   async function create(): Promise<void> {
+    const make = options.port.create;
     const wanted = nameInput.value.trim();
-    if (busy) return;
+    if (busy || make === undefined) return;
     if (wanted === "") {
       problem = "Give the project a name.";
       draw();
@@ -220,7 +226,7 @@ export function createProjectSwitcher(options: ProjectSwitcherOptions): ProjectS
     draw();
     let made: ProjectSummary | undefined;
     try {
-      made = await options.port.create(wanted);
+      made = await make(wanted);
     } catch (error) {
       problem = problemWords(error, "Couldn't create the project. Try again.");
     }
@@ -268,7 +274,7 @@ export function createProjectSwitcher(options: ProjectSwitcherOptions): ProjectS
     isOpen = false;
     document.removeEventListener("pointerdown", onPointer);
     naming.hidden = true;
-    newButton.hidden = false;
+    newButton.hidden = !canCreate;
     newButton.setAttribute("aria-expanded", "false");
     nameInput.value = "";
     problem = undefined;

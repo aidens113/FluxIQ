@@ -153,10 +153,13 @@ Pairing is an approval flow, not a code-entry flow.
 1. User signs into the FluxIQ web panel.
 2. Client opens the WebSocket connection.
 3. Client sends `client.hello`.
-4. FluxIQ replies with `server.pairing_required` and a `referenceCode`.
+4. FluxIQ replies with `server.pairing_required` and a `referenceCode`. While
+   the client waits, a lapsed code is renewed on the same socket with another
+   `server.pairing_required` (see [Pairing Required](#pairing-required)).
 5. Client displays that reference code to the user.
-6. The web panel shows a global modal with the same reference code.
-7. User clicks **Approve** or **Reject** in the web panel.
+6. The web panel shows a global modal with the same reference code. Closing it
+   leaves the request in a "Review" bar until it is answered.
+7. User clicks **Confirm** or **Decline** in the web panel.
 8. If approved, FluxIQ sends `server.session_ready` to the waiting socket.
 9. Client replaces its saved token with the returned token and includes it in
    the next `client.hello` message.
@@ -232,6 +235,17 @@ If the client is not already trusted, FluxIQ responds:
 
 Display `referenceCode` in the client UI and wait. Do not send the reference
 code back to FluxIQ.
+
+**The message may repeat on one socket (t1095).** Each code lives five minutes
+by default. When a code lapses while the client is still waiting on the same
+socket, FluxIQ mints a fresh code and sends `server.pairing_required` again,
+with a new `referenceCode` and no `credential`. Treat every such message as
+replacing the code on screen; it is the same request, not a new one, and the
+client should not reconnect to get a working code. The web panel swaps the
+renewed code into its dialog silently. `FluxIQClientGatewayConnection` keeps
+only the newest code in `pairingReferenceCode` and clears the previous code
+when a new socket sends its hello, so a reconnect never shows the old socket's
+code while the new one waits for an answer.
 
 ## Session Ready
 
@@ -642,11 +656,10 @@ reducers.
 Recording over WebSocket is project-bound.
 
 1. The user opens Automation Studio in the web panel.
-2. If a project is open, the web panel publishes that active project to the
-   shared gateway runtime under the signed-in operator's identity. It publishes
-   on load, on a project or flow change, on window focus, and on every
-   visibility change — including the change to hidden, which is the user
-   switching to the tab they mean to record. It does not publish on a timer.
+2. The person's current project is the one the recording goes into: the web
+   panel writes it on every project or Flow switch and adopts it on load, and a
+   paired client may set the same per-person value itself
+   ([Current Project](#current-project)). It does not expire.
 3. A paired client calls `createRecording(...)` on
    `FluxIQAutomationStudioWebSocketClient`, which sends `client.start_recording`.
 4. FluxIQ resolves an optional operator+client project override first and then
@@ -659,24 +672,20 @@ Recording over WebSocket is project-bound.
    client sends while the start is still being handled wait for it, so they
    reach the recording that start opens. A message that arrives when no
    recording is open is discarded and audited under the recording id it names.
-5. If Automation Studio has no open project, FluxIQ rejects the request,
-   sends `server.error` with code `recording.project_required`, and the web
-   panel shows a modal telling the user to open a project first.
+5. If the person has no current project, FluxIQ rejects the request, sends
+   `server.error` with code `recording.project_required`, and the web panel
+   shows a modal telling the user to open a project first. A start that names
+   another project than the current one is refused with
+   `recording.project_context_mismatch`.
 
-A published context also carries a lease, `AUTOMATION_STUDIO_CONTEXT_LEASE_MS`
-in `apps/web/src/lib/automation-studio-context.ts`, currently five minutes. A
-request that arrives after it expires is refused with the same
-`recording.project_required` code. The lease bounds how long a Studio page that
-vanished without warning can keep directing recordings into the project it last
-held; it is not a limit on how long the operator's decision stays usable. A page
-that closes normally clears its context immediately, through
-`navigator.sendBeacon` so the clearing survives the teardown, so a lease only
-ever runs out for a browser that crashed, was killed, or lost its machine.
-
-The refusal separates the two cases in its metadata. `activeProjectId` is null
-when nobody has a project open, which no retry can fix. It names the project
-when the context merely lapsed, which the next publication does fix — returning
-to the Studio tab republishes on focus.
+Until t1095 a published context carried a five-minute lease
+(`AUTOMATION_STUDIO_CONTEXT_LEASE_MS`), a staleness guard for a Studio page that
+vanished while it held a project open. The value is now the person's lasting
+current project, written on every switch rather than by an open page, so its
+age says nothing and the lease is gone; the guard lives where the value is set
+(IAM and the domain decide each write, a client bound to one project can set no
+other, and clearing it is an explicit write). A refusal's metadata names the
+current project in `activeProjectId`, or null when there is none.
 
 ## Web Panel APIs
 
@@ -689,11 +698,78 @@ The global web shell uses these authenticated endpoints:
   filtered view of pairings and clients changed, only to a caller the snapshot
   route would serve, and never carries a kind, a code, a token or which client
   it was. The same stream carries the panel's `conversation` and `activity`
-  events ([client gateway architecture](../architecture/automation-studio/client-gateway.md#how-the-panel-hears-pairing-and-client-changes)).
+  events ([client gateway architecture](../architecture/automation-studio/client-gateway.md#how-the-panel-hears-pairing-and-client-changes)),
+  and a `context` event (`{ "version": n }`, t1095) after each committed write
+  of the person's current project or Flow, to that person's own streams only,
+  panel and paired client alike: read the snapshot again to follow the switch.
 - `POST /api/client-gateway/approve-pairing`
 - `POST /api/client-gateway/dismiss-pairing`
 
 Clients do not call these HTTP endpoints. They are for the signed-in web panel.
+
+## What A Paired Client Calls On The Program Route
+
+A paired client's credential is a bearer token on `/api/programs/<programId>/<endpoint>`
+for a fixed allowlist (`PAIRED_CLIENT_ENDPOINTS` in
+`packages/fluxiq/src/server/program-route/program-route.ts`; the
+[client gateway architecture](../architecture/automation-studio/client-gateway.md)
+lists every endpoint). Keys, settings and making or managing projects stay in
+the panel for every client (t1095): a token is refused `create-project`,
+`rename-conversation`, `delete-conversation` and every Secret Keys write, the
+person's own model key included, with
+`403 { "ok": false, "error": "This endpoint is not available to a paired client." }`,
+and a client opens the panel for them. It reads what it shows:
+
+- `POST /api/programs/automation-studio/projects`: the projects it may use, as
+  `{ projects: [{ id, name, updatedAt }] }`.
+- `POST /api/programs/secret-keys/snapshot`: whether a model key opens, as
+  kind, provider, enabled and availability, with no key id.
+- `POST /api/programs/identity-access/get-my-preferences` (or `GET`) with an
+  empty body (`{}` or none): its person's own starting humanness, as
+  `200 { "ok": true, "payload": { "startingHumanness": 40 } }`, or `null` when
+  the person set none. Any field in the body is refused with
+  `403 { "ok": false, "error": "A paired client's read of its person's preferences may not carry userId.", "errorCode": "authorization.forbidden" }`
+  (naming the first field). Changing it (`update-my-preferences`) is the
+  panel's.
+
+## Current Project
+
+The panel and a paired client share one current project and Flow per person
+(t1095). Both call, with a paired client's bearer credential or the panel's
+session:
+
+- `POST /api/client-gateway/automation-studio-context` (add
+  `?domainId=<id>` when the page is scoped to a domain; a paired client's
+  domain always comes from its own binding). Body:
+  `{ "activeProjectId": string | null, "activeFlowId"?: string | null }`. Ids
+  are trimmed, an empty `activeProjectId` means none, and `activeFlowId` is
+  dropped when there is no project. A paired client writes the same
+  per-person slot the panel writes, keyed by the person, and must not send
+  `clientId`:
+  `400 { "ok": false, "error": "A paired client sets the person's current project for itself, so it names no clientId." }`.
+  A client bound to one project may set only that project; any other, or a
+  clear, is
+  `403 { "ok": false, "error": "This browser was connected for one project only, so it cannot switch to another. Switch projects in the FluxIQ panel, or connect the browser again without choosing a project." }`.
+  IAM decides each call on the project, or on the Flow when one is named.
+  Other refusals: 401 `Authentication required`; 403 `Selected project is not
+  available in this domain.`, `Selected Flow is not available in this
+  project.` or an IAM denial; 409 `A newer context selection has already been
+  requested.`; 400 for a bad body. Success is
+  `200 { "ok": true, "payload": WorkspaceRuntimePresentation }` with
+  `cache-control: private, no-store`; `payload.automationStudio` holds
+  `activeProjectId`, `activeFlowId`, `updatedAt`, `contextCount` and
+  readiness, and a paired client gets the restricted view with no host paths.
+- `GET /api/client-gateway/snapshot` reads the slot back as
+  `payload.webRuntime.automationStudio.activeProjectId`, `activeFlowId` and
+  `activeProjectName`, for the panel and paired clients alike. A bound client's
+  snapshot shows only its bound project.
+- `POST /api/client-gateway/first-project` makes the person a first project
+  when they have none, for a paired client or the panel. The panel on a page
+  with no domain reads its own unscoped projects; a paired client with no
+  domain gets none.
+
+See the [client gateway architecture](../architecture/automation-studio/client-gateway.md)
+for how the panel restores and follows this value.
 
 ## Smoke Test
 

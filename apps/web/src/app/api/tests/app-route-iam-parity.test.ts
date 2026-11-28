@@ -44,10 +44,13 @@ const TODAY: Readonly<Record<string, Row>> = {
   "DELETE /api/keys": COOKIE_ONLY_READ,
   "POST /api/client-gateway/approve-pairing": selectedNeeds("runtime.control"),
   "POST /api/client-gateway/dismiss-pairing": selectedNeeds("runtime.control"),
-  "POST /api/client-gateway/automation-studio-context": selectedNeeds("runtime.control"),
-  // A credential is the whole of the proof, and it can only end its own trust.
-  // The registry's own check on making the project is the one that decides; here a bearer may only ask.
-  "POST /api/client-gateway/first-project": ["forbidden: This endpoint is not available to a panel caller.", "forbidden: This endpoint is not available to a panel caller.", "allowed", "allowed"],
+  // Changed in t1095, not a check that existed before: the person's current project is one value the panel
+  // and every client share, so a paired client may set it for itself (decided on the project, kept to a
+  // project it was connected for). The panel still needs runtime.control.
+  "POST /api/client-gateway/automation-studio-context": ["allowed", "forbidden: Permission required: runtime.control", "allowed", "allowed"],
+  // The registry's own check on making the project is the one that decides; here a caller may only ask.
+  // Since t1095 the panel's chat asks too, as a browser's does: every chat belongs to a project.
+  "POST /api/client-gateway/first-project": ["allowed", "allowed", "allowed", "allowed"],
   "GET /api/client-gateway/snapshot": ["allowed", "allowed", "allowed", "allowed"],
   "PUT /api/client-gateway/trace-artifacts/[sha256]": ["forbidden: This endpoint is not available to a panel caller.", "forbidden: This endpoint is not available to a panel caller.", "allowed", "allowed"],
   "GET /api/framework/setup": SELECTED_PANEL_READ,

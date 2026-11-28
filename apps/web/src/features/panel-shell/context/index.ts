@@ -1,6 +1,7 @@
 export { onScreenFromContext } from "./on-screen-from-context";
 export { PANEL_PAGES, type PanelContext, type PanelPage, type PanelSelection } from "./types";
 export type { PanelContextAction } from "./action";
+export { browserCoreContextPort, type CoreContextPort, type CoreContextRead, type CoreContextValue, type CoreContextWrite } from "./core-context";
 export { PanelContextProvider } from "./PanelContextProvider";
 export { INITIAL_PANEL_CONTEXT, panelContextReducer } from "./reducer";
 export { PublishPanelPage } from "./PublishPanelPage";

@@ -118,11 +118,17 @@ describe("FluxIQBrowserSession", () => {
     expect(outcome(decide(ALICE, session, "studio:DeleteProject", ownProject))).toBe("deny:explicit-deny");
     expect(outcome(decide(ALICE, session, "secrets:RevealKey", ownKey))).toBe("deny:explicit-deny");
     expect(outcome(decide(ALICE, session, "secrets:CreateKey", workspace))).toBe("deny:implicit-deny");
-    // The person's own model key, on their own user only (t950).
-    expect(outcome(decide(ALICE, session, "secrets:SaveModelKey", { frn: iamPrincipalFrn("user", WS, "alice"), ownerId: "alice" }))).toBe("allow:allowed");
+    // No key write, the person's own model key included (t950 to t1095): keys are the panel's.
+    expect(outcome(decide(ALICE, session, "secrets:SaveModelKey", { frn: iamPrincipalFrn("user", WS, "alice"), ownerId: "alice" }))).toBe("deny:explicit-deny");
     expect(outcome(decide(ALICE, session, "secrets:RemoveModelKey", { frn: iamPrincipalFrn("user", WS, "bob"), ownerId: "bob" }))).toBe("deny:implicit-deny");
     expect(outcome(decide(ALICE, session, "secrets:SaveModelKey", workspace))).toBe("deny:implicit-deny");
+    // Of identity, only reading the person's own preferences (t1095); every other action is refused by name.
+    expect(outcome(decide(ALICE, session, "iam:GetMyPreferences", { frn: iamPrincipalFrn("user", WS, "alice"), ownerId: "alice" }))).toBe("allow:allowed");
+    expect(outcome(decide(ALICE, session, "iam:GetMyPreferences", { frn: iamPrincipalFrn("user", WS, "bob"), ownerId: "bob" }))).toBe("deny:explicit-deny");
+    expect(outcome(decide(ALICE, session, "iam:UpdateMyPreferences", { frn: iamPrincipalFrn("user", WS, "alice"), ownerId: "alice" }))).toBe("deny:explicit-deny");
+    expect(outcome(decide(ALICE, session, "iam:RecaseMyUsername", { frn: iamPrincipalFrn("user", WS, "alice"), ownerId: "alice" }))).toBe("deny:explicit-deny");
     expect(outcome(decide(ALICE, session, "iam:SetPassword", { frn: iamPrincipalFrn("user", WS, "alice") }))).toBe("deny:explicit-deny");
+    expect(outcome(decide(ALICE, session, "iam:Snapshot", workspace))).toBe("deny:explicit-deny");
   });
 
   it("narrows an owner too, and turns the fast path off", () => {
@@ -130,6 +136,12 @@ describe("FluxIQBrowserSession", () => {
     expect(outcome(decide(ALICE, ownerSession, "studio:GetFlow", othersProject))).toBe("allow:allowed");
     expect(outcome(decide(ALICE, ownerSession, "ops:Snapshot", program))).toBe("deny:implicit-deny");
     expect(outcome(decide(ALICE, ownerSession, "studio:DeleteRecording", othersProject))).toBe("deny:explicit-deny");
+    // An owner may do anything to their own user in the panel; their browser still only reads its preferences.
+    expect(outcome(decide(ALICE, ownerSession, "iam:GetMyPreferences", { frn: iamPrincipalFrn("user", WS, "alice"), ownerId: "alice" }))).toBe("allow:allowed");
+    for (const action of ["iam:UpdateMyPreferences", "iam:UpdateUser", "iam:SetPassword", "secrets:SaveModelKey"]) {
+      expect(outcome(decide(ALICE, ownerSession, action, { frn: iamPrincipalFrn("user", WS, "alice"), ownerId: "alice" })), action).toBe("deny:explicit-deny");
+    }
+    expect(outcome(decide(ALICE, ownerSession, "iam:UpdateUser", { frn: iamPrincipalFrn("user", WS, "bob"), ownerId: "bob" }))).toBe("deny:explicit-deny");
   });
 });
 
