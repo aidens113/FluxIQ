@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { AUTOMATION_STUDIO_CONTEXT_LEASE_MS } from "../../../automation-studio-context";
 import { createWorkspacePresentations } from "../index";
 import { hostFacts, instanceFixture, recordingInput } from "./fixture";
 
@@ -60,16 +59,14 @@ describe("workspace instance context ownership", () => {
     expect(view.context()?.activeProjectId).toBe("project.current");
   });
 
-  it("reuses the existing recording resolver freshness and mismatch semantics", async () => {
+  it("directs recordings into the caller's lasting current project however old, and keeps the mismatch refusal", async () => {
     let now = 0;
     const registry = createWorkspacePresentations({ now: () => now });
     const owner = registry.bind({ workspaceId: "tenant.one", instance: instanceFixture().instance, runtimeId: "runtime.one", profile: "service" });
     owner.forCaller({ userId: "user.same", clientId: "client.same" }).beginContextWrite().commit({ activeProjectId: "project.one", activeFlowId: "flow.one" });
-    now = AUTOMATION_STUDIO_CONTEXT_LEASE_MS - 1;
+    now = 10 * 24 * 60 * 60 * 1000;
     expect(await owner.recordingContextProvider(recordingInput())).toEqual({ ok: true, projectId: "project.one", taskId: "flow.one" });
     expect(await owner.recordingContextProvider(recordingInput("user.same", "client.same", "project.foreign"))).toMatchObject({ ok: false, code: "recording.project_context_mismatch", metadata: { activeProjectId: "project.one", contextUpdatedAt: 0 } });
-    now = AUTOMATION_STUDIO_CONTEXT_LEASE_MS;
-    expect(await owner.recordingContextProvider(recordingInput())).toMatchObject({ ok: false, code: "recording.project_required", metadata: { activeProjectId: "project.one" } });
     expect(await owner.recordingContextProvider(recordingInput("other-user"))).toMatchObject({ ok: false, code: "recording.project_required", metadata: { activeProjectId: null } });
   });
 });

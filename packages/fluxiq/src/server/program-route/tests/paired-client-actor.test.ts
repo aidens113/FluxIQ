@@ -1,5 +1,6 @@
 // Covers paired-client-actor.ts: the actor a paired client's token call runs as, generic and per
-// program-route endpoint (t955: `secrets.manage` only on the person's own model-key writes).
+// program-route endpoint (t955 narrowed `secrets.manage` to the person's own model-key writes; t1095 removed
+// those writes from the token, so no endpoint adds a permission).
 import { describe, expect, it } from "vitest";
 import { pairedClientActor, pairedClientEndpointActor } from "../paired-client-actor.ts";
 import { PAIRED_CLIENT_ENDPOINTS } from "../program-route.ts";
@@ -33,32 +34,19 @@ describe("a paired client's actor", () => {
     expect(pairedClientActor({ sessionId: "g1", operatorUserId: "user:viewer" }, directory)?.permissions).toEqual(["programs.read"]);
   });
 
-  it("adds secrets.manage to the person's own model-key writes alone, and only when their role holds it", () => {
+  // t1095: key writes are the panel's, so no endpoint names a permission of its own any more.
+  it("hands every allowlisted endpoint exactly the generic actor, so no paired call carries secrets.manage", () => {
     const owner = { sessionId: "g1", operatorUserId: "user:owner" };
-    const keyWrites = ["save-model-key", "replace-model-key", "remove-model-key"];
-    for (const endpoint of keyWrites) {
-      expect(pairedClientEndpointActor(owner, directory, "secret-keys", endpoint), endpoint).toEqual({
-        sessionId: "client-gateway:g1",
-        userId: "user:owner",
-        roleId: "role:admin",
-        permissions: ["programs.read", "programs.write", "runtime.control", "flows.write", "secrets.manage"],
-        channel: "paired-client",
-      });
-      // Named as a request names it: the route's allowlist reads ids case- and space-insensitively, and so does this.
-      expect(pairedClientEndpointActor(owner, directory, " Secret-Keys ", endpoint.toUpperCase())?.permissions, endpoint).toContain("secrets.manage");
-      // A role without it gains nothing: IAM then refuses the write, as it refuses the person's login.
-      expect(pairedClientEndpointActor({ sessionId: "g1", operatorUserId: "user:viewer" }, directory, "secret-keys", endpoint)?.permissions, endpoint).toEqual(["programs.read"]);
-      expect(pairedClientEndpointActor({ sessionId: "g1", operatorUserId: "user:off" }, directory, "secret-keys", endpoint), endpoint).toBeNull();
-    }
-    // Every other allowlisted endpoint gets exactly the generic actor, and so does one outside the allowlist.
     for (const [programId, endpoints] of Object.entries(PAIRED_CLIENT_ENDPOINTS)) {
-      for (const endpoint of endpoints.filter((name) => !(programId === "secret-keys" && keyWrites.includes(name)))) {
+      for (const endpoint of endpoints) {
         expect([programId, endpoint, pairedClientEndpointActor(owner, directory, programId, endpoint)]).toEqual([programId, endpoint, pairedClientActor(owner, directory)]);
       }
     }
-    for (const [programId, endpoint] of [["secret-keys", "create-key"], ["secret-keys", "reveal-key"], ["identity-access", "save-model-key"], ["automation-studio", "remove-model-key"]]) {
+    for (const [programId, endpoint] of [["secret-keys", "save-model-key"], ["secret-keys", "replace-model-key"], ["secret-keys", " Remove-Model-Key "], ["secret-keys", "create-key"], ["identity-access", "get-my-preferences"]]) {
       expect(pairedClientEndpointActor(owner, directory, programId!, endpoint!)?.permissions, `${programId}/${endpoint}`).not.toContain("secrets.manage");
+      expect(pairedClientEndpointActor(owner, directory, programId!, endpoint!)?.permissions, `${programId}/${endpoint}`).not.toContain("identity.manage");
     }
+    expect(pairedClientEndpointActor({ sessionId: "g1", operatorUserId: "user:off" }, directory, "identity-access", "get-my-preferences")).toBeNull();
   });
 
   it("acts as nobody when the approving person is disabled, gone, or never recorded", () => {

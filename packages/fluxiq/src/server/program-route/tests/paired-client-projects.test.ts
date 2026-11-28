@@ -1,8 +1,8 @@
 // @fluxiq-test-group real-sql
-// Covers handle-program-request.ts with program-route.ts: a paired client's token listing and making projects and
-// chatting in any project its approving person may use, through the whole route on the hosted (`service`) IAM
-// profile, against the real registry and store. Another person's project, another domain's and another tenant's
-// are refused; renaming and deleting a project stay the signed-in person's alone.
+// Covers handle-program-request.ts with program-route.ts: a paired client's token listing projects and chatting in
+// any project its approving person may use, through the whole route on the hosted (`service`) IAM profile, against
+// the real registry and store. Another person's project, another domain's and another tenant's are refused; making,
+// renaming and deleting a project are the panel's (t1095: projects are managed in the panel for every client).
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -115,30 +115,10 @@ describe("a paired client's projects, through the program route on the service p
     expect(listed.body.payload.projects.map((project: { id: string }) => project.id)).toEqual([own]);
   });
 
-  it("makes a project from its name alone, in the bound domain, owned by the approving person", async () => {
-    const created = await send("create-project", { name: "  Shop  ", description: "from token", categoryId: "category.someone", domainId: "other-domain", authorizationPin: "1234", authSessionId: "s" });
-    expect(created.status, created.body.error).toBe(200);
-    expect(created.body).toEqual({ ok: true, payload: { project: { id: expect.any(String), name: "Shop", updatedAt: expect.any(Number) } } });
-    expect(call.mock.calls[0]?.[0].payload).toEqual({ name: "  Shop  " });
-    const stored = (await runtime.automationStudio.listProjects(DOMAIN)).projects;
-    expect(stored).toEqual([expect.objectContaining({ id: created.body.payload.project.id, name: "Shop", description: "", categoryId: null, domainId: DOMAIN })]);
-    // Its owner is the approving person: Alice's token lists it, and Bob's login cannot rename it.
-    expect((await send("projects", {})).body.payload.projects.map((project: { id: string }) => project.id)).toEqual([created.body.payload.project.id]);
-    const bobRename = await runtime.api.call({ programId: "automation-studio", endpoint: "update-project", scope: { domainId: DOMAIN }, actor: BOB, payload: { projectId: created.body.payload.project.id, name: "Taken" } });
-    expect(bobRename.ok).toBe(false);
-  });
-
-  it("refuses a nameless or empty new project, and makes nothing", async () => {
-    expect((await send("create-project", { description: "no name" })).status).toBe(403);
-    const empty = await send("create-project", { name: "  " });
-    expect(empty.body.ok).toBe(false);
-    expect((await runtime.automationStudio.listProjects(DOMAIN)).projects).toEqual([]);
-  });
-
-  it("keeps renaming and deleting a project, and its categories, the signed-in person's alone", async () => {
+  it("keeps making, renaming and deleting a project, and its categories, the signed-in person's alone (t1095)", async () => {
     const own = await made(ALICE, "Own");
     call.mockClear();
-    for (const endpoint of ["update-project", "delete-project", "create-project-category", "delete-project-category"]) {
+    for (const endpoint of ["create-project", "update-project", "delete-project", "create-project-category", "delete-project-category"]) {
       const refused = await send(endpoint, { projectId: own, name: "Renamed" });
       expect(refused.status, endpoint).toBe(403);
       expect(refused.body.error).toBe("This endpoint is not available to a paired client.");

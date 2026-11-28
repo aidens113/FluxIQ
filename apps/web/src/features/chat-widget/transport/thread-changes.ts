@@ -1,6 +1,7 @@
 // The thread list's New chat, Rename and Delete over Core's conversation
 // endpoints (`open-conversation` with `fresh: true`, `rename-conversation`,
-// `delete-conversation`). A rename or delete names the thread's own project
+// `delete-conversation`). A New chat with no project open is made in the
+// person's own project (`personProject`), which the host then hears of. A rename or delete names the thread's own project
 // when the request or the chat knows one; with none, Core looks for the thread
 // in every project the person may change. Core's refusals (a thread still in
 // use is `conversation_run_active`) pass through with Core's sentence.
@@ -10,13 +11,13 @@ import { commitConversationChanged } from "../../automation-studio/conversation"
 import type { ProgramCommandTransport } from "../../automation-studio/data/program-transport";
 import { chatResult } from "./chat-result";
 import type { ProgramChatTransportOptions } from "./options";
-import { projectFor } from "./project-for";
+import { projectToStart } from "./project-to-start";
 
 type ThreadChanges = Pick<ChatConversationPort, "newThread" | "renameThread" | "deleteThread">;
 
 const NO_TITLE = "A chat needs a name.";
 
-export function createThreadChanges(api: ProgramCommandTransport, options: Pick<ProgramChatTransportOptions, "projectId">): ThreadChanges {
+export function createThreadChanges(api: ProgramCommandTransport, options: Pick<ProgramChatTransportOptions, "projectId" | "personProject">): ThreadChanges {
   const told = (projectId: string | undefined, conversationId: string | undefined): void => {
     if (projectId && conversationId) commitConversationChanged({ projectId, conversationId });
   };
@@ -24,7 +25,7 @@ export function createThreadChanges(api: ProgramCommandTransport, options: Pick<
 
   return {
     async newThread(request) {
-      const project = projectFor(request.projectId, options);
+      const project = await projectToStart(request.projectId, options);
       if (!project.ok) return project.failure;
       const subjectKind = request.subjectKind ?? "project";
       const subjectId = request.subjectId ?? (subjectKind === "project" ? project.projectId : undefined);
@@ -35,7 +36,10 @@ export function createThreadChanges(api: ProgramCommandTransport, options: Pick<
         ...(request.title ? { title: request.title } : {}),
         fresh: true
       }));
-      if (opened.ok) told(project.projectId, idOf(opened.value.conversation));
+      if (opened.ok) {
+        told(project.projectId, idOf(opened.value.conversation));
+        if (project.found) options.personProject?.found?.(project.projectId);
+      }
       return opened;
     },
 

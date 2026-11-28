@@ -1,4 +1,4 @@
-import type { PanelChange, PanelChangeTopic } from "./topics";
+import type { PanelChange, PanelChangeSink, PanelChangeTopic } from "./topics";
 
 /**
  * How long the stream may stay silent before a comment line is sent. A proxy
@@ -22,22 +22,27 @@ type Step = IteratorResult<string, undefined>;
 type Waiting = { resolve(step: Step): void; reject(error: unknown): void };
 
 const DONE: Step = Object.freeze({ done: true, value: undefined });
+const OPEN: Step = Object.freeze({ done: false, value: ": open\n\n" });
 
 /** Changes that mean the same read are one until sent: one gateway read, one model-access read, one read per thread, one per project's activity. */
 function keyOf(change: PanelChange): string {
-  if (change.topic === "gateway" || change.topic === "model-access") return change.topic;
+  if (change.topic === "gateway" || change.topic === "model-access" || change.topic === "context") return change.topic;
   return change.topic === "conversation" ? `conversation:${change.conversationId}` : `activity:${change.projectId}`;
 }
 
 /**
  * The Server-Sent Events body of `GET /api/panel/changes`: an opening comment,
  * then one event each time a topic reports a change this caller may hear of,
- * and a comment whenever the stream has been silent for `keepAliveMs`.
+ * and a comment whenever the stream has been silent for `keepAliveMs`. The
+ * opening waits for every topic's baseline (`PanelChangeSink.opensAfter`), so
+ * what the browser reads when it opens is never older than what later changes
+ * are compared with; a change found meanwhile is sent after the opening.
  *
  * Events are `gateway` (read the gateway snapshot again), `conversation`
  * (read the thread `conversationId` again), `activity` (read project
- * `projectId`'s live activity again) and `model-access` (read the Secret Keys
- * snapshot again, for the caller's model access). Each carries `version`, a count of the
+ * `projectId`'s live activity again), `model-access` (read the Secret Keys
+ * snapshot again, for the caller's model access) and `context` (read the client
+ * snapshot again, for the person's current project and Flow). Each carries `version`, a count of the
  * events this stream has sent, starting at 1 with no gaps: it cannot reveal
  * how many changes happened to anyone else, and a reader that sees a gap
  * knows it missed one. Nothing else is sent: no content, no kind of change.
@@ -61,12 +66,21 @@ export class PanelChangeStream implements AsyncIterator<string, undefined> {
   private keepAlive: unknown;
   private failure: { error: unknown } | undefined;
   private opened = false;
+  // The views the opening waits for, and whether it is waiting for them now.
+  private readonly baselines: Array<Promise<void>> = [];
+  private awaitingBaselines = false;
   private ended = false;
 
   constructor(topics: readonly PanelChangeTopic[], options: { keepAliveMs?: number; timers?: Timers } = {}) {
     this.keepAliveMs = options.keepAliveMs ?? PANEL_CHANGE_KEEP_ALIVE_MS;
     this.timers = options.timers ?? REAL_TIMERS;
-    const sink = { changed: (change: PanelChange) => this.changed(change), fail: (error: unknown) => this.fail(error) };
+    const sink: PanelChangeSink = {
+      changed: (change) => this.changed(change),
+      fail: (error) => this.fail(error),
+      opensAfter: (baseline) => {
+        this.baselines.push(baseline);
+      }
+    };
     for (const topic of topics) {
       const stop = topic.start(sink);
       // A topic that failed while starting has already ended the stream: stop it too, and start no more.
@@ -82,10 +96,17 @@ export class PanelChangeStream implements AsyncIterator<string, undefined> {
     if (this.ended) return Promise.resolve(DONE);
     if (this.failure) return Promise.reject(this.failure.error);
     if (this.waiting) return Promise.reject(new Error("A change stream chunk is already being waited for."));
-    // The first chunk goes out at once, so every proxy on the way passes the headers and the browser sees the stream open.
+    // The first chunk goes out as soon as every topic has its baseline, so every proxy on the way passes the headers and the browser sees the stream open.
     if (!this.opened) {
       this.opened = true;
-      return Promise.resolve({ done: false, value: ": open\n\n" });
+      if (this.baselines.length === 0) return Promise.resolve(OPEN);
+      return new Promise<Step>((resolve, reject) => {
+        this.waiting = { resolve, reject };
+        this.awaitingBaselines = true;
+        void Promise.all(this.baselines).then(() => {
+          if (this.awaitingBaselines) this.settle(OPEN);
+        });
+      });
     }
     const queued = this.pending.shift();
     if (queued) return Promise.resolve({ done: false, value: this.event(queued) });
@@ -102,7 +123,8 @@ export class PanelChangeStream implements AsyncIterator<string, undefined> {
 
   private changed(change: PanelChange): void {
     if (this.ended || this.failure) return;
-    if (this.waiting) {
+    // While the opening waits for its baselines the change is queued: it follows the opening.
+    if (this.waiting && !this.awaitingBaselines) {
       this.settle({ done: false, value: this.event(change) });
       return;
     }
@@ -113,7 +135,7 @@ export class PanelChangeStream implements AsyncIterator<string, undefined> {
   private event(change: PanelChange): string {
     this.sequence += 1;
     const version = this.sequence;
-    if (change.topic === "gateway" || change.topic === "model-access") return `event: ${change.topic}\ndata: ${JSON.stringify({ version })}\n\n`;
+    if (change.topic === "gateway" || change.topic === "model-access" || change.topic === "context") return `event: ${change.topic}\ndata: ${JSON.stringify({ version })}\n\n`;
     if (change.topic === "conversation") return `event: conversation\ndata: ${JSON.stringify({ conversationId: change.conversationId, version })}\n\n`;
     return `event: activity\ndata: ${JSON.stringify({ projectId: change.projectId, version })}\n\n`;
   }
@@ -129,12 +151,14 @@ export class PanelChangeStream implements AsyncIterator<string, undefined> {
     this.stopTopics();
     if (this.keepAlive !== undefined) this.timers.clear(this.keepAlive);
     this.keepAlive = undefined;
+    this.awaitingBaselines = false;
     const waiting = this.waiting;
     this.waiting = undefined;
     waiting?.reject(error);
   }
 
   private settle(step: Step): void {
+    this.awaitingBaselines = false;
     if (this.keepAlive !== undefined) this.timers.clear(this.keepAlive);
     this.keepAlive = undefined;
     const waiting = this.waiting;

@@ -93,7 +93,8 @@ describe("the web panel and a paired client show one person the same projects an
     const response = await handleProgramRequest(request, { fluxiq: fluxiq(), identityAuthority });
     return { status: response.status, raw: response.body, body: JSON.parse(response.body) };
   };
-  const created = async (caller: "token" | Cookie, name: string): Promise<string> => {
+  // Projects are made in the panel (t1095); a paired client's token is refused `create-project`.
+  const created = async (caller: Cookie, name: string): Promise<string> => {
     const answer = await send(caller, "create-project", { name });
     expect(answer.status, answer.body.error).toBe(200);
     return answer.body.payload.project.id as string;
@@ -104,10 +105,13 @@ describe("the web panel and a paired client show one person the same projects an
     return (answer.body.payload.projects as Array<{ id: string }>).map((project) => project.id);
   };
 
-  it("lists a project made in the panel to the paired client, and one made by the paired client in the panel", async () => {
+  it("lists the projects made in the panel to the paired client, which makes none itself (t1095)", async () => {
     serveDomain();
     const fromPanel = await created("cookie-alice", "Walkthrough A");
-    const fromClient = await created("token", "Walkthrough C");
+    const fromClient = await created("cookie-alice", "Walkthrough C");
+    const refused = await send("token", "create-project", { name: "From the browser" });
+    expect(refused.status).toBe(403);
+    expect(refused.body.error).toBe("This endpoint is not available to a paired client.");
     expect((await listed("token")).sort()).toEqual([fromPanel, fromClient].sort());
     expect((await listed("cookie-alice")).sort()).toEqual([fromPanel, fromClient].sort());
     // The panel's project is stored in the instance's domain, so its Flows are scoped to that domain's nodes.
@@ -123,7 +127,7 @@ describe("the web panel and a paired client show one person the same projects an
   it("shows a chat started in either client in the other's list across projects and in its project", async () => {
     serveDomain();
     const fromPanel = await created("cookie-alice", "Panel project");
-    const fromClient = await created("token", "Client project");
+    const fromClient = await created("cookie-alice", "Client project");
     const panelChat = await send("cookie-alice", "open-conversation", { projectId: fromClient, title: "Started in the panel" });
     expect(panelChat.status, panelChat.body.error).toBe(200);
     const clientChat = await send("token", "open-conversation", { projectId: fromPanel, title: "Started in the extension" });

@@ -77,10 +77,9 @@ describe("held workspace context selection", () => {
     expect(runtime.releases.a).toHaveBeenCalledOnce();
   });
 
-  it("keeps cookie-first identity and paired-client support explicitly refused", async () => {
+  it("keeps cookie-first identity: a valid cookie wins over a bearer, and an invalid cookie never falls back to one", async () => {
     expect((await POST(contextRequest({ activeProjectId: null }, { bearer: "invalid" }))).status).toBe(200);
     expect((await POST(contextRequest({ activeProjectId: null }, { cookie: "invalid", bearer: "browser-a-token" }))).status).toBe(401);
-    expect((await POST(contextRequest({ activeProjectId: null }, { cookie: null, bearer: "browser-a-token" }))).status).toBe(403);
     expect(runtime.resolveBrowser).not.toHaveBeenCalled();
     expect(runtime.releases.a).toHaveBeenCalledOnce();
   });

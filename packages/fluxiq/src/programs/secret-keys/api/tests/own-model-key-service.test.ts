@@ -6,11 +6,12 @@
 // - a member of another tenant cannot read, use or change it, and another member of the same workspace cannot
 //   change it either;
 // - a member's paired browser, decided by `FluxIQBrowserSession` over its person's policies (not by its legacy
-//   `viewer` role), writes only its own person's key, whatever its body names, and reaches no other key write;
+//   `viewer` role), writes no key at all, its own person's included (t1095: keys are the panel's for every client,
+//   user 2026-11-27), and still has model access: it reads readiness and its person's key is used for its calls;
 // - the provider is asked BEFORE a key is stored (t950): a key it refuses, or whose account has no credit, is never
 //   stored, so the person's previous key stays in use (or they keep no key), Activity reads a failed write of that
 //   kind, and the panel's card keeps the typed key; an unreachable provider still lets the key be saved, and that
-//   outcome is recorded on it; for the member and for their paired browser alike;
+//   outcome is recorded on it, for the member; their paired browser is refused before the provider is asked;
 // - saving never changes the workspace's assistant key or another member's access (F1); the first key saved into an
 //   empty workspace becomes its key only when the saver may choose it (an owner, never a member or a browser), and
 //   never in another tenant.
@@ -191,54 +192,65 @@ describe("a member's own model key (service)", () => {
 describe("a member's paired browser and its person's own model key (service, FluxIQBrowserSession)", () => {
   const browsers = TENANTS;
 
-  it("saves, replaces and removes only its own person's key, whatever its body names", async () => {
+  // t1095: the session policy no longer allows the person's own model-key writes (t950 did); keys are the panel's.
+  it("writes no key, its own person's included, whatever its body names, and changes nothing", async () => {
     const { service, call, keyOf } = tenant("ws-a", browsers);
-    // Mia's key, which the browser must never reach.
-    expect((await call("save-model-key", { ...mia, channel: "panel" }, { provider: "anthropic", value: "dummy-mia-value" })).ok).toBe(true);
-    const miasKey = (await keyOf("mia"))!;
-
-    const saved = await call("save-model-key", alicesBrowser, { provider: "anthropic", value: VALUE, userId: "mia", createdBy: "mia", id: miasKey.id });
-    expect(saved.ok, saved.error).toBe(true);
-    expect(await keyOf("alice")).toMatchObject({ createdBy: "alice" });
-    expect(await call("replace-model-key", alicesBrowser, { value: NEXT, id: miasKey.id })).toMatchObject({ ok: true });
-    expect(await call("remove-model-key", alicesBrowser, { id: miasKey.id })).toMatchObject({ ok: true });
-    expect(await keyOf("alice")).toBeUndefined();
-    expect(await keyOf("mia")).toEqual(miasKey);
-    service.close();
-  });
-
-  it("never takes an empty workspace's assistant key by saving, and reads Ready for its own person", async () => {
-    const { service, call } = tenant("ws-a", browsers);
-    const saved = await call("save-model-key", alicesBrowser, { provider: "anthropic", value: VALUE });
-    expect(saved).toMatchObject({ ok: true, payload: { modelAccess: { status: "ready" } } });
-    expect(await service.modelKeys.read()).toMatchObject({ assistantKeyId: null, assistantKeyChosen: false });
-    service.close();
-  });
-
-  it("reaches no other key write, its own key included, and no key reveal", async () => {
-    const { service, call, keyOf } = tenant("ws-a", browsers);
-    expect((await call("save-model-key", alicesBrowser, { provider: "anthropic", value: VALUE })).ok).toBe(true);
-    const key = (await keyOf("alice"))!;
+    expect((await call("save-model-key", alice, { provider: "anthropic", value: VALUE, name: "Alice's" })).ok).toBe(true);
+    const alicesKey = (await keyOf("alice"))!;
+    const before = await service.snapshot();
     for (const [endpoint, payload] of [
+      ["save-model-key", { provider: "anthropic", value: NEXT }],
+      ["replace-model-key", { value: NEXT }],
+      ["remove-model-key", {}],
       ["create-key", { name: "Other", value: "dummy-other", kind: "llm", provider: "Anthropic" }],
-      ["update-key", { id: key.id, name: "Renamed" }],
-      ["rotate-key", { id: key.id, value: "dummy-other" }],
-      ["delete-key", { id: key.id }],
-      ["reveal-key", { id: key.id }],
-      ["set-default-key", { id: key.id }],
-      ["offer-key", { id: key.id, offered: true }],
-      ["set-assistant-model", { keyId: key.id }]
+      ["update-key", { id: alicesKey.id, name: "Renamed" }],
+      ["rotate-key", { id: alicesKey.id, value: "dummy-other" }],
+      ["delete-key", { id: alicesKey.id }],
+      ["reveal-key", { id: alicesKey.id }],
+      ["set-default-key", { id: alicesKey.id }],
+      ["offer-key", { id: alicesKey.id, offered: true }],
+      ["set-assistant-model", { keyId: alicesKey.id }]
     ] as const) {
-      expect(await call(endpoint, alicesBrowser, payload), endpoint).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
+      const answer = await call(endpoint, alicesBrowser, payload);
+      expect(answer, endpoint).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
+      expect(JSON.stringify(answer), endpoint).not.toContain(NEXT);
     }
-    expect(await keyOf("alice")).toEqual(key);
+    expect(await service.snapshot()).toEqual(before);
+    expect(await service.modelKeys.personKeyId("alice")).toBe(alicesKey.id);
+    service.close();
+  });
+
+  it("still has model access: it reads its person's readiness and may use its person's own key, never another's", async () => {
+    const { service, call, keyOf, registry } = tenant("ws-a", browsers);
+    expect((await call("save-model-key", alice, { provider: "anthropic", value: VALUE })).ok).toBe(true);
+    expect((await call("save-model-key", { ...mia, channel: "panel" }, { provider: "anthropic", value: "dummy-mia-value" })).ok).toBe(true);
+    const alicesKey = (await keyOf("alice"))!;
+    const miasKey = (await keyOf("mia"))!;
+    const snapshot = await call("snapshot", alicesBrowser);
+    expect(snapshot.ok, snapshot.error).toBe(true);
+    expect(snapshot.payload.modelAccess).toMatchObject({ status: "ready", key: { id: alicesKey.id } });
+    const useKey = async (keyId: string) => (await registry.authorize({ actor: alicesBrowser, action: "secrets:UseKey", permission: "programs.write", resources: { kind: "key", keyId }, programId: "secret-keys" })).allowed;
+    expect(await useKey(alicesKey.id)).toBe(true);
+    expect(await useKey(miasKey.id)).toBe(false);
     service.close();
   });
 });
 
 describe("the free check runs before a member's key is stored (service, t950)", () => {
   const browsers = TENANTS;
-  for (const [who, caller] of [["a member from the panel", alice], ["a member's paired browser", alicesBrowser]] as const) {
+  it("refuses a member's paired browser before the provider is asked, and stores nothing (t1095)", async () => {
+    const { service, call, scripted, outcomes } = tenant("ws-a", browsers);
+    scripted.answer({ outcome: "provider_unreachable" });
+    for (const [endpoint, payload] of [["save-model-key", { provider: "anthropic", value: VALUE }], ["replace-model-key", { value: NEXT }]] as const) {
+      expect(await call(endpoint, alicesBrowser, payload), endpoint).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
+    }
+    expect((await service.snapshot()).keys).toEqual([]);
+    expect(scripted.recorded).toEqual([]);
+    expect(outcomes()).not.toContainEqual({ result: "succeeded" });
+    service.close();
+  });
+
+  for (const [who, caller] of [["a member from the panel", alice]] as const) {
     describe(who, () => {
       it.each(["provider_refused", "no_credit"] as const)("stores nothing on %s when they had no key, and Activity reads a failed save of that kind", async (outcome) => {
         const { service, call, accessOf, scripted, outcomes } = tenant("ws-a", browsers);

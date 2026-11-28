@@ -3,7 +3,9 @@
 import { QrCode } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useGatewayChanges, type GatewayChangeStatus } from "../features/client-gateway-changes";
+import { requestProgramAuthentication } from "../features/programs/program-auth-recovery";
 import { Button, InlineNotice, Modal } from "../features/programs/shared-ui";
+import "./client-pairing-bars.css";
 import "./client-pairing-modal.css";
 
 export type ClientPairingRequest = {
@@ -39,9 +41,31 @@ export function pairingSnapshotsEqual(left: ClientGatewaySnapshot, right: Client
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-export function pendingPairingRequests(pairings: ClientPairingRequest[], nowMs: number, dismissedCodes: string[]): ClientPairingRequest[] {
-  const dismissed = new Set(dismissedCodes);
-  return pairings.filter((pairing) => pairing.requestedBySessionId && !pairing.consumedAt && pairing.expiresAt > nowMs && !dismissed.has(pairing.pairingCode));
+/**
+ * The requests still waiting for a person: asked for by a client, not yet
+ * approved, and not answered from this tab (`resolvedCodes`). The gateway is
+ * the clock: a code that lapses while its client still waits is renewed there
+ * under a new code, and one it drops leaves the snapshot, so nothing is dropped
+ * on this tab's own clock (which would close a request the gateway is renewing).
+ */
+export function pendingPairingRequests(pairings: ClientPairingRequest[], resolvedCodes: string[]): ClientPairingRequest[] {
+  const resolved = new Set(resolvedCodes);
+  return pairings.filter((pairing) => pairing.requestedBySessionId && !pairing.consumedAt && !resolved.has(pairing.pairingCode));
+}
+
+/** Which request a pairing belongs to: the client session that asked. A renewed code is the same request under a new code. */
+export function pairingRequestKey(pairing: Pick<ClientPairingRequest, "pairingCode" | "requestedBySessionId">): string {
+  return pairing.requestedBySessionId ?? pairing.pairingCode;
+}
+
+/**
+ * Whether a request that left the dialog is still waiting under some code:
+ * the gateway renewed its code, or the person set it aside for the Review bar.
+ * Either way it is the same request, not a closed one.
+ */
+export function pairingStillWaiting(shown: ClientPairingRequest, pending: ClientPairingRequest[]): boolean {
+  const key = pairingRequestKey(shown);
+  return pending.some((pairing) => pairingRequestKey(pairing) === key);
 }
 
 /**
@@ -121,14 +145,17 @@ function closedApprovalNotice(message: string): PairingNotice {
 export function liveUpdatesNotice(status: GatewayChangeStatus): string | null {
   if (status === "live" || status === "connecting") return null;
   if (status === "reconnecting") return "Live updates dropped and are reconnecting. This request may have changed meanwhile; it is read again as soon as they are back.";
-  return "Live updates are off. This request may have changed; it is read again when this tab is shown again or the network returns.";
+  return "Live updates are off. This request may have changed; it is read again when you reconnect, this tab is shown again or the network returns.";
 }
 
 export function GlobalClientGatewayPairing() {
   // The page's shared gateway subscription: it reads the snapshot when the stream opens and on each change it signals.
   const changes = useGatewayChanges();
   const [snapshot, setSnapshot] = useState<ClientGatewaySnapshot>({});
-  const [dismissedCodes, setDismissedCodes] = useState<string[]>([]);
+  // Requests answered from this tab (approved or declined), by code.
+  const [resolvedCodes, setResolvedCodes] = useState<string[]>([]);
+  // Requests the person closed the dialog on, by the client that asked: they wait in the Review bar, under whatever code the gateway renews them to.
+  const [deferredKeys, setDeferredKeys] = useState<string[]>([]);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [busyAction, setBusyAction] = useState<"approve" | "reject" | null>(null);
   const [actionError, setActionError] = useState("");
@@ -143,38 +170,79 @@ export function GlobalClientGatewayPairing() {
     setSnapshot((current) => pairingSnapshotsEqual(current, next) ? current : next);
   }, [changes.snapshot]);
 
-  const pending = useMemo(() => pendingPairingRequests(snapshot.pairings ?? [], nowMs, dismissedCodes), [dismissedCodes, nowMs, snapshot.pairings]);
+  const pending = useMemo(() => pendingPairingRequests(snapshot.pairings ?? [], resolvedCodes), [resolvedCodes, snapshot.pairings]);
+  const prompted = useMemo(() => pending.filter((pairing) => !deferredKeys.includes(pairingRequestKey(pairing))), [deferredKeys, pending]);
+  const deferred = useMemo(() => pending.filter((pairing) => deferredKeys.includes(pairingRequestKey(pairing))), [deferredKeys, pending]);
   useEffect(() => {
-    if (!pending.length) return;
+    if (!prompted.length) return;
     const timer = window.setInterval(() => setNowMs(Date.now()), 1_000);
     return () => window.clearInterval(timer);
-  }, [pending.length]);
+  }, [prompted.length]);
 
-  const pendingPairing = pending[0];
-  // A request leaving the modal without this operator's approve or dismiss
-  // (those mark it dismissed first) was withdrawn, expired or resolved
-  // elsewhere; say which instead of letting it vanish.
+  const pendingPairing = prompted[0];
+  // A request leaving the modal without this operator's approve or decline
+  // (those mark it resolved first) was withdrawn, expired or resolved
+  // elsewhere; say which instead of letting it vanish. One still waiting under
+  // a renewed code, or set aside for the Review bar, has not closed.
   useEffect(() => {
     const shown = shownPairing.current;
     shownPairing.current = pendingPairing ?? null;
     if (!shown || shown.pairingCode === pendingPairing?.pairingCode) return;
-    if (dismissedCodes.includes(shown.pairingCode)) return;
+    if (resolvedCodes.includes(shown.pairingCode)) return;
+    if (pairingStillWaiting(shown, pending)) return;
     setClosedNotice(vanishedPairingNotice(shown, snapshot.pairings ?? [], Date.now()));
-  }, [dismissedCodes, pendingPairing, snapshot.pairings]);
+  }, [pending, pendingPairing, resolvedCodes, snapshot.pairings]);
 
+  const sessionName = (pairing: ClientPairingRequest | undefined) => (snapshot.sessions ?? []).find((session) => session.sessionId === pairing?.requestedBySessionId)?.name;
   const pendingSession = (snapshot.sessions ?? []).find((session) => session.sessionId === pendingPairing?.requestedBySessionId);
-  if (!pendingPairing) return closedNotice ? (
-    <Modal description="The pairing request closed before you confirmed it." title="Pairing request closed" onClose={() => setClosedNotice(null)}>
-      <InlineNotice message={closedNotice.message} title={closedNotice.title} tone={closedNotice.tone} />
-      <div className="modal-actions">
-        <Button data-modal-submit onClick={() => setClosedNotice(null)} variant="primary">Close</Button>
-      </div>
-    </Modal>
+  // A signed-out page reconnects by signing in again in place; anything else re-opens the stream and reads now.
+  const reconnect = () => (changes.refused ? void requestProgramAuthentication() : changes.refresh());
+  const reconnectLabel = changes.refused ? "Sign in again" : "Reconnect";
+  // Not modal: what waits for the person, and whether this tab hears changes at all, stay on screen while they work.
+  const notLiveBar = changes.status === "closed" && !pendingPairing;
+  const bars = notLiveBar || deferred.length ? (
+    <div aria-label="Connect requests" className="client-pairing-bars">
+      {notLiveBar ? (
+        <InlineNotice
+          action={<Button onClick={reconnect}>{reconnectLabel}</Button>}
+          message={changes.refused ? "Your session ended, so new connect requests do not appear here. Sign in again to see them." : "New connect requests do not appear here until live updates are back."}
+          title="Not live"
+          tone="warning"
+        />
+      ) : null}
+      {deferred.map((pairing) => (
+        <InlineNotice
+          action={<Button onClick={() => reviewPairing(pairing)}>Review</Button>}
+          key={pairingRequestKey(pairing)}
+          message="Waiting for your approval."
+          title={pairingTitle(pairing, sessionName(pairing))}
+          tone="info"
+        />
+      ))}
+    </div>
   ) : null;
+  if (!pendingPairing) return (
+    <>
+      {bars}
+      {closedNotice ? (
+        <Modal description="The pairing request closed before you confirmed it." title="Pairing request closed" onClose={() => setClosedNotice(null)}>
+          <InlineNotice message={closedNotice.message} title={closedNotice.title} tone={closedNotice.tone} />
+          <div className="modal-actions">
+            <Button data-modal-submit onClick={() => setClosedNotice(null)} variant="primary">Close</Button>
+          </div>
+        </Modal>
+      ) : null}
+    </>
+  );
 
   function removePairing(pairingCode: string) {
-    setDismissedCodes((codes) => [...codes.filter((code) => code !== pairingCode), pairingCode].slice(-20));
+    setResolvedCodes((codes) => [...codes.filter((code) => code !== pairingCode), pairingCode].slice(-20));
     setSnapshot((current) => ({ ...current, pairings: (current.pairings ?? []).filter((pairing) => pairing.pairingCode !== pairingCode) }));
+  }
+
+  function reviewPairing(pairing: ClientPairingRequest) {
+    const key = pairingRequestKey(pairing);
+    setDeferredKeys((keys) => keys.filter((item) => item !== key));
   }
 
   async function resolvePairing(action: "approve" | "reject") {
@@ -209,16 +277,19 @@ export function GlobalClientGatewayPairing() {
     }
   }
 
+  // Closing the dialog answers nothing: the request stays pending, in the Review bar, until it is approved, declined or ends.
   function dismissPairingPrompt() {
-    const pairingCode = pendingPairing?.pairingCode;
-    if (!pairingCode || busyAction) return;
-    removePairing(pairingCode);
+    if (!pendingPairing || busyAction) return;
+    const key = pairingRequestKey(pendingPairing);
+    setDeferredKeys((keys) => [...keys.filter((item) => item !== key), key].slice(-20));
   }
 
   return (
-    <Modal busy={Boolean(busyAction)} closeOnEscape={!busyAction} description="Check that the code below matches the one shown in the app you are connecting." title={pairingTitle(pendingPairing, pendingSession?.name)} onClose={dismissPairingPrompt}>
-      {liveUpdatesNotice(changes.status) ? <InlineNotice message={liveUpdatesNotice(changes.status) ?? ""} title="Not live" tone="warning" /> : null}
-      {pending.length > 1 ? <InlineNotice message={`Showing request 1 of ${pending.length}. The next request will open after this one is resolved.`} tone="info" /> : null}
+    <>
+      {bars}
+      <Modal busy={Boolean(busyAction)} closeOnEscape={!busyAction} description="Check that the code below matches the one shown in the app you are connecting." title={pairingTitle(pendingPairing, pendingSession?.name)} onClose={dismissPairingPrompt}>
+      {liveUpdatesNotice(changes.status) ? <InlineNotice action={changes.status === "closed" ? <Button onClick={reconnect}>{reconnectLabel}</Button> : undefined} message={liveUpdatesNotice(changes.status) ?? ""} title="Not live" tone="warning" /> : null}
+      {prompted.length > 1 ? <InlineNotice message={`Showing request 1 of ${prompted.length}. The next request will open after this one is resolved.`} tone="info" /> : null}
       {closedNotice ? <InlineNotice message={closedNotice.message} title={`Previous request: ${closedNotice.title.toLowerCase()}`} tone={closedNotice.tone === "error" ? "warning" : "info"} /> : null}
       {actionError ? <InlineNotice message={actionError} title="Pairing unchanged" tone="error" /> : null}
       {snapshot.webRuntime?.clientGatewayError ? <InlineNotice message={snapshot.webRuntime.clientGatewayError} title="Gateway issue" tone="warning" /> : null}
@@ -236,6 +307,7 @@ export function GlobalClientGatewayPairing() {
         <Button busy={busyAction === "reject"} disabled={busyAction === "approve"} onClick={() => void resolvePairing("reject")}>Decline</Button>
         <Button busy={busyAction === "approve"} data-autofocus data-modal-submit disabled={busyAction === "reject"} onClick={() => void resolvePairing("approve")} variant="primary">Confirm</Button>
       </div>
-    </Modal>
+      </Modal>
+    </>
   );
 }

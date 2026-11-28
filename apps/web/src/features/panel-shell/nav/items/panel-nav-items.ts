@@ -9,8 +9,8 @@ export const PANEL_NAV_ITEMS: readonly PanelNavItem[] = [
   { page: "flows", label: "Flows", href: "/flows", hint: "Your Flows and folders" },
   { page: "runs", label: "Runs", href: "/runs", hint: "What ran, and how it went" },
   { page: "data", label: "Data", href: "/data", hint: "What your Flows collected" },
-  { page: "chats", label: "Chats", href: "/chats", hint: "Every conversation with FluxIQ" },
-  { page: "security", label: "Security", href: "/security", hint: "Keys, access and activity" },
+  { page: "chats", label: "Chats", href: "/chats", hint: "Every chat, in every project" },
+  { page: "security", label: "Security", href: "/security", hint: "Sign-in, devices, people and activity" },
   { page: "settings", label: "Settings", href: "/settings", hint: "AI keys, budgets and setup" }
 ];
 

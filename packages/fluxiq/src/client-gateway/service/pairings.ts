@@ -11,10 +11,16 @@ export type ClientGatewayPairingAddressLookup = (sessionId: string) => string | 
 /**
  * What the registry says of its own changes, and the clock its expiry wait
  * runs on. Only the two changes no other collaborator records as they happen
- * are told here: a challenge created, and challenges lapsing.
+ * are told here: a challenge created, and challenges lapsing (with which ones).
  */
 export type ClientGatewayPairingRegistryHooks = {
   changed?: (kind: Extract<ClientGatewayChangeKind, "pairing.requested" | "pairing.expired">) => void;
+  /**
+   * Hears the waiting challenges that just lapsed, once their lapse is
+   * signalled and they are gone from the registry, in the same turn: the
+   * gateway gives a client still waiting on one a fresh code on its socket.
+   */
+  lapsed?: (challenges: readonly ClientGatewayPairingChallenge[]) => void;
   /** Starts the wait for the next waiting challenge to lapse. Unset: a `setTimeout` that never keeps the process alive. */
   startExpiryTimer?: (delayMs: number, fire: () => void) => ClientGatewayTimer;
 };
@@ -32,6 +38,7 @@ export class ClientGatewayPairingRegistry {
   private readonly config: ClientGatewayConfig;
   private readonly addressOf: ClientGatewayPairingAddressLookup;
   private readonly changed: ClientGatewayPairingRegistryHooks["changed"];
+  private readonly lapsed: ClientGatewayPairingRegistryHooks["lapsed"];
   private readonly startExpiryTimer: NonNullable<ClientGatewayPairingRegistryHooks["startExpiryTimer"]>;
   private limits: ClientGatewayPairingLimits;
   // The wait for the earliest waiting challenge to lapse, and that challenge's expiry.
@@ -46,6 +53,7 @@ export class ClientGatewayPairingRegistry {
     this.config = config;
     this.addressOf = addressOf;
     this.changed = hooks.changed;
+    this.lapsed = hooks.lapsed;
     this.startExpiryTimer = hooks.startExpiryTimer ?? startUnrefTimer;
     this.limits = config.pairingLimits;
   }
@@ -116,19 +124,24 @@ export class ClientGatewayPairingRegistry {
     return this.pairings.size;
   }
 
-  /** Drops every waiting challenge past its expiry, and says so once when any lapsed. */
+  /**
+   * Drops every waiting challenge past its expiry, says so once when any
+   * lapsed, and hands the lapsed challenges to `hooks.lapsed`.
+   */
   pruneExpired(): void {
     const now = this.config.now();
-    let lapsed = 0;
+    const lapsed: ClientGatewayPairingChallenge[] = [];
     for (const [code, pairing] of this.pairings) {
       if (pairing.expiresAt >= now || pairing.consumedAt) continue;
       this.pairings.delete(code);
-      lapsed += 1;
+      lapsed.push(pairing);
     }
     for (const [code, withdrawal] of this.withdrawn) {
       if (withdrawal.expiresAt < now) this.withdrawn.delete(code);
     }
-    if (lapsed > 0) this.changed?.("pairing.expired");
+    if (lapsed.length === 0) return;
+    this.changed?.("pairing.expired");
+    this.lapsed?.(lapsed);
   }
 
   /**

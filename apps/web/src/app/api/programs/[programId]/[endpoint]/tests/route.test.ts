@@ -44,8 +44,6 @@ const ALLOWLISTED = [
   "get-conversation",
   "append-turn",
   "answer-ask",
-  "rename-conversation",
-  "delete-conversation",
   "list-runtime-sessions",
   "cancel-runtime-session",
   "cancel-flow-bootstrap",
@@ -78,8 +76,14 @@ const ALLOWLISTED = [
   "save-project-part",
   "run-project-part",
   "projects",
-  "create-project",
 ];
+
+/**
+ * Making a project and renaming or deleting a thread are the panel's for every client (t1095; user,
+ * 2026-11-27). Each stays registered as `authoring`, so a token is refused them by the allowlist itself,
+ * never by its classification.
+ */
+const PANEL_ONLY = ["create-project", "rename-conversation", "delete-conversation"];
 
 const CLASSIFICATIONS: Record<string, string> = {
   "get-runtime-build-identity": "read",
@@ -121,16 +125,15 @@ const CLASSIFICATIONS: Record<string, string> = {
   "get-project-part": "read",
   "save-project-part": "authoring",
   "run-project-part": "authoring",
-  // As handlers/projects.ts registers them: listing reads, creating authors.
+  // As handlers/projects.ts registers them: listing reads, creating authors (creating is the panel's, PANEL_ONLY).
   "projects": "read",
   "create-project": "authoring",
 };
 
 /** A run by token with no mode is pinned to no LLM intervention; every other body passes as sent. */
 function forwardedPayload(endpoint: string, body: Record<string, unknown>) {
-  // A paired client lists projects with no input, and creates one from its name alone.
+  // A paired client lists projects with no input.
   if (endpoint === "projects") return {};
-  if (endpoint === "create-project") return { name: body.name };
   return endpoint === "run-runtime-session" ? { ...body, adaptiveMode: "no_llm_intervention" } : body;
 }
 
@@ -225,7 +228,7 @@ describe("a paired client's bearer token", () => {
     // Every allowlisted endpoint is registered, whether or not the built
     // `fluxiq` package the endpoint list is read from has caught up with it.
     endpoints.mockReturnValue(
-      [...new Set([...Object.values(AUTOMATION_STUDIO_ENDPOINTS), ...ALLOWLISTED])].map((endpoint) => ({
+      [...new Set([...Object.values(AUTOMATION_STUDIO_ENDPOINTS), ...ALLOWLISTED, ...PANEL_ONLY])].map((endpoint) => ({
         programId: "automation-studio",
         endpoint,
         permission: "programs.read",
@@ -237,7 +240,7 @@ describe("a paired client's bearer token", () => {
 
   it.each(ALLOWLISTED)("reaches %s as the person who approved the pairing, in the session's own domain", async (endpoint) => {
     // A carry-on names an attempt and an amount, and never a Flow (its narrowing refuses one).
-    const body: Record<string, unknown> = endpoint === "projects" ? {} : endpoint === "create-project" ? { name: "Loans" } : endpoint === "run-project-part" ? { projectId: "project-1", partId: "part-1" } : endpoint === "carry-on-task-attempt" ? { projectId: "project-1", attemptId: "attempt-1", addUsd: 0 } : endpoint === "rename-conversation" ? { projectId: "project-1", conversationId: "conv-1", title: "Loans" } : endpoint === "delete-conversation" ? { projectId: "project-1", conversationId: "conv-1" } : endpoint === "rename-task" ? { projectId: "project-1", taskId: "task-1", title: "Loans" } : endpoint === "update-task-settings" ? { projectId: "project-1", taskId: "task-1", humanness: 40 } : endpoint === "update-flow-settings" ? { projectId: "project-1", flowId: "flow-1", flow: { metadata: { humanness: 40 } } } : endpoint === "remove-task" || endpoint === "run-task-again" ? { projectId: "project-1", taskId: "task-1" } : { projectId: "project-1", flowId: "flow-1" };
+    const body: Record<string, unknown> = endpoint === "projects" ? {} : endpoint === "run-project-part" ? { projectId: "project-1", partId: "part-1" } : endpoint === "carry-on-task-attempt" ? { projectId: "project-1", attemptId: "attempt-1", addUsd: 0 } : endpoint === "rename-task" ? { projectId: "project-1", taskId: "task-1", title: "Loans" } : endpoint === "update-task-settings" ? { projectId: "project-1", taskId: "task-1", humanness: 40 } : endpoint === "update-flow-settings" ? { projectId: "project-1", flowId: "flow-1", flow: { metadata: { humanness: 40 } } } : endpoint === "remove-task" || endpoint === "run-task-again" ? { projectId: "project-1", taskId: "task-1" } : { projectId: "project-1", flowId: "flow-1" };
     const flowDetail = endpoint === "get-flow-metadata-detail" || endpoint === "update-flow-settings";
     if (flowDetail) {
       // Real detail is richer than a paired client may read. The positive
@@ -260,9 +263,6 @@ describe("a paired client's bearer token", () => {
         categories: [{ id: "category-1", name: "Fixture category" }]
       } });
     }
-    if (endpoint === "create-project") {
-      call.mockResolvedValue({ ok: true, payload: { project: { id: "project-2", name: "Loans", owners: ["user:owner"], categoryId: "category-1", updatedAt: 6 } } });
-    }
     const response = await POST(tokenRequest(endpoint, { body }), params(endpoint));
 
     expect(response.status).toBe(200);
@@ -284,9 +284,7 @@ describe("a paired client's bearer token", () => {
       ? { flow: { flowId: "flow-1", metadata: { humanness: 40 } } }
       : endpoint === "projects"
         ? { projects: [{ id: "project-1", name: "Loans", updatedAt: 5 }] }
-        : endpoint === "create-project"
-          ? { project: { id: "project-2", name: "Loans", updatedAt: 6 } }
-          : { conversation: { id: "c1" } } });
+        : { conversation: { id: "c1" } } });
   });
 
   it("mirrors Core's paired-client allowlist for Automation Studio exactly", () => {
@@ -384,38 +382,56 @@ describe("a paired client's bearer token", () => {
     expect(call).not.toHaveBeenCalled();
   });
 
-  it("forwards a thread's rename and delete as the person who approved the pairing, with only the project, the thread and the name", async () => {
-    for (const [endpoint, body] of [
-      ["rename-conversation", { conversationId: "conv-1", title: "Loans" }],
-      ["delete-conversation", { conversationId: "conv-1" }]
-    ] as const) {
-      call.mockClear();
-      const response = await POST(tokenRequest(endpoint, { body }), params(endpoint));
-      expect(response.status).toBe(200);
-      expect(call).toHaveBeenCalledWith(expect.objectContaining({ programId: "automation-studio", endpoint, payload: body }));
+  // t1095: these were reachable by token until the rule that projects and threads are managed in the panel.
+  it.each(PANEL_ONLY)("refuses %s, though registered as authoring, by GET and POST, whatever the body, without the token being looked up", async (endpoint) => {
+    expect(CLASSIFICATIONS[endpoint]).toBe("authoring");
+    expect(PAIRED_CLIENT_ENDPOINTS["automation-studio"]).not.toContain(endpoint);
+    const bodies = endpoint === "create-project"
+      ? [{ name: "Loans" }, { name: "Loans", description: "d" }, {}]
+      : [{ projectId: "project-1", conversationId: "conv-1", title: "Loans" }, { conversationId: "conv-1" }, ["conv-1"]];
+    for (const body of bodies) {
+      for (const handler of [GET, POST]) {
+        const response = await handler(tokenRequest(endpoint, { body }), params(endpoint));
+        expect({ endpoint, body, status: response.status }).toEqual({ endpoint, body, status: 403 });
+        expect(await response.json()).toEqual({ ok: false, error: "This endpoint is not available to a paired client." });
+      }
     }
-  });
-
-  it("refuses a rename or delete that carries anything beyond what it needs, and Core is never called", async () => {
-    const refused: Array<[string, Record<string, unknown>]> = [
-      ["rename-conversation", { projectId: "project-1", conversationId: "conv-1", title: "Loans", status: "closed" }],
-      ["rename-conversation", { projectId: "project-1", conversationId: "conv-1", title: "Loans", flowId: "flow-1" }],
-      ["delete-conversation", { projectId: "project-1", conversationId: "conv-1", force: true }],
-      ["delete-conversation", { projectId: "project-1", conversationId: "conv-1", title: "Loans" }]
-    ];
-    for (const [endpoint, body] of refused) {
-      const response = await POST(tokenRequest(endpoint, { body }), params(endpoint));
-      expect({ endpoint, status: response.status }).toEqual({ endpoint, status: 403 });
-      expect(await response.json()).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
-    }
+    expect(authorizeToken).not.toHaveBeenCalled();
     expect(call).not.toHaveBeenCalled();
   });
 
-  it("refuses a rename or delete whose body is not an object, and Core is never called", async () => {
-    for (const endpoint of ["rename-conversation", "delete-conversation"]) {
-      const response = await POST(tokenRequest(endpoint, { body: ["conv-1"] }), params(endpoint));
+  it("refuses every key write, the person's own model key included, and reads the key state (t1095)", async () => {
+    endpoints.mockReturnValue([
+      ...["save-model-key", "replace-model-key", "remove-model-key"].map((endpoint) => ({ programId: "secret-keys", endpoint, permission: "secrets.manage", classification: "program-gated" })),
+      { programId: "secret-keys", endpoint: "snapshot", permission: "programs.read", classification: "read" },
+    ]);
+    for (const endpoint of ["save-model-key", "replace-model-key", "remove-model-key"]) {
+      const response = await POST(tokenRequest(endpoint, { body: { provider: "anthropic", value: "dummy-value" } }), params(endpoint, "secret-keys"));
       expect({ endpoint, status: response.status }).toEqual({ endpoint, status: 403 });
     }
+    expect(call).not.toHaveBeenCalled();
+    call.mockResolvedValue({ ok: true, payload: { keys: [{ id: "secret:1", name: "Mine", kind: "llm", provider: "anthropic", enabled: true }] } });
+    const read = await POST(tokenRequest("snapshot", { body: {} }), params("snapshot", "secret-keys"));
+    expect(read.status).toBe(200);
+    expect(JSON.stringify(await read.json())).not.toContain("secret:1");
+  });
+
+  it("reads the person's own preferences with an empty body only, and never changes them (t1095)", async () => {
+    endpoints.mockReturnValue([
+      { programId: "identity-access", endpoint: "get-my-preferences", permission: "programs.read", classification: "read" },
+      { programId: "identity-access", endpoint: "update-my-preferences", permission: "programs.read", classification: "authoring" },
+    ]);
+    call.mockResolvedValue({ ok: true, payload: { startingHumanness: 40, userId: "user:owner" } });
+    const read = await POST(tokenRequest("get-my-preferences", { body: {} }), params("get-my-preferences", "identity-access"));
+    expect(read.status).toBe(200);
+    expect(await read.json()).toEqual({ ok: true, payload: { startingHumanness: 40 } });
+    expect(call).toHaveBeenCalledWith(expect.objectContaining({ programId: "identity-access", endpoint: "get-my-preferences", payload: {}, actor: expect.objectContaining({ userId: "user:owner", channel: "paired-client" }) }));
+    call.mockClear();
+    const named = await POST(tokenRequest("get-my-preferences", { body: { userId: "user:other" } }), params("get-my-preferences", "identity-access"));
+    expect(named.status).toBe(403);
+    expect(await named.json()).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
+    const change = await POST(tokenRequest("update-my-preferences", { body: { startingHumanness: 90 } }), params("update-my-preferences", "identity-access"));
+    expect(change.status).toBe(403);
     expect(call).not.toHaveBeenCalled();
   });
 

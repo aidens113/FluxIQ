@@ -31,6 +31,14 @@ export function withProgramAuthSession(programId: string, payload: unknown, sess
 // person who approved the pairing. Every other endpoint still requires the
 // cookie, and a token on one of them is refused rather than ignored.
 //
+// Configuration and project management are the panel's (user, 2026-11-27:
+// keys, settings and creating or managing projects live in the panel for every
+// client; clients show the work and keep their chat). So no token makes a
+// project, renames or deletes a thread, or writes a key (t1095): those are not
+// in the allowlist, and a client opens the panel for them. A token may read
+// what a client shows -- the projects it may use, whether a model key opens,
+// the person's own starting humanness -- and talk, run and review in its chat.
+//
 // Four rules keep the token from being more than that:
 //
 // - **An allowlist, not a classification.** The endpoints are named below. A
@@ -42,22 +50,15 @@ export function withProgramAuthSession(programId: string, payload: unknown, sess
 //   program-gated credential check: a token reaches no delete and no payment
 //   through this route. Answering an ask is `authoring`: it is how a person
 //   answers a question in their own thread, and the act it answers is still
-//   gated where it happens. The one exception is named, not classified: the
-//   person's own model key, saved, replaced or removed
-//   (`PAIRED_CLIENT_IAM_DECIDED_ENDPOINTS`), which the registry files as
-//   `program-gated` although its handlers check no credential, so IAM alone
-//   decides it (t928; user, 2026-11-14 and 2026-11-16: a connected client has
-//   model access with no unlock, password or PIN, and IAM still applies).
-//   Removing it asks nothing further: the person pressing Remove in their own
-//   settings is the confirmation, IAM decides whether they may, and only the
-//   key their own calls use, which they added, can be removed this way.
+//   gated where it happens. An exception would be named, not classified
+//   (`PAIRED_CLIENT_IAM_DECIDED_ENDPOINTS`); since t1095 there is none: the
+//   person's own model-key writes, the one there was (t928), are the panel's.
 // - **Only the permissions these endpoints need.** The actor carries the
 //   approving person's role permissions intersected with the four the
 //   allowlist uses, so a token never holds `identity.manage` or `data.manage`,
 //   whatever the person's role. An endpoint that needs one more names it
-//   itself (`PAIRED_CLIENT_ENDPOINT_PERMISSIONS` in `paired-client-actor.ts`:
-//   `secrets.manage` on the three model-key writes, t955), and only that
-//   endpoint's actor carries it. Where an allowlisted endpoint's body could
+//   itself (`PAIRED_CLIENT_ENDPOINT_PERMISSIONS` in `paired-client-actor.ts`;
+//   none does since t1095), and only that endpoint's actor carries it. Where an allowlisted endpoint's body could
 //   still reach further -- an LLM, an inline Flow, a side-effect authorization,
 //   another reviewer -- `narrowPairedClientRequest` refuses that field, and
 //   where its answer holds more than a token should read,
@@ -111,20 +112,14 @@ export const PAIRED_CLIENT_ENDPOINTS: Readonly<Record<string, readonly string[]>
   "automation-studio": Object.freeze([
     "get-runtime-build-identity",
     // The extension's project switcher (usable client, 2026-11-16). Listing the projects the person may read in the bound
-    // domain, `read`, projected to each project's id, name and last change, never its owner. Making one, `authoring`
-    // (programs.write), narrowed to its name alone, in the bound domain, owned by the approving person. Renaming and
-    // deleting a project stay the signed-in person's alone. Neither reaches a project, so neither is gated on the session's.
+    // domain, `read`, projected to each project's id, name and last change, never its owner. It reaches no project, so it
+    // is not gated on the session's. Making, renaming and deleting a project are the panel's (t1095).
     "projects",
-    "create-project",
     "list-conversations",
     "open-conversation",
     "get-conversation",
     "append-turn",
     "answer-ask",
-    // A person's own name for a thread, and deleting one, from the chat's thread list, `authoring` (programs.write).
-    // Narrowed: the project, the thread and a name. Each touches only that thread; a delete is refused while a run still uses it.
-    "rename-conversation",
-    "delete-conversation",
     "list-runtime-sessions",
     "cancel-runtime-session",
     "cancel-flow-bootstrap",
@@ -190,16 +185,12 @@ export const PAIRED_CLIENT_ENDPOINTS: Readonly<Record<string, readonly string[]>
   "secret-keys": Object.freeze([
     // Whether an LLM key is configured and opens here, `read`. Projected: kind, provider, enabled, ownership and safe availability only, nothing that names or identifies a key.
     "snapshot",
-    // The person's own model key from the extension's settings (t928), under `secrets.manage` on the workspace, decided by IAM
-    // alone: see `PAIRED_CLIENT_IAM_DECIDED_ENDPOINTS`. Narrowed to the fields each handler reads, and answered with the
-    // person's model access alone, never a key id. A save changes only the key the person's own calls use, never the
-    // workspace's assistant key or model; the one exception is a workspace with no assistant key at all, where the first
-    // saved key becomes it, so a person alone saves and talks at once. Every other key write -- create, update, rotate
-    // and delete-key, the default key, the assistant's model, offering a key to others, and revealing one -- stays the
-    // signed-in person's.
-    "save-model-key",
-    "replace-model-key",
-    "remove-model-key",
+    // Every key write -- the person's own model key included (t928 until t1095) -- is the panel's.
+  ]),
+  "identity-access": Object.freeze([
+    // The person's own starting humanness, so a client starts a task at the pace the person chose in the panel (t1095),
+    // `read` (programs.read). Narrowed to an empty body: the person is the actor, never a field. Changing it is the panel's.
+    "get-my-preferences",
   ]),
 });
 
@@ -208,11 +199,9 @@ const PAIRED_CLIENT_CLASSIFICATIONS: readonly string[] = ["read", "authoring"];
 
 /**
  * The allowlisted endpoints a token may reach although the registry classifies
- * them `program-gated`: the person's own model key, saved, replaced or removed.
- * `program-gated` means the program decides beyond IAM, and for these three it
- * decides nothing more: their handlers check no password, PIN or code
- * (`programs/secret-keys/api/model-key-endpoints.ts`), so IAM alone decides them
- * (`secrets.manage`, Write, on the workspace), for a login and a token alike.
+ * them `program-gated`, each named because its handler checks no credential and
+ * IAM alone decides it. Empty since t1095: the person's own model-key writes,
+ * the only entries there were (t928), are the panel's.
  *
  * Named rather than admitting `program-gated` in general, which is the
  * narrowest sound rule: other `program-gated` endpoints do run a credential
@@ -222,9 +211,7 @@ const PAIRED_CLIENT_CLASSIFICATIONS: readonly string[] = ["read", "authoring"];
  * widens only which classification those entries may carry, never which
  * endpoints a token names.
  */
-const PAIRED_CLIENT_IAM_DECIDED_ENDPOINTS: Readonly<Record<string, readonly string[]>> = Object.freeze({
-  "secret-keys": Object.freeze(["save-model-key", "replace-model-key", "remove-model-key"]),
-});
+const PAIRED_CLIENT_IAM_DECIDED_ENDPOINTS: Readonly<Record<string, readonly string[]>> = Object.freeze({});
 
 /** Whether a paired client's token may name this endpoint at all. */
 export function isPairedClientEndpoint(programId: string, endpoint: string): boolean {
@@ -271,7 +258,7 @@ export function pairedClientDomainScope(requestUrl: string, session: PairedClien
  * on the bound domain (its scope) as a whole, and its narrowing hands the
  * handler no `projectId` to read.
  */
-const PAIRED_CLIENT_PROJECTLESS_ENDPOINTS: readonly string[] = Object.freeze(["projects", "create-project"]);
+const PAIRED_CLIENT_PROJECTLESS_ENDPOINTS: readonly string[] = Object.freeze(["projects"]);
 
 /** The project a token call reaches, which the route checks against the bound domain, or the refusal of a malformed one. */
 export type PairedClientProjectTarget =
@@ -351,10 +338,9 @@ const PAIRED_CLIENT_RUN_INTENT = "explore_and_adapt";
 export function narrowPairedClientRequest(programId: string, endpoint: string, payload: unknown): PairedClientRequestNarrowing {
   const program = programId.trim().toLowerCase();
   const name = endpoint.trim().toLowerCase();
-  if (program === "secret-keys" && Object.hasOwn(MODEL_KEY_WRITE_FIELDS, name)) return narrowModelKeyWrite(payload, MODEL_KEY_WRITE_FIELDS[name] ?? []);
+  if (program === "identity-access" && name === "get-my-preferences") return narrowOwnPreferencesRead(payload);
   if (program !== "automation-studio") return { ok: true, payload };
   if (name === "projects") return { ok: true, payload: {} };
-  if (name === "create-project") return narrowCreateProject(payload);
   if (name === "run-runtime-session") return narrowRunRuntimeSession(payload);
   if (name === "carry-on-task-attempt") return narrowCarryOnTaskAttempt(payload);
   if (name === "run-task-again") return narrowRunTaskAgain(payload);
@@ -363,8 +349,6 @@ export function narrowPairedClientRequest(programId: string, endpoint: string, p
   if (name === "remove-task") return narrowTaskMemory(payload, ["projectId", "taskId"]);
   if (name === "get-flow-metadata-detail") return narrowFlowHumannessRead(payload);
   if (name === "update-flow-settings") return narrowFlowHumanness(payload);
-  if (name === "rename-conversation") return narrowThreadChange(payload, ["projectId", "conversationId", "title"]);
-  if (name === "delete-conversation") return narrowThreadChange(payload, ["projectId", "conversationId"]);
   if (name === "generate-recording-proposal") return narrowGenerateRecordingProposal(payload);
   if (name === "review-recording-flow-proposal") return narrowReviewRecordingFlowProposal(payload);
   if (name === "save-project-part") return narrowSaveProjectPart(payload);
@@ -372,39 +356,20 @@ export function narrowPairedClientRequest(programId: string, endpoint: string, p
   return { ok: true, payload };
 }
 
-/** The fields each of the person's model-key writes reads, and so all a token's body hands on. */
-const MODEL_KEY_WRITE_FIELDS: Readonly<Record<string, readonly string[]>> = Object.freeze({
-  "save-model-key": Object.freeze(["provider", "value", "name"]),
-  "replace-model-key": Object.freeze(["value"]),
-  "remove-model-key": Object.freeze([]),
-});
-
 /**
- * A model-key write by token carries only the fields its handler reads: the
- * payload handed on is rebuilt from those, every other key is ignored rather
- * than refused (an older client's password or PIN field asks for nothing now),
- * so a field a handler starts reading later is never reached by token by
- * default. Each kept field goes on as sent: a missing or malformed value is the
- * handler's to refuse, in its own words.
+ * A token's read of its person's own preferences carries nothing: the person is
+ * the actor the session names, never a field, so any field at all -- a user id,
+ * the person's own id, a value -- is refused by name before the handler runs,
+ * and the payload handed on is `{}`. (The handler refuses a named person too;
+ * this keeps the rule on the route, where every token call is narrowed.)
  */
-function narrowModelKeyWrite(payload: unknown, fields: readonly string[]): PairedClientRequestNarrowing {
-  const body = payloadRecord(payload) ?? {};
-  return { ok: true, payload: Object.fromEntries(fields.filter((field) => Object.hasOwn(body, field)).map((field) => [field, body[field]])) };
-}
-
-/**
- * A project made by token is exactly `{ name }`: the handler would otherwise
- * also take a description, a category (another person's grouping) and a PIN,
- * so the payload handed on is rebuilt from the name alone and every other key
- * is ignored rather than refused, as the switcher's "New project" sends only a
- * name. The domain is never the body's: the handler takes the route's scope,
- * which for a token is the bound domain. An empty name is the handler's to
- * refuse, in its own words.
- */
-function narrowCreateProject(payload: unknown): PairedClientRequestNarrowing {
-  const name = payloadRecord(payload)?.name;
-  if (typeof name !== "string") return forbidden("A paired client's new project must carry its name as a string.");
-  return { ok: true, payload: { name } };
+function narrowOwnPreferencesRead(payload: unknown): PairedClientRequestNarrowing {
+  if (payload === undefined || payload === null) return { ok: true, payload: {} };
+  const body = payloadRecord(payload);
+  if (!body) return forbidden("A paired client's read of its person's preferences carries no body.");
+  const [field] = Object.keys(body);
+  if (field !== undefined) return forbidden(`A paired client's read of its person's preferences may not carry ${field}.`);
+  return { ok: true, payload: {} };
 }
 
 function narrowRunRuntimeSession(payload: unknown): PairedClientRequestNarrowing {
@@ -526,16 +491,6 @@ function unlistedField(record: Record<string, unknown>, allowed: readonly string
   return field === undefined ? null : forbidden(`${subject} may not carry ${path}${field}.`);
 }
 
-/** A thread's rename or deletion names the project, the thread (and the new name), and nothing else. */
-function narrowThreadChange(payload: unknown, allowed: readonly string[]): PairedClientRequestNarrowing {
-  const body = payloadRecord(payload);
-  if (!body) return forbidden("A paired client's change to a conversation must name the conversation.");
-  for (const field of Object.keys(body)) {
-    if (!allowed.includes(field)) return forbidden(`A paired client's change to a conversation may not carry ${field}.`);
-  }
-  return { ok: true, payload: body };
-}
-
 function narrowGenerateRecordingProposal(payload: unknown): PairedClientRequestNarrowing {
   const body = payloadRecord(payload) ?? {};
   if (body.mode === "llm_assisted") return forbidden("A paired client's proposal may not carry mode llm_assisted.");
@@ -607,16 +562,15 @@ const FLOW_HUMANNESS_DETAIL_ENDPOINTS: readonly string[] = ["get-flow-metadata-d
  *   detail (`updateFlowSettingsForRequest` reads it back after the save), so
  *   its answer is cut the same way: otherwise a token could re-send the
  *   current level and read everything the read withholds.
- * - A model-key write (t928) is cut to the person's model access after it, as
- *   the snapshot's is: see `projectModelKeyWrite`.
+ * - The person's own preferences are cut to `startingHumanness`: see
+ *   `projectOwnPreferences`.
  */
 export function projectPairedClientResponse(programId: string, endpoint: string, response: ProgramAnswer): ProgramAnswer {
   const program = programId.trim().toLowerCase();
   const name = endpoint.trim().toLowerCase();
   if (program === "automation-studio" && FLOW_HUMANNESS_DETAIL_ENDPOINTS.includes(name)) return projectFlowHumannessDetail(response);
   if (program === "automation-studio" && name === "projects") return projectProjectList(response);
-  if (program === "automation-studio" && name === "create-project") return projectCreatedProject(response);
-  if (program === "secret-keys" && Object.hasOwn(MODEL_KEY_WRITE_FIELDS, name)) return projectModelKeyWrite(response);
+  if (program === "identity-access" && name === "get-my-preferences") return projectOwnPreferences(response);
   if (program !== "secret-keys" || name !== "snapshot" || !response.ok) return response;
   const keys = payloadRecord(response.payload)?.keys;
   // No snapshot list means readiness is unknown, not that no key exists.
@@ -650,18 +604,16 @@ function pairedClientModelAccess(value: unknown): ModelAccessState | null {
 }
 
 /**
- * A model-key write as a paired client is answered: exactly `{ modelAccess }`,
- * the person's model access after the change, rebuilt through
- * `readModelAccessState` and without the key's id, as the snapshot's is. The
- * handler already leaves the id out for a paired client (`callerModelAccess`);
- * this is the route's own copy of that rule, so a handler change cannot hand a
- * token the id. A state that does not read is left out (`{}`), never shown as
- * ready; the write still happened. A refusal keeps only its sentence and its code.
+ * The person's own preferences as a paired client reads them: exactly `{
+ * startingHumanness }`, a whole number from 0 to 100 or null when unset,
+ * rebuilt rather than copied, so a preference the handler adds later is not
+ * handed to a token by default. A value that is not a number reads as null. A
+ * refusal keeps only its sentence and its code.
  */
-function projectModelKeyWrite(response: ProgramAnswer): ProgramAnswer {
+function projectOwnPreferences(response: ProgramAnswer): ProgramAnswer {
   if (!response.ok) return refusalOnly(response);
-  const modelAccess = pairedClientModelAccess(payloadRecord(response.payload)?.modelAccess);
-  return { ok: true, payload: modelAccess ? { modelAccess } : {} };
+  const value = payloadRecord(response.payload)?.startingHumanness;
+  return { ok: true, payload: { startingHumanness: typeof value === "number" && Number.isFinite(value) ? value : null } };
 }
 
 /** A project as a paired client reads it: its id, its name and when it last changed (epoch milliseconds). */
@@ -682,12 +634,6 @@ function projectProjectList(response: ProgramAnswer): ProgramAnswer {
   const projects = payloadRecord(response.payload)?.projects;
   const summaries = Array.isArray(projects) ? projects.map(pairedClientProjectSummary).filter((summary) => summary !== null) : [];
   return { ok: true, payload: { projects: summaries } };
-}
-
-/** A project made by token, answered as `{ project: { id, name, updatedAt } }`, or `{ project: null }` when the answer holds none. */
-function projectCreatedProject(response: ProgramAnswer): ProgramAnswer {
-  if (!response.ok) return refusalOnly(response);
-  return { ok: true, payload: { project: pairedClientProjectSummary(payloadRecord(response.payload)?.project) } };
 }
 
 function pairedClientProjectSummary(value: unknown): PairedClientProjectSummary | null {

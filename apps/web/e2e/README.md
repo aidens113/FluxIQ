@@ -112,6 +112,12 @@ chosen by words the person's message contains, and lists the model's decisions i
 `{ reply }`); `{ $answer: "revision" }` inside a tool's input reads from what the previous tool answered. A call that waits for
 the person's Allow must come first in its scenario. Script text is generic; never shape it like a Lab task.
 
+Every chat belongs to a project (t1095), so a message typed into the dock is read first by the project chat, whose
+model on the fixture host replays the same script (Core: `runtime/conversations/assistant/model/chat-model-binding.ts`):
+a scenario's message is handed to the panel's tools (`panel.assistant`), or to the capability the scenario's optional
+`chat` names, and the scripted assistant then plays the scenario's turns into that project's thread. A message no scenario
+fits is answered with `otherwise`.
+
 ## Every panel screen, in one command
 
 `support/run-isolated.mjs` runs every `panel-*.spec.ts` (Home, Flows, Runs, Data, Security, Settings, Welcome, the redirects,

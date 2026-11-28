@@ -403,7 +403,7 @@ test("the heading is a title in words with one thread and no host title bar, nev
     await settle();
     const title = root.byClass("chat-thread-title")[0]!;
     assert.equal(title.hidden, false);
-    assert.equal(title.textContent, "Company website");
+    assert.equal(title.textContent, "New chat", "the conversation's name, not the project's");
     assert.equal(root.byClass("chat-thread-header")[0]!.textContent.includes("conv-secret-id-1"), false);
     assert.equal(root.byClass("chat-thread-row")[0]!.textContent.includes("conv-secret-id-1"), false);
     assert.equal(root.descendants().some((element) => element.tagName === "BUTTON" && element.textContent === "Refresh"), false, "no Refresh control");

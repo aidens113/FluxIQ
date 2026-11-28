@@ -35,7 +35,7 @@ export class WorkspacePresentationContexts {
   }
 
   recording(input: Parameters<WorkspaceRecordingContextProvider>[0]): ReturnType<typeof resolveClientRecordingProject> {
-    return resolveClientRecordingProject(this.contexts, { ...(input.session.operatorUserId ? { operatorUserId: input.session.operatorUserId } : {}), clientId: input.session.clientId, ...(input.request.projectId !== undefined ? { requestedProjectId: input.request.projectId } : {}) }, this.now());
+    return resolveClientRecordingProject(this.contexts, { ...(input.session.operatorUserId ? { operatorUserId: input.session.operatorUserId } : {}), clientId: input.session.clientId, ...(input.request.projectId !== undefined ? { requestedProjectId: input.request.projectId } : {}) });
   }
 
   clear(): void {

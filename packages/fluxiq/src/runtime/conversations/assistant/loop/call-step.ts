@@ -12,6 +12,7 @@ import { panelAssistantClearlyAsked, panelAssistantConfirmWords, panelAssistantG
 import { panelAssistantInputWithContext } from "../context/index.ts";
 import type { PanelAssistantActor, PanelAssistantCallResult, PanelAssistantConsent, PanelAssistantToolCall } from "../types.ts";
 import type { PanelAssistantDecision } from "./decision.ts";
+import { PANEL_ASSISTANT_CARD_ASK_PREFIX } from "./card-ask.ts";
 import { PANEL_ASSISTANT_CORE_TOOLS } from "./prompt.ts";
 import { PANEL_ASSISTANT_WORDS, panelAssistantStepText, panelAssistantStepTitle } from "./step-words.ts";
 import type { PanelAssistantTurnState } from "./types.ts";
@@ -57,7 +58,7 @@ export async function panelAssistantCallStep<TActor extends PanelAssistantActor>
       await turn.threads.appendCard(turn.actor.userId, {
         conversationId: turn.conversationId,
         text: panelAssistantConfirmWords({ tool, target, classes: gated }),
-        ask: { askId: `ask.${randomUUID()}`, kind: "confirm", parks: false, options: ALLOW_OR_NOT, ...(consequencesAsked.length ? { consequences: consequencesAsked } : {}) },
+        ask: { askId: `${PANEL_ASSISTANT_CARD_ASK_PREFIX}${randomUUID()}`, kind: "confirm", parks: false, options: ALLOW_OR_NOT, ...(consequencesAsked.length ? { consequences: consequencesAsked } : {}) },
         call: { toolName: tool.name, input: call.input, words: turn.words, context: turn.context }
       });
       return "asked";

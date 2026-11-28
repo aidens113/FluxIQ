@@ -22,8 +22,10 @@ export type ChatDockProps = {
   projectName?: string;
   /** What the panel has open, so "run it" means the Flow on screen. */
   onScreen?: ConversationOnScreen;
-  /** Present: the window is the panel-wide assistant. */
+  /** Present: the window is the panel's docked chat, which starts in the person's own project when none is open. */
   panel?: PanelConversationOptions;
+  /** Hears the project a chat with none open was just started in. */
+  onProjectFound?(projectId: string): void;
   onOpenAttachment?(attachment: ChatAttachment): void;
   onSelectedConversationChange?(conversationId: string): void;
   /** Restored by whatever mounted the dock, so it reopens on the same thread. */

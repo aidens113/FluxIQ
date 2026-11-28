@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { SESSION_RESTORED_EVENT } from "../../features/panel-changes";
 import { Button, Field, InlineNotice, Modal } from "../../features/programs/shared-ui";
 import { hasPendingProgramAuthentication, programAuthenticationRequiredEvent, resolveProgramAuthentication } from "../../features/programs/program-auth-recovery";
 import { sanitizeAsciiDigits } from "../../lib/input-sanitizers";
@@ -63,6 +64,8 @@ export function SessionReauthentication() {
       if (response.ok) {
         setOpen(false);
         resolveProgramAuthentication(true);
+        // The page did not reload: a live-update stream the server refused while the session had lapsed opens again on this.
+        window.dispatchEvent(new Event(SESSION_RESTORED_EVENT));
         return;
       }
       if (body?.requiresTotp) setRequiresTotp(true);

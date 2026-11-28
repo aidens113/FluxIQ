@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { browserPanelChangeSources } from "../browser-sources";
 import { PanelChangeConnection } from "../connection";
+import { SESSION_RESTORED_EVENT } from "../session-restored-event";
 import type { PanelChangeEventStream, PanelChangeEventType, PanelChangeListener } from "../types";
 
 class FakeStream implements PanelChangeEventStream {
@@ -57,7 +59,8 @@ function reader() {
     gateway: () => heard.push("gateway"),
     conversation: (id) => heard.push(`conversation:${id}`),
     activity: (id) => heard.push(`activity:${id}`),
-    modelAccess: () => heard.push("model-access")
+    modelAccess: () => heard.push("model-access"),
+    context: () => heard.push("context")
   };
   return { heard, listener };
 }
@@ -95,6 +98,17 @@ describe("PanelChangeConnection", () => {
     streams[0]!.send("model-access", "not json");
     expect(streams).toHaveLength(1);
     expect(keys.heard).toEqual(["status:connecting", "status:live", "opened", "gateway", "model-access", "opened", "opened"]);
+  });
+
+  it("tells readers to read the person's current project again on a context event (t1095), numbered with the others", () => {
+    const { connection, streams } = harness();
+    const panel = reader();
+    connection.subscribe(panel.listener);
+    streams[0]!.open();
+    streams[0]!.send("context", { version: 1 });
+    streams[0]!.send("gateway", { version: 2 });
+    streams[0]!.send("context", { version: 3 });
+    expect(panel.heard).toEqual(["status:connecting", "status:live", "opened", "context", "gateway", "context"]);
   });
 
   it("tells a reader who joins an open stream to read once, since it has read nothing yet", () => {
@@ -148,6 +162,43 @@ describe("PanelChangeConnection", () => {
     wake();
     connection.reopen();
     expect(streams).toHaveLength(2);
+  });
+
+  // t1095 RC3: a stream refused while the session had lapsed closes for good;
+  // signing in again in place must open it again, or later requests never show.
+  it("a restored session reopens a closed stream", () => {
+    const browser = new EventTarget();
+    vi.stubGlobal("window", browser);
+    vi.stubGlobal("document", { visibilityState: "visible", addEventListener() {}, removeEventListener() {} });
+    try {
+      const streams: FakeStream[] = [];
+      const connection = new PanelChangeConnection({
+        openStream: (url) => {
+          const stream = new FakeStream(url);
+          streams.push(stream);
+          return stream;
+        },
+        onWake: browserPanelChangeSources().onWake
+      });
+      const pairing = reader();
+      const leave = connection.subscribe(pairing.listener);
+      streams[0]!.open();
+      streams[0]!.drop(true);
+      expect(connection.status()).toBe("closed");
+
+      browser.dispatchEvent(new Event(SESSION_RESTORED_EVENT));
+      expect(streams).toHaveLength(2);
+      streams[1]!.open();
+      expect(connection.status()).toBe("live");
+      expect(pairing.heard.filter((entry) => entry === "opened")).toHaveLength(2);
+
+      // Once the last reader leaves, a restored session opens nothing.
+      leave();
+      browser.dispatchEvent(new Event(SESSION_RESTORED_EVENT));
+      expect(streams).toHaveLength(2);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("says closed, and opens nothing, where the browser has no EventSource", () => {

@@ -17,9 +17,12 @@ import type { AutomationStudioConversationSignalSink } from "../../signals/index
 import { AutomationStudioProjectConversationStore } from "../../store.ts";
 import type { AutomationStudioConversation } from "../../thread.ts";
 import type { AutomationStudioConversationAttachment, AutomationStudioConversationAuthor, AutomationStudioConversationTurn } from "../../turn.ts";
+import { panelAssistantAttachmentProjects } from "../attachments/index.ts";
+import type { PanelAssistantTurnAttachment } from "../loop/index.ts";
 import type { PanelAssistantConversation, PanelAssistantThread } from "../types.ts";
 import { panelAssistantDatabaseId } from "./database-id.ts";
 import { PANEL_ASSISTANT_STORE_MIGRATIONS } from "./migrations.ts";
+import type { PanelAssistantThreadStore } from "./thread-store.ts";
 import { PanelAssistantWaitingCalls, type PanelAssistantWaitingCall } from "./waiting-calls.ts";
 
 /** The subject and the project id every panel thread reads back with. */
@@ -28,7 +31,7 @@ const PANEL = "panel";
 /** One person's panel database, open for one operation. */
 type Opened = { threads: AutomationStudioProjectConversationStore; waiting: PanelAssistantWaitingCalls };
 
-export class PanelAssistantThreads {
+export class PanelAssistantThreads implements PanelAssistantThreadStore {
   private readonly pool: AutomationStudioProjectDatabasePool;
   private readonly now: () => number;
   private readonly signals: AutomationStudioConversationSignalSink | undefined;
@@ -113,7 +116,7 @@ export class PanelAssistantThreads {
   /** Appends a confirm card and keeps the exact call it asks about, so Allow runs that call and no other, with the words and place it was raised under. */
   async appendCard(userId: string, input: { conversationId: string; text: string; ask: AutomationStudioConversationAskInput; call: Omit<PanelAssistantWaitingCall, "askId" | "conversationId"> }): Promise<AutomationStudioConversationTurn> {
     // Kept first: a card the person can see always has its call to run.
-    await this.with(userId, ({ waiting }) => waiting.put({ ...input.call, askId: input.ask.askId, conversationId: input.conversationId }, this.now()));
+    await this.keepWaitingCall(userId, { ...input.call, askId: input.ask.askId, conversationId: input.conversationId });
     return this.append(userId, { conversationId: input.conversationId, author: "automation", text: input.text, ask: input.ask });
   }
 
@@ -127,9 +130,28 @@ export class PanelAssistantThreads {
     return this.with(userId, async ({ threads }) => this.signalled(userId, await threads.answerAsk({ mutationId: `conversation.answer:${input.askId}:${input.kind}`, askId: input.askId, kind: input.kind, value: null, actorId: input.actorId })));
   }
 
+  /**
+   * Keeps the exact call a card asks about in the person's own database. A card the assistant raises in a
+   * project's thread keeps its call here too (`./project-threads.ts`), so only the person whose message raised
+   * it can ever run it.
+   */
+  keepWaitingCall(userId: string, call: PanelAssistantWaitingCall): Promise<void> {
+    return this.with(userId, ({ waiting }) => waiting.put(call, this.now()));
+  }
+
+  /** Whether a call of this person's still waits on `askId`. */
+  hasWaitingCall(userId: string, askId: string): Promise<boolean> {
+    return this.with(userId, ({ waiting }) => waiting.waiting(askId));
+  }
+
   /** Takes the call a card waits on, once; null when none waits or another press took it. */
   takeWaitingCall(userId: string, askId: string): Promise<PanelAssistantWaitingCall | null> {
     return this.with(userId, ({ waiting }) => waiting.take(askId, this.now()));
+  }
+
+  /** A panel thread belongs to no project, so a step that shows a project's record names its project. */
+  storedAttachment(attachment: PanelAssistantTurnAttachment): AutomationStudioConversationAttachment {
+    return panelAssistantAttachmentProjects.stored(attachment);
   }
 
   /** Closes every open database. */

@@ -122,12 +122,67 @@ describe("PanelChangeStream with the gateway topic", () => {
       if (reads === 1) await new Promise<void>((resolve) => { release = resolve; });
       return seen;
     })], { timers: manualTimers().timers });
-    await stream.next();
+    const opening = stream.next();
     value = 1;
     signal();
     release();
+    expect((await opening).value).toBe(": open\n\n");
     const pending = stream.next();
     expect((await pending).value).toBe('event: gateway\ndata: {"version":1}\n\n');
+  });
+
+  // t1095 RC4: the browser reads the snapshot once the stream opens. Opening
+  // before the topic had its first view let a request made between the
+  // browser's read and that view go unsignalled: it was in the baseline already.
+  it("`: open` waits for each topic's baseline, and a change made meanwhile still follows it", async () => {
+    const { changes, signal } = port();
+    let release: () => void = () => undefined;
+    let reads = 0;
+    const stream = new PanelChangeStream([gatewayChangeTopic(changes, async () => {
+      reads += 1;
+      if (reads === 1) await new Promise<void>((resolve) => { release = resolve; });
+      return reads;
+    })], { timers: manualTimers().timers });
+    let opened = false;
+    const opening = stream.next().then((step) => {
+      opened = true;
+      return step;
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(opened).toBe(false);
+    release();
+    expect((await opening).value).toBe(": open\n\n");
+    // After the opening, any change to the view is signalled.
+    signal();
+    expect((await stream.next()).value).toBe('event: gateway\ndata: {"version":1}\n\n');
+  });
+
+  it("settles an opening still waiting for a baseline when the stream is returned or a topic fails", async () => {
+    const { changes } = port();
+    const hung = new PanelChangeStream([gatewayChangeTopic(changes, () => new Promise<never>(() => undefined))], { timers: manualTimers().timers });
+    const opening = hung.next();
+    await hung.return();
+    expect(await opening).toEqual({ done: true, value: undefined });
+
+    const failing = manualTopic();
+    const waiting = manualTopic();
+    const failed = new PanelChangeStream([waiting.start, failing.start], { timers: manualTimers().timers });
+    waiting.topic.sink!.opensAfter(new Promise<void>(() => undefined));
+    const failedOpening = failed.next();
+    failing.topic.sink!.fail(new Error("authority lost"));
+    await expect(failedOpening).rejects.toThrow("authority lost");
+  });
+
+  it("sends no change before the opening while a baseline is read", async () => {
+    const threads = manualTopic();
+    let baselined: () => void = () => undefined;
+    const stream = new PanelChangeStream([threads.start], { timers: manualTimers().timers });
+    threads.topic.sink!.opensAfter(new Promise<void>((resolve) => { baselined = resolve; }));
+    const opening = stream.next();
+    threads.topic.sink!.changed({ topic: "conversation", conversationId: "conversation.one" });
+    baselined();
+    expect((await opening).value).toBe(": open\n\n");
+    expect((await stream.next()).value).toBe('event: conversation\ndata: {"conversationId":"conversation.one","version":1}\n\n');
   });
 
   it("sends a keep-alive comment when nothing changed for the keep-alive time", async () => {

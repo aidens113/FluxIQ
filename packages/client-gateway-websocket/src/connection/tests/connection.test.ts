@@ -60,6 +60,41 @@ describe("FluxIQClientGatewayConnection state", () => {
     await h.settle();
     expect(h.connection.statusFields()).toMatchObject({ connectionState: "connected", pairingReferenceCode: undefined });
   });
+
+  it("a second pairing_required on one socket replaces the code", async () => {
+    const h = harness();
+    const connecting = h.connection.connect();
+    await h.settle();
+    await connecting;
+    const socket = FakeSocket.latest();
+    socket.serverSays("server.pairing_required", { referenceCode: "REF-1", reason: "approval needed" });
+    await h.settle();
+    // The gateway renewed a lapsed code on the same socket.
+    socket.serverSays("server.pairing_required", { referenceCode: "REF-2", reason: "approval needed" });
+    await h.settle();
+    expect(FakeSocket.created).toHaveLength(1);
+    expect(h.connection.state()).toBe("pairing");
+    expect(h.connection.statusFields().pairingReferenceCode).toBe("REF-2");
+    expect(h.pairing.map((entry) => entry.referenceCode)).toEqual(["REF-1", "REF-2"]);
+  });
+
+  it("a reconnect clears the previous code before the gateway names one", async () => {
+    const h = harness({ autoReconnect: true });
+    const connecting = h.connection.connect();
+    await h.settle();
+    await connecting;
+    FakeSocket.latest().serverSays("server.pairing_required", { referenceCode: "REF-1", reason: "approval needed" });
+    await h.settle();
+    expect(h.connection.statusFields().pairingReferenceCode).toBe("REF-1");
+    FakeSocket.latest().drop();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await h.settle();
+    expect(FakeSocket.created).toHaveLength(2);
+    // The new socket has sent its hello and the gateway has not answered yet.
+    expect(h.connection.state()).toBe("pairing");
+    expect(h.connection.statusFields().pairingReferenceCode).toBeUndefined();
+    h.connection.stopReconnecting();
+  });
 });
 
 // A socket that never opens: `connect()` settles at its deadline and says why.

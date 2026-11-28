@@ -23,6 +23,13 @@
 // request's project only for a reference that names none), which IAM decides
 // separately (`./project-attachments.ts`).
 //
+// Every chat belongs to a project (t1095). A project's chat in the panel hands a message the panel's own
+// tools should do to the assistant (Core's `panel.assistant` command, offered only to the panel), through
+// `work-in-project-thread`: decided on that project, refused to a paired client like every endpoint here,
+// it reads the person's stored turn for their words and the page and selection it was written on, and runs
+// the same loop into that project's thread (`runtime/conversations/assistant/store/project-threads.ts`).
+// Its Allow cards are answered through the project's own `answer-ask` (`../handlers/conversations.ts`).
+//
 // `send-panel-message` answers once the message is stored; the work goes on in
 // the background and every step lands in the thread, which the dock reads as it
 // reads any thread. `answer-panel-ask` likewise answers once the answer is
@@ -36,12 +43,12 @@
 import path from "node:path";
 import { iamActionName } from "@fluxiq/contracts/iam";
 import { iamEndpointAccessLevel, iamProgramService } from "../../../../platform/iam/catalog/index.ts";
-import { PanelAssistant, PanelAssistantThreads } from "../../../../runtime/conversations/assistant/index.ts";
+import { PanelAssistant, PanelAssistantProjectThreads, PanelAssistantThreads, panelAssistantOnScreenOf, type PanelAssistantProjectConversations } from "../../../../runtime/conversations/assistant/index.ts";
 import type { AutomationStudioConversationSignalSink } from "../../../../runtime/conversations/signals/index.ts";
 import type { GlobalProgramApiRegistry, ProgramApiActor, ProgramApiHandler, ProgramEndpointClassification } from "../../../_shared/api.ts";
 import { endpointResource, type ProgramEndpointResource } from "../../../_shared/iam/index.ts";
 import type { Permission } from "../../../identity-access/index.ts";
-import { PANEL_ASSISTANT_ENDPOINTS } from "./endpoints.ts";
+import { PANEL_ASSISTANT_ENDPOINTS, PANEL_ASSISTANT_PROJECT_ENDPOINTS } from "./endpoints.ts";
 import { rememberPanelAssistant } from "./panel-assistant-of.ts";
 import { panelAssistantProjectAttachments, type PanelAssistantProjectReads } from "./project-attachments.ts";
 import { panelAssistantPrograms } from "./programs-port.ts";
@@ -59,24 +66,28 @@ const PANEL_PROJECT = "panel";
  */
 export type PanelAssistantApiDependencies = {
   readonly registry: GlobalProgramApiRegistry;
-  readonly service: { readonly projectPaths: { readonly root: string | undefined }; readonly conversations?: { readonly signals: AutomationStudioConversationSignalSink } } & PanelAssistantProjectReads;
+  readonly service: { readonly projectPaths: { readonly root: string | undefined }; readonly conversations?: { readonly signals: AutomationStudioConversationSignalSink } & Partial<PanelAssistantProjectConversations> } & PanelAssistantProjectReads;
 };
 
 /** Registers the endpoints and answers the assistant they serve. */
 export function registerPanelAssistantEndpoints(dependencies: PanelAssistantApiDependencies): PanelAssistant<ProgramApiActor> {
   const { registry, service } = dependencies;
   let threads: PanelAssistantThreads | undefined;
+  const panelThreads = (): PanelAssistantThreads => {
+    if (threads) return threads;
+    const projectsRoot = service.projectPaths.root;
+    if (!projectsRoot) throw new Error("The assistant's conversations need a workspace that keeps its data on disk.");
+    // Beside the projects' root, never inside it: no project's id can name a panel database.
+    const signals = service.conversations?.signals;
+    threads = new PanelAssistantThreads({ rootDir: path.join(path.dirname(projectsRoot), "panel-assistant"), ...(signals === undefined ? {} : { signals }) });
+    return threads;
+  };
+  const projects = projectConversationsOf(service.conversations);
   const assistant = new PanelAssistant<ProgramApiActor>({
     programs: panelAssistantPrograms(registry),
-    threads: () => {
-      if (threads) return threads;
-      const projectsRoot = service.projectPaths.root;
-      if (!projectsRoot) throw new Error("The assistant's conversations need a workspace that keeps its data on disk.");
-      // Beside the projects' root, never inside it: no project's id can name a panel database.
-      const signals = service.conversations?.signals;
-      threads = new PanelAssistantThreads({ rootDir: path.join(path.dirname(projectsRoot), "panel-assistant"), ...(signals === undefined ? {} : { signals }) });
-      return threads;
-    }
+    threads: panelThreads,
+    // A project's thread is written through the project's own conversations; the calls its cards wait on stay in the person's panel database.
+    ...(projects ? { projectThreads: (projectId: string) => new PanelAssistantProjectThreads(projectId, projects, panelThreads()) } : {})
   });
   rememberPanelAssistant(registry, assistant);
   /** `resource` is what the endpoint changes or reads: the caller's own user unless it says otherwise. */
@@ -114,6 +125,14 @@ export function registerPanelAssistantEndpoints(dependencies: PanelAssistantApiD
     });
     return { conversation: sent.conversation, turn: sent.turn };
   });
+  register(PANEL_ASSISTANT_PROJECT_ENDPOINTS.workInProjectThread, "programs.write", "authoring", "A project's chat hands a message to the panel's tools by itself; a person never asks for this.", async (actor, payload, scope) => {
+    const projectId = text(payload.projectId, "projectId");
+    const conversationId = text(payload.conversationId, "conversationId");
+    if (!projects) throw new Error("The assistant cannot work in a project's conversation on this panel.");
+    const said = await personTurnBefore(projects, projectId, conversationId, text(payload.answerTurnId, "answerTurnId"));
+    const outcome = await assistant.workInProject(actor, scope, { projectId, conversationId, words: said.text, onScreen: panelAssistantOnScreenOf(said.attachment) });
+    return { ending: outcome.ending, spentUsd: outcome.spentUsd };
+  }, endpointResource.project());
   register(PANEL_ASSISTANT_ENDPOINTS.answer, "programs.write", "authoring", "Only a person's own press answers the assistant's Allow card.", async (actor, payload, scope) => {
     const kind = payload.kind;
     if (kind !== "grant" && kind !== "deny") throw new Error("An answer to the assistant is grant (Allow) or deny (Don't).");
@@ -123,6 +142,25 @@ export function registerPanelAssistantEndpoints(dependencies: PanelAssistantApiD
   register(PANEL_ASSISTANT_ENDPOINTS.getAllowance, "programs.read", "read", "Settings shows the assistant's spending allowance.", async () => assistant.allowance(), endpointResource.workspace());
   register(PANEL_ASSISTANT_ENDPOINTS.setAllowance, "secrets.manage", "authoring", "The assistant does not change its own spending allowance; a person sets it in Settings.", async (_actor, payload) => assistant.setAllowance(payload.allowanceUsd), endpointResource.workspace());
   return assistant;
+}
+
+/** How far back the person's turn is looked for: Core answers a message at once, so it is among the last few. */
+const PERSON_TURN_WINDOW = 50;
+
+/** The project conversations a project's thread is written through, when the service holds them all. */
+function projectConversationsOf(conversations: Partial<PanelAssistantProjectConversations> | undefined): PanelAssistantProjectConversations | undefined {
+  if (!conversations?.appendTurn || !conversations.appendAutomationTurn || !conversations.recentTurns || !conversations.getAsk || !conversations.answerAsk) return undefined;
+  return conversations as PanelAssistantProjectConversations;
+}
+
+/** The person's own turn that Core's turn `answerTurnId` answered: the last person turn before it. */
+async function personTurnBefore(projects: PanelAssistantProjectConversations, projectId: string, conversationId: string, answerTurnId: string) {
+  const turns = await projects.recentTurns({ projectId, conversationId, count: PERSON_TURN_WINDOW });
+  const answered = turns.findIndex((turn) => turn.turnId === answerTurnId);
+  if (answered < 0) throw new Error("The message this answers is not in the conversation any more.");
+  const person = turns.slice(0, answered).reverse().find((turn) => turn.author === "person");
+  if (!person) throw new Error("There is no message of yours before this answer to work on.");
+  return person;
 }
 
 function payloadOf(payload: unknown): Record<string, unknown> {

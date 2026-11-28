@@ -11,7 +11,7 @@ import { useReloadOnChatChanges } from "./use-reload-on-chat-changes";
 import { CHATS_PAGE_SIZE, loadChats } from "./load-chats";
 import "./chats.css";
 
-/** Every conversation with FluxIQ, in the current project or in all of them, each opening as a full page. */
+/** Every chat, in the current project or in all of them, each opening as a full page. Earlier chats with no project show with all projects. */
 export function ChatsPage() {
   const studio = useProgramTransport("automation-studio");
   const { context } = usePanelContext();
@@ -58,7 +58,7 @@ export function ChatsPage() {
           </p>
         ) : null}
         {chats.state === "ready" && rows.length === 0 ? (
-          <p className="chats-note">{chats.data.length === 0 ? "There are no chats here yet. Open the assistant and ask for something to start one." : "No chat matches that search."}</p>
+          <p className="chats-note">{chats.data.length === 0 ? "There are no chats here yet. Open the chat and ask for something to start one." : "No chat matches that search."}</p>
         ) : null}
         {rows.length ? (
           <ul className="chats-rows">

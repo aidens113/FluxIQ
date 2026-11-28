@@ -43,6 +43,7 @@ import { getConversationInput, listConversationsInput } from "@fluxiq/contracts/
 import { authorizeProgramPin, type ProgramPinAuthorizationPayload } from "../../../_shared/authorization.ts";
 import { endpointResource } from "../../../_shared/iam/index.ts";
 import type { IdentityAccessService } from "../../../identity-access/index.ts";
+import { panelAssistantProjectChat } from "../panel-assistant/index.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS, type ConversationAnswerRequest, type ConversationAttachmentRequest, type ConversationDeleteRequest, type ConversationListRequest, type ConversationOpenRequest, type ConversationReadRequest, type ConversationRenameRequest, type ConversationTurnAppendRequest } from "../../../../api-contracts/automation.ts";
 import type { GlobalProgramApiRegistry, ProgramApiRequest } from "../../../_shared/api.ts";
 import type { AutomationStudioConversations } from "../../../../framework/automation-service/index.ts";
@@ -91,6 +92,8 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
   const { registry, service } = dependencies;
   const conversations = (): AutomationStudioConversations => service.conversations;
   const resolveAttachment = automationStudioConversationAttachmentResolver(service);
+  // The panel's chat is a project conversation (t1095): it offers the panel assistant, its cards are answered by it, and its steps are read here.
+  const panelChat = panelAssistantProjectChat(registry, service);
 
   registry.register({
     programId: "automation-studio",
@@ -233,7 +236,7 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
       const payload = conversationPayload<ConversationTurnAppendRequest>(request.payload);
       const projectId = String(payload.projectId ?? "");
       await service.assertProjectDomainAccess(projectId, request.scope.domainId);
-      return { ok: true, payload: await appendConversationTurnForRequest(dependencies, request, projectId, payload) };
+      return { ok: true, payload: await appendConversationTurnForRequest(dependencies, request, projectId, panelChat.vocabulary(request, payload)) };
     }
   });
 
@@ -250,6 +253,8 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
       const payload = conversationPayload<ConversationAnswerRequest>(request.payload);
       const projectId = String(payload.projectId ?? "");
       await service.assertProjectDomainAccess(projectId, request.scope.domainId);
+      const assistantAnswer = await panelChat.answer(request, projectId, payload);
+      if (assistantAnswer) return { ok: true, payload: assistantAnswer };
       if (request.actor?.channel !== "paired-client") await authorizeAnswer(dependencies, projectId, payload);
       return { ok: true, payload: await answerConversationAskForRequest(dependencies, request, projectId, payload) };
     }
@@ -272,7 +277,7 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
         projectId,
         conversationId: String(payload.conversationId ?? ""),
         turnId: String(payload.turnId ?? "")
-      }, resolveAttachment);
+      }, panelChat.resolver(request, resolveAttachment, "studio:GetConversationAttachment"));
       return { ok: true, payload: { attachment } };
     }
   });

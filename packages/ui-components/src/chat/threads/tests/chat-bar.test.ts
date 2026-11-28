@@ -70,7 +70,7 @@ test("one New chat control at a time: the bar's hides while the list, which has 
   });
 });
 
-test("the title opens the drawer like the Chats button, and the list can be left again", async () => {
+test("pressing the bar's title does not open or close the drawer, and it never says the project's name", async () => {
   const core = threadsCore([inProject("alpha")]);
   await mounted(core.transport({ actions: true }), { threads: {} }, async (_chat, root) => {
     await settle();
@@ -78,11 +78,15 @@ test("the title opens the drawer like the Chats button, and the list can be left
     const title = root.byClass("chat-bar-title")[0]!;
     const toggle = root.byClass("chat-thread-toggle")[0]!;
     assert.equal(nav.hidden, true);
-    assert.equal(title.getAttribute("aria-controls"), nav.id);
+    assert.notEqual(title.tagName, "BUTTON", "the title is plain text");
+    assert.equal(title.getAttribute("aria-controls"), null);
+    assert.equal(title.getAttribute("aria-expanded"), null);
     title.dispatch("click");
-    assert.equal(nav.hidden, false);
-    assert.equal(title.getAttribute("aria-expanded"), "true");
-    assert.equal(toggle.getAttribute("aria-expanded"), "true");
+    assert.equal(nav.hidden, true, "pressing the title leaves the drawer closed");
+    toggle.dispatch("click");
+    assert.equal(nav.hidden, false, "Chats is the only toggle");
+    title.dispatch("click");
+    assert.equal(nav.hidden, false, "pressing the title leaves the drawer open");
     toggle.dispatch("click");
     assert.equal(nav.hidden, true);
   });
@@ -131,7 +135,7 @@ test("a project with no chats shows an empty new chat for it, and a person's sen
     assert.deepEqual(core.calls.listAll.at(-1), { projectId: "gamma", limit: 25 });
     assert.deepEqual(chat.target(), { kind: "latest", projectId: "gamma" });
     assert.deepEqual(root.byClass("chat-thread-name").map((name) => name.textContent), []);
-    assert.equal(root.byClass("chat-bar-title-text")[0]!.textContent, "Gamma");
+    assert.equal(root.byClass("chat-bar-title-text")[0]!.textContent, "New chat", "a project with no chat yet: the bar names the chat, not the project");
     const input = root.descendants().find((element) => element.id === "conversationInput")!;
     input.value = "Start here";
     input.dispatch("input");

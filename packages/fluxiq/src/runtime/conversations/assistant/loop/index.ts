@@ -8,5 +8,6 @@ export * from "./loop-watch.ts";
 export * from "./page-tools.ts";
 export * from "./prompt.ts";
 export * from "./step-words.ts";
+export * from "./card-ask.ts";
 export * from "./call-step.ts";
 export * from "./run-turn.ts";

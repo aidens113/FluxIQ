@@ -5,3 +5,4 @@ export * from "./programs-port.ts";
 export * from "./project-attachments.ts";
 export * from "./panel-assistant-of.ts";
 export * from "./register.ts";
+export * from "./project-chat.ts";

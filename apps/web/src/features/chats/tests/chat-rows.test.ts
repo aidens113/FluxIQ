@@ -22,11 +22,12 @@ describe("chatRows", () => {
     expect(rows.map((row) => row.conversationId)).toEqual(["a"]);
     expect(chatRows([chat("a")], names, "shop")).toHaveLength(1);
   });
-  it("names the assistant's own chats Assistant and never prints the internal project id", () => {
+  it("says an earlier chat has no project, opens it where it lives, and never prints or links the internal project id", () => {
     const rows = chatRows([chat("a", { projectId: "panel", title: "Invoices" }), chat("b", { projectId: "panel" })], names);
-    expect(rows.map((row) => row.projectName)).toEqual(["Assistant", "Assistant"]);
-    expect(rows.find((row) => row.conversationId === "b")!.title).toMatch(/^Assistant chat, /);
-    expect(JSON.stringify(rows.map((row) => [row.title, row.projectName]))).not.toContain("panel");
+    expect(rows.map((row) => row.projectName)).toEqual(["No project (an earlier chat)", "No project (an earlier chat)"]);
+    expect(rows.find((row) => row.conversationId === "b")!.title).toMatch(/^Chat from /);
+    expect(rows.map((row) => row.href).sort()).toEqual(["/chats/a", "/chats/b"]);
+    expect(JSON.stringify(rows.map((row) => [row.title, row.projectName, row.href]))).not.toMatch(/panel|Assistant/u);
   });
   it("gives an untitled chat a dated name, never Untitled chat", () => {
     const [row] = chatRows([chat("a", { title: "  " })], names);

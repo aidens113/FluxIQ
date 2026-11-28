@@ -137,4 +137,15 @@ describe.each([
     await expect(automationStudioPersonProject({ registry: runtime.api, actor: ALICE, domainId: null, create: true })).resolves.toBeNull();
     await expect(allProjects()).resolves.toEqual([]);
   });
+
+  it("on a panel page scoped to no domain, is their own in the panel's unscoped list, and only one first one", async () => {
+    const unscoped = (actor: ProgramApiActor, create?: boolean) => automationStudioPersonProject({ registry: runtime.api, actor, domainId: null, unscoped: true, ...(create ? { create } : {}) });
+    await expect(unscoped(ALICE)).resolves.toBeNull();
+    const answers = await Promise.all([unscoped(ALICE, true), unscoped(ALICE, true)]);
+    expect(answers[0]).toBeTruthy();
+    expect(new Set(answers).size).toBe(1);
+    await expect(unscoped(ALICE)).resolves.toBe(answers[0]);
+    await expect(unscoped(ALICE, true)).resolves.toBe(answers[0]);
+    await expect(unscoped(BOB)).resolves.not.toBe(answers[0]);
+  });
 });

@@ -5,7 +5,9 @@ import type { ProgramChatTransportOptions } from "./options";
 
 export type ProjectChoice = { ok: true; projectId: string } | { ok: false; failure: ChatFailure };
 
-const NO_PROJECT = "FluxIQ has not said which project this chat belongs to yet. Choose a project, then try again.";
+// Every chat belongs to a project, and nobody has to make one first: a first message puts the chat in
+// the person's project (`project-to-start.ts`). So this names that, never "choose a project".
+const NO_PROJECT = "This chat is not in a project yet. Send a message and FluxIQ puts it in your project.";
 
 export function projectFor(named: string | undefined, options: Pick<ProgramChatTransportOptions, "projectId">): ProjectChoice {
   const projectId = named?.trim() || options.projectId()?.trim();

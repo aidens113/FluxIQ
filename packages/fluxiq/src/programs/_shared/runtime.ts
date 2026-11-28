@@ -12,7 +12,7 @@ import { AutomationStudioClientGatewayBridge, automationStudioActivityHub, Autom
 import { registerAutomationStudioApi } from "../automation-studio/index.ts";
 import { panelAssistantOf } from "../automation-studio/api/panel-assistant/index.ts";
 import { installPairedProjectFocus, relayOwnProjectActivity, relayProjectConversationChanges } from "../automation-studio/api/project-focus/index.ts";
-import { panelAssistantFixtureHostModelSource, panelAssistantKeyModelSource } from "../../runtime/conversations/assistant/index.ts";
+import { automationStudioFixtureHostChatModel, panelAssistantFixtureHostModelSource, panelAssistantKeyModelSource } from "../../runtime/conversations/assistant/index.ts";
 import { createAutomationStudioCallerKeyChatModel } from "../../runtime/llm/caller-key-chat/index.ts";
 import { AutomationStudioModelAccessLedger, automationStudioModelAccessState, checkAutomationStudioModelKey, chooseAutomationStudioCallerModelKey } from "../../runtime/models/secrets/index.ts";
 import { AutomationStudioChannelScope } from "../../framework/automation-service/environment/index.ts";
@@ -353,9 +353,11 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
   // A chat reads each message with the provider of the key the sender's call uses, chosen per call and
   // released to the sender's authenticated principal. It was bound to the default model's provider at
   // startup, so a saved Anthropic key was never looked at and every chat said no key existed (t924).
-  if (modelProvidersEnabled) automationStudio.conversations.bindModel(createAutomationStudioCallerKeyChatModel({
+  // On the e2e fixture host alone (its marker AND FLUXIQ_E2E_SCRIPTED_ASSISTANT) it reads from the scripted
+  // assistant's script instead, which hands a scripted message to the panel's tools (t1095).
+  if (modelProvidersEnabled) automationStudio.conversations.bindModel(automationStudioFixtureHostChatModel({ rootDir: paths?.root, env: process.env, fallback: createAutomationStudioCallerKeyChatModel({
     ports: sessionKeyPorts, preferred: keyChoices.preferred, ownKeyId: keyChoices.ownKeyId, ledger: modelAccessLedger
-  }));
+  }) }));
   const productionRunner = new ProductionRunnerService(undefined, storageOptions);
   const runtime = new RuntimeService(paths ? { store: new FileRuntimeStore({ rootDir: path.join(paths.artifacts ?? path.join(paths.fluxiq, "artifacts"), "runtime") }) } : {});
   runtime.registerTransport(new ClientGatewayRuntimeTransport({ gateway: clientGateway }));

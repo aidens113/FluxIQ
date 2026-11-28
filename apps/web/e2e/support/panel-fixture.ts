@@ -24,15 +24,20 @@ export async function signInToPanel(page: Page, manifest: UiFixtureManifest): Pr
     }
   });
   expect(response.ok(), `fixture login failed (${response.status()}): ${await response.text()}`).toBe(true);
+  // The person's current project is one value in Core that the panel adopts on load (t1095): each test starts
+  // with none, as each started with an empty browser before that value was shared.
+  const cleared = await page.request.post("/api/client-gateway/automation-studio-context", { timeout: 30_000, data: { activeProjectId: null } });
+  expect(cleared.ok(), `clearing the current project failed (${cleared.status()}): ${await cleared.text()}`).toBe(true);
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible({ timeout: 30_000 });
 }
 
-export const assistantDock = (page: Page) => page.getByRole("complementary", { name: "Assistant" });
+/** The panel's docked chat (one name, "Chat", since t1095). */
+export const assistantDock = (page: Page) => page.getByRole("complementary", { name: "Chat" });
 
 /** On a wide screen the dock is already beside the page; on a phone it opens from the round button. */
 export async function openAssistantDock(page: Page): Promise<void> {
-  const button = page.getByRole("button", { name: "Open the assistant" });
+  const button = page.getByRole("button", { name: "Open the chat" });
   if (await button.isVisible()) await button.click();
   await expect(assistantDock(page)).toBeVisible();
 }

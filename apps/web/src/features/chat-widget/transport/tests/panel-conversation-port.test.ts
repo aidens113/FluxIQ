@@ -1,8 +1,10 @@
-// The transport's panel branch: panel threads go to the assistant's own endpoints, carry the page and
-// selection on every send, and name no project. The project branch is untouched (conversation-port.test.ts).
+// The panel port, which since t1095 serves only the person's earlier chats with no project: they go to the
+// assistant's own endpoints, carry the page and selection on every send, and name no project. The dock reaches
+// it only for those chats (composed-conversation-port.test.ts).
 
 import { describe, expect, it } from "vitest";
 import { fakeProgramApi } from "../../tests/fake-program-api";
+import { createPanelConversationPort } from "../panel-conversation-port";
 import { createProgramChatTransport } from "../program-chat-transport";
 
 const THREAD = { conversationId: "panel-1", projectId: "panel", status: "open", subjectKind: "panel", subjectId: "panel" };
@@ -10,11 +12,10 @@ const ON_SCREEN = { page: "flows", selection: { flowId: "flow.a", stepNumbers: [
 
 function panel(answers: Parameters<typeof fakeProgramApi>[0] = {}) {
   const api = fakeProgramApi(answers);
-  const transport = createProgramChatTransport(api, { projectId: () => undefined, panel: { onScreen: () => ON_SCREEN } });
-  return { api, conversation: transport.conversation };
+  return { api, conversation: createPanelConversationPort(api, { onScreen: () => ON_SCREEN }) };
 }
 
-describe("the panel transport branch", () => {
+describe("the panel port, for earlier chats", () => {
   it("lists panel threads from list-panel-threads, with no project", async () => {
     const { api, conversation } = panel({ "list-panel-threads": { ok: true, payload: { conversations: [THREAD] } } });
     expect(await conversation.listAllThreads!({ limit: 25 })).toEqual({ ok: true, value: { conversations: [THREAD] } });

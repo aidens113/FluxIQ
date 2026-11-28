@@ -4,7 +4,8 @@
  * stream that dropped (it does so by itself), and `closed` when it will not:
  * the server refused or failed it, or this browser has no EventSource. A
  * closed stream opens again when the tab is shown again, the network comes
- * back, or a reader asks (`reopen`).
+ * back, the person signs in again in place (`SESSION_RESTORED_EVENT`), or a
+ * reader asks (`reopen`).
  */
 export type PanelChangeStatus = "connecting" | "live" | "reconnecting" | "closed";
 
@@ -27,6 +28,8 @@ export type PanelChangeListener = {
   activity?(projectId: string): void;
   /** Read the caller's model access (the Secret Keys snapshot) again. */
   modelAccess?(): void;
+  /** Read the person's current project and Flow (the client snapshot) again: the panel or a client switched it. */
+  context?(): void;
 };
 
 /** The page's one change stream, shared by every reader on it. */
@@ -39,7 +42,7 @@ export type PanelChangesPort = {
 };
 
 /** The events `GET /api/panel/changes` sends. */
-export type PanelChangeEventType = "gateway" | "conversation" | "activity" | "model-access";
+export type PanelChangeEventType = "gateway" | "conversation" | "activity" | "model-access" | "context";
 
 /** The part of an `EventSource` the connection uses, so a test can stand in for it. */
 export type PanelChangeEventStream = {
@@ -54,6 +57,6 @@ export type PanelChangeEventStream = {
 export type PanelChangeSources = {
   /** Opens the change stream; undefined where the browser has no EventSource. */
   openStream(url: string): PanelChangeEventStream | undefined;
-  /** Calls back when the tab is shown again or the network comes back; returns the unsubscribe. */
+  /** Calls back when the tab is shown again, the network comes back or the session is restored in place; returns the unsubscribe. */
   onWake(listener: () => void): () => void;
 };

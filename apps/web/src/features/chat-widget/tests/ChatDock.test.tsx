@@ -183,30 +183,40 @@ describe("the window over the Studio", () => {
     });
   });
 
-  it("takes a message at once with no project when it is the assistant, into its own thread", async () => {
-    const PANEL_THREAD = { conversationId: "panel.1", projectId: "panel", subject: { kind: "panel" }, status: "open", title: null, revision: 1, turnCount: 1, pendingAskCount: 0, createdAt: 1, updatedAt: 2 };
-    const sent: unknown[] = [];
+  it("takes a message at once with no project, into a conversation of the person's own project (Core's first-project)", async () => {
+    const OPENED = { conversationId: "conversation.mine", projectId: "project.mine", subject: { kind: "project", id: "project.mine" }, status: "open", title: null, revision: 1, turnCount: 0, pendingAskCount: 0, createdAt: 1, updatedAt: 2 };
+    const fetched: string[] = [];
+    const found: string[] = [];
+    vi.stubGlobal("fetch", async (url: string, init?: { method?: string }) => {
+      fetched.push(`${init?.method ?? "GET"} ${url}`);
+      return new Response(JSON.stringify({ ok: true, payload: { projectId: "project.mine" } }), { status: 200, headers: { "content-type": "application/json" } });
+    });
     const api = fakeProgramApi({
-      "list-panel-threads": () => ({ ok: true, payload: { conversations: sent.length ? [PANEL_THREAD] : [] } }),
-      "get-panel-thread": { ok: true, payload: { conversation: { conversation: PANEL_THREAD, turns: [], hasMore: false } } },
-      "send-panel-message": (payload) => {
-        sent.push(payload);
-        return { ok: true, payload: { conversation: PANEL_THREAD } };
-      },
+      "list-panel-threads": { ok: true, payload: { conversations: [] } },
+      "list-conversations": { ok: true, payload: { conversations: [] } },
+      "open-conversation": { ok: true, payload: { conversation: OPENED } },
+      "append-turn": { ok: true, payload: {} },
+      "get-conversation": { ok: true, payload: { conversation: { conversation: OPENED, turns: [], hasMore: false } } },
       "get-activity": { ok: true, payload: { current: null, recent: [] } }
     });
-    await mount(<ChatDock projectId={null} panel={{ onScreen: () => ({ page: "home" }) }} />, api, async ({ host }) => {
-      await act(async () => launcher(host).dispatch("click"));
-      await settle();
-      expect(host.textContent).not.toContain("Open a project to start a conversation.");
-      const box = host.descendants().find((node) => node.id === "conversationInput")!;
-      expect(box.disabled).toBe(false);
-      await send(host, "hello");
-      expect(api.sentTo("send-panel-message")).toEqual([{ text: "hello", onScreen: { page: "home" } }]);
-      expect(api.sentTo("append-turn")).toEqual([]);
-      expect(api.sentTo("open-conversation")).toEqual([]);
-      expect(api.sentTo("list-conversations")).toEqual([]);
-    });
+    try {
+      await mount(<ChatDock projectId={null} panel={{ onScreen: () => ({ page: "home" }) }} onProjectFound={(id) => found.push(id)} />, api, async ({ host }) => {
+        await act(async () => launcher(host).dispatch("click"));
+        await settle();
+        expect(host.textContent).not.toContain("Open a project to start a conversation.");
+        const box = host.descendants().find((node) => node.id === "conversationInput")!;
+        expect(box.disabled).toBe(false);
+        await send(host, "hello");
+        expect(fetched).toEqual(["POST /api/client-gateway/first-project"]);
+        expect(api.sentTo("open-conversation")).toEqual([{ projectId: "project.mine", subjectKind: "project", subjectId: "project.mine" }]);
+        expect(api.sentTo("append-turn")[0]).toMatchObject({ projectId: "project.mine", conversationId: "conversation.mine", text: "hello" });
+        expect(api.sentTo("send-panel-message")).toEqual([]);
+        expect(api.sentTo("open-panel-thread")).toEqual([]);
+        expect(found).toEqual(["project.mine"]);
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("lights the badge while collapsed, because the chat keeps reading the thread list", async () => {
@@ -294,7 +304,8 @@ describe("the window over the Studio", () => {
     const { api, state } = world({ threads: [] });
     await mount(<ChatDock projectId="project.one" projectName="Company website" />, api, async ({ host }) => {
       const listed = api.sentTo("list-conversations").length;
-      expect(host.byClass("chat-window-heading")[0]!.textContent).toBe("FluxIQCompany website");
+      // With no thread yet the heading names the chat, never the project (t1095, I3).
+      expect(host.byClass("chat-window-heading")[0]!.textContent).toBe("FluxIQNew chat");
       state.threads = [THREAD];
       await act(async () => {
         commitAutomationStudioMutation({ kind: "conversation.changed", projectId: "project.one", conversationId: "conversation.1" });

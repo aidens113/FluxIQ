@@ -16,18 +16,19 @@ export type PanelChatOptionsInput = {
   openControl: ChatOpenControlFactory;
   threads: Omit<ChatThreadsOptions, "unavailableReason">;
   /**
-   * The panel-wide assistant: it has its own threads, so it needs no project and accepts a message at once.
-   * Without it (a chat that is only about a project) the chat says there is nowhere to send until one is open.
+   * The chat starts in the person's own project when none is open (the docked chat), so it accepts a
+   * message at once. Without it (a chat that is only about one project) the chat says there is nowhere to
+   * send until one is open.
    */
-  assistant?: boolean;
-  /** The key card's host actions: Change model opens the assistant's model, the rest the AI keys. */
+  personProject?: boolean;
+  /** The key card's host actions: Change model opens the chat's model setting, the rest the AI keys. */
   onModelKeyAction?: (action: ModelKeyHostAction) => void;
 };
 
 /** The chat's options for this panel, without the owner key (the mount knows the project). */
 export function panelChatOptions(input: PanelChatOptionsInput): Omit<ChatWidgetOptions, "ownerKey"> {
   return {
-    threads: input.assistant ? { ...input.threads, emptyTitle: "FluxIQ assistant" } : { ...input.threads, unavailableReason: NO_PROJECT },
+    threads: input.personProject ? { ...input.threads, emptyTitle: "New chat" } : { ...input.threads, unavailableReason: NO_PROJECT },
     asks: input.asks,
     attachments: input.attachments,
     openControl: input.openControl,

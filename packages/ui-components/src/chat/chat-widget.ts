@@ -145,7 +145,6 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
       focusComposer: () => composer.focus(),
       bar: options.chatBar !== false,
       projectId: () => latestStatus?.projectId,
-      projectName: () => latestStatus?.projectName,
       target: () => shownTarget,
       open: (next) => open(next),
       busy: () => controller.state().sending,

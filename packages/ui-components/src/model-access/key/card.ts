@@ -6,7 +6,9 @@
 // an inline form (`model-key-form.ts`); the full card also offers "Add another key" while a key is saved, which
 // opens the same form; "Save and check" moves the card to checking and then to the new state,
 // in place. Remove is one inline confirm (`model-key-remove.ts`). Change model, Try now, How to update and the
-// host's own "Open FluxIQ" go to `onAction`. The card reads and writes only through the `ModelKeysPort`; a
+// host's own "Open FluxIQ" go to `onAction`. Where the port cannot write (`canWrite` false: a client that only shows
+// the work) the card draws the key's state, the line "Add or change your AI key in the FluxIQ panel." and one
+// "Open in FluxIQ panel" action in place of Add, Paste again, Replace and Change model; it has no form, no Add another and no Remove. The card reads and writes only through the `ModelKeysPort`; a
 // pasted value is cleared from the form once it is sent and is never kept, logged or drawn. A key needs no password.
 
 import { createElement } from "../../dom/index.ts";
@@ -17,7 +19,7 @@ import type { ModelKeyProvider } from "./providers.ts";
 import { createModelKeyRemove, type ModelKeyRemove } from "./remove.ts";
 import type { ModelKeysPort } from "./port.ts";
 
-/** What the host does for the card. `open-fluxiq` is offered where the client cannot write a key yet. */
+/** What the host does for the card. `open-fluxiq` is offered where the client cannot write a key: the panel adds and changes keys. */
 export type ModelKeyHostAction = "change-model" | "try-now" | "how-to-update" | "open-fluxiq";
 
 /** What a host supplies. */
@@ -40,7 +42,7 @@ export type ModelKeyCard = {
 };
 
 const COULD_NOT_READ = "Couldn't check your AI key just now.";
-const ADD_IN_FLUXIQ = "Add it in FluxIQ for now.";
+const IN_THE_PANEL = "Add or change your AI key in the FluxIQ panel.";
 const FAILED = "Something went wrong. Try again.";
 
 /** Creates the card and starts reading the state. */
@@ -51,10 +53,12 @@ export function createModelKeyCard(options: ModelKeyCardOptions): ModelKeyCard {
   const action = createElement("button", { className: "model-key-action", attrs: { type: "button" }, hidden: true });
   const addAnother = createElement("button", { className: "model-key-add-another", text: "Add another key", attrs: { type: "button" }, hidden: true });
   const removeLink = createElement("button", { className: "model-key-remove-link", text: "Remove", attrs: { type: "button" }, hidden: true });
+  const panelNote = createElement("p", { className: "model-key-panel-note", text: IN_THE_PANEL, hidden: true });
   const slot = createElement("div", { className: "model-key-slot" });
   const element = createElement("div", { className: "model-key-card", attrs: { "data-variant": options.variant, "data-state": "checking" } }, [
     createElement("div", { className: "model-key-head" }, [badge, line]),
     createElement("div", { className: "model-key-buttons" }, [action, addAnother, removeLink]),
+    panelNote,
     slot
   ]);
   let state: ModelAccessState | null = null;
@@ -69,6 +73,9 @@ export function createModelKeyCard(options: ModelKeyCardOptions): ModelKeyCard {
 
   const words = () => (state === null ? null : modelAccessWords(state));
   const keyName = (): string | undefined => (state !== null && "keyName" in state ? state.keyName : undefined);
+
+  /** Without a write port, the actions that add or change a key, or choose the model, become one that opens the FluxIQ panel. */
+  const sendsToPanel = (id: string): boolean => !port.canWrite && (id === "add-key" || id === "paste-again" || id === "replace-key" || id === "change-model");
 
   function draw(): void {
     const shown = words();
@@ -85,9 +92,10 @@ export function createModelKeyCard(options: ModelKeyCardOptions): ModelKeyCard {
     }
     const idle = !busy && form === null && confirm === null;
     action.hidden = !(idle && shown !== null);
-    if (shown !== null) action.textContent = shown.action.label;
-    removeLink.hidden = !(idle && options.variant === "full" && keyId !== undefined && keyName() !== undefined);
-    addAnother.hidden = !(idle && options.variant === "full" && keyId !== undefined && state !== null && state.kind !== "no-key");
+    if (shown !== null) action.textContent = sendsToPanel(shown.action.id) ? "Open in FluxIQ panel" : shown.action.label;
+    panelNote.hidden = port.canWrite || shown === null || busy;
+    removeLink.hidden = !(port.canWrite && idle && options.variant === "full" && keyId !== undefined && keyName() !== undefined);
+    addAnother.hidden = !(port.canWrite && idle && options.variant === "full" && keyId !== undefined && state !== null && state.kind !== "no-key");
     if (confirm === null && form === null && slot.childNodes.length > 0) slot.replaceChildren();
   }
 
@@ -109,21 +117,11 @@ export function createModelKeyCard(options: ModelKeyCardOptions): ModelKeyCard {
     draw();
   }
 
-  function offerOpen(): void {
-    const button = createElement("button", { className: "model-key-open", text: "Open FluxIQ", attrs: { type: "button" } });
-    button.addEventListener("click", () => options.onAction("open-fluxiq"));
-    form?.offer(button);
-  }
-
   async function save(mode: "add" | "replace"): Promise<void> {
     const current = form;
     if (current === null) return;
     const values = current.values();
     if (values.value === "") return current.problem("Paste your key first.");
-    if (!port.canWrite) {
-      current.problem(ADD_IN_FLUXIQ);
-      return offerOpen();
-    }
     current.problem("");
     current.offer(null);
     current.busy(true);
@@ -183,6 +181,7 @@ export function createModelKeyCard(options: ModelKeyCardOptions): ModelKeyCard {
   action.addEventListener("click", () => {
     const shown = words();
     if (shown === null) return;
+    if (sendsToPanel(shown.action.id)) return options.onAction("open-fluxiq");
     switch (shown.action.id) {
       case "add-key": return open("add");
       case "paste-again":

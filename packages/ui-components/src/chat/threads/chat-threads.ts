@@ -43,7 +43,6 @@ export type ChatThreadsDeps = {
   actions: ThreadActionPorts;
   /** The project the host has open, if any. */
   projectId(): string | undefined;
-  projectName(): string | null | undefined;
   /** The target on screen. */
   target(): ChatTarget;
   /** Shows `target`. */
@@ -180,7 +179,7 @@ export function createChatThreads(deps: ChatThreadsDeps): ChatThreads {
     const shownId = target.kind === "thread" ? target.conversationId : conversationId;
     const threads = catalog.threads();
     const selected = threads.find((thread) => thread.conversationId === shownId) ?? null;
-    const title = conversationDisplayTitle(selected, deps.projectName(), options.emptyTitle);
+    const title = conversationDisplayTitle(selected, options.emptyTitle);
     header.update({
       title,
       showTitle: options.onTitle === undefined,

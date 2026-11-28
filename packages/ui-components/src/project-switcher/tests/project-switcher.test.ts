@@ -259,3 +259,27 @@ test("a press outside closes the sheet and a press inside does not", async () =>
     switcher.destroy();
   });
 });
+
+test("without a create port there is no New project control, the all-projects action points to the FluxIQ panel, and the button says No project yet", async () => {
+  await withFakeDocument(async () => {
+    let all = 0;
+    const switcher = createProjectSwitcher({ port: { list: async () => [] }, onSelect: () => undefined, onOpenAll: () => (all += 1) });
+    try {
+      const root = fake(switcher.element);
+      assert.equal(root.byClass("project-switcher-name")[0]!.textContent, "No project yet");
+      switcher.open();
+      await settle();
+      assert.equal(root.byClass("project-switcher-new")[0]!.hidden, true, "no New project");
+      assert.equal(root.byClass("project-switcher-naming")[0]!.hidden, true, "no name field");
+      assert.equal(root.byClass("project-switcher-none")[0]!.textContent, "FluxIQ makes one when you send your first message.");
+      const allButton = root.byClass("project-switcher-all")[0]!;
+      assert.equal(allButton.textContent, "Add or manage projects in the FluxIQ panel");
+      allButton.dispatch("click");
+      assert.equal(all, 1);
+      switcher.setCurrent(ALPHA);
+      assert.equal(root.byClass("project-switcher-name")[0]!.textContent, "Alpha shop");
+    } finally {
+      switcher.destroy();
+    }
+  });
+});

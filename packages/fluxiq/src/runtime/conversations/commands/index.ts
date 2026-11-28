@@ -22,6 +22,7 @@ export * from "./run-flow.ts";
 export * from "./answer-ask.ts";
 export * from "./apply-change.ts";
 export * from "./discard-change.ts";
+export * from "./panel-assistant/index.ts";
 export * from "./catalog.ts";
 export * from "./vocabulary.ts";
 export * from "./work.ts";

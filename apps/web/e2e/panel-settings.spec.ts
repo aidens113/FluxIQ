@@ -132,7 +132,7 @@ for (const [id, name] of TOOLS) {
     await expect(page.getByRole("heading", { level: 1, name, exact: true })).toBeVisible();
     await expect(page.locator("a.settings-tool-back")).toHaveAttribute("href", "/settings");
     await expect(page.getByRole("button", { name: "Technical details" })).toBeVisible();
-    await expect(page.getByRole("complementary", { name: "Assistant" })).toBeVisible();
+    await expect(page.getByRole("complementary", { name: "Chat" })).toBeVisible();
     // The tool's own view replaces its loading words.
     await expect(page.locator("main").getByText(/^Loading/)).toHaveCount(0, { timeout: 30_000 });
   });

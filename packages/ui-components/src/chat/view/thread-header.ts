@@ -11,9 +11,11 @@
 // control: the chat reads on its own. Built once and updated in place.
 //
 // With a chat bar (a drawer whose host leaves `chatBar` on) the header is the
-// bar: the chat's name in words (it also opens the list), the "Chats" button
-// with how many wait, and "+ New chat" where the client can make one. The bar
-// draws the name itself, so the button inside it says only "Chats".
+// bar: the chat's name in plain words (its own title, else "New chat", never the
+// project; not a button, it opens nothing), the "Chats" button with how many
+// wait, and "+ New chat" where the client can make one. "Chats" is the only
+// control for the list. The bar draws the name itself, so the button inside it
+// says only "Chats".
 
 import { createElement } from "../../dom/index.ts";
 import { lucideIcon } from "../../icons/index.ts";
@@ -93,7 +95,7 @@ export function createThreadHeader(layout: ChatThreadsLayout, toggle: () => void
     lucideIcon("chevron-down", 14)
   ]);
   button.addEventListener("click", toggle);
-  if (bar !== undefined) return createBar(layout, button, title, badge, toggle, controls, bar);
+  if (bar !== undefined) return createBar(layout, button, title, badge, bar);
   const element = createElement("header", { className: "chat-thread-header", attrs: { "data-layout": layout } }, [button]);
   return {
     element,
@@ -111,18 +113,14 @@ export function createThreadHeader(layout: ChatThreadsLayout, toggle: () => void
   };
 }
 
-function createBar(layout: ChatThreadsLayout, button: HTMLButtonElement, title: HTMLElement, badge: HTMLElement, toggle: () => void, controls: string, bar: ThreadBar): ThreadHeader {
+function createBar(layout: ChatThreadsLayout, button: HTMLButtonElement, title: HTMLElement, badge: HTMLElement, bar: ThreadBar): ThreadHeader {
   const name = createElement("span", { className: "chat-bar-title-text" });
-  // The name opens the list too, for a pointer; the keyboard has the "Chats" button beside it.
-  const nameButton = createElement("button", {
-    className: "chat-bar-title",
-    attrs: { type: "button", tabindex: "-1", "aria-expanded": "false", "aria-controls": controls, title: "Choose a chat" }
-  }, [name]);
-  nameButton.addEventListener("click", toggle);
+  // Plain text naming the chat. It is not interactive: the "Chats" button beside it is the only toggle.
+  const nameLabel = createElement("span", { className: "chat-bar-title" }, [name]);
   const create = createElement("button", { className: "chat-bar-new", hidden: true, attrs: { type: "button" } }, [lucideIcon("plus", 14), "New chat"]);
   create.addEventListener("click", () => bar.create());
   title.hidden = true;
-  const element = createElement("header", { className: "chat-thread-header chat-bar", attrs: { "data-layout": layout } }, [nameButton, button, create]);
+  const element = createElement("header", { className: "chat-thread-header chat-bar", attrs: { "data-layout": layout } }, [nameLabel, button, create]);
   return {
     element,
     toggle: button,
@@ -133,7 +131,6 @@ function createBar(layout: ChatThreadsLayout, button: HTMLButtonElement, title: 
       if (badge.textContent !== waiting) badge.textContent = waiting;
       if (badge.hidden === (waiting !== "")) badge.hidden = waiting === "";
       button.setAttribute("aria-expanded", String(model.open));
-      nameButton.setAttribute("aria-expanded", String(model.open));
       // The open list has its own "New chat"; two primary buttons would stack.
       const offered = model.canCreate === true && !model.open;
       if (create.hidden === offered) create.hidden = !offered;

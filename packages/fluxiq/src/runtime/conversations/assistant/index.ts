@@ -16,3 +16,4 @@ export * from "./loop/index.ts";
 export * from "./attachments/index.ts";
 export * from "./thread-use.ts";
 export * from "./panel-assistant.ts";
+export * from "./project-chat.ts";

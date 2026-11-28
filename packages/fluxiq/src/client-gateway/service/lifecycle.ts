@@ -180,6 +180,42 @@ export class ClientGatewayLifecycle {
       refused = ending?.expired === true ? "expired" : "refused";
     }
     session.status = "pairing_required";
+    await this.offerPairing(session, refused);
+  }
+
+  /**
+   * Codes that lapsed while their client still waits on the same socket get a
+   * fresh one there: `server.pairing_required` is sent again, with no
+   * `credential`, so a person who reaches the approval late still finds the
+   * request and the client never sits on a dead code. Each code keeps its own
+   * lifetime. A session that left, paired, or was given another code since is
+   * not renewed. Runs in the turn that found the lapse, so a reader hears the
+   * lapse and the renewal as one change.
+   */
+  renewLapsedPairings(lapsed: readonly ClientGatewayPairingChallenge[]): void {
+    for (const challenge of lapsed) {
+      const session = challenge.requestedBySessionId === undefined ? undefined : this.sessions.get(challenge.requestedBySessionId);
+      if (!session || session.disconnectedAt !== undefined || session.status !== "pairing_required") continue;
+      if (session.pendingPairingCode !== challenge.pairingCode) continue;
+      this.audit.record("pairing.renewed", "A pairing code lapsed while its client still waited, so it was given a new one on the same connection.", {
+        sessionId: session.sessionId,
+        lapsedPairingCode: challenge.pairingCode
+      });
+      this.offerPairing(session, undefined).catch((error: unknown) => {
+        this.audit.record("pairing.renewal_failed", "A lapsed pairing code could not be renewed for its waiting client.", {
+          sessionId: session.sessionId,
+          message: error instanceof Error ? error.message : String(error)
+        });
+      });
+    }
+  }
+
+  /**
+   * Names the code a waiting session is to show (`server.pairing_required`),
+   * minting one when it has none still valid, or refuses it over the pending
+   * caps. Everything up to the send runs synchronously.
+   */
+  private async offerPairing(session: InternalSession, refused: ClientGatewayPairingCredentialRefusal | undefined): Promise<void> {
     let pairing: ClientGatewayPairingChallenge;
     try {
       pairing = this.pairingFlow.ensureForSession(session);
@@ -188,7 +224,7 @@ export class ClientGatewayLifecycle {
       await this.refuseOverCapacity(session, error);
       return;
     }
-    await this.transport.send(sessionId, this.transport.message("server.pairing_required", {
+    await this.transport.send(session.sessionId, this.transport.message("server.pairing_required", {
       referenceCode: pairing.referenceCode ?? pairing.pairingCode,
       reason: PAIRING_REASONS[refused ?? "none"],
       ...(refused !== undefined ? { credential: refused } : {})

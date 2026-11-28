@@ -23,6 +23,7 @@ import { createModelsPort } from "./models-port";
 import type { ProgramChatTransportOptions } from "./options";
 import { createRecordingsPort } from "./recordings-port";
 import { createRunPort } from "./run-port";
+import { withOnScreen } from "./with-on-screen";
 
 /** The chat's transport, whose activity port its host tells when the chat moves to another project (`followProject`). */
 export type ProgramChatTransport = ChatTransport & { readonly activity: ProgramActivityPort };
@@ -44,16 +45,21 @@ function withKeyRefresh(conversation: ChatConversationPort, options: ProgramChat
   return modelKeys ? notifyKeysOnFailedSend(conversation, () => modelKeys.notify()) : conversation;
 }
 
-// A panel chat is the person's own threads, joined by the open project's when the host says which is open.
+// The panel's docked chat is project chats (in the person's own project when none is open), with the
+// person's earlier chats that have no project listed beside them where they live.
 function conversationFor(api: ProgramCommandTransport, options: ProgramChatTransportOptions): ChatConversationPort {
   const { panel } = options;
   if (!panel) return createConversationPort(api, options);
-  const own = createPanelConversationPort(api, panel);
-  if (!panel.openProject) return own;
+  const openProject = panel.openProject ?? (() => undefined);
   return createComposedConversationPort({
-    panel: own,
-    project: createConversationPort(api, { projectId: options.projectId, onScreen: () => conversationOnScreen(panel.onScreen()) }),
-    openProject: panel.openProject
+    panel: createPanelConversationPort(api, panel),
+    // Each message keeps the page and selection it was written on, for the panel assistant it may be handed to.
+    project: createConversationPort(withOnScreen(api, () => panel.onScreen()), {
+      projectId: options.projectId,
+      onScreen: () => conversationOnScreen(panel.onScreen()),
+      ...(options.personProject ? { personProject: options.personProject } : {})
+    }),
+    openProject
   });
 }
 

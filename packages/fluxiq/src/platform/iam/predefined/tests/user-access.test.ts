@@ -136,9 +136,14 @@ describe("FluxIQUserAccess self-only identity actions", () => {
     expect(decide("iam:UpdateUser", ALICE_USER, "alice")).toBe("deny");
   });
 
-  it("refuses each, the re-case exactly as the preferences, to a paired browser's credential", () => {
-    for (const action of SELF_ONLY) {
-      expect(evaluateIamRequest(browser, ALICE, action, [{ frn: ALICE_USER, ownerId: "alice" }], { workspaceId: WS, origin: "extension-chat", currentTimeMs: 0 }).decision, action).toBe("deny");
+  // t1095: a client starts a task at the pace its person chose in the panel, so it reads (never changes) the preference.
+  it("lets a paired browser's credential read its own person's preferences, and refuses it every change, the re-case included", () => {
+    const decideBrowser = (action: string, frn: string, ownerId: string) => evaluateIamRequest(browser, ALICE, action, [{ frn, ownerId }], { workspaceId: WS, origin: "extension-chat", currentTimeMs: 0 }).decision;
+    expect(decideBrowser("iam:GetMyPreferences", ALICE_USER, "alice")).toBe("allow");
+    expect(decideBrowser("iam:GetMyPreferences", BOB_USER, "bob")).toBe("deny");
+    expect(decideBrowser("iam:GetMyPreferences", iamWorkspaceFrn(WS), "alice")).toBe("deny");
+    for (const action of SELF_ONLY.filter((name) => name !== "iam:GetMyPreferences")) {
+      expect(decideBrowser(action, ALICE_USER, "alice"), action).toBe("deny");
     }
   });
 });
@@ -148,12 +153,13 @@ describe("FluxIQUserAccess and the key the person's own chats use (t950)", () =>
   const decideBrowser = (action: string, frn: string, ownerId?: string) =>
     evaluateIamRequest(browser, ALICE, action, [{ frn, ...(ownerId === undefined ? {} : { ownerId }) }], { workspaceId: WS, origin: "extension-chat", currentTimeMs: 0 }).decision;
 
-  it("lets the person save, replace and remove it on their own user, from the panel and from their paired browser", () => {
+  // t1095: key writes are the panel's for every client (user, 2026-11-27), so the browser's session no longer allows them.
+  it("lets the person save, replace and remove it on their own user, and refuses a paired browser's credential", () => {
     expect([...IAM_OWN_MODEL_KEY_ACTIONS].sort()).toEqual(["secrets:RemoveModelKey", "secrets:ReplaceModelKey", "secrets:SaveModelKey"]);
     for (const action of IAM_OWN_MODEL_KEY_ACTIONS) {
       expect(decide(action, ALICE_USER, "alice"), action).toBe("allow");
       expect(decideFrom("extension-chat", action, ALICE_USER, "alice"), action).toBe("allow");
-      expect(decideBrowser(action, ALICE_USER, "alice"), action).toBe("allow");
+      expect(decideBrowser(action, ALICE_USER, "alice"), action).toBe("deny");
     }
   });
 

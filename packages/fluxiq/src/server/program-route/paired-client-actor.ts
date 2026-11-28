@@ -7,8 +7,8 @@
 // so the key-access authority's paired actor reads the same set.
 // `pairedClientEndpointActor` is the program route's, per endpoint: the generic
 // actor plus what that one allowlisted endpoint names in
-// `PAIRED_CLIENT_ENDPOINT_PERMISSIONS`, so `secrets.manage` rides on the
-// person's own model-key writes and on no other call.
+// `PAIRED_CLIENT_ENDPOINT_PERMISSIONS`, which names none since t1095, so no
+// paired call carries `secrets.manage`.
 
 import { PAIRED_CLIENT_PERMISSIONS } from "../../programs/_shared/paired-client/index.ts";
 
@@ -24,23 +24,15 @@ export type PairedClientSession = {
  * `PAIRED_CLIENT_PERMISSIONS`, carried by that endpoint's actor alone
  * (`pairedClientEndpointActor`) and never by the generic paired actor.
  *
- * `secrets.manage` on the person's own model key, saved, replaced or removed
- * (t928): the registry requires it for those writes. It was in the generic cap
- * until t955, which handed it to every paired actor -- every other program
- * endpoint, every app route and every saved-key use -- although none of them
- * needs it. Only a role that holds it keeps it, so a member's client is still
- * refused those three by IAM, exactly as the member's login is, and IAM still
- * decides them for an administrator's. Each entry must also be in
- * `PAIRED_CLIENT_ENDPOINTS`; this map widens only what an allowlisted
- * endpoint's actor carries, never which endpoints a token names.
+ * Empty since t1095. Its only entries were `secrets.manage` on the person's own
+ * model key, saved, replaced or removed (t928, narrowed to those three by
+ * t955); key writes are the panel's now (user, 2026-11-27), so no paired actor
+ * carries `secrets.manage`. Only a role that holds a named permission would
+ * keep it. Each entry must also be in `PAIRED_CLIENT_ENDPOINTS`; this map widens
+ * only what an allowlisted endpoint's actor carries, never which endpoints a
+ * token names.
  */
-const PAIRED_CLIENT_ENDPOINT_PERMISSIONS: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>> = Object.freeze({
-  "secret-keys": Object.freeze({
-    "save-model-key": Object.freeze(["secrets.manage"]),
-    "replace-model-key": Object.freeze(["secrets.manage"]),
-    "remove-model-key": Object.freeze(["secrets.manage"]),
-  }),
-});
+const PAIRED_CLIENT_ENDPOINT_PERMISSIONS: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>> = Object.freeze({});
 
 type IdentityDirectory = {
   users: ReadonlyArray<{ id: string; roleId: string; enabled: boolean }>;

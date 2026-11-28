@@ -3,6 +3,7 @@ import { appRouteIamContract } from "../../../../lib/app-route-iam";
 import { getWorkspaceWebPresentation } from "../../../../lib/fluxiq";
 import { workspaceRouteContext } from "../../../../lib/workspaces/routes";
 import { WorkspacePresentationError } from "../../../../lib/workspaces/presentation";
+import { panelContextChanges } from "../../panel/changes/topics";
 import { ContextRouteError } from "./failure";
 import { prepareContextWrite } from "./prepare";
 import { validateContextSelection } from "./validate";
@@ -33,6 +34,8 @@ export async function POST(request: Request) {
     await validateContextSelection(owner, request.url, prepared.selection);
     presentation.context();
     if (!owner.current()) return refused({ status: 401, error: "Authentication required" });
+    // Every open stream of this person's (the panel, their clients) reads the value again now (t1095).
+    panelContextChanges.signal({ workspaceId: owner.workspaceId, userId: current.binding.userId });
     return response;
   } catch (error) {
     if (error instanceof ContextRouteError) return refused(error);
