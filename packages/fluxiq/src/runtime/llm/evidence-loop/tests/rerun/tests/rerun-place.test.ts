@@ -8,9 +8,9 @@
 // and none on page 5, and a read that pages to the end, keeping what its
 // filter keeps or, when it keeps nothing, returning the page unfiltered.
 import { describe, expect, it, vi } from "vitest";
-import type { JsonObject } from "../../../../core/index.ts";
-import type { AutomationStudioFlowDraftStep } from "../../../flow-authoring/draft/index.ts";
-import { runAutomationStudioLlmEvidenceLoop } from "../../index.ts";
+import type { JsonObject } from "../../../../../../core/index.ts";
+import type { AutomationStudioFlowDraftStep } from "../../../../../flow-authoring/draft/index.ts";
+import { runAutomationStudioLlmEvidenceLoop } from "../../../../index.ts";
 
 const tools = [
   { toolId: "read", description: "Read the list, every page.", inputSchema: { type: "object" }, effect: "observe" as const },

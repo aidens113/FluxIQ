@@ -8,12 +8,12 @@
 // beside creation -- which is the duplication this design exists to avoid.
 
 import { describe, expect, it, vi } from "vitest";
-import type { AutomationStudioFlowDraftStep } from "../../flow-authoring/draft/index.ts";
-import { automationStudioFlowDraftReplayable } from "../../flow-authoring/draft/index.ts";
-import { automationStudioFlowDraftScheduledCandidateCall } from "../../flow-authoring/draft/scheduled-candidate/index.ts";
-import { automationStudioFlowDraftSeedFromFlow } from "../node-tools/index.ts";
-import { runAutomationStudioLlmEvidenceLoop } from "../evidence-loop.ts";
-import { automationStudioLlmEvidenceLoopSeedSteps } from "../loop-configuration.ts";
+import type { AutomationStudioFlowDraftStep } from "../../../../flow-authoring/draft/index.ts";
+import { automationStudioFlowDraftReplayable } from "../../../../flow-authoring/draft/index.ts";
+import { automationStudioFlowDraftScheduledCandidateCall } from "../../../../flow-authoring/draft/scheduled-candidate/index.ts";
+import { automationStudioFlowDraftSeedFromFlow } from "../../../node-tools/index.ts";
+import { runAutomationStudioLlmEvidenceLoop } from "../../../evidence-loop.ts";
+import { automationStudioLlmEvidenceLoopSeedSteps } from "../../../loop-configuration.ts";
 
 const tools = [{ toolId: "act", description: "Do one thing to the target.", inputSchema: { type: "object" }, effect: "mutate" as const }];
 

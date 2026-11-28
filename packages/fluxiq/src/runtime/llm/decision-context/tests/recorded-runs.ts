@@ -46,7 +46,7 @@
 
 // The llm barrel first: `runtime/loop-limits/` imports back into it, and reached
 // the other way round the suite does not collect (see
-// `../../tests/evidence-loop-draft-shown.test.ts`).
+// `../../tests/evidence-loop/tests/evidence-loop-draft-shown.test.ts`).
 import {
   automationStudioLlmRunNodeTool,
   runAutomationStudioLlmEvidenceLoop,
@@ -637,7 +637,7 @@ export async function replayRecordedRun(name: RecordedRunName, options: Recorded
     // redid every proposed step of the build under call ids the log never ran,
     // and 32 and 42 ended `rerun_place_unreachable`. That rule is tested by
     // `../../node-tools/tests/step-place.test.ts` and
-    // `../../evidence-loop/tests/rerun-place.test.ts`; this replay keeps it out,
+    // `../../evidence-loop/tests/rerun/tests/rerun-place.test.ts`; this replay keeps it out,
     // as it keeps out every step's real address. (On the live pages 32 and 38
     // had no proposed step before them on the cart page; 42 had 25,
     // `addkettle1`, pressed there at 34, which today's code would redo first.)
