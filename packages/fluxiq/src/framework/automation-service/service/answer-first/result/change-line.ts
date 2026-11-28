@@ -53,9 +53,9 @@ export function automationStudioAnswerFirstResultChangeLine(before: AutomationSt
   return `result ${rowsBefore} → ${words.rows(rowsAfter)}${parts.length ? `: ${parts.join("; ")}` : ""}.`;
 }
 
-/** Whose rows the result is: one step's, or the steps' that append to one output, in turn. */
+/** Whose rows the result is: one step's, or the steps' that append to one output or read its one list, in turn. */
 function whose(group: readonly AutomationStudioAnswerFirstResultStep[], named: (step: AutomationStudioAnswerFirstResultStep) => string): string {
-  return group.length === 1 ? `${named(group[0]!)}'s` : `${group.map(named).join(" then ")}'s, each appending to one record output`;
+  return group.length === 1 ? `${named(group[0]!)}'s` : `${group.map(named).join(" then ")}'s, ${words.joined(group)}`;
 }
 
 /** The rows the result's steps hold. */

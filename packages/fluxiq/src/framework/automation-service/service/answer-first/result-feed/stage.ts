@@ -56,7 +56,7 @@ export function automationStudioAnswerFirstDataStage(initial: AutomationStudioAn
     /** How the latest evaluation named the result's fields (`./column-names.ts`, t1074); absent before one. */
     naming: () => named,
     active: () => declaration !== undefined && (declaration.task !== null || requiresData),
-    evaluate(input: { schema?: AutomationStudioRecordSchema; schemaIssues?: readonly string[]; rows: readonly AutomationStudioRecordCollectedRow[]; columns: readonly string[]; askedColumns?: readonly string[] | undefined; own?: unknown; renamed?: Readonly<Record<string, string>> | undefined }): { readiness: AutomationStudioAnswerFirstResultReadiness; summary?: Pick<AutomationStudioAnswerFirstRowsSummary, "rows" | "columns" | "schema">; processing?: AutomationStudioRecordProcessing; account?: AutomationStudioRecordProcessingAccount; renames?: ReadonlyMap<string, { id: string; label: string }>; storedRows?: JsonObject[] } {
+    evaluate(input: { schema?: AutomationStudioRecordSchema; schemaIssues?: readonly string[]; rows: readonly AutomationStudioRecordCollectedRow[]; columns: readonly string[]; askedColumns?: readonly string[] | undefined; own?: unknown; renamed?: Readonly<Record<string, string>> | undefined; identity?: readonly string[] | undefined }): { readiness: AutomationStudioAnswerFirstResultReadiness; summary?: Pick<AutomationStudioAnswerFirstRowsSummary, "rows" | "columns" | "schema">; processing?: AutomationStudioRecordProcessing; account?: AutomationStudioRecordProcessingAccount; renames?: ReadonlyMap<string, { id: string; label: string }>; storedRows?: JsonObject[] } {
       bound = undefined;
       stored = undefined;
       named = undefined;
@@ -85,7 +85,11 @@ export function automationStudioAnswerFirstDataStage(initial: AutomationStudioAn
       // The declaration's own columns, bound, place what evidence alone could not (`automationStudioRecordAskedColumns`, order).
       if (process.columns) named = automationStudioAnswerFirstColumnNames({ schema: input.schema, ...naming, columns: process.columns });
       bound = process;
-      const evaluated = processAutomationStudioRecordRows({ rows: input.rows, schema: input.schema, process, now: referenceTimeMs as number, mode: "automatic" });
+      // Rows read by several extractions of one list are the same row on the fields they share (`./shared-fields.ts`,
+      // t1091), or on the asked columns where those are among them: the data layer's own dedupe by that key, where none was
+      // declared. Only this evaluation uses it: the declaration as bound, saved and shown to the judge stays the model's.
+      const identity = input.identity?.length && process.dedupe === undefined ? (process.columns?.length && process.columns.every((id) => input.identity!.includes(id)) ? process.columns : input.identity) : undefined;
+      const evaluated = processAutomationStudioRecordRows({ rows: input.rows, schema: input.schema, process: identity ? { ...process, dedupe: { by: [...identity] } } : process, now: referenceTimeMs as number, mode: "automatic" });
       if (evaluated.state === "missing-evidence") return missing("answer_first.processing_evidence_missing", `Required data evidence is unavailable: ${evaluated.missingEvidence.map((entry) => `${entry.operator}[${entry.index}] ${entry.field}${entry.from ? ` from ${entry.from}` : ""} (${entry.reason}) at source ${entry.source.batchKey}, step ${entry.source.nodeId}, row ${entry.source.row}`).join("; ")}. Read the named fields for those source occurrences.`);
       if (evaluated.state === "empty") {
         const withheld = missing("answer_first.processing_empty", said(`The declared data task is not ready: ${evaluated.reason === "uncollected" ? "no captured records" : "no qualifying records"}; ${evaluated.account.kept} rows kept. Gather the requested matching evidence. An intentionally empty contract must explicitly permit minRows: 0.`));
