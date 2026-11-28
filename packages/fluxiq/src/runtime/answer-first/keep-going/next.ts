@@ -1,16 +1,19 @@
 // The plan's hard rule as a table (answer-first plan, "Keep Going Until The
 // Result"): given how a round ended, what comes next. Nothing but a judged
 // result, a budget gone or a person's Stop ends a task, so this never returns a
-// failure. Order matters:
+// failure -- save a request the provider refused, which asking again cannot get
+// past (`./refused-request.ts`). Order matters:
 //   1. a person's Stop               -> stopped
 //   2. the result achieved           -> achieved
 //   3. purse refusal / empty balance -> budget_out
-//   4. the model service silent      -> backoff (costs nothing)
-//   5. everything else, unknown errors and codes included -> fresh_round
+//   4. the provider refused it       -> refused (never waited on or asked again)
+//   5. the model service silent      -> backoff (costs nothing)
+//   6. everything else, unknown errors and codes included -> fresh_round
 
 import type { JsonObject } from "../../../core/index.ts";
 import { AUTOMATION_STUDIO_ANSWER_FIRST_LOOP_FAILURE_REASONS } from "./loop-failure-reasons.ts";
 import { automationStudioAnswerFirstBackoff } from "./backoff.ts";
+import { automationStudioAnswerFirstRefusedRequest } from "./refused-request.ts";
 import { automationStudioAnswerFirstThrownKind } from "./thrown-kind.ts";
 import type { AutomationStudioAnswerFirstNext } from "./next-step.ts";
 import type { AutomationStudioAnswerFirstRoundEnd } from "./round-end.ts";
@@ -39,6 +42,7 @@ export function automationStudioAnswerFirstNext(input: {
     const kind = automationStudioAnswerFirstThrownKind(end.error);
     if (kind === "purse") return { kind: "budget_out", why: "purse" };
     if (kind === "empty_balance") return { kind: "budget_out", why: "empty_balance" };
+    if (kind === "refused") return { kind: "refused", why: automationStudioAnswerFirstRefusedRequest(end.error)!.words };
     if (kind === "silent") return { kind: "backoff", ...automationStudioAnswerFirstBackoff(input.backoffs) };
     return freshRound("something unexpected went wrong");
   }

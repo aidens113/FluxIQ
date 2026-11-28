@@ -1,4 +1,5 @@
-// One strict tool demoted after the platform refused a request for its compiled grammar (t1093).
+// One strict tool demoted after the platform refused a request for its compiled grammar (t1093), or for one strict tool's
+// schema, which the refusal names (`./named-refusal.ts`, t1100): that tool is the one demoted.
 //
 // **The platform's refusal, answered by changing the request.** The grammar limit has no number
 // (`./grammar-refusal.ts`), so no count Core keeps can promise a strict set fits; only the platform can say. Each
@@ -32,12 +33,16 @@ const KEPT_LONGEST = "complete";
  * held (`./held-fits.ts`), so a second request of the same offer refused at once names the same tool and demotes no
  * other: it is then sent again as the memory now builds it.
  */
-export function automationStudioAnthropicDemoteStrictTool(offered: readonly Offered[], sent: readonly Sent[]): string | undefined {
+export function automationStudioAnthropicDemoteStrictTool(offered: readonly Offered[], sent: readonly Sent[], named?: string): string | undefined {
   const keptLongest = new Set(offered.filter((tool) => tool.variant === undefined ? tool.name === KEPT_LONGEST : tool.variant.kind === KEPT_LONGEST).map((tool) => tool.name));
+  // A refusal that named a strict tool's schema (`./named-refusal.ts`, t1100) demotes that tool first, whatever its size.
+  const first = (name: string) => Number(name !== named);
   const strict = sent
     .filter((tool): tool is Sent & { name: string } => tool.strict === true && typeof tool.name === "string")
     .map((tool) => ({ name: tool.name, last: keptLongest.has(tool.name), cost: Buffer.byteLength(JSON.stringify(tool.input_schema ?? null), "utf8") }))
-    .sort((a, b) => Number(a.last) - Number(b.last) || b.cost - a.cost || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    .sort((a, b) => first(a.name) - first(b.name) || Number(a.last) - Number(b.last) || b.cost - a.cost || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  // A named tool the refused request did not send strict is no tool to demote: the refusal stands.
+  if (named !== undefined && strict[0]?.name !== named) return undefined;
   const next = strict[0]?.name;
   // The offer is held to what the refused request sent strict, less this one: no tool it sent non-strict turns strict.
   if (next !== undefined) AUTOMATION_STUDIO_ANTHROPIC_STRICT_FITS.narrow(automationStudioAnthropicToolsDigest(offered), strict.slice(1).map((tool) => tool.name));

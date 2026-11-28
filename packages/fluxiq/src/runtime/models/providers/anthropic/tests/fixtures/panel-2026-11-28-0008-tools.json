@@ -1,0 +1,797 @@
+[
+  {
+    "name": "complete",
+    "description": "Finishes the task with its result.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "type": "string",
+          "description": "Original constraints: minLength: 1; maxLength: 240."
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string",
+              "description": "One sentence on what you got."
+            },
+            "answer": {
+              "type": "string",
+              "description": "The answer in words, only when the result is words rather than rows or acts."
+            },
+            "notes": {
+              "type": "object",
+              "description": "Short plain notes for the next attempt at this same task. Hold no secrets: no passwords, keys or codes.",
+              "properties": {
+                "worked": {
+                  "type": "string",
+                  "description": "What worked on this site."
+                },
+                "failed": {
+                  "type": "string",
+                  "description": "What did not work."
+                },
+                "quirks": {
+                  "type": "string",
+                  "description": "Anything odd about the site worth knowing next time."
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "summary"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "summary",
+        "result"
+      ]
+    },
+    "strict": true
+  },
+  {
+    "name": "amend_draft",
+    "description": "Changes the Flow draft by the amendments given.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "amendments": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "step",
+              "change"
+            ],
+            "properties": {
+              "step": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "The step number shown in the draft. Every number in one decision names the step as the draft shows it; the draft is renumbered once, after the whole decision."
+              },
+              "change": {
+                "enum": [
+                  "keep",
+                  "drop",
+                  "result",
+                  "repeat",
+                  "unrepeat",
+                  "bind",
+                  "rerun"
+                ],
+                "description": "keep: put back a step the framework left out (its out line says why). drop: take a step out of the Flow. result: this read holds the answer. repeat: do this step again for each row the step given by over produced, or while the step given by while keeps succeeding; a step over, while or through names that was left out comes in. unrepeat: take the repeat off this step. bind: make a value general: input names the parameters to lift, only parameters the step already has -- a value a step typed, or a read's condition; a press's control or option is never bound -- each set to {\"$input\": <name>, \"test\": <value>} for a value the person gave that differs from run to run, or {\"$row\": <field>} for a field of the row a repeat is on. rerun: do this step again in its place, with input as the corrected argument; the new run takes its place, and running the Flow from it checks what follows."
+              },
+              "input": {
+                "type": "object",
+                "description": "bind: the parameters to lift -- a value a step typed, or a read's condition; a press's control or option is never bound -- each set to a binding form, at any depth. rerun: a JSON merge patch over the argument the step ran with. Only the keys that change, and a node's parameters may be written without parameters around them; a list replaces whole; null removes a key; a key left out is kept, except in an object you write out again, repeating more of it than you leave out: that drops the keys you were shown and left out, and keeps keys withheld from you; a new key given a left-out key's value renames it."
+              },
+              "through": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "repeat only: the last step of the span that repeats. Leave it out to repeat this step alone."
+              },
+              "over": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "repeat only: the step whose rows the span repeats for, a step before this one. Leave it out for the step before it."
+              },
+              "while": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "repeat only, never with over: the span's last step, which must answer ended when there is nothing more."
+              },
+              "most": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10000,
+                "description": "repeat only, and only when the instruction itself gives a number: that many passes or rows at most."
+              },
+              "act": {
+                "type": "string",
+                "pattern": "^a[1-9][0-9]{0,2}([.][a-z]{1,16})?$",
+                "description": "keep only: the act from the acts checklist this step does. Only a step that changes something does an act."
+              },
+              "place": {
+                "type": "string",
+                "pattern": "^(none|r[1-9][0-9]?(,r[1-9][0-9]?){0,19})$",
+                "description": "keep only, once the draft shows route: the places on the route this step is on, by their ids."
+              }
+            }
+          }
+        }
+      },
+      "required": [
+        "summary",
+        "amendments"
+      ]
+    }
+  },
+  {
+    "name": "web_detect_repeating_structure",
+    "description": "Calls the offered tool web.detect_repeating_structure (evidenceLoop.tools describes it); its input goes in input.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "type": "string",
+          "description": "Original constraints: minLength: 1; maxLength: 240."
+        },
+        "callId": {
+          "type": "string",
+          "description": "Original constraints: pattern: \"^[a-zA-Z0-9_.:-]{1,200}$\"."
+        },
+        "input": {
+          "type": "object",
+          "properties": {
+            "target": {
+              "type": "string",
+              "description": "Original constraints: pattern: \"^(?:t|target\\\\.)[1-9][0-9]{0,5}$\"."
+            }
+          },
+          "additionalProperties": false
+        },
+        "add": {
+          "type": "boolean"
+        },
+        "act": {
+          "type": "string",
+          "description": "Original constraints: pattern: \"^a[1-9][0-9]{0,2}([.][a-z]{1,16})?$\"."
+        },
+        "place": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "summary",
+        "callId",
+        "input"
+      ]
+    },
+    "strict": true
+  },
+  {
+    "name": "web_describe_element",
+    "description": "Calls the offered tool web.describe_element (evidenceLoop.tools describes it); its input goes in input.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "type": "string",
+          "description": "Original constraints: minLength: 1; maxLength: 240."
+        },
+        "callId": {
+          "type": "string",
+          "description": "Original constraints: pattern: \"^[a-zA-Z0-9_.:-]{1,200}$\"."
+        },
+        "input": {
+          "type": "object",
+          "properties": {
+            "target": {
+              "type": "string",
+              "description": "Original constraints: pattern: \"^(?:t|target\\\\.)[1-9][0-9]{0,5}$\"."
+            }
+          },
+          "required": [
+            "target"
+          ],
+          "additionalProperties": false
+        },
+        "add": {
+          "type": "boolean"
+        },
+        "act": {
+          "type": "string",
+          "description": "Original constraints: pattern: \"^a[1-9][0-9]{0,2}([.][a-z]{1,16})?$\"."
+        },
+        "place": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "summary",
+        "callId",
+        "input"
+      ]
+    },
+    "strict": true
+  },
+  {
+    "name": "core_run_node",
+    "description": "Calls the offered tool core.run_node (evidenceLoop.tools describes it); its input goes in input.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "callId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_.:-]{1,200}$"
+        },
+        "input": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "node",
+            "parameters",
+            "consequences"
+          ],
+          "properties": {
+            "node": {
+              "enum": [
+                "web.output.browser-download",
+                "web.output.browser-navigate",
+                "web.output.browser-tab",
+                "web.output.dom-assert",
+                "web.output.dom-check",
+                "web.output.dom-clear",
+                "web.output.dom-click",
+                "web.output.dom-dialog",
+                "web.output.dom-extract",
+                "web.output.dom-extract_list",
+                "web.output.dom-hover",
+                "web.output.dom-keypress",
+                "web.output.dom-next_page",
+                "web.output.dom-scroll",
+                "web.output.dom-select",
+                "web.output.dom-type",
+                "web.output.dom-upload",
+                "web.output.dom-wait_for_selector",
+                "web.output.dom-wait_for_text"
+              ],
+              "description": "The node's id, copied exactly from the catalog."
+            },
+            "parameters": {
+              "type": "object",
+              "description": "That node's own parameters, exactly as its definition under describedNodes declares them. Where a value changes between runs or rows, a written step (write true) holds a binding in its place: {\"$input\": \"<name>\", \"test\": <the value to test with>} for a value the person gave, which becomes an input of the Flow, or {\"$row\": \"<field>\"} for a field of the row a repeat is on, or {\"$step\": <n>, \"output\": \"<output id>\"} for an output of the earlier step n (add \"path\": \"<field>\" for one field of a record output). A call that runs now takes concrete values only."
+            },
+            "consequences": {
+              "type": "array",
+              "maxItems": 5,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "enum": [
+                  "move_money",
+                  "delete",
+                  "send_or_publish",
+                  "modify_existing",
+                  "create_new"
+                ]
+              },
+              "description": "What running this node would lastingly do. [] leaves nothing behind; a press that submits, orders, deletes or changes something saved names its class, such as send_or_publish, and is put to the person first."
+            },
+            "write": {
+              "type": "boolean",
+              "description": "true: write this step into the Flow without running it -- nothing is done now; it is checked as a run would check it, frozen as written and added, and the test runs it. Use it once what you have seen is enough to know the node and its parameters, and prefer write for a lasting act on items a loop selects: the test acts on exactly the items the Flow selects, and the build changes nothing the Flow should not. Declare consequences as for a run."
+            }
+          }
+        },
+        "add": {
+          "type": "boolean",
+          "description": "Not needed: a step that works joins the Flow by itself, and amend_draft edits what was drafted."
+        },
+        "act": {
+          "type": "string",
+          "pattern": "^a[1-9][0-9]{0,2}([.][a-z]{1,16})?$",
+          "description": "The act from the acts checklist this step does, such as a2, or the choice under it this step makes, such as a2.quantity."
+        },
+        "place": {
+          "type": "string",
+          "pattern": "^(none|r[1-9][0-9]?(,r[1-9][0-9]?){0,19})$",
+          "description": "Once the draft shows route: the places on it this step is on, such as r1, or r1,r2 for two; none clears them."
+        }
+      },
+      "required": [
+        "summary",
+        "callId",
+        "input"
+      ]
+    }
+  },
+  {
+    "name": "core_describe_nodes",
+    "description": "Calls the offered tool core.describe_nodes (evidenceLoop.tools describes it); its input goes in input.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "type": "string",
+          "description": "Original constraints: minLength: 1; maxLength: 240."
+        },
+        "callId": {
+          "type": "string",
+          "description": "Original constraints: pattern: \"^[a-zA-Z0-9_.:-]{1,200}$\"."
+        },
+        "input": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ids"
+          ],
+          "properties": {
+            "ids": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "description": "Original constraints: pattern: \"^[A-Za-z0-9._:-]{1,200}$\"."
+              },
+              "description": "The ids of the nodes to describe, each copied exactly from flowBootstrap.nodeCatalog, where it comes before the colon. Original constraints: maxItems: 64; uniqueItems: true."
+            }
+          }
+        }
+      },
+      "required": [
+        "summary",
+        "callId",
+        "input"
+      ]
+    },
+    "strict": true
+  },
+  {
+    "name": "core_recall_result",
+    "description": "Calls the offered tool core.recall_result (evidenceLoop.tools describes it); its input goes in input.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "type": "string",
+          "description": "Original constraints: minLength: 1; maxLength: 240."
+        },
+        "callId": {
+          "type": "string",
+          "description": "Original constraints: pattern: \"^[a-zA-Z0-9_.:-]{1,200}$\"."
+        },
+        "input": {
+          "type": "object",
+          "properties": {
+            "callId": {
+              "type": "string",
+              "description": "Original constraints: minLength: 1; maxLength: 200."
+            },
+            "round": {
+              "type": "integer",
+              "description": "Original constraints: minimum: 1."
+            }
+          },
+          "required": [
+            "callId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "summary",
+        "callId",
+        "input"
+      ]
+    },
+    "strict": true
+  },
+  {
+    "name": "core_full_page",
+    "description": "Calls the offered tool core.full_page (evidenceLoop.tools describes it); its input goes in input.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "type": "string",
+          "description": "Original constraints: minLength: 1; maxLength: 240."
+        },
+        "callId": {
+          "type": "string",
+          "description": "Original constraints: pattern: \"^[a-zA-Z0-9_.:-]{1,200}$\"."
+        },
+        "input": {
+          "type": "object",
+          "properties": {
+            "part": {
+              "type": "integer",
+              "description": "Original constraints: minimum: 1."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "summary",
+        "callId",
+        "input"
+      ]
+    },
+    "strict": true
+  },
+  {
+    "name": "core_set_result_processing",
+    "description": "Calls the offered tool core.set_result_processing (evidenceLoop.tools describes it); its input goes in input.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "type": "string",
+          "description": "Original constraints: minLength: 1; maxLength: 240."
+        },
+        "callId": {
+          "type": "string",
+          "description": "Original constraints: pattern: \"^[a-zA-Z0-9_.:-]{1,200}$\"."
+        },
+        "input": {
+          "type": "object",
+          "properties": {
+            "process": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "The whole data declaration; null may explicitly complete only a missing first action-only declaration."
+            },
+            "clear": {
+              "type": "boolean",
+              "description": "true removes the declaration held, in place of process."
+            },
+            "dataset": {
+              "type": "string",
+              "description": "The list it shapes, when the result is not the one meant; absent, the result. Original constraints: maxLength: 200."
+            },
+            "why": {
+              "type": "string",
+              "description": "Original constraints: maxLength: 500."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "summary",
+        "callId",
+        "input"
+      ]
+    },
+    "strict": true
+  },
+  {
+    "name": "core_loop_decision",
+    "description": "Calls the offered tool core.loop_decision (evidenceLoop.tools describes it); its input goes in input.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "callId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_.:-]{1,200}$"
+        },
+        "input": {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "enum": [
+                "continue",
+                "change_approach",
+                "ask_person",
+                "finish_with_best"
+              ]
+            },
+            "why": {
+              "type": "string",
+              "maxLength": 500
+            },
+            "approach": {
+              "type": "string",
+              "maxLength": 500
+            },
+            "question": {
+              "type": "string",
+              "maxLength": 500
+            },
+            "result": {
+              "type": "object",
+              "properties": {
+                "summary": {
+                  "type": "string",
+                  "description": "One sentence on what you got."
+                },
+                "answer": {
+                  "type": "string",
+                  "description": "The answer in words, only when the result is words rather than rows or acts."
+                },
+                "notes": {
+                  "type": "object",
+                  "description": "Short plain notes for the next attempt at this same task. Hold no secrets: no passwords, keys or codes.",
+                  "properties": {
+                    "worked": {
+                      "type": "string",
+                      "description": "What worked on this site."
+                    },
+                    "failed": {
+                      "type": "string",
+                      "description": "What did not work."
+                    },
+                    "quirks": {
+                      "type": "string",
+                      "description": "Anything odd about the site worth knowing next time."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "summary"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "decision"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "summary",
+        "callId",
+        "input"
+      ]
+    }
+  },
+  {
+    "name": "core_run_flow",
+    "description": "Calls the offered tool core.run_flow (evidenceLoop.tools describes it); its input goes in input.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "type": "string",
+          "description": "Original constraints: minLength: 1; maxLength: 240."
+        },
+        "callId": {
+          "type": "string",
+          "description": "Original constraints: pattern: \"^[a-zA-Z0-9_.:-]{1,200}$\"."
+        },
+        "input": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "from"
+          ],
+          "properties": {
+            "from": {
+              "type": "integer",
+              "description": "The number of the first step to run, as the draft shows it. Original constraints: minimum: 1."
+            },
+            "to": {
+              "type": "integer",
+              "description": "The number of the last step to run; the Flow's last step when absent. Original constraints: minimum: 1."
+            }
+          }
+        }
+      },
+      "required": [
+        "summary",
+        "callId",
+        "input"
+      ]
+    },
+    "strict": true
+  },
+  {
+    "name": "core_check_answer",
+    "description": "The answer of the check of an attempt's result, and only that: called once by the check, when a system message asks it to judge, with its verdict, the JSON object its outputSchema asks for, as the whole input. It is never a decision: called while deciding, it is refused and does nothing.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "diagnosis",
+        "summary"
+      ],
+      "properties": {
+        "kind": {
+          "const": "diagnosis"
+        },
+        "diagnosis": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "expected": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "observed": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "changed": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "stillAchievable": {
+              "enum": [
+                "yes",
+                "no",
+                "unknown"
+              ]
+            },
+            "deterministicRecoveryPossible": {
+              "enum": [
+                "yes",
+                "no",
+                "unknown"
+              ]
+            },
+            "answersRequest": {
+              "enum": [
+                "yes",
+                "no",
+                "unknown"
+              ]
+            },
+            "defects": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "row",
+                  "requestWords"
+                ],
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "kept_not_asked",
+                      "asked_missing",
+                      "wrong_value",
+                      "act_missing",
+                      "act_wrong",
+                      "other"
+                    ]
+                  },
+                  "row": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "column": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "value": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "step": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "requestWords": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            },
+            "checked": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "row",
+                  "column",
+                  "value"
+                ],
+                "properties": {
+                  "row": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "column": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "value": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            },
+            "answerRecords": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "asked"
+              ],
+              "properties": {
+                "asked": {
+                  "type": "boolean"
+                },
+                "siteShows": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "explorationNeeded": {
+              "type": "boolean"
+            },
+            "patchNeeded": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "answersRequest",
+            "defects",
+            "checked",
+            "answerRecords"
+          ]
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "metadata": {
+          "type": "object"
+        }
+      }
+    }
+  }
+]
