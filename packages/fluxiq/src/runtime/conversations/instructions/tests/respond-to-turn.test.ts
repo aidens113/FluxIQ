@@ -7,7 +7,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutomationStudioProjectDatabasePool } from "../../../../framework/persistence/automation/index.ts";
 import { parseAutomationStudioPanelCapabilities } from "../../../../framework/automation-service/panel-capabilities/index.ts";
 import { AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE } from "../../commands/index.ts";
@@ -87,6 +87,7 @@ describe("a person's turn, answered in the thread", () => {
   });
 
   afterEach(async () => {
+    vi.unstubAllEnvs();
     if (pool) {
       await pool.closeAll();
       pool = undefined;
@@ -114,6 +115,8 @@ describe("a person's turn, answered in the thread", () => {
   // UI D9, live run `run-musp8nz1-dbd3905a`: the first reply read `Doing "Create an automation here".`
   // and the summary then named the full Lab address.
   it("says what a build will do, where, without the command's title or the page's address", async () => {
+    // A project-mode build's first reply, the default until 2026-11-27 (t1093).
+    vi.stubEnv("FLUXIQ_AUTHORING_MODE", "project");
     // Core's own descriptor, as the append-turn handler puts it in place of the client's (`commands/vocabulary.ts`).
     const capabilities = [AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE.capability];
     const { say, turns } = await thread(scripted('{"do": "flow.createHere", "with": {"instruction": "Find towels under 10 dollars."}}'), { capabilities, onScreen: { pageUrl: "http://127.0.0.1:4100/scenarios/towels" } });

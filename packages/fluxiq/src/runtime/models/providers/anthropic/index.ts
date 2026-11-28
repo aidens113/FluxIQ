@@ -17,4 +17,5 @@ export * from "./messages.ts";
 export * from "./no-thinking.ts";
 export * from "./request-body.ts";
 export * from "./size-refusal.ts";
+export * from "./strict-fit/index.ts";
 export * from "./reply/index.ts";

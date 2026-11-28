@@ -10,7 +10,7 @@
 // what it learned, from Core's closed change kinds only: never the model's
 // diagnosis, page text or a selector.
 
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AutomationStudioConversationCommandCallResult, AutomationStudioConversationCommandContext } from "../command.ts";
 import { AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW } from "../run-flow.ts";
 
@@ -65,6 +65,9 @@ const adaptation = (adaptationId: string, status: string, kind: string, appliedT
 const NEVER_SHOWN = ["SECRET-PAGE-TEXT", "#buy-now-2", "selector", "node.buy"];
 
 describe("Run it", () => {
+  // A saved Flow run outside answer-first, the default until 2026-11-27 (t1093); answer-first's run is `./answer-first-run-flow.test.ts`.
+  beforeEach(() => { vi.stubEnv("FLUXIQ_AUTHORING_MODE", "project"); });
+  afterEach(() => { vi.unstubAllEnvs(); });
   it("keeps a generic true without attributing a kind from missing or foreign run proof", async () => {
     for (const decision of [undefined, { autoApply: true, applied: true, judgedRunId: "run.other" }, { autoApply: true, applied: false, judgedRunId: "run.7" }]) {
       const { context } = contextWith({ "get-flow": named, "run-runtime-session": ended("succeeded", { createdAdaptationIds: ["a"], durableBehaviorChanged: true }), "get-flow-adaptation": () => ({ ok: true, payload: { adaptation: { ...adaptation("a", "applied", "edit_action_target"), metadata: { approvalDecision: decision } } } }) });

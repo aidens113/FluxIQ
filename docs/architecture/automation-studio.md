@@ -400,6 +400,64 @@ as plain text, read and checked against its own schema; a tool call there is
 `tool_call_unexpected`. A provider built with `decisionTools: false`, or a
 decision schema the tools cannot express, keeps the JSON-text transport.
 
+**The strict set fits the grammar the platform compiles** (t1093). The counted
+limits are not the whole of it: the structured-outputs page names "additional
+internal limits on the compiled grammar size" with no number. On 2026-11-27 the
+web panel's first decision -- 12 tools, 8 strict, within every count -- was
+answered in 177 ms with HTTP 400 "The compiled grammar is too large, which would
+cause performance issues. Simplify your tool schemas or reduce the number of
+strict tools." (Sonnet refused the same body). So where Anthropic refuses a
+request for its grammar (that message, or the page's "Schema is too complex for
+compilation"; `models/providers/anthropic/strict-fit/grammar-refusal.ts`), the
+adapter demotes one strict tool to non-strict and sends the request again
+(`llm/anthropic/provider.ts`): the one whose schema as sent is largest, ties by
+name, with `complete` kept strict longest (`strict-fit/demote.ts`). It is the
+platform's refusal answered by changing the request, not a retry: each pass
+removes one strict tool, so it ends by itself, and a refusal is free. The strict
+set the platform then accepted is held for that exact offer -- the digest of
+every tool's name, description and input schema in order -- for the rest of the
+process (`strict-fit/held-fits.ts`), so every later request of the offer is the
+same bytes and the prompt cache holds. The held set only narrows: a tool the
+refused request sent non-strict never turns strict on the budget a demoted tool
+freed. A tool sent non-strict is still checked against its unchanged schema.
+With no strict tool left the refusal stands. A judge continuing a decider sends
+the decider's accepted tools unchanged, so it never needs this.
+
+**A refused request says why** (t1093). On any 4xx or 5xx the adapter keeps the
+API's own error type and message, screened for the credential and for
+locator-shaped text, on the failure's refusal record; writes them into the
+call's step (`response.json`, beside `meta.json`'s `httpStatus`); and a 4xx's
+words read "the model provider refused the request: <its message>" (a 5xx's,
+"the model provider answered with a server error")
+(`runtime/models/failures/refused-words.ts`, used by
+`automation-activity/wording/failure-code-words.ts` and the chat's
+`conversations/instructions/interpret.ts`). The step's `decision.json` keeps
+`refusal: {status, type, message}` beside the code, read only from a real
+`AutomationStudioLlmProviderError` (`llm/step-log/model-step.ts`). A build's
+ending quotes it from the diagnostic's `accounting.providerRefusal`, read back
+through the refusal record's own parse (`conversations/commands/progress.ts`);
+a builder that the provider refused hands the record back on its return
+(`providerRefusal`, `project-agents/contracts/builder-return.ts`, set in
+`project-agents/dispatch/ending.ts`), which the person's return card quotes
+(`automation-activity/project/return-words.ts`) and the supervisor's view of the
+return leaves out, since a provider fault is nothing the supervisor can act on.
+The failure's own message stays "Anthropic refused the request." so no
+provider sentence reaches text a model reads; and a loop ended by a run of
+server errors says so (`flow-authoring/bootstrap/generation-failure/loop-provider-unavailable.ts`).
+"The model could not be reached" is said only for a call that got no answer
+(`llm.provider_network_error`).
+
+**Anthropic contract check.** `node scripts/anthropic-contract-check.mjs --env
+<.env.local> <step-log dir | request.json>...` sends the first request Core
+built for each distinct call in a step log (`FLUXIQ_LLM_STEP_LOG_DIR`: one per
+provider, model, task kind, role, phase and exact tool offer) to the Messages
+API, as written except `max_tokens` (16) and `stream: false`, and prints only
+each status and, on a refusal, the API's error type and message. It reads
+`CLAUDE_API_KEY` from the env file named and never prints it; `--dry-run` lists
+what it would send. A refusal is free; an accepted request costs about
+$0.01-0.03. It takes recorded bodies because a decision's tool offer holds the
+domain's own tools beside Core's, which only a run of that domain builds.
+
 **An evidence decision goes to DeepSeek as one native function call too** (D12, t1038), from the same
 `provider-task/decision-tools/`. The request (`llm/deepseek/request-body.ts`) sends `tools` as
 `{type: "function", function: {name, description, parameters}}` and `tool_choice: "required"`

@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AutomationStudioLlmTaskRequest } from "../../harness/index.ts";
 import { AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL, buildAutomationStudioLlmEvidenceLoopDecisionSchema, createAutomationStudioDeepSeekPanelCommandModel, createAutomationStudioDeepSeekProvider } from "../../index.ts";
 import { automationStudioLlmStepLogModelStep, automationStudioLlmStepLogScope } from "../index.ts";
+import { AutomationStudioLlmProviderError } from "../../../models/failures/index.ts";
 
 /** The resolved credential: not credential-shaped, so only never handing it over keeps it out of the files. */
 const SECRET = "resolved-secret-value-7f3a9c";
@@ -34,6 +35,27 @@ describe("what a model step records of the cache", () => {
     expect(json(path.join(directory, readdirSync(directory).find((name) => name.endsWith("-decide"))!, "meta.json"))).toMatchObject({
       usage: { inputTokens: 170, outputTokens: 30, cacheHitInputTokens: 50, cacheMissInputTokens: 120, cacheWriteInputTokens: 20 }
     });
+  });
+});
+
+// t1093: the panel's 400 left `decision.json` with `reply: null` and nothing to say why it was refused.
+describe("what a model step records of a refusal", () => {
+  const GRAMMAR = "The compiled grammar is too large, which would cause performance issues. Simplify your tool schemas or reduce the number of strict tools.";
+  const decision = () => json(path.join(directory, readdirSync(directory).find((name) => name.endsWith("-decide"))!, "decision.json")) as { error: Record<string, unknown> };
+  const step = () => automationStudioLlmStepLogModelStep({ provider: "anthropic", model: "claude-haiku-5-5", url: "https://api.anthropic.com/v1/messages", body: "{}", taskKind: "evidence_tool_decision" })!;
+
+  it("keeps the provider's status, error type and sentence beside the code", () => {
+    step().failed(new AutomationStudioLlmProviderError("llm.provider_http_error", "Anthropic refused the request.", false, 400, undefined, undefined, { status: 400, contentType: "application/json", bodyBytes: 210, error: { code: null, type: "invalid_request_error", param: null, message: GRAMMAR }, withheld: [], request: null }));
+    expect(decision().error).toEqual({ code: "llm.provider_http_error", name: "AutomationStudioLlmProviderError", status: 400, retryable: false, reply: null, refusal: { status: 400, type: "invalid_request_error", message: GRAMMAR } });
+  });
+
+  it("reads a refusal only from a real provider failure, never a look-alike's claim, and records none for a failure that has none", () => {
+    step().failed({ name: "AutomationStudioLlmProviderError", code: "llm.provider_http_error", status: 400, retryable: false, refusal: { status: 400, error: { type: "x", message: "claimed" } } });
+    expect(decision().error.refusal).toBeNull();
+    rmSync(directory, { recursive: true, force: true });
+    mkdirSync(directory, { recursive: true });
+    step().failed(new AutomationStudioLlmProviderError("llm.provider_network_error", "Anthropic request failed at the network boundary.", true));
+    expect(decision().error.refusal).toBeNull();
   });
 });
 

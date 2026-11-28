@@ -73,6 +73,25 @@ describe("builder return", () => {
     expect(issues(done, brief()).map((issue) => issue.code)).toEqual(["project.return_terminal_reason"]);
   });
 
+  // t1093: what the provider said when it refused the builder's request, for the person's card; returns stored before it still read.
+  it("reads a provider refusal record within the record's bounds, refuses one outside them, and reads a return stored without it", () => {
+    const providerRefusal = { status: 400, contentType: "application/json", bodyBytes: 210, error: { code: null, type: "invalid_request_error", param: null, message: "Reduce the number of strict tools." }, withheld: [], request: null };
+    const refused = builderReturn((value) => Object.assign(value, { outcome: "blocked", proposal: undefined, providerRefusal }));
+    expect(parse(JSON.parse(JSON.stringify(refused)))).toEqual({ status: "valid", value: refused });
+    expect(issues(refused, brief())).toEqual([]);
+    // A record with no status is no refusal record, and a string is no record: each is refused.
+    for (const bad of [{ ...providerRefusal, status: "400" }, JSON.stringify(providerRefusal)]) {
+      expect(parse(builderReturn((value) => Object.assign(value, { outcome: "blocked", proposal: undefined, providerRefusal: bad })))).toMatchObject({ status: "invalid", code: "project.provider_refusal_invalid" });
+    }
+    // A field the record would not publish is dropped and named, as the record's parse does everywhere.
+    const unpublishable = parse(builderReturn((value) => Object.assign(value, { outcome: "blocked", proposal: undefined, providerRefusal: { ...providerRefusal, error: { ...providerRefusal.error, type: "not a name" } } })));
+    expect(unpublishable).toMatchObject({ status: "valid", value: { providerRefusal: { error: { type: null, message: "Reduce the number of strict tools." } } } });
+    // A return written before the field, as the build record holds it, reads as it did.
+    const old = builderReturn((value) => Object.assign(value, { outcome: "blocked", proposal: undefined }));
+    expect(parse(JSON.parse(JSON.stringify(old)))).toEqual({ status: "valid", value: old });
+    expect(old).not.toHaveProperty("providerRefusal");
+  });
+
   it("accepts a done reset without a proposal and refuses one that proposes a subflow", () => {
     const reset = brief((value) => Object.assign(value, { kind: "reset", parts: [], permittedActs: [] }));
     expect(issues(builderReturn((value) => delete value.proposal), reset)).toEqual([]);

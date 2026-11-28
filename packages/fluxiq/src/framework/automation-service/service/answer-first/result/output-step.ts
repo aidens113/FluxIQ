@@ -1,6 +1,7 @@
 // The output step: the last read step in the draft that the model did not mark `purpose: intermediate`. Its current
-// version's pages are the result, after those of the steps appending to its named output before it
-// (`./output-group.ts`); every other read step is a working read, and the header says so (`./header.ts`).
+// version's pages are the result, with those of the steps appending to its named output before it and of every other
+// result read of its list (`./output-group.ts`); every other read step is a working read, and the header says so
+// (`./header.ts`).
 // A step others were folded into stands where the last of them stands in the draft.
 import type { AutomationStudioAnswerFirstResultLedger, AutomationStudioAnswerFirstResultStep } from "./types.ts";
 

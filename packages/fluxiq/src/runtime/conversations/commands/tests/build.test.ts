@@ -60,7 +60,9 @@ describe("explicit candidate authoring mode", () => {
   });
 });
 
-describe.each([undefined, "", "  "])("unset authoring mode (setting %s) resolves to project", (mode) => {
+// Unset is answer-first since 2026-11-27 (t1093). A build from the chat wants a Flow's steps in, and answer-first answers a
+// task (`automationStudioConversationAnswerFirstAttempt`), so here it is a candidate build (`../build.ts`).
+describe.each([undefined, "", "  "])("unset authoring mode (setting %s) resolves to answer-first", (mode) => {
   beforeEach(() => { vi.stubEnv("FLUXIQ_AUTHORING_MODE", mode); });
 
   it("refuses an answer that is not a valid candidate for this Flow", async () => {
@@ -71,12 +73,12 @@ describe.each([undefined, "", "  "])("unset authoring mode (setting %s) resolves
     expect(await buildAutomationStudioFlowFromConversation(proposal.context, { flowId: "flow", mode: "create" })).toMatchObject({ ok: false, kept: false });
   });
 
-  it("requests a project build for a creation and a candidate build for an extend", async () => {
+  it("requests a candidate build for a creation and for an extend", async () => {
     const { requests, context } = recording({ ok: true, payload: { candidate: CANDIDATE } });
     expect(await buildAutomationStudioFlowFromConversation(context, { flowId: "flow", mode: "create" })).toMatchObject({ ok: true, status: "draft", candidate: { candidateId: "candidate", verification: "not_performed" } });
     expect(await buildAutomationStudioFlowFromConversation(context, { flowId: "flow", mode: "extend" })).toMatchObject({ ok: true, status: "draft" });
     expect(requests.map((request) => request.payload)).toEqual([
-      expect.objectContaining({ evidenceGuided: true, authoringMode: "project", authSessionId: "session" }),
+      expect.objectContaining({ evidenceGuided: true, authoringMode: "candidate", authSessionId: "session" }),
       expect.objectContaining({ evidenceGuided: true, authoringMode: "candidate", mode: "extend" })
     ]);
   });

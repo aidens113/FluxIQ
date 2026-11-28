@@ -3,12 +3,12 @@
 // rather than asking the model again, and the brief comes back blocked with
 // the ending's reason. A build stop is still a stop.
 import { describe, expect, it, vi } from "vitest";
-import type { JsonObject } from "../../../../core/index.ts";
-import type { AutomationStudioSiteResetNamedAct } from "../../../flow-authoring/bootstrap/site-reset/index.ts";
-import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, runAutomationStudioSubflowBuilderLoop, type AutomationStudioSubflowBuilderOutcome } from "../../../flow-authoring/bootstrap/subflow-candidate/index.ts";
-import { OPEN, callPart, part, script, testSubmission } from "../../../flow-authoring/bootstrap/subflow-candidate/tests/subflow-fixture.ts";
-import type { AutomationStudioProjectBriefEnding, AutomationStudioProjectBuilderPorts, AutomationStudioProjectResetPorts } from "../index.ts";
-import { gardenBrief, gardenBuild, proposalFor, untilAborted } from "./dispatch-fixture.ts";
+import type { JsonObject } from "../../../../../../core/index.ts";
+import type { AutomationStudioSiteResetNamedAct } from "../../../../../flow-authoring/bootstrap/site-reset/index.ts";
+import { AUTOMATION_STUDIO_SUBFLOW_SUBMIT_TOOL_ID, runAutomationStudioSubflowBuilderLoop, type AutomationStudioSubflowBuilderOutcome } from "../../../../../flow-authoring/bootstrap/subflow-candidate/index.ts";
+import { OPEN, callPart, part, script, testSubmission } from "../../../../../flow-authoring/bootstrap/subflow-candidate/tests/subflow-fixture.ts";
+import type { AutomationStudioProjectBriefEnding, AutomationStudioProjectBuilderPorts, AutomationStudioProjectResetPorts } from "../../../index.ts";
+import { gardenBrief, gardenBuild, proposalFor, untilAborted } from "../../dispatch-fixture.ts";
 
 const DECLINED = "A step of this subflow needs the person's permission to delete on \"Remove packet\", and the person did not give it (request permission-request:1), so the brief stopped.";
 

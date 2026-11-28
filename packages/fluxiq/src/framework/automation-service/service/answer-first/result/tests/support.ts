@@ -24,13 +24,14 @@ export function step(position: number, intermediate?: boolean): AutomationStudio
   return intermediate === undefined ? { id: `s${position}`, position } : { id: `s${position}`, position, intermediate };
 }
 
-export type ReadOver = { place?: string; version?: AutomationStudioAnswerFirstResultVersion; paging?: AutomationStudioAnswerFirstResultPaging; carried?: boolean };
+export type ReadOver = { place?: string; version?: AutomationStudioAnswerFirstResultVersion; paging?: AutomationStudioAnswerFirstResultPaging; carried?: boolean; where?: string };
 
 export function read(source: string, kept: readonly JsonObject[], over: ReadOver = {}): AutomationStudioAnswerFirstResultRead {
   const said: AutomationStudioAnswerFirstResultRead = { source, version: over.version ?? seatVersion(), kept };
   if (over.place !== undefined) said.place = over.place;
   if (over.paging !== undefined) said.paging = over.paging;
   if (over.carried !== undefined) said.carried = over.carried;
+  if (over.where !== undefined) said.where = over.where;
   return said;
 }
 

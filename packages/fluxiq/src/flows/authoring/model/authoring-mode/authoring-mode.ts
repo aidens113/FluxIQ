@@ -4,7 +4,18 @@
 // improvement, and the Lab -- takes the mode from here (or from Core resolving
 // it for them), never from a literal of its own.
 //
-// - `project` (the product default since 2026-10-16, A8): a project supervisor
+// - `answer-first` (the product default since 2026-11-27, t1093): a single
+//   live exploration that must reach the person's result, with no trial, reset
+//   or dry run inside it. It writes the draft as it goes and ends with the
+//   result judged, or with its budget gone. It never proposes an adaptation:
+//   the Flow it leaves is a saved, unfinished draft
+//   (`framework/automation-service/service/answer-first/`). It is the user's
+//   direction of 2026-11-03 ("one-time exploration ... then simulation"), and
+//   every Lab run and fix since has been made in it; the web panel, which
+//   resolved the setting unset, was still building in `project` and was the
+//   one place left that did.
+// - `project` (the default from 2026-10-16, A8, to 2026-11-27; still
+//   selectable with `FLUXIQ_AUTHORING_MODE=project`): a project supervisor
 //   breaks the task into parts, plans the Flow's subflows and their
 //   interfaces, dispatches a bounded builder per subflow, assembles their
 //   proposals into one candidate and tests that exact revision; promotion is
@@ -22,13 +33,6 @@
 //   onto a blank Flow and asks before applying an improvement; the panel offers
 //   the proposal for review.
 //
-// - `answer-first` (opt-in, the Answer First plan's one exploration): a single
-//   live exploration that must reach the person's result, with no trial, reset
-//   or dry run inside it. It writes the draft as it goes and ends with the
-//   result judged, or with its budget gone. It never proposes an adaptation:
-//   the Flow it leaves is a saved, unfinished draft
-//   (`framework/automation-service/service/answer-first/`).
-//
 // Raw API requests that omit authoringMode retain their legacy wire contract;
 // configured product callers resolve this setting instead.
 //
@@ -45,7 +49,7 @@ export const AUTOMATION_STUDIO_AUTHORING_MODES = Object.freeze(["legacy", "candi
 export type AutomationStudioAuthoringMode = (typeof AUTOMATION_STUDIO_AUTHORING_MODES)[number];
 
 /** The mode when nothing is set. */
-export const AUTOMATION_STUDIO_AUTHORING_MODE_DEFAULT: AutomationStudioAuthoringMode = "project";
+export const AUTOMATION_STUDIO_AUTHORING_MODE_DEFAULT: AutomationStudioAuthoringMode = "answer-first";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 

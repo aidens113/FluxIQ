@@ -5,12 +5,12 @@
 // locations of the lists whose refs the build issued, under `places`. Generic
 // shelves only; the model is a script.
 import { describe, expect, it } from "vitest";
-import type { JsonObject } from "../../../../core/index.ts";
-import { runAutomationStudioSubflowBuilderLoop } from "../../../flow-authoring/bootstrap/subflow-candidate/index.ts";
-import { testSubmission } from "../../../flow-authoring/bootstrap/subflow-candidate/tests/subflow-fixture.ts";
-import type { AutomationStudioLlmEvidenceTool } from "../../../llm/evidence-loop.ts";
-import type { AutomationStudioProjectBuilderPorts, AutomationStudioProjectResetPorts } from "../index.ts";
-import { gardenBrief, gardenBuild } from "./dispatch-fixture.ts";
+import type { JsonObject } from "../../../../../../core/index.ts";
+import { runAutomationStudioSubflowBuilderLoop } from "../../../../../flow-authoring/bootstrap/subflow-candidate/index.ts";
+import { testSubmission } from "../../../../../flow-authoring/bootstrap/subflow-candidate/tests/subflow-fixture.ts";
+import type { AutomationStudioLlmEvidenceTool } from "../../../../../llm/evidence-loop.ts";
+import type { AutomationStudioProjectBuilderPorts, AutomationStudioProjectResetPorts } from "../../../index.ts";
+import { gardenBrief, gardenBuild } from "../../dispatch-fixture.ts";
 
 type Sent = { callId: string; value: JsonObject };
 type Issued = Array<{ ref: string; count: number; location?: string }>;

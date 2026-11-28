@@ -47,7 +47,7 @@
 //
 // Lines said away from a call (a run's passes, the draft's own changes) are told once, with the header, in the next
 // request's fixed slot (`slot`). Nothing here caps or cuts: every page holds every row its read kept.
-import { automationStudioRecordCapturedFields, parseAutomationStudioRecordProcessing, type AutomationStudioRecordProcessing, type AutomationStudioRecordProcessingAccount, type AutomationStudioRecordSchema } from "@fluxiq/contracts/automation";
+import { automationStudioRecordCapturedFields, automationStudioRecordRowIdentity, parseAutomationStudioRecordProcessing, type AutomationStudioRecordProcessing, type AutomationStudioRecordProcessingAccount, type AutomationStudioRecordSchema } from "@fluxiq/contracts/automation";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { stableJson } from "../../stable-json.ts";
 import type { AutomationStudioRecordBatch } from "../../../../../engine/automation/contracts.ts";
@@ -76,6 +76,7 @@ import { automationStudioAnswerFirstListPagerEvents } from "./list-pager.ts";
 import { automationStudioAnswerFirstReadPlaces } from "./place-of.ts";
 import { automationStudioAnswerFirstLeftReads } from "./left-reads.ts";
 import { automationStudioAnswerFirstReturnedPages } from "./returned-pages.ts";
+import { automationStudioAnswerFirstSharedFields } from "./shared-fields.ts";
 
 /** What the latest decision says its call is: a step the draft adds as it runs, or a rerun of a kept step. Absent: a look. */
 export type AutomationStudioAnswerFirstResultIntent =
@@ -240,6 +241,9 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
       // A row repeated whole on two pages is one row, as the store's default processing counts it.
       const columns = answer.columns.length ? answer.columns : [...new Set(group.flatMap((step) => Object.keys(step.reads.fields)))];
       const schema = retainedSchema();
+      // Pages read by several extractions of one list are deduped on the fields they all hold (`./shared-fields.ts`, t1091),
+      // unless their schemas declare a primary key, which is the identity they already agree on.
+      const identity = schema.ok && schema.schema.primaryKey?.length ? undefined : automationStudioAnswerFirstSharedFields(pages.map((page) => schemas.get(page.source)));
       if (stage.active()) {
         sourceState.validate(baseEvidence(false), datasets);
         if (sourceState.reason() !== undefined) return EMPTY;
@@ -249,7 +253,7 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
           const own = schemas.get(page.source);
           const captured = own === undefined ? undefined : automationStudioRecordCapturedFields(own);
           return page.kept.map((values) => ({ values, nodeId: step.id, batchKey: page.source, ...(captured === undefined ? {} : { captured }) }));
-        })), columns, askedColumns: port.ledger().contract.sure ? port.ledger().contract.columns : undefined, own: processes.get(output.id), renamed: renamedOf(group) });
+        })), columns, askedColumns: port.ledger().contract.sure ? port.ledger().contract.columns : undefined, own: processes.get(output.id), renamed: renamedOf(group), identity });
         // Each kept row with the values the processing read on it, beside the asked columns (`./kept-key-rows.ts`, t1072),
         // read from the stored rows and shown under the answer's names (`./asked-view.ts`, t1074).
         const renames = evaluated.renames ?? new Map<string, { id: string; label: string }>();
@@ -258,7 +262,7 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
         if (evaluated.processing && evaluated.account) account = { declared: evaluated.processing, account: evaluated.account, ...(keptRows ? { keptRows } : {}) };
         return evaluated.summary ? { datasetId, totalRows: evaluated.summary.rows.length, truncated: sources.some((source) => truncated.has(source)), ...evaluated.summary } : EMPTY;
       }
-      const shaped = processed(pages.flatMap((page) => page.kept), columns, automationStudioAnswerFirstMergedProcessing(processes.get(output.id), held), schema.ok ? schema.schema : undefined, reference);
+      const shaped = processed(pages.flatMap((page) => page.kept), columns, automationStudioAnswerFirstMergedProcessing(processes.get(output.id), held), schema.ok ? schema.schema : undefined, reference, identity);
       account = shaped.account;
       legacyRefusal = shaped.refusal;
       return { datasetId, totalRows: shaped.rows.length, truncated: sources.some((source) => truncated.has(source)), columns: shaped.columns, rows: shaped.rows };
@@ -557,12 +561,19 @@ function renamedOf(group: readonly { reads: { fields: JsonObject } }[]): Record<
   return renamed;
 }
 
-function processed(rows: readonly JsonObject[], columns: readonly string[], declared: unknown, retainedSchema: AutomationStudioRecordSchema | undefined, now: number): { rows: JsonObject[]; columns: { id: string; label: string }[]; account?: ProcessedAccount; refusal?: string } {
+function processed(rows: readonly JsonObject[], columns: readonly string[], declared: unknown, retainedSchema: AutomationStudioRecordSchema | undefined, now: number, identity?: readonly string[]): { rows: JsonObject[]; columns: { id: string; label: string }[]; account?: ProcessedAccount; refusal?: string } {
   const schema = retainedSchema ?? automationStudioAnswerFirstReadSchema(rows);
   const parsed = schema ? parseAutomationStudioRecordProcessing(declared, schema) : undefined;
   if (declared !== undefined && (!schema || !parsed?.ok)) return { rows: [], columns: [], refusal: `The saved data processing cannot be applied to the retained schema: ${parsed && !parsed.ok ? parsed.issues.join(", ") : "captured schema missing"}. Repair the field binding or capture the missing evidence; no unfiltered answer has been substituted.` };
-  const made = declared !== undefined && schema && parsed?.ok ? automationStudioAnswerFirstProcessedRows(rows, schema, parsed.processing, now) : undefined;
-  const shaped = made ? made.rows : wholeOnce(rows);
+  // Rows read by several extractions of one list are one row on the fields they share, or the asked columns among them
+  // (`./shared-fields.ts`, t1091), where no dedupe was declared; the declaration as the judge is shown it stays the model's.
+  const keyed = (process: AutomationStudioRecordProcessing): AutomationStudioRecordProcessing => {
+    if (!identity?.length || process.dedupe !== undefined) return process;
+    const by = process.columns?.length && process.columns.every((id) => identity.includes(id)) ? process.columns : identity;
+    return { ...process, dedupe: { by: [...by] } };
+  };
+  const made = declared !== undefined && schema && parsed?.ok ? automationStudioAnswerFirstProcessedRows(rows, schema, keyed(parsed.processing), now) : undefined;
+  const shaped = made ? made.rows : identity?.length ? onceBy(rows, columns.length && columns.every((id) => identity.includes(id)) ? columns : identity) : wholeOnce(rows);
   const asked = made && parsed?.ok && parsed.processing.columns ? parsed.processing.columns : undefined;
   const shown = asked ?? columns;
   // Dedupe compares the original whole rows before narrowing the answer. Two listings differing in an unasked
@@ -594,6 +605,18 @@ function wholeOnce(rows: readonly JsonObject[]): JsonObject[] {
   const seen = new Set<string>();
   return rows.filter((row) => {
     const key = stableJson(row);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/** Rows without a second row of one identity under the fields `by` (the data layer's row identity), the first of each where it was. */
+function onceBy(rows: readonly JsonObject[], by: readonly string[]): JsonObject[] {
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    const key = automationStudioRecordRowIdentity(row, by);
+    if (key === undefined) return true;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
