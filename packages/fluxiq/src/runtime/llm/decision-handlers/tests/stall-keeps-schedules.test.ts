@@ -5,7 +5,7 @@
 // model reran each one alone (t688, Lab steps 0095-0120). Covers the
 // refusal-run (`../refusal-run.ts`), refused-repeat (`../refused-repeat.ts`)
 // and searching (`../searching.ts`) stalls; the loop's own refused-completion
-// stall is in `../../tests/evidence-loop-seeded-draft.test.ts`.
+// stall is in `../../tests/evidence-loop/tests/evidence-loop-seeded-draft.test.ts`.
 import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
 import { automationStudioFlowDraftScheduledCandidateCall } from "../../../flow-authoring/draft/scheduled-candidate/index.ts";

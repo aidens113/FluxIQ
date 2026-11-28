@@ -1,6 +1,6 @@
 // An already-answered note on a whole-page capture delivered in parts names the parts not yet shown.
 import { describe, expect, it } from "vitest";
-import { automationStudioLlmEvidenceAnsweredRequestNote } from "../../../answered-request.ts";
+import { automationStudioLlmEvidenceAnsweredRequestNote } from "../answered-request.ts";
 
 const base = { code: "llm_evidence_loop.already_answered" as const, toolId: "core.full_page", answeredByCallId: "call.1", stepsWithoutProgress: 1 };
 

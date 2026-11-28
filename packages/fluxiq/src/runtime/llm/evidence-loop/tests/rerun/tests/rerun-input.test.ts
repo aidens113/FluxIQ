@@ -2,10 +2,10 @@
 // that asks for it stays short and shallow, which is where the unreadable
 // replies of lane C's live runs came from (`../rerun-input.ts`).
 import { describe, expect, it } from "vitest";
-import type { JsonObject } from "../../../../core/index.ts";
-import { AUTOMATION_STUDIO_FLOW_DRAFT_EDIT_SCHEMA, type AutomationStudioFlowDraftStep } from "../../../flow-authoring/draft/index.ts";
-import { automationStudioLlmEvidenceRerunInput } from "../rerun/index.ts";
-import { automationStudioLlmEvidenceRerunRequest } from "../rerun/index.ts";
+import type { JsonObject } from "../../../../../../core/index.ts";
+import { AUTOMATION_STUDIO_FLOW_DRAFT_EDIT_SCHEMA, type AutomationStudioFlowDraftStep } from "../../../../../flow-authoring/draft/index.ts";
+import { automationStudioLlmEvidenceRerunInput } from "../../../rerun/index.ts";
+import { automationStudioLlmEvidenceRerunRequest } from "../../../rerun/index.ts";
 
 // The shape of the list read whose reruns came back unreadable: a node, its
 // columns, its conditions and its paging, three and four levels deep.

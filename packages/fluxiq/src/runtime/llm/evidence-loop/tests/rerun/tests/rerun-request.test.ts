@@ -8,12 +8,12 @@
 // not taken. These hold every way it declines to the refusal it now produces.
 
 import { describe, expect, it, vi } from "vitest";
-import type { JsonObject } from "../../../../core/index.ts";
-import type { AutomationStudioFlowDraftAmendment, AutomationStudioFlowDraftStep } from "../../../flow-authoring/draft/index.ts";
-import { automationStudioLlmEvidenceRerunRequest } from "../index.ts";
-import { runAutomationStudioLlmEvidenceLoop } from "../../index.ts";
-import { automationStudioLlmEvidenceCanonicalJson } from "../../evidence-loop-decision.ts";
-import type { AutomationStudioLlmEvidenceRepeatedOutcome } from "../../repeat-guard/index.ts";
+import type { JsonObject } from "../../../../../../core/index.ts";
+import type { AutomationStudioFlowDraftAmendment, AutomationStudioFlowDraftStep } from "../../../../../flow-authoring/draft/index.ts";
+import { automationStudioLlmEvidenceRerunRequest } from "../../../index.ts";
+import { runAutomationStudioLlmEvidenceLoop } from "../../../../index.ts";
+import { automationStudioLlmEvidenceCanonicalJson } from "../../../../evidence-loop-decision.ts";
+import type { AutomationStudioLlmEvidenceRepeatedOutcome } from "../../../../repeat-guard/index.ts";
 
 const step = (position: number, actionId: string, toolId?: string): AutomationStudioFlowDraftStep => ({
   position,

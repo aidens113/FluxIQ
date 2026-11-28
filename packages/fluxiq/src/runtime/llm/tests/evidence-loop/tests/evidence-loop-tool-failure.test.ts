@@ -1,16 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
-import type { JsonObject, JsonValue } from "../../../core/index.ts";
-import type { OutputDispatchResult } from "../../../io/index.ts";
-import type { FluxIQRuntimeCommandResult } from "../../index.ts";
+import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import type { OutputDispatchResult } from "../../../../../io/index.ts";
+import type { FluxIQRuntimeCommandResult } from "../../../../index.ts";
 import type { AutomationStudioTargetActionabilityRecord } from "@fluxiq/contracts/automation";
 import { projectAutomationStudioFailureControlRecord } from "@fluxiq/contracts/automation";
-import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
-import { runAutomationStudioLlmEvidenceLoop } from "../evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../../evidence-loop.ts";
+import { runAutomationStudioLlmEvidenceLoop } from "../../../evidence-loop.ts";
 import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_TOOL_EXECUTION_KEYS,
   automationStudioLlmEvidenceParseToolExecutionResult,
   automationStudioLlmEvidenceToolResultInvalidCode
-} from "../evidence-loop-decision.ts";
+} from "../../../evidence-loop-decision.ts";
 
 // A tool call that fails is an observation, not the end: Flow creation on the
 // realistic professional-network site died on the first press a promotion covered, because
