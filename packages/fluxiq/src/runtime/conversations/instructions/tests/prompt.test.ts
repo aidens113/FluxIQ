@@ -16,6 +16,9 @@ function instructions(overrides: Partial<AutomationStudioConversationDecisionCon
 }
 
 describe("the chat model's instructions about a described job", () => {
+  // Project mode's words, the default until 2026-11-27 (t1093); answer-first's are the describe below.
+  beforeEach(() => { vi.stubEnv("FLUXIQ_AUTHORING_MODE", "project"); });
+  afterEach(() => { vi.unstubAllEnvs(); });
   it("say that a job described for the open site is a request to build it there, with the message as its instruction", () => {
     const text = instructions({});
     expect(text).toContain(`${DESCRIBED_JOB} -- something to find, list, collect, fill in or buy on it -- that no Flow above already does is a request to make a new automation from this page: choose flow.createHere and pass their whole message, in their own words, as its instruction.`);

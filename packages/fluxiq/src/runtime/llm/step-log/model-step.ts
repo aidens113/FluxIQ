@@ -1,3 +1,4 @@
+import { AutomationStudioLlmProviderError } from "../../models/failures/index.ts";
 import { automationStudioLlmStepLogAttempt } from "./attempts.ts";
 import { automationStudioLlmStepLogDirectory } from "./directory.ts";
 import { automationStudioLlmStepLogWriter } from "./files.ts";
@@ -136,16 +137,35 @@ function requestText(call: AutomationStudioLlmStepLogModelCall): string {
   }
 }
 
-/** A failure's code, status and reply account (which malformed case, finish reason, length): never its message. */
-function errorRecord(error: unknown): { code: string; name: string; status: number | null; retryable: boolean | null; reply: unknown } {
+/**
+ * A failure's code, status and reply account (which malformed case, finish reason, length), and, for a request the
+ * provider refused, what it said: never the failure's own message.
+ */
+function errorRecord(error: unknown): { code: string; name: string; status: number | null; retryable: boolean | null; reply: unknown; refusal: RefusalSaid | null } {
   const record = (typeof error === "object" && error !== null ? error : {}) as { code?: unknown; name?: unknown; status?: unknown; retryable?: unknown; reply?: unknown };
   return {
     code: typeof record.code === "string" ? record.code : "unknown",
     name: typeof record.name === "string" ? record.name : "non_error",
     status: typeof record.status === "number" ? record.status : null,
     retryable: typeof record.retryable === "boolean" ? record.retryable : null,
-    reply: record.reply ?? null
+    reply: record.reply ?? null,
+    refusal: refusalSaid(error)
   };
+}
+
+/** What a provider said when it refused the request: its status, error type and sentence. */
+type RefusalSaid = { status: number; type: string | null; message: string | null };
+
+/**
+ * The refusal a provider answered with, as `decision.json` keeps it (t1093: the panel's 400 left `reply: null` and
+ * nothing to say why). Read only from a real `AutomationStudioLlmProviderError`, whose adapter screened the record for
+ * the credential and for locator-shaped text and bounded it (`../../models/failures/refusal/`); a look-alike's claim is
+ * not read. The writer screens the file again as it writes it (`./files.ts`).
+ */
+function refusalSaid(error: unknown): RefusalSaid | null {
+  if (!(error instanceof AutomationStudioLlmProviderError) || !error.refusal) return null;
+  const said = error.refusal.error;
+  return { status: error.refusal.status, type: typeof said?.type === "string" ? said.type : null, message: typeof said?.message === "string" ? said.message : null };
 }
 
 function replyUsage(error: unknown): AutomationStudioLlmStepLogUsage | undefined {

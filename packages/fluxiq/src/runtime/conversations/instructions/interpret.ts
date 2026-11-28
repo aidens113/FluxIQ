@@ -28,6 +28,7 @@ import { automationStudioConversationDeclaredActs } from "./acts.ts";
 import { automationStudioConversationDeclaredProcessing } from "./processing.ts";
 import { automationStudioConversationDeclaredIntent } from "./intent.ts";
 import type { AutomationStudioConversationDecisionContext } from "./invocation.ts";
+import { AutomationStudioLlmProviderError, automationStudioLlmProviderRefusalWords } from "../../models/failures/index.ts";
 import type { AutomationStudioConversationCaller, AutomationStudioConversationModel, AutomationStudioConversationModelTurn } from "./model.ts";
 import { parseAutomationStudioConversationDecision } from "./parse.ts";
 import { automationStudioConversationInstructions } from "./prompt.ts";
@@ -200,7 +201,11 @@ function priced(costUsd: number | undefined, pricedCalls: number): { costUsd?: n
   return costUsd === undefined ? {} : { costUsd, pricedCalls };
 }
 
-/** Why a model call failed, in words a person reads in the thread. Never the provider's own message, which is not written for them. */
+/**
+ * Why a model call failed, in words a person reads in the thread. The provider's own words appear in one case only: a
+ * request it refused, said with the sentence its refusal record carries, screened by the adapter that built it
+ * (`../../models/failures/refused-words.ts`, t1093). "Could not be reached" is said only where no answer came back.
+ */
 export function automationStudioConversationModelProblem(error: unknown): string {
   const code = typeof (error as { code?: unknown } | null)?.code === "string" ? (error as { code: string }).code : "";
   const name = error instanceof Error ? error.name : "";
@@ -209,7 +214,10 @@ export function automationStudioConversationModelProblem(error: unknown): string
   if (/balance_exhausted/u.test(code)) return "the model account's balance has run out, so add credit with the model provider and try again";
   if (/secret_unavailable/u.test(code)) return secretProblem(error instanceof Error ? error.message : "");
   if (/auth|secret/u.test(code)) return "the model's credentials were not accepted";
-  if (/network|http|redirect/u.test(code)) return "the model could not be reached";
+  // A provider that answered with an unsuccessful status was reached: it refused, and its refusal says why (t1093).
+  if (/http_error/u.test(code)) return automationStudioLlmProviderRefusalWords(error instanceof AutomationStudioLlmProviderError ? error.refusal : undefined) ?? "the model provider answered the request with an error";
+  if (/redirect/u.test(code)) return "the model provider redirected the request somewhere else, so it was not followed";
+  if (/network/u.test(code)) return "the model could not be reached";
   // Never the code itself: the thread keeps these words, and shows them again (t276).
   return "the model call failed";
 }

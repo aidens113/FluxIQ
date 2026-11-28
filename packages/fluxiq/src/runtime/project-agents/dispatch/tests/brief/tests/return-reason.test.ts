@@ -4,12 +4,12 @@
 // and what its last trial answered: the predecessor whose entry was missing,
 // the step that failed and its code, or the judge's words.
 import { describe, expect, it } from "vitest";
-import type { JsonObject } from "../../../../core/index.ts";
-import type { AutomationStudioSubflowBuilderOutcome, AutomationStudioSubflowProposal, AutomationStudioSubflowTrialResult } from "../../../flow-authoring/bootstrap/subflow-candidate/index.ts";
-import { AutomationStudioFlowBootstrapGenerationError } from "../../../flow-authoring/bootstrap/generation-failure/index.ts";
-import { automationStudioCandidateRefusalCodes as refusalCodes } from "../../../../framework/automation-service/service/candidate-failure/index.ts";
-import { automationStudioProjectDispatchEnding as ending } from "../ending.ts";
-import { gardenBrief } from "./dispatch-fixture.ts";
+import type { JsonObject } from "../../../../../../core/index.ts";
+import type { AutomationStudioSubflowBuilderOutcome, AutomationStudioSubflowProposal, AutomationStudioSubflowTrialResult } from "../../../../../flow-authoring/bootstrap/subflow-candidate/index.ts";
+import { AutomationStudioFlowBootstrapGenerationError } from "../../../../../flow-authoring/bootstrap/generation-failure/index.ts";
+import { automationStudioCandidateRefusalCodes as refusalCodes } from "../../../../../../framework/automation-service/service/candidate-failure/index.ts";
+import { automationStudioProjectDispatchEnding as ending } from "../../../ending.ts";
+import { gardenBrief } from "../../dispatch-fixture.ts";
 
 const brief = gardenBrief("b-read", "list_seeds");
 const proposal: AutomationStudioSubflowProposal = { scope: { buildId: "build.1", briefId: "b-read", planDigest: brief.planDigest, subflowKey: "list_seeds" }, revision: 2, digest: "c".repeat(64), subflows: [], summary: "", changedPaths: [] };

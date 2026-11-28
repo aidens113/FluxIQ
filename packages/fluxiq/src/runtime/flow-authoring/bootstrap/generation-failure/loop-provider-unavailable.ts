@@ -28,6 +28,12 @@ import type { AutomationStudioFlowBootstrapBuildEnding } from "./build-ending.ts
 
 /** The provider code whose run is said as "could not be reached" rather than "did not answer" (the commonest of the run, `codes[0]`). */
 const UNREACHABLE = "llm.provider_network_error";
+/**
+ * The provider code whose run is said as server errors (t1093): the provider was reached and answered each request with
+ * an unsuccessful status, so it is neither "could not be reached" nor "did not answer". The loop sees it only for a 5xx
+ * (`../../../models/failures/unanswered.ts`); a refused request ends the loop at once and says the provider's own words.
+ */
+const SERVER_ERROR = "llm.provider_http_error";
 
 /**
  * What the page holds after the loop, as the ending says it: `count` the
@@ -48,7 +54,9 @@ export function flowBootstrapLoopProviderUnavailableEnding(
   // "Could not be reached" is already what its code's words say, so they are not said twice.
   const happened = unreachable
     ? `The build stopped because the AI model provider could not be reached: ${requests} got no answer.`
-    : `The build stopped because the AI model provider did not answer: ${requests} got no answer -- ${unanswered.said}.`;
+    : unanswered.codes[0] === SERVER_ERROR
+      ? `The build stopped because the AI model provider answered with a server error: ${requests} got an error back instead of an answer.`
+      : `The build stopped because the AI model provider did not answer: ${requests} got no answer -- ${unanswered.said}.`;
   const changes = result.trace.filter((row) => row.decision === "tool_call" && row.effectApplied === true).length;
   const built = page === "said_by_caller"
     ? "Nothing was built: no Flow was created or changed."
@@ -79,6 +87,7 @@ function fromTrace(result: Extract<AutomationStudioLlmEvidenceLoopResult, { ok: 
     run.push(row.resultCode);
   }
   const reached = run.length > 0 && run.every((code) => code === UNREACHABLE);
+  const erred = run.length > 0 && run.every((code) => code === SERVER_ERROR);
   // Only an answered call breaks a run, so a row before it means something arrived.
-  return { inARow: Math.max(1, run.length), codes: reached ? [UNREACHABLE] : [], said: reached ? "it could not be reached" : "it did not answer", replied: result.trace.length > run.length };
+  return { inARow: Math.max(1, run.length), codes: reached ? [UNREACHABLE] : erred ? [SERVER_ERROR] : [], said: reached ? "it could not be reached" : erred ? "it answered with a server error" : "it did not answer", replied: result.trace.length > run.length };
 }

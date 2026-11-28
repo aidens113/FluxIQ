@@ -28,6 +28,14 @@ describe("a builder's return, in a person's words", () => {
     expect(said("blocked", "The builder failed: Flow Bootstrap generation failed (flow_bootstrap.something_new).")).toBe("The builder couldn't finish: it stopped before this part was built.");
   });
 
+  // t1093: an HTTP error is the provider answering, never "could not be reached"; with the refusal record it quotes the provider.
+  it("a builder the provider refused says so, with the provider's own sentence where its record came with it", () => {
+    const failed = "The builder failed: Flow Bootstrap generation failed (flow_bootstrap.provider_http_error).";
+    expect(said("blocked", failed)).toBe("The builder couldn't finish: the model provider answered the request with an error.");
+    const refusal = { status: 400, contentType: "application/json", bodyBytes: 120, error: { code: null, type: "invalid_request_error", param: null, message: "Reduce the number of strict tools." }, withheld: [], request: null };
+    expect(automationStudioProjectReturnWords({ outcome: "blocked", reason: failed, providerRefusal: refusal }, nameOf)).toBe("The builder couldn't finish: the model provider refused the request: Reduce the number of strict tools.");
+  });
+
   it("a part that waited on one that did not pass names that part, never a brief's id or a key", () => {
     expect(said("blocked", `Brief brief-1 for subflow pick_branch, which this subflow starts after, ended blocked (${STOPPED}), so this subflow's entry cannot be prepared and its trials could not run.`))
       .toBe("It starts after Pick the branch, which couldn't be built, so it was never started.");
@@ -62,6 +70,20 @@ describe("the cards Core sends", () => {
     const words = "The builder couldn't finish: it kept trying without getting any further, so it was stopped.";
     expect(event.detail?.text).toBe(words);
     expect(event.detail?.project).toMatchObject({ kind: "return", reason: words });
+  });
+
+  // t1093: the provider's refusal rides on the return for this card alone, and the card quotes it.
+  it("a return card for a builder the provider refused quotes the provider", () => {
+    const providerRefusal = { status: 400, contentType: "application/json", bodyBytes: 120, error: { code: null, type: "invalid_request_error", param: null, message: "Reduce the number of strict tools." }, withheld: [], request: null };
+    const failed = "The builder failed: Flow Bootstrap generation failed (flow_bootstrap.provider_http_error).";
+    inBuild(() => emitAutomationStudioProjectReturnCard({ returned: builderReturn((value) => Object.assign(value, { outcome: "blocked", proposal: undefined, reason: failed, providerRefusal })), brief: brief(), structurePlan: structurePlan() }));
+    const words = "The builder couldn't finish: the model provider refused the request: Reduce the number of strict tools.";
+    expect(seen[0]!.detail?.text).toBe(words);
+    expect(seen[0]!.detail?.project).toMatchObject({ kind: "return", reason: words });
+    // A provider failure thrown as it stood, not as a build failure, reads the same.
+    seen = [];
+    inBuild(() => emitAutomationStudioProjectReturnCard({ returned: builderReturn((value) => Object.assign(value, { outcome: "blocked", proposal: undefined, reason: "The builder failed: Anthropic refused the request.", providerRefusal })), brief: brief(), structurePlan: structurePlan() }));
+    expect(seen[0]!.detail?.text).toBe(words);
   });
 
   it("a brief card names the parts it starts after by the plan's names, never its own, empty for none, and the wire keeps them", () => {

@@ -1,4 +1,5 @@
 import { parseAutomationStudioFlowBootstrapGenerationError } from "../../flow-authoring/bootstrap/generation-failure/index.ts";
+import { AutomationStudioLlmProviderError, parseAutomationStudioLlmProviderRefusal, type AutomationStudioLlmProviderRefusal } from "../../models/failures/index.ts";
 import type { AutomationStudioSiteResetNamedAct, AutomationStudioSiteResetUnsettleableAct } from "../../flow-authoring/bootstrap/site-reset/index.ts";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioSubflowBuilderOutcome, AutomationStudioSubflowDoneBefore, AutomationStudioSubflowProposal, AutomationStudioSubflowTrialResult } from "../../flow-authoring/bootstrap/subflow-candidate/index.ts";
@@ -236,6 +237,10 @@ export const automationStudioProjectDispatchEnding = Object.freeze({
     const passed = passedProposal(spend.accepted, spend.trial);
     if (passed) return passedDone(brief, passed, why, spend);
     const value = returned(brief, spend.accepted ? "partial" : "blocked", why, spend, spend.accepted);
+    // What the provider said when it refused the builder's request, for the person's card alone (t1093): never in the
+    // reason, which the supervisor reads.
+    const providerRefusal = stopped || refusal ? undefined : providerRefusalOf(error);
+    if (providerRefusal) value.providerRefusal = providerRefusal;
     // Core's build failure for the guard's stop, read structurally (header, lane-1 fix 1).
     if (!stopped && !refusal && parseAutomationStudioFlowBootstrapGenerationError(error)?.code === BUILD_REPEATED) value.stoppedRepeating = true;
     // A stop or the allowance's refusal leaves nothing a changed brief could change (header, t743).
@@ -307,6 +312,16 @@ function returned(
   };
   if (proposal) value.proposal = { subflowKey: proposal.scope.subflowKey, revision: proposal.revision, digest: proposal.digest };
   return value;
+}
+
+/**
+ * The refusal record a builder's thrown failure carries, read through the record's own parse (t1093): a provider
+ * failure of this process's own adapter, or a build failure whose diagnostic kept the provider's refusal
+ * (`accounting.providerRefusal`). Nothing for any other throw.
+ */
+function providerRefusalOf(error: unknown): AutomationStudioLlmProviderRefusal | undefined {
+  if (error instanceof AutomationStudioLlmProviderError) return parseAutomationStudioLlmProviderRefusal(error.refusal);
+  return parseAutomationStudioLlmProviderRefusal(parseAutomationStudioFlowBootstrapGenerationError(error)?.accounting?.providerRefusal);
 }
 
 /** `value` with `reason` as its closed terminal reason (header, t743), on a return that is not done; as it is otherwise. */
