@@ -19,6 +19,18 @@ export type AutomationStudioAnthropicGrammar = { schema: Record<string, unknown>
 export const AUTOMATION_STUDIO_ANTHROPIC_GRAMMAR_LIMITS = Object.freeze({ strictTools: 20, optional: 24, unions: 16 });
 
 /**
+ * Whether `value` is an object schema: `type: "object"`, a type array that holds `"object"` (`["object", "null"]`), or
+ * declared `properties`. The grammar holds an object only where it says `additionalProperties: false`, and the platform
+ * refuses a strict tool whose object does not: the web panel's replay on 2026-11-28 sent `core_set_result_processing`
+ * strict with `input.process` typed `["object", "null"]` and nothing else, and every decision was answered HTTP 400
+ * "tools.8.custom: For 'object' type, 'additionalProperties' must be explicitly set to false" (t1100). A nullable object
+ * is an object here, so an open one leaves its schema unrepresentable and its tool goes non-strict.
+ */
+function isObjectSchema(value: Record<string, unknown>): boolean {
+  return value.type === "object" || (Array.isArray(value.type) && value.type.includes("object")) || value.properties !== undefined;
+}
+
+/**
  * An optional property that is an open object (`{ type: "object" }` and nothing more), such as a `metadata` bag Core strips
  * on the way in anyway. The grammar cannot close it, and carrying it would force the whole answer into JSON text, so the
  * Anthropic grammar leaves it out. The unchanged original schema still describes it to every other provider.
@@ -43,7 +55,7 @@ export function automationStudioAnthropicGrammar(original: Record<string, unknow
     }
     const result: Record<string, unknown> = {};
     const notes: string[] = [];
-    if (value.type === "object" || value.properties !== undefined) {
+    if (isObjectSchema(value)) {
       if (value.additionalProperties !== false) representable = false;
       const required = Array.isArray(value.required) ? value.required : [];
       if (isRecord(value.properties)) optional += Object.keys(value.properties).filter((key) => !required.includes(key) && !dropped(value, key)).length;

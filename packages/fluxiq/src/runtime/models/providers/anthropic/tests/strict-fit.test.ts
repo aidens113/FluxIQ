@@ -8,7 +8,9 @@ import {
   AUTOMATION_STUDIO_ANTHROPIC_STRICT_FITS,
   automationStudioAnthropicDecisionToolsWire,
   automationStudioAnthropicDemoteStrictTool,
+  automationStudioAnthropicGrammar,
   automationStudioAnthropicRefusedForGrammar,
+  automationStudioAnthropicStrictToolNamedByRefusal,
   type AutomationStudioAnthropicToolDefinition
 } from "../index.ts";
 
@@ -95,5 +97,68 @@ describe("strict tools fitted to the platform's compiled grammar", () => {
     expect(automationStudioAnthropicRefusedForGrammar(400, { message: "prompt is too long: 1200000 tokens > 1000000 maximum" })).toBe(false);
     expect(automationStudioAnthropicRefusedForGrammar(500, GRAMMAR)).toBe(false);
     expect(automationStudioAnthropicRefusedForGrammar(400, null)).toBe(false);
+  });
+});
+
+// t1100: the web panel's replay (2026-11-28, fluxiq 0.55.0) sent `core_set_result_processing` strict with `input.process`
+// typed `["object", "null"]` and left open, and every decision was refused: HTTP 400 "tools.8.custom: For 'object' type,
+// 'additionalProperties' must be explicitly set to false". These are that request's tools as sent.
+const REPLAY = fixture("panel-2026-11-28-0008-tools.json");
+const NAMED = { type: "invalid_request_error", message: "tools.8.custom: For 'object' type, 'additionalProperties' must be explicitly set to false" };
+
+/** Every object schema in `schema` -- a type array holding "object" included -- that does not say `additionalProperties: false`, by path. */
+function openObjects(schema: unknown, path = "$"): string[] {
+  if (Array.isArray(schema)) return schema.flatMap((item, index) => openObjects(item, `${path}[${index}]`));
+  if (schema === null || typeof schema !== "object") return [];
+  const record = schema as Record<string, unknown>;
+  const object = record.type === "object" || (Array.isArray(record.type) && record.type.includes("object")) || record.properties !== undefined;
+  const own = object && record.additionalProperties !== false ? [path] : [];
+  return [...own, ...Object.entries(record).flatMap(([key, value]) => key === "enum" || key === "const" || key === "default" ? [] : openObjects(value, `${path}.${key}`))];
+}
+
+describe("a nullable object is an object to the strict schema check (t1100)", () => {
+  it("leaves a schema with an open nullable object unrepresentable, and a closed one representable", () => {
+    const open = { type: "object", additionalProperties: false, properties: { process: { type: ["object", "null"], description: "The whole declaration." } } };
+    expect(automationStudioAnthropicGrammar(open, { keepOpenObjects: true }).representable).toBe(false);
+    const closedNullable = { type: "object", additionalProperties: false, properties: { process: { type: ["object", "null"], properties: { mode: { type: "string" } }, required: ["mode"], additionalProperties: false } } };
+    expect(automationStudioAnthropicGrammar(closedNullable, { keepOpenObjects: true }).representable).toBe(true);
+  });
+
+  it("sends the replay's core_set_result_processing non-strict, as offered, and every strict tool closed at every depth", () => {
+    expect(REPLAY[8]!.name).toBe("core_set_result_processing");
+    expect(REPLAY[8]!.strict).toBe(true);
+    expect(openObjects(REPLAY[8]!.input_schema)).toEqual(["$.properties.input.properties.process"]);
+    const wire = automationStudioAnthropicDecisionToolsWire(offered(REPLAY)).tools;
+    const processing = wire.find((tool) => tool.name === "core_set_result_processing")!;
+    expect(processing.strict).toBeUndefined();
+    expect(processing.input_schema).toEqual(REPLAY[8]!.input_schema);
+    for (const tool of wire.filter((each) => each.strict === true)) expect(openObjects(tool.input_schema), tool.name).toEqual([]);
+    // The other strict tools stay strict, in the same order, as the same bytes. The counted budget the demoted tool held
+    // goes, as counted, to the next closed tool in the offer: core_loop_decision, closed at every depth, now fits it.
+    // Should the platform refuse that set for its grammar, t1093's demotion answers it.
+    expect(strictNames(wire)).toEqual(["complete", "web_detect_repeating_structure", "web_describe_element", "core_describe_nodes", "core_recall_result", "core_full_page", "core_loop_decision", "core_run_flow"]);
+    for (const tool of wire.filter((each) => each.name !== "core_set_result_processing" && each.name !== "core_loop_decision")) expect(JSON.stringify(tool)).toBe(JSON.stringify(REPLAY.find((each) => each.name === tool.name)));
+  });
+});
+
+describe("a refusal that names one strict tool's schema (t1100)", () => {
+  it("names the strict tool at the refusal's place, and nothing for a tool sent non-strict or no place", () => {
+    expect(automationStudioAnthropicStrictToolNamedByRefusal(400, NAMED, REPLAY)).toBe("core_set_result_processing");
+    expect(automationStudioAnthropicStrictToolNamedByRefusal(400, { message: "tools.1.custom: something" }, REPLAY)).toBeUndefined(); // amend_draft went non-strict
+    expect(automationStudioAnthropicStrictToolNamedByRefusal(400, { message: "tools.99.custom: something" }, REPLAY)).toBeUndefined();
+    expect(automationStudioAnthropicStrictToolNamedByRefusal(400, { message: "messages.0.content: something" }, REPLAY)).toBeUndefined();
+    expect(automationStudioAnthropicStrictToolNamedByRefusal(500, NAMED, REPLAY)).toBeUndefined();
+    expect(automationStudioAnthropicStrictToolNamedByRefusal(400, null, REPLAY)).toBeUndefined();
+  });
+
+  it("demotes the named tool, whatever its size, and holds the offer to the rest of the strict set", () => {
+    const tools = offered(REPLAY);
+    // Built as the replay was, before the schema check knew a nullable object: every tool sent strict as recorded.
+    expect(automationStudioAnthropicDemoteStrictTool(tools, REPLAY, "core_set_result_processing")).toBe("core_set_result_processing");
+    const wire = automationStudioAnthropicDecisionToolsWire(tools).tools;
+    expect(strictNames(wire)).toEqual(strictNames(REPLAY).filter((name) => name !== "core_set_result_processing"));
+    // A name the refused request did not send strict demotes nothing, and the refusal stands.
+    expect(automationStudioAnthropicDemoteStrictTool(tools, REPLAY, "amend_draft")).toBeUndefined();
+    expect(strictNames(automationStudioAnthropicDecisionToolsWire(tools).tools)).toEqual(strictNames(wire));
   });
 });

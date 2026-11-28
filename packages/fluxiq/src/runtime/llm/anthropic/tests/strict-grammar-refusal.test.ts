@@ -89,8 +89,30 @@ describe("a request refused for its strict tools' compiled grammar", () => {
   });
 
   it("sends any other refusal once, as it was", async () => {
-    const { provider, sent } = adapter(refusal("tools.0.input_schema: something else is wrong"));
-    await expect(provider.runTask(strictDecision())).rejects.toMatchObject({ code: "llm.provider_http_error", refusal: { error: { message: "tools.0.input_schema: something else is wrong" } } });
+    const { provider, sent } = adapter(refusal("messages.0.content: something else is wrong"));
+    await expect(provider.runTask(strictDecision())).rejects.toMatchObject({ code: "llm.provider_http_error", refusal: { error: { message: "messages.0.content: something else is wrong" } } });
+    expect(sent).toHaveLength(1);
+  });
+
+  // t1100: the panel's replay was refused "tools.8.custom: For 'object' type, 'additionalProperties' must be explicitly set to false".
+  it("demotes the strict tool a refusal names by its place, and sends the request again", async () => {
+    const OPEN = "For 'object' type, 'additionalProperties' must be explicitly set to false";
+    const place = (wire: Wire, name: string) => wire.tools!.findIndex((tool) => tool.name === name);
+    // The platform refuses while core_read_shelf, the smallest strict schema, goes strict: the grammar's order would demote another first.
+    const { provider, sent } = adapter((wire) => strictNames(wire).includes("core_read_shelf") ? refusal(`tools.${place(wire, "core_read_shelf")}.custom: ${OPEN}`)() : toolUseStreamReply([decisionCall(READ, strictDecision())]));
+    const answered = await provider.runTask(strictDecision());
+    expect((answered as { response: unknown }).response).toMatchObject({ kind: "evidence_tool_decision", decision: { kind: "tool_call", toolId: "core.read_shelf" } });
+    expect(sent.map(strictNames)).toEqual([["complete", "core_read_shelf", "core_write_plan"], ["complete", "core_write_plan"]]);
+    // Remembered for the offer: the next request goes out as accepted, with no second refusal.
+    await provider.runTask(strictDecision());
+    expect(sent.map(strictNames).at(-1)).toEqual(["complete", "core_write_plan"]);
+    expect(sent).toHaveLength(3);
+  });
+
+  it("lets a refusal that names a tool sent non-strict stand, sent once", async () => {
+    const { provider, sent } = adapter((wire) => refusal(`tools.${wire.tools!.length - 1}.custom: something is wrong`)());
+    await expect(provider.runTask(strictDecision())).rejects.toMatchObject({ code: "llm.provider_http_error", status: 400 });
+    expect(sent[0]!.tools!.at(-1)!.strict).toBeUndefined();
     expect(sent).toHaveLength(1);
   });
 
