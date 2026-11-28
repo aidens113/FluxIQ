@@ -87,6 +87,8 @@ export function project(options: {
   ledger?: { hook?: boolean; undoes?: boolean };
   /** The output a return that is not done names as one its subflow could not make (t645); none when absent. */
   unmadeOutput?: (brief: AutomationStudioProjectSubflowBrief) => string | undefined;
+  /** The provider refusal a return that is not done carries, as a builder the provider refused hands back (t1093); none when absent. */
+  providerRefusal?: (brief: AutomationStudioProjectSubflowBrief) => AutomationStudioProjectBuilderReturn["providerRefusal"];
   /**
    * The judged whole run's readings (t775 D5): the holds list the builders read before acting is at `HOLDS_AT`, Core's
    * own look (`look`, as `service/project-build/phase-start.ts` makes it) reads it there and hands the read to every
@@ -152,7 +154,8 @@ export function project(options: {
       }
       if (outcome !== "done") {
         const unmade = options.unmadeOutput?.(brief);
-        returns.push({ briefId: brief.briefId, outcome, reason: `The ${brief.subflowKey} control could not be found.`, trials: options.notDoneTrials?.(brief, attempt) ?? [], spentUsd: 0.01, calls: 4, ...(unmade ? { unmadeOutput: unmade } : {}) });
+        const providerRefusal = options.providerRefusal?.(brief);
+        returns.push({ briefId: brief.briefId, outcome, reason: `The ${brief.subflowKey} control could not be found.`, trials: options.notDoneTrials?.(brief, attempt) ?? [], spentUsd: 0.01, calls: 4, ...(unmade ? { unmadeOutput: unmade } : {}), ...(providerRefusal ? { providerRefusal } : {}) });
         continue;
       }
       const proposal = await propose(brief, attempt);

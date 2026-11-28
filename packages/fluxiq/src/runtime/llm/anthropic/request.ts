@@ -1,6 +1,6 @@
 import { automationStudioAnthropicMessageBody } from "../../models/providers/anthropic/index.ts";
 export { AUTOMATION_STUDIO_ANTHROPIC_JSON_TEXT_INSTRUCTION, automationStudioAnthropicMessageBody } from "../../models/providers/anthropic/index.ts";
-import { AUTOMATION_STUDIO_ANTHROPIC_JUDGE_ANSWER_TOOL, automationStudioAnthropicCacheContent, automationStudioAnthropicDecisionToolsWire, automationStudioAnthropicTrailCacheContent } from "../../models/providers/anthropic/index.ts";
+import { AUTOMATION_STUDIO_ANTHROPIC_JUDGE_ANSWER_TOOL, automationStudioAnthropicCacheContent, automationStudioAnthropicDecisionToolsWire, automationStudioAnthropicTrailCacheContent, type AutomationStudioAnthropicDecisionTool } from "../../models/providers/anthropic/index.ts";
 import { AUTOMATION_STUDIO_LLM_FLOW_LESS_JUDGE_SOURCE } from "../verification-checked/index.ts";
 import type { AutomationStudioLlmTaskRequest } from "../harness/index.ts";
 import { estimateAutomationStudioLlmTokensFromUtf8Bytes } from "../../models/limits/index.ts";
@@ -22,6 +22,12 @@ export type AutomationStudioAnthropicPreparedRequest = {
   body: string;
   format: AutomationStudioAnthropicOutputFormat;
   decisionTools?: AutomationStudioLlmDecisionTools;
+  /**
+   * The tools a decision sent as tools offered, before the wire chose which go strict: where the platform refuses the
+   * request for its compiled grammar, one of them is demoted for this exact offer and the request built again
+   * (`../../models/providers/anthropic/strict-fit/`, t1093).
+   */
+  strictOffer?: readonly AutomationStudioAnthropicDecisionTool[];
   estimatedInputBytes: number;
   estimatedInputTokens: number;
 };
@@ -36,13 +42,14 @@ export function automationStudioAnthropicRequest(request: AutomationStudioLlmTas
   const messages = [{ role: "user" as const, content }];
   // The check's answer tool goes last, after the decision tools, in every decision sent as tools (t1065): a judge that
   // continues this conversation answers by calling it, and the tool list it sends is then this one, byte for byte.
-  const wire = decisionTools
-    ? automationStudioAnthropicMessageBody({ model, system: system!.content, messages, tools: automationStudioAnthropicDecisionToolsWire([...decisionTools.tools, { ...AUTOMATION_STUDIO_ANTHROPIC_JUDGE_ANSWER_TOOL, inputSchema: automationStudioAnthropicJudgeAnswerSchema(request) }]) })
+  const strictOffer = decisionTools ? [...decisionTools.tools, { ...AUTOMATION_STUDIO_ANTHROPIC_JUDGE_ANSWER_TOOL, inputSchema: automationStudioAnthropicJudgeAnswerSchema(request) }] : undefined;
+  const wire = strictOffer
+    ? automationStudioAnthropicMessageBody({ model, system: system!.content, messages, tools: automationStudioAnthropicDecisionToolsWire(strictOffer) })
     : automationStudioAnthropicMessageBody({ model, system: system!.content, messages, format });
   // Includes the tools or the schema and adapter framing actually sent. Keys and framing
   // count too: this is conservative and agrees with the harness's preflight.
   const estimatedInputBytes = Buffer.byteLength(JSON.stringify({ tools: wire.tools, tool_choice: wire.tool_choice, system: wire.system, messages: wire.messages, output_config: wire.output_config }), "utf8");
-  return { body: JSON.stringify(wire), format, ...(decisionTools ? { decisionTools } : {}), estimatedInputBytes, estimatedInputTokens: estimateAutomationStudioLlmTokensFromUtf8Bytes(estimatedInputBytes) + 16 };
+  return { body: JSON.stringify(wire), format, ...(decisionTools ? { decisionTools } : {}), ...(strictOffer ? { strictOffer } : {}), estimatedInputBytes, estimatedInputTokens: estimateAutomationStudioLlmTokensFromUtf8Bytes(estimatedInputBytes) + 16 };
 }
 
 /**

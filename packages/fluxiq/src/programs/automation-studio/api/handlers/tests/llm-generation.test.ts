@@ -74,7 +74,7 @@ describe("Automation Studio LLM execution API", () => {
       expect(await registry.call(request)).toMatchObject({ ok: false });
     }
   });
-  it("resolves a configured authoring mode from Core's setting: legacy proposes, candidate drafts, unset or blank builds as a project", async () => {
+  it("resolves a configured authoring mode from Core's setting: legacy proposes, candidate and project draft", async () => {
     const draft = { projectId: "project", flowId: "flow", status: "draft", candidateId: "candidate", revision: 1, digest: "a".repeat(64), baseDependencyDigest: "base", baseSettingsRevision: 1, sourceInstructionIds: ["instruction"], accounting: { requestId: "request", estimatedInputTokens: 10 }, verification: "not_performed", promotionAllowed: false };
     const proposed = { projectId: "project", flowId: "flow", adaptationId: "adaptation", status: "proposed", riskLevel: "low", baseDependencyDigest: "base", baseSettingsRevision: 1, sourceInstructionIds: ["instruction"], accounting: { requestId: "request", estimatedInputTokens: 10 } };
     const generate = vi.fn(), registry = new GlobalProgramApiRegistry();
@@ -90,7 +90,9 @@ describe("Automation Studio LLM execution API", () => {
       generate.mockResolvedValue(draft);
       expect(await registry.call(request)).toMatchObject({ ok: false });
 
-      for (const [mode, resolved] of [[undefined, "project"], ["", "project"], ["  ", "project"], ["candidate", "candidate"]] as const) {
+      // Unset or blank is answer-first since 2026-11-27 (t1093), whose attempt is answered whole on its own road
+      // (`framework/automation-service/service/flow-bootstrap-requests/tests/generate-answer-first.test.ts`); project stays selectable.
+      for (const [mode, resolved] of [["project", "project"], [" project ", "project"], ["candidate", "candidate"]] as const) {
         vi.stubEnv("FLUXIQ_AUTHORING_MODE", mode);
         generate.mockClear().mockResolvedValue(draft);
         expect(await registry.call(request)).toMatchObject({ ok: true, payload: { candidate: { candidateId: "candidate", verification: "not_performed", promotionAllowed: false } } });

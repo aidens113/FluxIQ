@@ -100,6 +100,11 @@ export async function automationStudioAnthropicMessage<T>(input: AutomationStudi
       // A request the model's window cannot hold is the caller's to make smaller, never a server error (t965, run-mwodpw10-3d5748ab 0117): said with the code Core's own size check uses.
       const tooLarge = automationStudioAnthropicRefusedForSize(response.status, refusal.error);
       const code = balance ? "llm.provider_balance_exhausted" : response.status === 401 || response.status === 403 ? "llm.provider_auth_failed" : response.status === 429 ? "llm.provider_rate_limited" : tooLarge ? "llm.provider_input_budget_exceeded" : "llm.provider_http_error";
+      // What the API said, screened, goes in the call's step (`response.json`), so the step says why it was refused and
+      // not only that it was (t1093: the panel's 400 left `reply: null` and nothing else). Never the raw body.
+      // The provider's sentence travels on the refusal record only, never in the failure's message: a message can reach
+      // text a model reads (a builder's return, t1093), and a provider fault is nothing a model can act on.
+      if (refusal.error) step?.reply(JSON.stringify({ type: "error", error: refusal.error }), response.status);
       throw new AutomationStudioLlmProviderError(code, tooLarge ? "Anthropic refused the request as larger than the model's context window; nothing was trimmed." : "Anthropic refused the request.", !balance && !tooLarge && (response.status === 429 || response.status >= 500), response.status, undefined, undefined, refusal);
     }
     let envelope: unknown;

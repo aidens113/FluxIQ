@@ -1,6 +1,7 @@
 import { AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS, type AutomationStudioCandidateTrialVerdict } from "../../flow-authoring/bootstrap/candidate/index.ts";
 import { automationStudioProjectJsonShape as shape, type AutomationStudioProjectParse } from "./json-shape.ts";
 import { readAutomationStudioProjectReceiptRef, type AutomationStudioProjectReceiptRef } from "./receipt-ref.ts";
+import { parseAutomationStudioLlmProviderRefusal, type AutomationStudioLlmProviderRefusal } from "../../models/failures/index.ts";
 import type { AutomationStudioProjectSubflowBrief } from "./subflow-brief.ts";
 
 // What a builder hands back: compact by construction, because the supervisor
@@ -76,6 +77,15 @@ export type AutomationStudioProjectBuilderReturn = {
    * Absent from every other return.
    */
   terminalReason?: (typeof TERMINAL_REASONS)[number];
+  /**
+   * What the model provider said when it refused the builder's request (t1093): the refusal record its adapter screened
+   * for the credential and for locator-shaped text (`../../models/failures/refusal/`), read back here through the
+   * record's own parse. It is for the person's return card alone (`../../automation-activity/project/return-card.ts`),
+   * which quotes the provider: the supervisor's view of a return leaves it out (`../supervisor/dispatch-tool.ts`,
+   * `compact`), since a provider fault is nothing the supervisor can act on. Absent from every other return, and from
+   * returns stored before it.
+   */
+  providerRefusal?: AutomationStudioLlmProviderRefusal;
   spentUsd: number;
   calls: number;
 };
@@ -159,7 +169,7 @@ function trialAbove(left: AutomationStudioProjectTrialRef, right: AutomationStud
 }
 
 function read(value: unknown): AutomationStudioProjectBuilderReturn {
-  const fields = shape.object(value, "return", ["briefId", "outcome", "reason", "trials", "spentUsd", "calls"], ["proposal", "interfaceRequest", "findings", "unmadeOutput", "doneBefore", "stoppedRepeating", "terminalReason"]);
+  const fields = shape.object(value, "return", ["briefId", "outcome", "reason", "trials", "spentUsd", "calls"], ["proposal", "interfaceRequest", "findings", "unmadeOutput", "doneBefore", "stoppedRepeating", "terminalReason", "providerRefusal"]);
   const returned: AutomationStudioProjectBuilderReturn = {
     briefId: shape.storageId(fields.briefId, "return.briefId"),
     outcome: shape.oneOf(fields.outcome, "return.outcome", AUTOMATION_STUDIO_PROJECT_RETURN_OUTCOMES),
@@ -183,6 +193,11 @@ function read(value: unknown): AutomationStudioProjectBuilderReturn {
   }
   if (fields.stoppedRepeating !== undefined) returned.stoppedRepeating = fields.stoppedRepeating === true ? true : shape.refuse("project.not_true", "return.stoppedRepeating");
   if (fields.terminalReason !== undefined) returned.terminalReason = shape.oneOf(fields.terminalReason, "return.terminalReason", TERMINAL_REASONS);
+  // A record the refusal record's parse would not read is refused; a field it would not publish is dropped and named in its `withheld` (t1093).
+  if (fields.providerRefusal !== undefined) {
+    const record = typeof fields.providerRefusal === "object" ? parseAutomationStudioLlmProviderRefusal(fields.providerRefusal) : undefined;
+    returned.providerRefusal = record ?? shape.refuse("project.provider_refusal_invalid", "return.providerRefusal");
+  }
   if (fields.findings !== undefined) returned.findings = shape.array(fields.findings, "return.findings", LIMITS.findings).map((finding, index) => shape.text(finding, `return.findings.${index}`, LIMITS.finding));
   return returned;
 }

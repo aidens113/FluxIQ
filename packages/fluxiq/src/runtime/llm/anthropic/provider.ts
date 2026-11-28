@@ -6,7 +6,7 @@ import { validateAutomationStudioLlmTaskRequest } from "../provider-task/index.t
 import type { AutomationStudioLlmSecretReference } from "../deepseek/index.ts";
 import { automationStudioAnthropicMessage, automationStudioAnthropicPaidFailure } from "./messages.ts";
 import { automationStudioAnthropicRequest, type AutomationStudioAnthropicPreparedRequest } from "./request.ts";
-import { AUTOMATION_STUDIO_ANTHROPIC_JUDGE_ANSWER_TOOL, automationStudioAnthropicAnswerNullsAbsent, automationStudioAnthropicDeciderPrefix, automationStudioAnthropicJudgeCallAnswered, automationStudioAnthropicJudgeContinuation, automationStudioAnthropicReadReply, type AutomationStudioAnthropicDeciderPrefix, type AutomationStudioAnthropicJudgeOpenTurn, type AutomationStudioAnthropicToolCall } from "../../models/providers/anthropic/index.ts";
+import { AUTOMATION_STUDIO_ANTHROPIC_JUDGE_ANSWER_TOOL, automationStudioAnthropicAnswerNullsAbsent, automationStudioAnthropicDemoteStrictTool, automationStudioAnthropicRefusedForGrammar, automationStudioAnthropicDeciderPrefix, automationStudioAnthropicJudgeCallAnswered, automationStudioAnthropicJudgeContinuation, automationStudioAnthropicReadReply, type AutomationStudioAnthropicDeciderPrefix, type AutomationStudioAnthropicJudgeOpenTurn, type AutomationStudioAnthropicToolCall } from "../../models/providers/anthropic/index.ts";
 import { automationStudioLlmDecisionFromToolCall, automationStudioLlmTaskMessages, automationStudioLlmTaskOutputSchema, type AutomationStudioLlmDecisionTools } from "../provider-task/index.ts";
 import { automationStudioLlmAttemptKey } from "../role-routing/index.ts";
 import { estimateAutomationStudioAnthropicCostUsd } from "./pricing.ts";
@@ -52,31 +52,37 @@ export function createAutomationStudioAnthropicProvider(options: AutomationStudi
     // then charge the actual read/write split. Output is the harness reserve.
     estimateCostUsd: ({ inputTokens, outputTokens }) => estimateAutomationStudioAnthropicCostUsd(inputTokens, outputTokens, 0, model, inputTokens),
     runTask: async (request, execution) => {
-      // A judge marked as continuing is held to the window by what is sent (t1089): the request it was built as carries
-      // page views that a continuation leaves out, so its size refuses only the judge sent on that request.
-      const marked = request.taskKind === "loop_verification" && request.metadata?.continuesDecider === true;
-      const { continuation, judgeTurn, ...prepared } = continued(request, prepare(request, model, decisionTools, !marked), model, deciders, judges);
-      if (marked && continuation?.used !== true) withinWindow(request, prepared, model);
-      const tools = prepared.decisionTools;
-      // A continuing judge's reply as it arrived, held where it is then not read: the next ask answers it in this conversation (t1065).
-      let arrived: ReadonlyArray<Record<string, unknown>> | undefined;
-      try {
-        return await automationStudioAnthropicMessage({
-          body: prepared.body, model, ...(continuation ? { continuation } : {}), fetchImpl: options.fetchImpl ?? fetch, maxResponseBytes,
-          timeoutMs: request.timeoutMs, ...(execution?.signal ? { signal: execution.signal } : {}),
-          requestId: request.requestId, taskKind: request.taskKind,
-          ...(request.context.stage ? { stage: request.context.stage } : {}),
-          ...(request.context.evidenceLoop?.iteration ? { iteration: request.context.evidenceLoop.iteration } : {}),
-          requestShape: { model, taskKind: request.taskKind, requestId: request.requestId, bodyBytes: Buffer.byteLength(prepared.body, "utf8"), responseFormat: tools || judgeTurn?.answerTool ? "decision_tools" : prepared.format.jsonText ? "json_text" : "json_schema", measuredInput: prepared.estimatedInputTokens, maxOutput: AUTOMATION_STUDIO_ANTHROPIC_MODEL_LIMITS[model].maxOutputTokens },
-          resolveKey: async (signal) => await options.resolveSecret({ provider: "anthropic", secretReference: reference, projectId: request.context.projectId, flowId: request.context.flowId, requestId: request.requestId, purpose: "llm_provider_request", outboundBody: prepared.body, signal }),
-          readAnswer: (text, usage) => parseAnswer(text, usage, request, prepared.format.jsonText),
-          // A judge continuing a decider sent as tools answers by calling the check's answer tool, and by nothing else.
-          readToolCall: judgeTurn?.answerTool ? (call, usage) => parseJudgeAnswer(call, usage, request) : tools ? (call, usage) => parseToolCall(call, usage, request, tools) : undefined,
-          replyArrived: judgeTurn ? (reply) => { arrived = reply; } : undefined
-        });
-      } catch (error) {
-        if (judgeTurn && arrived) held(judges, judgeTurn.key, { wire: judgeTurn.wire, reply: arrived });
-        throw error;
+      for (;;) {
+        // A judge marked as continuing is held to the window by what is sent (t1089): the request it was built as carries
+        // page views that a continuation leaves out, so its size refuses only the judge sent on that request.
+        const marked = request.taskKind === "loop_verification" && request.metadata?.continuesDecider === true;
+        const { continuation, judgeTurn, ...prepared } = continued(request, prepare(request, model, decisionTools, !marked), model, deciders, judges);
+        if (marked && continuation?.used !== true) withinWindow(request, prepared, model);
+        const tools = prepared.decisionTools;
+        // A continuing judge's reply as it arrived, held where it is then not read: the next ask answers it in this conversation (t1065).
+        let arrived: ReadonlyArray<Record<string, unknown>> | undefined;
+        try {
+          return await automationStudioAnthropicMessage({
+            body: prepared.body, model, ...(continuation ? { continuation } : {}), fetchImpl: options.fetchImpl ?? fetch, maxResponseBytes,
+            timeoutMs: request.timeoutMs, ...(execution?.signal ? { signal: execution.signal } : {}),
+            requestId: request.requestId, taskKind: request.taskKind,
+            ...(request.context.stage ? { stage: request.context.stage } : {}),
+            ...(request.context.evidenceLoop?.iteration ? { iteration: request.context.evidenceLoop.iteration } : {}),
+            requestShape: { model, taskKind: request.taskKind, requestId: request.requestId, bodyBytes: Buffer.byteLength(prepared.body, "utf8"), responseFormat: tools || judgeTurn?.answerTool ? "decision_tools" : prepared.format.jsonText ? "json_text" : "json_schema", measuredInput: prepared.estimatedInputTokens, maxOutput: AUTOMATION_STUDIO_ANTHROPIC_MODEL_LIMITS[model].maxOutputTokens },
+            resolveKey: async (signal) => await options.resolveSecret({ provider: "anthropic", secretReference: reference, projectId: request.context.projectId, flowId: request.context.flowId, requestId: request.requestId, purpose: "llm_provider_request", outboundBody: prepared.body, signal }),
+            readAnswer: (text, usage) => parseAnswer(text, usage, request, prepared.format.jsonText),
+            // A judge continuing a decider sent as tools answers by calling the check's answer tool, and by nothing else.
+            readToolCall: judgeTurn?.answerTool ? (call, usage) => parseJudgeAnswer(call, usage, request) : tools ? (call, usage) => parseToolCall(call, usage, request, tools) : undefined,
+            replyArrived: judgeTurn ? (reply) => { arrived = reply; } : undefined
+          });
+        } catch (error) {
+          if (judgeTurn && arrived) held(judges, judgeTurn.key, { wire: judgeTurn.wire, reply: arrived });
+          // Refused for the strict tools' compiled grammar: one strict tool is demoted for this offer and the request is
+          // built and sent again (`../../models/providers/anthropic/strict-fit/`, t1093). Each pass removes one strict
+          // tool, so this ends by itself; with none left, the refusal stands and says why.
+          if (strictToolDemoted(error, prepared)) continue;
+          throw error;
+        }
       }
     }
   };
@@ -174,6 +180,19 @@ function held<T>(map: Map<string, T>, key: string, value: T): void {
     if (map.size <= DECIDERS_HELD) break;
     map.delete(oldest);
   }
+}
+
+/**
+ * Whether `error` is the platform refusing `prepared` for its strict tools' compiled grammar, and one strict tool was
+ * then demoted for its offer, so the request is to be built and sent again (t1093). False for every other failure, for
+ * a request that offered no decision tools (a judge continuing a decider sends the decider's accepted tools), and where
+ * the refused request held no strict tool left to demote.
+ */
+function strictToolDemoted(error: unknown, prepared: AutomationStudioAnthropicPreparedRequest): boolean {
+  if (!(error instanceof AutomationStudioLlmProviderError) || !prepared.strictOffer) return false;
+  if (!automationStudioAnthropicRefusedForGrammar(error.status, error.refusal?.error)) return false;
+  const sent = (JSON.parse(prepared.body) as { tools?: unknown }).tools;
+  return Array.isArray(sent) && automationStudioAnthropicDemoteStrictTool(prepared.strictOffer, sent as Array<Record<string, unknown>>) !== undefined;
 }
 
 /** `sized`: refuse the request here if it exceeds the window; a judge marked as continuing is refused after the adapter decides (`runTask`, t1089). */

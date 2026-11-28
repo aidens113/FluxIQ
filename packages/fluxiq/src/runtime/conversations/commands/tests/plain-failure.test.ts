@@ -100,6 +100,24 @@ describe("a failed build's stored answer", () => {
   it("never says a model call's code", () => {
     expect(automationStudioConversationModelProblem(Object.assign(new Error("x"), { code: "llm.provider_refused_unknown" }))).toBe("the model call failed");
   });
+  // t1093: every build the web panel started ended "The build failed: the model could not be reached", while Anthropic
+  // had answered each first decision at once with HTTP 400 and said why.
+  it("quotes the provider's refusal, never that the model could not be reached", () => {
+    const GRAMMAR = "The compiled grammar is too large, which would cause performance issues. Simplify your tool schemas or reduce the number of strict tools.";
+    const providerRefusal = { status: 400, contentType: "application/json", bodyBytes: 210, error: { code: null, type: "invalid_request_error", param: null, message: GRAMMAR }, withheld: [], request: null };
+    const refused = (diagnostic: Record<string, unknown>) => automationStudioConversationCallCause("the build", { ok: false, error: "Flow Bootstrap generation failed (flow_bootstrap.provider_http_error).", payload: { diagnostic } });
+    expect(refused({ code: "flow_bootstrap.provider_http_error", stage: "provider_request", accounting: { requestId: "r", estimatedInputTokens: 1, providerStatus: 400, providerRefusal } }))
+      .toBe(`the build failed: the model provider refused the request: ${GRAMMAR.replace(/\.$/u, "")}`);
+    // With no record: still not "could not be reached".
+    expect(refused({ code: "flow_bootstrap.provider_http_error", stage: "provider_request" })).toBe("the build failed: the model provider answered the request with an error");
+    // A stage word alone, for a provider that answered with a status, is not "could not be reached" either.
+    expect(automationStudioConversationCallCause("the build", { ok: false, error: "x", payload: { diagnostic: { stage: "provider_request", accounting: { providerStatus: 400 } } } })).toBe("the build failed: the model provider answered the request with an error");
+    expect(automationStudioConversationCallCause("the build", { ok: false, error: "x", payload: { diagnostic: { stage: "provider_request", accounting: { providerStatus: 400, providerRefusal } } } })).toMatch(/^the build failed: the model provider refused the request: The compiled grammar/u);
+    // A record that does not hold to the refusal record's bounds is not quoted.
+    expect(refused({ code: "flow_bootstrap.provider_http_error", accounting: { providerRefusal: { status: 400, error: { message: GRAMMAR, type: "has spaces in it" }, withheld: "no" } } })).toBe("the build failed: the model provider answered the request with an error");
+    // A provider that gave no answer is still said as one.
+    expect(automationStudioConversationCallCause("the build", { ok: false, error: "x", payload: { diagnostic: { code: "flow_bootstrap.provider_network_error", stage: "provider_request" } } })).toBe("the build failed: the model could not be reached");
+  });
 });
 
 describe("a failed run's stored answer", () => {

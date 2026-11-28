@@ -5,13 +5,13 @@ const env = (mode?: string) => (mode === undefined ? {} : { [AUTOMATION_STUDIO_A
 
 describe("the authoring mode a build runs in", () => {
   it("builds a creation in the configured mode", () => {
-    expect(resolveAutomationStudioBuildAuthoringMode("create", env())).toBe("project");
+    expect(resolveAutomationStudioBuildAuthoringMode("create", env())).toBe("answer-first");
     expect(resolveAutomationStudioBuildAuthoringMode("create", env("project"))).toBe("project");
     expect(resolveAutomationStudioBuildAuthoringMode("create", env("candidate"))).toBe("candidate");
     expect(resolveAutomationStudioBuildAuthoringMode("create", env("legacy"))).toBe("legacy");
   });
 
-  it("extends as a candidate build when the configured mode is project, which cannot extend yet", () => {
+  it("extends as a candidate build when the configured mode is project or the default answer-first, which cannot extend yet", () => {
     expect(resolveAutomationStudioBuildAuthoringMode("extend", env())).toBe("candidate");
     expect(resolveAutomationStudioBuildAuthoringMode("extend", env("project"))).toBe("candidate");
     expect(resolveAutomationStudioBuildAuthoringMode("extend", env("candidate"))).toBe("candidate");
