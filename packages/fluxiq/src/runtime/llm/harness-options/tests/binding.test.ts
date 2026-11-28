@@ -240,11 +240,13 @@ describe("Automation Studio harness option binding with a described-node memory"
     expect(memory.ids()).toEqual([AND]);
   });
 
-  it("describes the node of a failed call once, and names the parameters its definition does not declare", async () => {
-    const { memory, run } = wired(vi.fn(async () => failed()));
+  it("refuses a call naming a parameter its definition does not declare before it runs, describing the node once (t1096)", async () => {
+    const executeTool = vi.fn(async () => failed());
+    const { memory, run } = wired(executeTool);
     const first = await run({ node: AND, parameters: { emptyBehavior: "true", selector: "#go" }, consequences: [] });
-    // Named on its result, where the request shows its definition (t289-G).
-    expect(first).toMatchObject({ resultCode: "node_failed", evidence: { ok: false, code: "node_failed", describedNodes: [AND], undeclaredParameters: ["selector"] } });
+    // Nothing was sent; named on its result, where the request shows its definition (t289-G).
+    expect(first).toMatchObject({ resultCode: "core.run_node.parameters_refused", evidence: { ok: false, code: "core.run_node.parameters_refused", describedNodes: [AND], undeclaredParameters: ["selector"] } });
+    expect(executeTool).not.toHaveBeenCalled();
     expect(memory.ids()).toEqual([AND]);
 
     // Already described: not named again, only the pointer and the list.
@@ -255,14 +257,14 @@ describe("Automation Studio harness option binding with a described-node memory"
 
   it("explains a failure answered as bare evidence the same way", async () => {
     const { run } = wired(vi.fn(async () => ({ ok: false, code: "node_failed" })));
-    expect(await run({ node: AND, parameters: { bogus: 1 }, consequences: [] })).toEqual({ ok: false, code: "node_failed", describedNodes: [AND], undeclaredParameters: ["bogus"] });
+    expect(await run({ node: AND, parameters: { emptyBehavior: "true" }, consequences: [] })).toEqual({ ok: false, code: "node_failed", describedNodes: [AND] });
   });
 
   it("never refuses an undescribed node before it runs, describes it, and names it on the first result only (t280, t289-G)", async () => {
     const answer = { kind: "llm_evidence_tool_execution" as const, evidence: { ok: true, rows: 2 }, effectApplied: false };
     const executeTool = vi.fn(async () => answer);
     const { memory, run } = wired(executeTool);
-    expect(await run({ node: AND, parameters: { bogus: 1 }, consequences: [] })).toEqual({ ...answer, evidence: { ok: true, rows: 2, describedNodes: [AND] } });
+    expect(await run({ node: AND, parameters: {}, consequences: [] })).toEqual({ ...answer, evidence: { ok: true, rows: 2, describedNodes: [AND] } });
     expect(executeTool).toHaveBeenCalledTimes(1);
     expect(memory.ids()).toEqual([AND]);
     expect(await run({ node: AND, parameters: {}, consequences: [] }, "call.2")).toBe(answer);

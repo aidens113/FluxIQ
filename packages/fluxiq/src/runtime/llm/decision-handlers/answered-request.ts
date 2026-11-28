@@ -19,6 +19,7 @@ import {
   type AutomationStudioLlmEvidenceLoopDecision,
   type AutomationStudioLlmEvidenceLoopTrace
 } from "../evidence-loop/index.ts";
+import { automationStudioLlmPageChannelProjection } from "../view-channel/index.ts";
 import type { AutomationStudioLlmEvidenceDecisionHandlerContext, AutomationStudioLlmEvidenceDecisionNext } from "./types.ts";
 
 /**
@@ -44,11 +45,14 @@ export function automationStudioLlmEvidenceHandleAnsweredRequest(
   const step: AutomationStudioLlmEvidenceLoopTrace = { iteration, decision: "tool_call", toolId: decision.toolId, resultCode: code, ...(decision.usage ? { usage: decision.usage } : {}) };
   const records = history.records();
   const answering = records.find((record) => (record.decision.kind === "call" || record.decision.kind === "look") && record.decision.callId === answeredByCallId);
+  // A whole-page capture delivered in parts: the note names the parts the model has not been shown.
+  const splitPage = context.input.pageChannel ? automationStudioLlmPageChannelProjection(evidence, context.input.pageChannel).split.get(answeredByCallId) : undefined;
   const note = automationStudioLlmEvidenceAnsweredRequestNote({
     code, toolId: decision.toolId, answeredByCallId, stepsWithoutProgress: noProgress.steps,
     ...(context.input.discoveryOnly ? { discoveryOnly: true, candidate: automationStudioLlmEvidenceLatestCandidateReceipt(evidence, context.input.finishingTools?.submit), finishing: context.input.finishingTools } : {}),
     ...(repeat ? { timesAsked: repeat.times, askedAt: repeat.iterations } : {}),
     ...(answering ? { answeredAt: answering.iteration } : {}),
+    ...(splitPage ? { splitPage } : {}),
     ...(context.lastAction ? { lastActionBefore: context.lastAction } : {})
   });
   const answeredTool = context.toolsById.get(decision.toolId);

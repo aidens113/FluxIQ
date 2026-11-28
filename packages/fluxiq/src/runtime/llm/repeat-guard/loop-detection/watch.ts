@@ -38,6 +38,15 @@
 // ask for repeats, so there it is told and never refused (`refuseActs`). On the new
 // path it is refused, up to what the caller's `askedRepeats` says the task asks for.
 //
+// **A repeat that never runs is on the ladder all the same (t1096).** The same call
+// on the same page answered from memory, or refused by the repeat guard, makes a
+// near repeat from its second time as one that ran does, and climbs the same
+// rungs. Before, such calls were only counted: a manual build asked one look
+// twelve times, answered from memory each time, and nothing was told until the
+// window of no progress stood at 16. Its caller gives the steer (`steerOwed`):
+// a rung climbed is a rung told, or the steer a later finding is owed would
+// already be spent. No count is added or changed, and nothing new ends a round.
+//
 // Progress ends the incident: the ladder starts again from nothing. An act that
 // lands, a row or a page never seen, and a draft never stood at are what tell
 // working from repeating, so a run that recovers is treated as one that recovered.
@@ -75,10 +84,12 @@ export type AutomationStudioLlmLoopWatch = {
   ran(call: AutomationStudioLlmLoopCall, guarded?: boolean): AutomationStudioLlmLoopFinding | undefined;
   /** An edit settled: the finding to steer on, or nothing. */
   amended(amendment: AutomationStudioLlmLoopAmendment): AutomationStudioLlmLoopFinding | undefined;
-  /** The repeat guard refused this call unrun: its own first case. */
-  guardRefused(toolId: string, input: JsonObject, context: string | undefined, state: string | undefined): void;
-  /** The loop answered a call from memory: one more without progress. */
-  answered(toolId: string, input: JsonObject, context: string | undefined, state: string | undefined): void;
+  /** The repeat guard refused this call unrun: its own first case. Answers the finding to steer on, or nothing, as `ran` does. */
+  guardRefused(toolId: string, input: JsonObject, context: string | undefined, state: string | undefined): AutomationStudioLlmLoopFinding | undefined;
+  /** The loop answered a call from memory: one more without progress. Answers the finding to steer on, or nothing, as `ran` does. */
+  answered(toolId: string, input: JsonObject, context: string | undefined, state: string | undefined): AutomationStudioLlmLoopFinding | undefined;
+  /** The steer the last call refused unrun or answered from memory found, still to be given: its caller hands it to `caught`, which gives it once and puts nothing on the ladder again. */
+  steerOwed(): AutomationStudioLlmLoopFinding | undefined;
   moved(): void;
   /** The model tried to complete: replays of the Flow count from nothing (`./detector.ts`, "A replay again"). */
   completionTried(): void;
@@ -128,6 +139,8 @@ export function automationStudioLlmLoopWatch(options: {
   let looksOnly = false;
   // This call was already counted as a run of looks (`caught`), so it is not counted twice.
   let caughtOutside = false;
+  // The steer a call refused unrun or answered from memory found, already on the ladder, until its caller gives it (`steerOwed`).
+  let owed: AutomationStudioLlmLoopFinding | undefined;
 
   const found = (finding: AutomationStudioLlmLoopFinding): AutomationStudioLlmLoopFinding | undefined => {
     standing = finding;
@@ -188,6 +201,7 @@ export function automationStudioLlmLoopWatch(options: {
       return repeating && rung !== "clear" ? refusing(repeating) : undefined;
     },
     ran(call, guarded) {
+      owed = undefined;
       came.push({ callId: call.callId, toolId: call.toolId, came: call.resultCode ?? (call.refused ? "refused" : call.effectApplied ? "applied" : "changed_nothing") });
       if (came.length > CAME_BACK_KEPT) came.shift();
       const { finding, progressed } = detector.ran(call, guarded);
@@ -208,19 +222,26 @@ export function automationStudioLlmLoopWatch(options: {
       return finding ? found(finding) : undefined;
     },
     guardRefused(toolId, input, context, state) {
-      detector.unrun(toolId, input, context, state);
+      const finding = detector.unrun(toolId, input, context, state);
       if (!guardStanding) caught.exact_repeat += 1;
       guardStanding = true;
       tally.refused += 1;
+      // A near repeat refused unrun climbs the ladder as one that ran does, and is steered by the caller (t1096); `found` counts the strike where refusing stands.
+      owed = finding ? found(finding) : undefined;
       // Refused again while an incident is being refused: another way round it, as a further finding is (t870: a read asked again between two repeats).
-      if (rung === "refusing") strikes += 1;
+      if (!finding && rung === "refusing") strikes += 1;
+      return owed;
     },
     answered(toolId, input, context, state) {
-      detector.unrun(toolId, input, context, state, true);
-      // A look asked again and answered from memory, after a change of approach on looks alone: the same way round.
-      if (looksOnly) strikes += 1;
+      const finding = detector.unrun(toolId, input, context, state, true);
+      // A look asked again and answered from memory, after a change of approach on looks alone: the same way round; counted once where it is also a finding.
+      if (looksOnly && !finding) strikes += 1;
+      owed = finding ? found(finding) : undefined;
+      return owed;
     },
+    steerOwed: () => owed,
     moved() {
+      owed = undefined;
       detector.moved();
       cleared();
     },
@@ -232,6 +253,11 @@ export function automationStudioLlmLoopWatch(options: {
       return signal(standing);
     },
     caught(finding) {
+      // The steer an unrun call found is on the ladder already: given once, never found twice.
+      if (finding === owed) {
+        owed = undefined;
+        return finding;
+      }
       caughtOutside = true;
       return found(finding);
     },

@@ -550,7 +550,7 @@ describe("a completion refused again over the same draft, where the caller takes
   });
 
   it("through the loop: the refused completion is caught as a repeat, and the round ends on loop detection's signal, not a bare stall", async () => {
-    const cycle = [partRun(0), complete, partRun(0)];
+    const cycle = [complete, partRun(0)];
     const decide = vi.fn();
     for (const decision of builtDraft) decide.mockResolvedValueOnce(decision);
     decide.mockImplementation(async () => {

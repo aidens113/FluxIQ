@@ -54,10 +54,14 @@ export function automationStudioLlmLoopReplay(events: readonly AutomationStudioL
       watch.moved();
       guard.moved();
     } else if (event.kind === "guard_refused") {
-      watch.guardRefused(event.toolId, event.input, undefined, event.state);
+      const finding = watch.guardRefused(event.toolId, event.input, undefined, event.state);
       say(event.step, "refuse", { pattern: "exact_repeat", repeats: 2, toolIds: [event.toolId] });
+      if (finding) say(event.step, "steer", finding);
     } else if (event.kind === "answered") {
-      watch.answered(event.toolId, event.input, undefined, event.state);
+      // Answered from memory, it is steered as a call that ran is, else the ladder's next rung may be due (t1096).
+      const finding = watch.answered(event.toolId, event.input, undefined, event.state);
+      if (finding) say(event.step, "steer", finding);
+      else due(event.step);
     } else if (event.kind === "amended") {
       const refused = watch.checkAmendment(event.amendment.key, event.amendment.draftBefore);
       if (refused) {
@@ -72,8 +76,9 @@ export function automationStudioLlmLoopReplay(events: readonly AutomationStudioL
       const blocked = state !== undefined && call.exempt !== true ? guard.blocks(call.toolId, call.input, state) : undefined;
       const refused = watch.check(call.toolId, call.input, call.context, state, () => call.targetWords);
       if (blocked) {
-        watch.guardRefused(call.toolId, call.input, call.context, state);
+        const steer = watch.guardRefused(call.toolId, call.input, call.context, state);
         say(event.step, "refuse", { pattern: "exact_repeat", repeats: 2, toolIds: [call.toolId] });
+        if (steer) say(event.step, "steer", steer);
       } else if (refused) {
         say(event.step, "refuse", refused);
         due(event.step);

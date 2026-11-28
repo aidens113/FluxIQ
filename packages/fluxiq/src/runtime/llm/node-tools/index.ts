@@ -29,3 +29,5 @@ export * from "./describe-nodes.ts";
 export * from "./describing-failures.ts";
 // Where a newly described node is named on a call's result, and its definition shown (t289-G).
 export * from "./described-nodes-key.ts";
+// A call whose parameters cannot be the node's is refused before it is sent (t1096).
+export * from "./parameters/index.ts";

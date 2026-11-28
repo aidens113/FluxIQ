@@ -67,6 +67,9 @@ const CHANGES_LEGEND = "A line after \"- \" left the page, after \"+ \" arrived,
 
 type Shape = "whole" | "changes";
 
+/** A `core.full_page` capture delivered in parts: how many there are, and which the model has been shown (the capture's first, and any it asked for). */
+export type AutomationStudioLlmPageSplit = { parts: number; shown: number[] };
+
 type Parted = { call: string; shape: Shape; parts: string[][] };
 
 /** What a key's next view is compared with. Gone when the key's deliveries left the window: its next view is then whole. */
@@ -92,11 +95,12 @@ type Holder = { key: string; recalled: boolean; lastAt: number; copies: Array<{ 
  * is never mutated. This is the function an offline replay drives: records in,
  * projected evidence out.
  */
-export function automationStudioLlmPageChannelProjection(records: readonly Entry[], channel: AutomationStudioLlmPageChannel): { history: Entry[]; window?: Entry } {
+export function automationStudioLlmPageChannelProjection(records: readonly Entry[], channel: AutomationStudioLlmPageChannel): { history: Entry[]; window?: Entry; split: ReadonlyMap<string, AutomationStudioLlmPageSplit> } {
   const budget = channel.budgetChars !== undefined && Number.isInteger(channel.budgetChars) && channel.budgetChars > 0 ? channel.budgetChars : AUTOMATION_STUDIO_LLM_PAGE_BUDGET_CHARS;
   const member = channel.member;
   const states = new Map<string, KeyState>();
   const parted = new Map<string, Parted>();
+  const split = new Map<string, AutomationStudioLlmPageSplit>();
   const holders = new Map<string, Holder>();
   /** Each projected record's note, fixed when it is projected. */
   const notes = new Map<number, JsonObject>();
@@ -137,16 +141,21 @@ export function automationStudioLlmPageChannelProjection(records: readonly Entry
 
   const delivered = (callId: string, key: string, shape: Shape, lines: readonly string[], extra: JsonObject): { page: JsonObject; chars: number } => {
     const parts = automationStudioLlmPageParts(lines, budget);
-    if (parts.length > 1) parted.set(key, { call: callId, shape, parts });
+    if (parts.length > 1) {
+      parted.set(key, { call: callId, shape, parts });
+      if (shape === "whole") split.set(callId, { parts: parts.length, shown: [1] });
+    }
     return { page: { call: callId, ...extra, ...partShown(shape, parts, 1, budget) }, chars: joinedLength(parts[0]!) };
   };
 
   // Delivered whole, as the key's new state: its earlier deliveries leave the entry (D7).
-  const whole = (index: number, callId: string, key: string, lines: readonly AutomationStudioLlmPageLine[], comparable: boolean): void => {
+  const whole = (index: number, callId: string, key: string, lines: readonly AutomationStudioLlmPageLine[], comparable: boolean, capture = false): void => {
     release(key);
     letGo.delete(key);
     current = key;
-    const { page, chars } = delivered(callId, key, "whole", lines.map((line) => line.text), {});
+    // A full capture puts the page as anyone sees it first and the extra lines (hidden elements, attributes) after, each in page order, so its first part is the visible page.
+    const ordered = capture ? [...lines.filter((line) => line.extra !== true), ...lines.filter((line) => line.extra === true)] : lines;
+    const { page, chars } = delivered(callId, key, "whole", ordered.map((line) => line.text), {});
     notes.set(index, { key, shown: "whole", in: AUTOMATION_STUDIO_LLM_PAGE_WINDOW_TOOL_ID });
     deliveries.set(index, page);
     hold(key, key, false, index, chars, callId);
@@ -161,6 +170,8 @@ export function automationStudioLlmPageChannelProjection(records: readonly Entry
     if (record.toolId === AUTOMATION_STUDIO_LLM_FULL_PAGE_TOOL_ID && value[member] === undefined && typeof value.part === "number") {
       const answer = partAnswer(record.callId, value.part, current, current === undefined ? undefined : parted.get(current), budget);
       notes.set(index, answer.note);
+      const asked = answer.page !== undefined && current !== undefined ? parted.get(current) : undefined;
+      if (asked && Number.isInteger(value.part)) split.get(asked.call)?.shown.push(value.part as number);
       if (answer.page !== undefined && answer.chars !== undefined && current !== undefined) {
         deliveries.set(index, answer.page);
         hold(current, current, false, index, answer.chars, record.callId);
@@ -182,12 +193,12 @@ export function automationStudioLlmPageChannelProjection(records: readonly Entry
     const { key, lines } = view;
     // Keys that do not name one line each cannot be compared: delivered whole, and the next view of this page is whole too.
     if (new Set(lines.map((line) => line.key)).size !== lines.length) {
-      whole(index, record.callId, key, lines, false);
+      whole(index, record.callId, key, lines, false, record.toolId === AUTOMATION_STUDIO_LLM_FULL_PAGE_TOOL_ID);
       return;
     }
     const state = states.get(key);
     if (!state || record.toolId === AUTOMATION_STUDIO_LLM_FULL_PAGE_TOOL_ID) {
-      whole(index, record.callId, key, lines, true);
+      whole(index, record.callId, key, lines, true, record.toolId === AUTOMATION_STUDIO_LLM_FULL_PAGE_TOOL_ID);
       return;
     }
     const changes = automationStudioLlmPageChanges(state.lines, lines);
@@ -218,7 +229,7 @@ export function automationStudioLlmPageChannelProjection(records: readonly Entry
     return { callId: record.callId, toolId: record.toolId, value: withMember(record.toolId, record.value, member, note) };
   });
   const window = pageWindow(holders, deliveries, letGo, current);
-  return window ? { history, window } : { history };
+  return window ? { history, window, split } : { history, split };
 }
 
 /**

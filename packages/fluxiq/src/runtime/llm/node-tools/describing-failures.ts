@@ -65,6 +65,7 @@ import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence
 import type { AutomationStudioHarnessOptionImplementation } from "../harness-options/index.ts";
 import { AUTOMATION_STUDIO_LLM_DESCRIBED_NODES_KEY } from "./described-nodes-key.ts";
 import type { AutomationStudioLlmNodeDescriptions } from "./node-descriptions.ts";
+import { automationStudioLlmNodeParametersRefusal } from "./parameters/index.ts";
 import { AUTOMATION_STUDIO_NODE_REPLAY_KEY } from "./replay/replay.ts";
 
 /** How a call Core makes for itself is named (header); the loop's opening call is `initial.`, and is described. */
@@ -80,6 +81,13 @@ export function automationStudioLlmRunNodeDescribingFailures(
     if (typeof node !== "string" || AUTOMATION_STUDIO_NODE_REPLAY_KEY in input.value || input.callId.startsWith(CORE_CALL_PREFIX)) return implementation(input);
     const definition = memory.definition(node);
     if (!definition) return implementation(input);
+    // Not sent at all when its parameters cannot be the node's (`./parameters/refusal.ts`); the node is described on that answer.
+    const refusedBefore = automationStudioLlmNodeParametersRefusal(definition, input.value.parameters);
+    if (refusedBefore) {
+      const evidence: JsonObject = { ...(refusedBefore.evidence as JsonObject) };
+      if (memory.describe([node]).described.length > 0) evidence[AUTOMATION_STUDIO_LLM_DESCRIBED_NODES_KEY] = [node];
+      return { ...refusedBefore, evidence };
+    }
     const result = await implementation(input);
     const execution = isRecord(result) && result.kind === "llm_evidence_tool_execution" ? result as AutomationStudioLlmEvidenceToolExecutionResult : undefined;
     const evidence: unknown = execution ? execution.evidence : result;
